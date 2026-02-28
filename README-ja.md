@@ -16,120 +16,169 @@
 
 ---
 
-Agentが数百〜数千のツールを持つ場合、すべてのツールをコンテキストウィンドウに読み込むとパフォーマンスが低下します。既存のソリューションはベクトル類似度のみを使用しています。**graph-tool-call**はツール間の**関係**（依存関係、呼び出し順序、補完、競合）をグラフとしてモデル化し、構造認識型の検索を実現します。
+## 課題
+
+LLM Agentが使えるツールはどんどん増えています。ECプラットフォームは**1,200以上のAPIエンドポイント**を持ち、社内システムは複数のサービスにまたがる**500以上の関数**を持つことがあります。
+
+しかし限界があります：**すべてのツールをコンテキストウィンドウに入れることはできません。**
+
+一般的な解決策はベクトル検索です——ツールの説明を埋め込み、最も近いマッチを見つけます。機能はしますが、重要なものを見逃しています：
+
+> **ツールは孤立して存在しません。互いに関係があります。**
+
+ユーザーが*「注文をキャンセルして返金処理して」*と言った時、ベクトル検索は `cancelOrder` を見つけるかもしれません。しかし、注文IDを取得するために先に `listOrders` を呼ぶ必要があること、その後に `processRefund` が来るべきことは分かりません。これらは単に似たツールではなく、**ワークフロー**を形成しています。
+
+## ソリューション
+
+**graph-tool-call** はツール間の関係をグラフとしてモデル化します：
+
+```
+                    ┌──────────┐
+          PRECEDES  │listOrders│  PRECEDES
+         ┌─────────┤          ├──────────┐
+         ▼         └──────────┘          ▼
+   ┌──────────┐                    ┌───────────┐
+   │ getOrder │                    │cancelOrder│
+   └──────────┘                    └─────┬─────┘
+                                         │ COMPLEMENTARY
+                                         ▼
+                                  ┌──────────────┐
+                                  │processRefund │
+                                  └──────────────┘
+```
+
+各ツールを独立したベクトルとして扱う代わりに、graph-tool-callは理解します：
+- **REQUIRES** — `getOrder` は `listOrders` のIDが必要
+- **PRECEDES** — 注文一覧を照会してからでないとキャンセルできない
+- **COMPLEMENTARY** — キャンセルと返金は一緒に使われる
+- **SIMILAR_TO** — `getOrder` と `listOrders` は関連機能
+- **CONFLICTS_WITH** — `updateOrder` と `deleteOrder` は同時実行不可
+
+*「注文キャンセル」*を検索すると、`cancelOrder` だけでなく**完全なワークフロー**が返されます：一覧照会 → 詳細照会 → キャンセル → 返金。
+
+## 仕組み
 
 ```
 OpenAPI/MCP/コード → [収集] → [分析] → [組織化] → [検索] → Agent
                       (変換)  (関係発見) (グラフ)   (ハイブリッド)
 ```
 
-## なぜ graph-tool-call か？
+**1. 収集（Ingest）** — Swagger仕様、MCPサーバー、Python関数を指定するだけ。ツールが統一スキーマに自動変換されます。
 
-| 機能 | ベクトルのみのソリューション | graph-tool-call |
-|------|------------------------|-----------------|
-| 範囲 | ツール検索のみ | 完全なツールライフサイクル |
-| ツールソース | 手動登録 | Swagger/OpenAPIから自動収集 |
-| 検索 | フラットなベクトル類似度 | グラフ + ベクトルハイブリッド (RRF)、3-Tier |
-| 関係 | なし | REQUIRES, PRECEDES, COMPLEMENTARY, SIMILAR_TO, CONFLICTS_WITH |
-| 重複排除 | なし | クロスソース重複検出 |
-| 依存関係 | なし | API仕様から自動検出 |
-| 呼び出し順序 | なし | ステートマシン + CRUDワークフロー検出 |
-| オントロジー | なし | Auto / LLM-Auto モード |
+**2. 分析（Analyze）** — 関係が自動検出されます：パス階層、CRUDパターン、共有スキーマ、response-parameterチェーン、ステートマシン。
+
+**3. 組織化（Organize）** — ツールがオントロジーグラフにグループ化されます。2つのモード：
+  - **Auto** — 純粋なアルゴリズム（tag、path、CRUDパターン）。LLM不要。
+  - **LLM-Auto** — LLM推論で強化（Ollama、vLLM、OpenAI）。より良い分類、より豊かな関係。
+
+**4. 検索（Retrieve）** — キーワードマッチング、グラフ探索、（オプションの）エンベディングを組み合わせたハイブリッド検索。LLMなしでも十分動作。LLMがあればさらに向上。
 
 ## クイックスタート
-
-### インストール
 
 ```bash
 pip install graph-tool-call
 ```
-
-### 基本的な使い方
 
 ```python
 from graph_tool_call import ToolGraph
 
 tg = ToolGraph()
 
-# ツールを登録（OpenAI / Anthropic / LangChain フォーマットを自動検出）
+# ツール登録（OpenAI / Anthropic / LangChain フォーマットを自動検出）
 tg.add_tools(your_tools_list)
 
-# カテゴリと関係を設定
-tg.add_category("file_ops", domain="io")
-tg.assign_category("read_file", "file_ops")
+# 関係を定義
 tg.add_relation("read_file", "write_file", "complementary")
 
-# クエリで関連ツールを検索
+# 検索 — グラフ展開が関連ツールを自動発見
 tools = tg.retrieve("read a file and save changes", top_k=5)
+# → [read_file, write_file, list_dir, ...]
+#    write_fileはベクトル類似度ではなくCOMPLEMENTARY関係で発見
 ```
 
-### OpenAPI 収集（Phase 1）
+### Swaggerから自動生成（Phase 1）
 
 ```python
 tg = ToolGraph()
 tg.ingest_openapi("https://petstore.swagger.io/v2/swagger.json")
-# 自動発見: CRUD依存関係、呼び出し順序、カテゴリグルーピング
+
+# 自動処理：20 endpoint → 20 tool → 34 関係 → 3 カテゴリ
+# CRUD依存関係、呼び出し順序、カテゴリグルーピング——すべて自動検出。
+
 tools = tg.retrieve("register a new pet and upload photo", top_k=5)
+# → [addPet, uploadFile, getPetById, updatePet, findPetsByStatus]
 ```
 
-## 主要機能
+## なぜベクトル検索だけでは足りないのか？
 
-### 収集（Ingest）
-OpenAPI/Swagger、MCPサーバー、Python関数、LangChain/OpenAI/Anthropicフォーマットのツールを統一スキーマに自動変換します。Spec正規化レイヤーがSwagger 2.0、OpenAPI 3.0、3.1の差異を透過的に処理します。
+| シナリオ | ベクトルのみ | graph-tool-call |
+|----------|-----------|-----------------|
+| *「注文をキャンセルして」* | `cancelOrder` を返す | `listOrders → getOrder → cancelOrder → processRefund`（完全なワークフロー）|
+| *「ファイルを読んで保存」* | `read_file` を返す | `read_file` + `write_file`（COMPLEMENTARY関係）|
+| 複数Swagger仕様に重複ツール | 結果に重複を含む | クロスソース自動重複排除 |
+| 1,200のAPIエンドポイント | 遅くノイズが多い | カテゴリに整理、正確なグラフ探索 |
 
-### 分析（Analyze）
-ツール間の関係を自動検出します：
-- **REQUIRES** — データ依存（response → parameter）
-- **PRECEDES** — 呼び出し順序（一覧照会 → キャンセル）
-- **COMPLEMENTARY** — 一緒に使うと効果的（read ↔ write）
-- **SIMILAR_TO** — 機能が重複
-- **CONFLICTS_WITH** — 相互排他的な操作
+## 3-Tier検索：持っているものを使う
 
-### 組織化（Organize）
-2つのモードでオントロジーグラフを構築します：
-- **Auto** — アルゴリズムベースの分類（tag、path、CRUDパターン、embeddingクラスタリング）。LLM不要。
-- **LLM-Auto** — Auto + LLMによる関係推論とカテゴリ提案の強化（Ollama、vLLM、llama.cpp、OpenAI）。
+graph-tool-callは**LLMなしでも動作**し、**あればさらに向上**するように設計されています：
 
-どちらのモードでも、結果をDashboardで可視化・手動編集できます。
+| Tier | 必要なもの | 何をするか | 改善効果 |
+|------|----------|-----------|---------|
+| **0** | 何も不要 | BM25キーワード + グラフ展開 + RRF融合 | ベースライン |
+| **1** | 小型LLM (1.5B~3B) | + クエリ拡張、同義語、翻訳 | Recall +15~25% |
+| **2** | 大型LLM (7B+) | + 意図分解、反復改善 | Recall +30~40% |
 
-### 検索（Retrieve）
-3-Tierハイブリッド検索アーキテクチャ：
-| Tier | LLM要否 | 方法 |
-|------|--------|------|
-| 0 | 不要 | BM25 + グラフ展開 + RRF |
-| 1 | 小型 (1.5B~3B) | + クエリ拡張 |
-| 2 | 大型 (7B+) | + 意図分解 |
+Ollamaで動く小さなモデル（`qwen2.5:1.5b`）でも検索品質は有意に向上します。Tier 0はGPUすら不要です。
 
-LLMなしでも動作します。LLMがあればさらに高品質に。
+## 機能比較
+
+| 機能 | ベクトルのみのソリューション | graph-tool-call |
+|------|------------------------|-----------------|
+| ツールソース | 手動登録 | Swagger/OpenAPI/MCPから自動収集 |
+| 検索方式 | フラットなベクトル類似度 | グラフ+ベクトルハイブリッド (RRF)、3-Tier |
+| ツール関係 | なし | 6種類の関係タイプ、自動検出 |
+| 呼び出し順序 | なし | ステートマシン + CRUDワークフロー検出 |
+| 重複排除 | なし | クロスソース重複検出 |
+| オントロジー | なし | Auto / LLM-Auto モード |
+| 可視化 | なし | グラフDashboard + 手動編集 |
+| LLM依存 | 必須 | オプション（なくても動く、あればさらに良い）|
 
 ## ロードマップ
 
-| Phase | 説明 | 状態 |
+| Phase | 内容 | 状態 |
 |-------|------|------|
-| **0** | コアグラフ + 検索 | ✅ 完了 (32 tests) |
-| **1** | OpenAPI収集 + 依存関係/順序検出 | 進行中 |
-| **2** | 重複排除 + embedding + オントロジー/検索モード | 計画中 |
-| **3** | MCP収集 + 可視化 + CLI + PyPI | 計画中 |
-| **4** | インタラクティブDashboard + コミュニティ | 計画中 |
+| **0** | コアグラフエンジン + ハイブリッド検索 | ✅ 完了 (32 tests) |
+| **1** | OpenAPI収集、仕様正規化、依存関係・順序検出 | 進行中 |
+| **2** | 重複排除、エンベディング、オントロジーモード（Auto/LLM-Auto）、検索Tier | 計画中 |
+| **3** | MCP収集、Pyvis可視化、Neo4jエクスポート、CLI、PyPI公開 | 計画中 |
+| **4** | インタラクティブDashboard（Dash Cytoscape）、手動編集、コミュニティ | 計画中 |
 
 ## ドキュメント
 
-- [WBS](docs/wbs/) — 作業分解構造
-- [アーキテクチャ](docs/architecture/overview.md) — システム概要とデータモデル
-- [設計](docs/design/) — アルゴリズム設計ドキュメント
-- [リサーチ](docs/research/) — 競合分析、APIスケールデータ
+| ドキュメント | 説明 |
+|------------|------|
+| [アーキテクチャ](docs/architecture/overview.md) | システム概要、パイプラインレイヤー、データモデル |
+| [WBS](docs/wbs/) | 作業分解構造 — Phase 0~4 進捗 |
+| [設計](docs/design/) | アルゴリズム設計 — 仕様正規化、依存関係検出、検索モード、呼び出し順序、オントロジーモード |
+| [リサーチ](docs/research/) | 競合分析、APIスケールデータ、ECパターン |
+| [OpenAPIガイド](docs/design/openapi-guide.md) | より良いツールグラフを生成するAPI仕様の書き方 |
 
 ## コントリビューション
 
-コントリビューションを歓迎します！ガイドラインは近日公開予定です。
+コントリビューションを歓迎します！
 
 ```bash
-# 開発環境のセットアップ
+# 開発環境セットアップ
 git clone https://github.com/SonAIengine/graph-tool-call.git
 cd graph-tool-call
 pip install poetry
 poetry install --with dev
+
+# テスト実行
 poetry run pytest -v
+
+# リント
+poetry run ruff check .
 ```
 
 ## ライセンス

@@ -16,35 +16,68 @@ English · [한국어](README-ko.md) · [中文](README-zh_CN.md) · [日本語]
 
 ---
 
-When your agent has hundreds or thousands of tools, loading all of them into the context window degrades performance. Existing solutions use vector similarity only. **graph-tool-call** models **relationships between tools** (dependencies, ordering, complements, conflicts) as a graph, enabling structure-aware retrieval.
+## The Problem
+
+LLM agents are getting access to more and more tools. A commerce platform might expose **1,200+ API endpoints**. A company's internal toolset might have **500+ functions** across multiple services.
+
+But there's a hard limit: **you can't put them all in the context window.**
+
+The common solution? Vector search — embed tool descriptions, find the closest matches. It works, but it misses something important:
+
+> **Tools don't exist in isolation. They have relationships.**
+
+When a user says *"cancel my order and process a refund"*, vector search might find `cancelOrder`. But it won't know that you need to call `listOrders` first (to get the order ID), and that `processRefund` should follow. These aren't just similar tools — they form a **workflow**.
+
+## The Solution
+
+**graph-tool-call** models tool relationships as a graph:
+
+```
+                    ┌──────────┐
+          PRECEDES  │listOrders│  PRECEDES
+         ┌─────────┤          ├──────────┐
+         ▼         └──────────┘          ▼
+   ┌──────────┐                    ┌───────────┐
+   │ getOrder │                    │cancelOrder│
+   └──────────┘                    └─────┬─────┘
+                                         │ COMPLEMENTARY
+                                         ▼
+                                  ┌──────────────┐
+                                  │processRefund │
+                                  └──────────────┘
+```
+
+Instead of treating each tool as an independent vector, graph-tool-call understands:
+- **REQUIRES** — `getOrder` needs an ID from `listOrders`
+- **PRECEDES** — you must list orders before you can cancel one
+- **COMPLEMENTARY** — cancellation and refund often go together
+- **SIMILAR_TO** — `getOrder` and `listOrders` serve related purposes
+- **CONFLICTS_WITH** — `updateOrder` and `deleteOrder` shouldn't run together
+
+This means when you search for *"cancel order"*, you don't just get `cancelOrder` — you get the **complete workflow**: list → get → cancel → refund.
+
+## How It Works
 
 ```
 OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Agent
                     (convert)  (relations)  (graph)     (hybrid)
 ```
 
-## Why graph-tool-call?
+**1. Ingest** — Point it at a Swagger spec, MCP server, or Python functions. Tools are auto-converted into a unified schema.
 
-| Feature | Vector-only solutions | graph-tool-call |
-|--|---|---|
-| Scope | Tool retrieval only | Full tool lifecycle |
-| Tool source | Manual registration | Auto-ingest from Swagger/OpenAPI |
-| Search | Flat vector similarity | Graph + vector hybrid (RRF), 3-Tier |
-| Relations | None | REQUIRES, PRECEDES, COMPLEMENTARY, SIMILAR_TO, CONFLICTS_WITH |
-| Deduplication | None | Cross-source duplicate detection |
-| Dependency | None | Auto-detected from API specs |
-| Call ordering | None | State machine + CRUD workflow detection |
-| Ontology | None | Auto / LLM-Auto modes |
+**2. Analyze** — Relationships are automatically detected: path hierarchies, CRUD patterns, shared schemas, response-parameter chains, state machines.
+
+**3. Organize** — Tools are grouped into an ontology graph. Two modes:
+  - **Auto** — purely algorithmic (tags, paths, CRUD patterns). No LLM needed.
+  - **LLM-Auto** — enhanced with LLM reasoning (Ollama, vLLM, OpenAI). Better categories, richer relations.
+
+**4. Retrieve** — Hybrid search that combines keyword matching, graph traversal, and (optionally) embeddings. Works great without any LLM. Works even better with one.
 
 ## Quick Start
-
-### Installation
 
 ```bash
 pip install graph-tool-call
 ```
-
-### Basic Usage
 
 ```python
 from graph_tool_call import ToolGraph
@@ -54,74 +87,85 @@ tg = ToolGraph()
 # Register tools (OpenAI / Anthropic / LangChain format auto-detected)
 tg.add_tools(your_tools_list)
 
-# Organize with categories and relations
-tg.add_category("file_ops", domain="io")
-tg.assign_category("read_file", "file_ops")
+# Define relationships
 tg.add_relation("read_file", "write_file", "complementary")
 
-# Retrieve relevant tools for a query
+# Retrieve — graph expansion finds related tools automatically
 tools = tg.retrieve("read a file and save changes", top_k=5)
+# → [read_file, write_file, list_dir, ...]
+#    write_file found via COMPLEMENTARY relation, not just vector similarity
 ```
 
-### OpenAPI Ingest (Phase 1)
+### From Swagger (Phase 1)
 
 ```python
 tg = ToolGraph()
 tg.ingest_openapi("https://petstore.swagger.io/v2/swagger.json")
-# Auto-discovers: CRUD dependencies, call ordering, category groupings
+
+# Automatic: 20 endpoints → 20 tools → 34 relations → 3 categories
+# CRUD dependencies, call ordering, category groupings — all detected.
+
 tools = tg.retrieve("register a new pet and upload photo", top_k=5)
+# → [addPet, uploadFile, getPetById, updatePet, findPetsByStatus]
 ```
 
-## Key Features
+## Why Not Just Vector Search?
 
-### Ingest
-Auto-convert tools from OpenAPI/Swagger, MCP servers, Python functions, and LangChain/OpenAI/Anthropic formats into a unified schema. Spec normalization handles Swagger 2.0, OpenAPI 3.0, and 3.1 transparently.
+| Scenario | Vector-only | graph-tool-call |
+|----------|------------|-----------------|
+| *"cancel my order"* | Returns `cancelOrder` | Returns `listOrders → getOrder → cancelOrder → processRefund` (full workflow) |
+| *"read and save file"* | Returns `read_file` | Returns `read_file` + `write_file` (via COMPLEMENTARY) |
+| Multiple Swagger specs with overlapping tools | Duplicate tools in results | Auto-deduplication across sources |
+| 1,200 API endpoints | Slow, noisy results | Organized into categories, precise graph traversal |
 
-### Analyze
-Automatically detect relationships between tools:
-- **REQUIRES** — data dependency (response → parameter)
-- **PRECEDES** — call ordering (list → cancel)
-- **COMPLEMENTARY** — useful together (read ↔ write)
-- **SIMILAR_TO** — overlapping functionality
-- **CONFLICTS_WITH** — mutually exclusive operations
+## 3-Tier Search: Use What You Have
 
-### Organize
-Build an ontology graph with two modes:
-- **Auto** — algorithmic categorization (tags, paths, CRUD patterns, embedding clustering). No LLM needed.
-- **LLM-Auto** — Auto + LLM-enhanced relation inference and category suggestions (Ollama, vLLM, llama.cpp, OpenAI).
+graph-tool-call is designed to work **without any LLM** and get **better with one**:
 
-Results can be visualized and manually edited via the Dashboard.
+| Tier | What you need | What it does | Improvement |
+|------|--------------|--------------|-------------|
+| **0** | Nothing | BM25 keywords + graph expansion + RRF fusion | Baseline |
+| **1** | Small LLM (1.5B~3B) | + query expansion, synonyms, translation | Recall +15~25% |
+| **2** | Full LLM (7B+) | + intent decomposition, iterative refinement | Recall +30~40% |
 
-### Retrieve
-3-Tier hybrid search architecture:
-| Tier | LLM Required | Method |
-|------|-------------|--------|
-| 0 | No | BM25 + graph expansion + RRF |
-| 1 | Small (1.5B~3B) | + query expansion |
-| 2 | Full (7B+) | + intent decomposition |
+Even a tiny model running on Ollama (`qwen2.5:1.5b`) can meaningfully improve search quality. No GPU required for Tier 0.
 
-Works without LLM. Better with one.
+## Feature Comparison
+
+| Feature | Vector-only solutions | graph-tool-call |
+|---------|----------------------|-----------------|
+| Tool source | Manual registration | Auto-ingest from Swagger/OpenAPI/MCP |
+| Search method | Flat vector similarity | Graph + vector hybrid (RRF), 3-Tier |
+| Tool relations | None | 6 relation types, auto-detected |
+| Call ordering | None | State machine + CRUD workflow detection |
+| Deduplication | None | Cross-source duplicate detection |
+| Ontology | None | Auto / LLM-Auto modes |
+| Visualization | None | Graph dashboard with manual editing |
+| LLM dependency | Required | Optional (better with, works without) |
 
 ## Roadmap
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| **0** | Core graph + retrieval | ✅ Done (32 tests) |
-| **1** | OpenAPI ingest + dependency/ordering detection | In progress |
-| **2** | Dedup + embedding + ontology modes + search modes | Planned |
-| **3** | MCP ingest + visualization + CLI + PyPI | Planned |
-| **4** | Interactive dashboard + community | Planned |
+| Phase | What | Status |
+|-------|------|--------|
+| **0** | Core graph engine + hybrid retrieval | ✅ Done (32 tests passing) |
+| **1** | OpenAPI ingest, spec normalization, dependency & ordering detection | In progress |
+| **2** | Deduplication, embeddings, ontology modes (Auto/LLM-Auto), search tiers | Planned |
+| **3** | MCP ingest, Pyvis visualization, Neo4j export, CLI, PyPI publish | Planned |
+| **4** | Interactive dashboard (Dash Cytoscape), manual editing, community | Planned |
 
 ## Documentation
 
-- [WBS](docs/wbs/) — Work Breakdown Structure
-- [Architecture](docs/architecture/overview.md) — System overview and data model
-- [Design](docs/design/) — Algorithm design docs
-- [Research](docs/research/) — Competitive analysis, API scale data
+| Doc | Description |
+|-----|-------------|
+| [Architecture](docs/architecture/overview.md) | System overview, pipeline layers, data model |
+| [WBS](docs/wbs/) | Work Breakdown Structure — Phase 0~4 progress |
+| [Design](docs/design/) | Algorithm design — spec normalization, dependency detection, search modes, call ordering, ontology modes |
+| [Research](docs/research/) | Competitive analysis, API scale data, commerce patterns |
+| [OpenAPI Guide](docs/design/openapi-guide.md) | How to write API specs that produce better tool graphs |
 
 ## Contributing
 
-Contributions are welcome! Please read our contributing guidelines (coming soon).
+Contributions are welcome!
 
 ```bash
 # Development setup
@@ -129,7 +173,12 @@ git clone https://github.com/SonAIengine/graph-tool-call.git
 cd graph-tool-call
 pip install poetry
 poetry install --with dev
+
+# Run tests
 poetry run pytest -v
+
+# Lint
+poetry run ruff check .
 ```
 
 ## License
