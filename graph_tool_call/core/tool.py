@@ -111,7 +111,9 @@ def parse_langchain_tool(tool: Any) -> ToolSchema:
     params: list[ToolParameter] = []
     args_schema = getattr(tool, "args_schema", None)
     if args_schema is not None:
-        schema = args_schema.model_json_schema() if hasattr(args_schema, "model_json_schema") else {}
+        schema = (
+            args_schema.model_json_schema() if hasattr(args_schema, "model_json_schema") else {}
+        )
         required_names = set(schema.get("required", []))
         for pname, pschema in schema.get("properties", {}).items():
             params.append(

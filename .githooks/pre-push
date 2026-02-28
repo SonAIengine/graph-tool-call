@@ -1,0 +1,17 @@
+#!/bin/bash
+# Prevent force push to main and ensure linear history
+
+remote="$1"
+
+while read local_ref local_sha remote_ref remote_sha; do
+    if [[ "$remote_ref" == "refs/heads/main" ]]; then
+        # Block --force push to main
+        if git rev-list --count "$remote_sha".."$local_sha" 2>/dev/null | grep -q "^0$"; then
+            echo "ERROR: Force push to main is not allowed."
+            echo "Use a feature branch and merge instead."
+            exit 1
+        fi
+    fi
+done
+
+exit 0

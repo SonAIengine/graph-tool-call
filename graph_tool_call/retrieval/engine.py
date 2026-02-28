@@ -57,7 +57,8 @@ class RetrievalEngine:
         keyword_scores = self._keyword_match(query)
 
         # Step 2: pick top seed tools and expand via graph
-        seed_tools = [name for name, _ in sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)[:5]]
+        sorted_by_score = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
+        seed_tools = [name for name, _ in sorted_by_score[:5]]
         graph_scores: dict[str, float] = {}
         if seed_tools:
             expanded = self._searcher.expand_from_seeds(

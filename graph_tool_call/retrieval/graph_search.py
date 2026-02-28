@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Any
 
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.ontology.schema import DEFAULT_RELATION_WEIGHTS, NodeType, RelationType

@@ -1,8 +1,6 @@
 """Tests for ToolGraph facade and serialization."""
 
 import json
-import tempfile
-from pathlib import Path
 
 from graph_tool_call import ToolGraph
 
@@ -48,10 +46,12 @@ def test_add_anthropic_tools():
 
 def test_add_relation_and_retrieve():
     tg = ToolGraph()
-    tg.add_tools([
-        {"name": "read_file", "description": "Read a file"},
-        {"name": "write_file", "description": "Write a file"},
-    ])
+    tg.add_tools(
+        [
+            {"name": "read_file", "description": "Read a file"},
+            {"name": "write_file", "description": "Write a file"},
+        ]
+    )
     tg.add_relation("read_file", "write_file", "complementary")
     results = tg.retrieve("read file", top_k=5)
     names = [t.name for t in results]
@@ -60,10 +60,12 @@ def test_add_relation_and_retrieve():
 
 def test_save_and_load(tmp_path):
     tg = ToolGraph()
-    tg.add_tools([
-        {"name": "tool_a", "description": "Tool A"},
-        {"name": "tool_b", "description": "Tool B"},
-    ])
+    tg.add_tools(
+        [
+            {"name": "tool_a", "description": "Tool A"},
+            {"name": "tool_b", "description": "Tool B"},
+        ]
+    )
     tg.add_relation("tool_a", "tool_b", "requires")
 
     save_path = tmp_path / "graph.json"
@@ -83,20 +85,24 @@ def test_save_and_load(tmp_path):
 
 def test_repr():
     tg = ToolGraph()
-    tg.add_tools([
-        {"name": "a", "description": "A"},
-        {"name": "b", "description": "B"},
-    ])
+    tg.add_tools(
+        [
+            {"name": "a", "description": "A"},
+            {"name": "b", "description": "B"},
+        ]
+    )
     r = repr(tg)
     assert "tools=2" in r
 
 
 def test_category_workflow():
     tg = ToolGraph()
-    tg.add_tools([
-        {"name": "read_file", "description": "Read file"},
-        {"name": "write_file", "description": "Write file"},
-    ])
+    tg.add_tools(
+        [
+            {"name": "read_file", "description": "Read file"},
+            {"name": "write_file", "description": "Write file"},
+        ]
+    )
     tg.add_category("file_ops", domain="io")
     tg.assign_category("read_file", "file_ops")
     tg.assign_category("write_file", "file_ops")

@@ -61,7 +61,9 @@ class NetworkXGraph:
             result.update(self._g.predecessors(node_id))
         return list(result)
 
-    def get_edges_from(self, node_id: str, direction: str = "both") -> list[tuple[str, str, dict[str, Any]]]:
+    def get_edges_from(
+        self, node_id: str, direction: str = "both"
+    ) -> list[tuple[str, str, dict[str, Any]]]:
         result: list[tuple[str, str, dict[str, Any]]] = []
         if direction in ("out", "both"):
             for _, v, d in self._g.out_edges(node_id, data=True):
@@ -71,7 +73,7 @@ class NetworkXGraph:
                 result.append((u, node_id, dict(d)))
         return result
 
-    def subgraph(self, node_ids: list[str]) -> "NetworkXGraph":
+    def subgraph(self, node_ids: list[str]) -> NetworkXGraph:
         sg = self._g.subgraph(node_ids).copy()
         return NetworkXGraph(sg)
 
@@ -115,7 +117,7 @@ class NetworkXGraph:
         return {"nodes": nodes, "edges": edges}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "NetworkXGraph":
+    def from_dict(cls, data: dict[str, Any]) -> NetworkXGraph:
         g = nx.DiGraph()
         for node in data.get("nodes", []):
             nid = node.pop("id")

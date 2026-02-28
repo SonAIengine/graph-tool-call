@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from graph_tool_call.tool_graph import ToolGraph
+    pass
 
 try:
     from langchain_core.callbacks import CallbackManagerForRetrieverRun

@@ -113,7 +113,7 @@ class ToolGraph:
         save_graph(self._graph, self._tools, path)
 
     @classmethod
-    def load(cls, path: str | Path) -> "ToolGraph":
+    def load(cls, path: str | Path) -> ToolGraph:
         """Load a tool graph from a JSON file."""
         graph, tools = load_graph(path)
         tg = cls(graph=graph)

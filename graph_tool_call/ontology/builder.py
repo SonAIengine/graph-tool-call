@@ -46,17 +46,13 @@ class OntologyBuilder:
         if domain is not None:
             if not self._graph.has_node(domain):
                 self.add_domain(domain)
-            self._graph.add_edge(
-                category, domain, relation=RelationType.BELONGS_TO
-            )
+            self._graph.add_edge(category, domain, relation=RelationType.BELONGS_TO)
 
     def assign_category(self, tool_name: str, category: str) -> None:
         """Assign a tool to a category (creates BELONGS_TO edge)."""
         if not self._graph.has_node(category):
             self.add_category(category)
-        self._graph.add_edge(
-            tool_name, category, relation=RelationType.BELONGS_TO
-        )
+        self._graph.add_edge(tool_name, category, relation=RelationType.BELONGS_TO)
 
     # --- relations ---
 
