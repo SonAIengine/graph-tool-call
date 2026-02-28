@@ -52,7 +52,7 @@ docs/
 
 - **API 호출 순서 감지**: PRECEDES 관계, 상태 머신, Arazzo spec
 - **3-Tier 검색**: No-LLM → Small-LLM → Full-LLM
-- **온톨로지 3모드**: Auto / Manual(Dashboard) / LLM-Enhanced
+- **온톨로지 2모드**: Auto / LLM-Auto (Dashboard는 공통 시각화+편집 레이어)
 - **시각화**: Pyvis HTML → Dash Cytoscape Dashboard
 - **OpenAPI 가이드**: 온톨로지 최적화를 위한 spec 작성법
 - **커머스 패턴**: 주문/결제/배송 워크플로우 자동 감지

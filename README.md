@@ -2,7 +2,7 @@
 
 **Tool Lifecycle Management for LLM Agents** — Ingest, Analyze, Organize, Retrieve.
 
-When your agent has hundreds or thousands of tools, loading all of them into the context window degrades performance. Existing solutions (like langgraph-bigtool) use vector similarity only. **graph-tool-call** goes further: it models **relationships between tools** (dependencies, complements, conflicts) as a graph, enabling structure-aware retrieval.
+When your agent has hundreds or thousands of tools, loading all of them into the context window degrades performance. Existing solutions use vector similarity only. **graph-tool-call** goes further: it models **relationships between tools** (dependencies, ordering, complements, conflicts) as a graph, enabling structure-aware retrieval.
 
 ```
 OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Agent
@@ -11,14 +11,16 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
 
 ## Key Differentiators
 
-| | langgraph-bigtool | graph-tool-call |
+| Feature | Vector-only solutions | graph-tool-call |
 |--|---|---|
 | Scope | Tool retrieval only | Full tool lifecycle |
 | Tool source | Manual registration | Auto-ingest from Swagger/OpenAPI |
-| Search | Flat vector similarity | Graph + vector hybrid (RRF) |
-| Relations | None | REQUIRES, COMPLEMENTARY, SIMILAR_TO, CONFLICTS_WITH |
+| Search | Flat vector similarity | Graph + vector hybrid (RRF), 3-Tier |
+| Relations | None | REQUIRES, PRECEDES, COMPLEMENTARY, SIMILAR_TO, CONFLICTS_WITH |
 | Deduplication | None | Cross-source duplicate detection |
 | Dependency | None | Auto-detected from API specs |
+| Call ordering | None | State machine + CRUD workflow detection |
+| Ontology | None | Auto / LLM-Auto modes |
 
 ## Quick Start
 
@@ -46,17 +48,6 @@ tg = ToolGraph()
 tg.ingest_openapi("https://petstore.swagger.io/v2/swagger.json")
 # Auto-discovers: CRUD dependencies, category groupings, resource relations
 tools = tg.retrieve("register a new pet and upload photo", top_k=5)
-```
-
-## Use as bigtool backend
-
-```python
-from langgraph_bigtool import create_agent
-
-def retrieve_tools(query: str) -> list[str]:
-    return [t.name for t in tg.retrieve(query, top_k=5)]
-
-builder = create_agent(llm, registry, retrieve_tools_function=retrieve_tools)
 ```
 
 ## Status

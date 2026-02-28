@@ -41,15 +41,19 @@ metadata = {
 
 ## RelationType
 
-tool 간 관계 5종:
+tool 간 관계 6종:
 
 | Type | Weight | 의미 | 예시 |
 |------|--------|------|------|
-| `REQUIRES` | 1.0 | A를 먼저 실행해야 B 가능 | POST /pet → GET /pet/{id} |
+| `REQUIRES` | 1.0 | A의 출력이 B의 입력에 필요 (데이터 의존) | POST /pet → GET /pet/{id} |
+| `PRECEDES` | 0.9 | A → B 호출 순서 (워크플로우 순서) | listOrders → cancelOrder |
 | `COMPLEMENTARY` | 0.7 | 함께 쓰면 효과적 | read_file ↔ write_file |
 | `SIMILAR_TO` | 0.8 | 비슷한 기능 | GET /pet/{id} ↔ GET /pets |
 | `CONFLICTS_WITH` | 0.2 | 동시 실행 시 문제 | update_pet ↔ delete_pet |
 | `BELONGS_TO` | 0.5 | 카테고리 소속 | read_file → file_operations |
+
+> **REQUIRES vs PRECEDES**: REQUIRES는 데이터 의존 (response → parameter),
+> PRECEDES는 워크플로우 순서 (목록 조회 → 취소). 상세: [design/call-ordering.md](../design/call-ordering.md)
 
 ## NodeType
 

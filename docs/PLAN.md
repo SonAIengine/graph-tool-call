@@ -1,4 +1,12 @@
-# graph-tool-call v2 — Tool Lifecycle Management for LLM Agents
+# [DEPRECATED] graph-tool-call v2 — Tool Lifecycle Management for LLM Agents
+
+> **이 문서는 더 이상 사용하지 않습니다.**
+> 최신 계획은 아래 문서를 참고하세요:
+> - [WBS](wbs/README.md) — Phase별 작업 분해
+> - [Design](design/) — 알고리즘 설계 문서
+> - [Research](research/) — 리서치 노트
+>
+> 이 파일은 초기 브레인스토밍 기록으로 보존합니다.
 
 ## 핵심 재정의
 

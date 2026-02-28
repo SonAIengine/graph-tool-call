@@ -14,7 +14,7 @@ OpenAPI/MCP/코드 → [수집] → [분석] → [조직화] → [검색] → Ag
 ## 파이프라인 레이어
 
 ```
-사용자 코드 / LangChain / LangGraph / bigtool
+사용자 코드 / LangChain / LangGraph
                 │
                 ▼
 ┌──────────────────────────────────────────────────┐
@@ -31,33 +31,35 @@ OpenAPI/MCP/코드 → [수집] → [분석] → [조직화] → [검색] → Ag
 │  ┌──────────────▼──────────────────────────────┐  │
 │  │  2. ANALYZE (분석)                           │  │
 │  │     Dependency detection (3-layer)           │  │
+│  │     Call ordering detection (PRECEDES)       │  │
 │  │     Deduplication (5-stage pipeline)         │  │
 │  │     CRUD pattern recognition                 │  │
+│  │     State machine detection                  │  │
 │  │     Conflict detection                       │  │
 │  └──────────────┬──────────────────────────────┘  │
 │                 │                                  │
 │  ┌──────────────▼──────────────────────────────┐  │
-│  │  3. ORGANIZE (조직화)                        │  │
-│  │     Auto-categorize (tag/path/LLM)           │  │
+│  │  3. ORGANIZE (조직화) — Auto / LLM-Auto       │  │
+│  │     Auto: tag/path/CRUD/embedding clustering │  │
+│  │     LLM-Auto: + LLM 관계 추론/카테고리 제안  │  │
 │  │     Ontology graph 구축 (NetworkX)           │  │
 │  │     Domain → Category → Tool 계층            │  │
-│  │     관계 edge (requires/complementary/...)   │  │
 │  └──────────────┬──────────────────────────────┘  │
 │                 │                                  │
 │  ┌──────────────▼──────────────────────────────┐  │
-│  │  4. RETRIEVE (검색)                          │  │
-│  │     BM25-style keyword scoring               │  │
-│  │     Graph traversal (BFS + relation weight)  │  │
-│  │     Embedding similarity (optional)          │  │
+│  │  4. RETRIEVE (검색) — 3-Tier                  │  │
+│  │     Tier 0: BM25 + graph expansion (No LLM) │  │
+│  │     Tier 1: + query expansion (Small LLM)   │  │
+│  │     Tier 2: + intent decomposition (Full)   │  │
 │  │     RRF Score fusion → Top-K                 │  │
 │  └─────────────────────────────────────────────┘  │
 │                                                   │
 │  ┌─────────────────────────────────────────────┐  │
 │  │  5. INTEGRATE (통합)                         │  │
 │  │     LangChain BaseRetriever                  │  │
-│  │     bigtool retrieve_tools_function          │  │
 │  │     Standalone Python API                    │  │
 │  │     Serialization (JSON 저장/로드)           │  │
+│  │     Dashboard (시각화 + 수동 편집)           │  │
 │  └─────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────┘
 ```
@@ -82,24 +84,30 @@ graph_tool_call/
 │   └── functions.py               # Python callable → ToolSchema
 │
 ├── analyze/                       # 분석 레이어
-│   ├── dependency.py              # 3-layer dependency detection
+│   ├── dependency.py              # 3-layer dependency + ordering detection
 │   ├── similarity.py              # 5-stage deduplication pipeline
 │   └── conflict.py                # 충돌 관계 감지
 │
 ├── ontology/                      # 조직화 레이어
 │   ├── schema.py                  # RelationType, NodeType
-│   ├── builder.py                 # 수동 온톨로지 빌더
-│   └── auto.py                    # LLM/embedding 기반 자동 조직화
+│   ├── builder.py                 # 온톨로지 빌더
+│   ├── auto.py                    # Auto/LLM-Auto 조직화
+│   └── llm_provider.py            # OntologyLLM (Ollama/vLLM/OpenAI)
 │
 ├── retrieval/                     # 검색 레이어
 │   ├── engine.py                  # Hybrid retrieval + RRF fusion
 │   ├── graph_search.py            # 그래프 탐색 (BFS)
 │   ├── keyword.py                 # BM25-style keyword scoring
-│   └── embedding.py               # 임베딩 유사도
+│   ├── embedding.py               # 임베딩 유사도
+│   ├── search_llm.py              # SearchLLM (Tier 1/2 query expansion)
+│   └── model_driven.py            # Model-Driven Search API
+│
+├── visualization/                 # 시각화 레이어
+│   ├── html_export.py             # Pyvis HTML export
+│   └── neo4j_export.py            # Neo4j Cypher export
 │
 └── integrations/                  # 통합 레이어
-    ├── langchain.py               # LangChain BaseRetriever
-    └── bigtool.py                 # bigtool retrieve_tools adapter
+    └── langchain.py               # LangChain BaseRetriever
 ```
 
 ## 경쟁 포지셔닝
@@ -116,8 +124,9 @@ graph_tool_call/
                └──────────────────────────────────┘
 ```
 
-**이 4개는 경쟁이 아니라 레이어:**
-- LAPIS 포맷으로 압축 → graph-tool-call로 관계 기반 검색 → bigtool agent loop에서 사용
+**이들은 경쟁이 아니라 보완 관계:**
+- LAPIS 포맷으로 압축 → graph-tool-call로 관계 기반 검색 → Agent에서 사용
+- graph-tool-call은 독립 라이브러리로 운영 (외부 프레임워크 의존 없음)
 
 ## 기술 스택
 
