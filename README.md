@@ -61,12 +61,14 @@ builder = create_agent(llm, registry, retrieve_tools_function=retrieve_tools)
 
 ## Status
 
-**Phase 1 MVP** (core graph + retrieval) is implemented and tested (32 tests passing). See [docs/PLAN.md](docs/PLAN.md) for the full roadmap.
+**Phase 0 MVP** (core graph + retrieval) is implemented and tested (32 tests passing). Phase 1 (OpenAPI ingest + dependency detection) is next.
 
 ## Documentation
 
-- [PLAN.md](docs/PLAN.md) — Full project plan with architecture, algorithms, and phase breakdown
-- [RESEARCH.md](docs/RESEARCH.md) — Research notes on competitive landscape, dependency detection, deduplication
+- [WBS](docs/wbs/) — Work Breakdown Structure (Phase 0-4 진행 상황)
+- [Architecture](docs/architecture/overview.md) — System overview and data model
+- [Design](docs/design/) — Algorithm design docs (spec normalization, dependency detection, retrieval)
+- [Research](docs/research/) — Competitive analysis, API scale data, framework comparison
 
 ## Installation
 

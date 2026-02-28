@@ -6,3 +6,21 @@ dist/
 build/
 *.pyc
 .ruff_cache/
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Environment
+.env
+.env.local
