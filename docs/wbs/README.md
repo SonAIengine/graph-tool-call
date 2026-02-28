@@ -6,7 +6,7 @@
 |-------|------|------------|------|------|
 | **0** | Core MVP | graph + retrieval 기본 동작 | ✅ 완료 | - |
 | **1** | Ingest + Dependency | OpenAPI ingest, dependency/ordering detection, retrieval 개선 | ⬜ 진행 예정 | 2주 |
-| **2** | Analyze + Search | dedup, embedding, ontology modes (auto/LLM), search modes | ⬜ 대기 | 2주 |
+| **2** | Analyze + Search | dedup, embedding, ontology modes (auto/LLM-auto), search modes | ⬜ 대기 | 2주 |
 | **3** | Production | MCP ingest, CLI, 시각화 dashboard, PyPI 배포 | ⬜ 대기 | 2주 |
 | **4** | Community | LangChain 등록, interactive dashboard, 블로그, 최적화 | ⬜ 대기 | 2주 |
 
@@ -76,7 +76,7 @@ graph-tool-call
 │   │   ├── 2-2a. all-MiniLM-L6-v2 / multilingual-e5 연동
 │   │   ├── 2-2b. EmbeddingIndex 실제 검색 통합
 │   │   └── 2-2c. RetrievalEngine에 embedding score 연결
-│   ├── 2-3. Ontology Modes ← EXPANDED
+│   ├── 2-3. Ontology Modes (Auto / LLM-Auto) ← EXPANDED
 │   │   ├── 2-3a. Auto mode 완성 (embedding clustering)
 │   │   ├── 2-3b. OntologyLLM 추상화 (Provider 인터페이스) ← NEW
 │   │   ├── 2-3c. Ollama provider ← NEW
@@ -135,7 +135,7 @@ graph-tool-call
 | 1 | 입력 소스 = 표준 포맷 확인 | 이미 반영 (OpenAPI/MCP/LangChain) | ✅ |
 | 2 | OpenAPI 작성 가이드 | 1-8, [design/openapi-guide.md](../design/openapi-guide.md) | ⬜ |
 | 3 | API 호출 순서/우선순위 | 1-4g~i, 2-5, [design/call-ordering.md](../design/call-ordering.md) | ⬜ |
-| 4 | 3가지 온톨로지 모드 | 2-3, 3-6, 4-1, [design/ontology-modes.md](../design/ontology-modes.md) | ⬜ |
+| 4 | 온톨로지 2모드 (Auto/LLM-Auto) + Dashboard 공통 | 2-3, 3-6, 4-1, [design/ontology-modes.md](../design/ontology-modes.md) | ⬜ |
 | 5 | Search modes 개선 | 1-7d~e, 2-4, 3-5, [design/search-modes.md](../design/search-modes.md) | ⬜ |
 
 ## 성공 기준

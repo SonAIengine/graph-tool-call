@@ -3,7 +3,34 @@
 **WBS**: 2-3 (Phase 2 확장)
 **파일**: `ontology/auto.py`, `ontology/builder.py`, `ontology/llm_provider.py`
 
-## 3가지 모드
+## 핵심 구조
+
+온톨로지 **생성 모드**와 **대시보드**는 별개 레이어다.
+
+```
+┌─────────────┐     ┌─────────────┐
+│  Auto Mode  │     │ LLM-Auto    │
+│  (알고리즘)  │     │ (LLM 보조)  │
+└──────┬──────┘     └──────┬──────┘
+       │                   │
+       └───────┬───────────┘
+               ▼
+        ┌──────────────┐
+        │  Tool Graph  │
+        └──────┬───────┘
+               │
+               ▼
+    ┌─────────────────────┐
+    │  Dashboard (공통)    │
+    │  시각화 + 수동 편집  │
+    │  관계 검증/수정      │
+    └─────────────────────┘
+```
+
+- **생성 모드**: 어떻게 온톨로지를 만들 것인가 (Auto / LLM-Auto)
+- **대시보드**: 만들어진 결과를 시각화하고 수정하는 공통 도구
+
+## 2가지 생성 모드
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -14,20 +41,66 @@
 │  → 품질: ★★☆ (structural 관계만)                          │
 │  → 속도: ★★★ (즉시)                                      │
 ├────────────────────────────────────────────────────────────┤
-│  Mode 2: Manual (Dashboard)                                │
-│  ─────────────────────────                                 │
-│  Neo4j 스타일 시각화 + 수동 편집                            │
-│  → 의존성: pyvis / dash-cytoscape                          │
-│  → 품질: ★★★ (사람이 검증)                                │
-│  → 속도: ★☆☆ (사람 작업 필요)                             │
-├────────────────────────────────────────────────────────────┤
-│  Mode 3: LLM-Enhanced                                      │
-│  ────────────────────                                      │
-│  LLM으로 고품질 관계 추론                                   │
+│  Mode 2: LLM-Auto                                          │
+│  ────────────────                                          │
+│  Auto + LLM으로 관계 추론 · 카테고리 제안 품질 강화         │
 │  → 의존성: ollama/vllm/llama.cpp/openai                    │
 │  → 품질: ★★★ (semantic 이해)                              │
 │  → 속도: ★★☆ (모델에 따라)                                │
 └────────────────────────────────────────────────────────────┘
+```
+
+## Dashboard (공통 레이어)
+
+어떤 모드로 만들었든, 대시보드에서 동일하게:
+
+1. **시각화** — Neo4j 스타일 그래프 탐색 (줌, 팬, 클릭 상세)
+2. **수동 편집** — 관계 추가/삭제, 카테고리 이름 수정, 도메인 계층 조정
+3. **검증** — 자동 감지된 관계를 confirm/reject
+4. **검색 테스트** — 쿼리 입력 → retrieve 결과 하이라이트
+5. **저장/로드** — JSON export/import
+
+### Dashboard 워크플로우
+
+```
+1. 생성 모드 실행 (Auto 또는 LLM-Auto)
+   tg.auto_organize()              # Auto
+   tg.auto_organize(llm=llm)       # LLM-Auto
+
+2. 대시보드 열기
+   tg.dashboard(port=8050)
+   # → http://localhost:8050
+
+3. 시각화 확인 + 수동 수정
+   - 잘못된 관계 삭제
+   - 누락된 관계 추가
+   - 카테고리 이름 수정
+   - LLM이 제안한 관계 검증
+
+4. 저장
+   tg.save("tool_graph.json")
+
+# 또는 static HTML export (대시보드 없이)
+tg.visualize("graph.html")
+```
+
+### 수동 편집 API (코드로도 가능)
+
+대시보드 없이 코드로 직접 편집도 가능:
+
+```python
+# 카테고리 추가
+tg.add_category("payment", domain="commerce")
+
+# 관계 추가
+tg.add_relation("createOrder", "processPayment", "requires")
+tg.add_relation("listOrders", "cancelOrder", "precedes")
+
+# 관계 삭제
+tg.remove_relation("addPet", "deletePet", "conflicts_with")
+
+# 카테고리 할당
+tg.assign_category("createOrder", "orders")
 ```
 
 ## Mode 1: Auto (No LLM)
@@ -48,6 +121,7 @@ tg.auto_organize()  # LLM 없이 동작
 # 4. Path hierarchy → REQUIRES
 # 5. Response-parameter 매칭 → REQUIRES
 # 6. State machine → PRECEDES
+# 7. CRUD workflow ordering → PRECEDES
 ```
 
 ### 카테고리 자동 생성 전략
@@ -81,58 +155,9 @@ def cluster_tools(tools: list[ToolSchema], n_clusters: int | None = None):
     return assign_cluster_names(tools, labels, embeddings)
 ```
 
-## Mode 2: Manual (Dashboard)
+## Mode 2: LLM-Auto
 
-시각화 대시보드에서 사람이 직접 온톨로지를 구성·검증.
-
-### 워크플로우
-
-```
-1. Auto mode 실행 → 초기 그래프 생성
-2. Dashboard 열기 → 시각화
-3. 사람이 검증:
-   - 잘못된 관계 삭제
-   - 누락된 관계 추가
-   - 카테고리 이름 수정
-   - 도메인 계층 조정
-4. 저장 → JSON export
-```
-
-### API
-
-```python
-tg = ToolGraph()
-tg.ingest_openapi("petstore.json")
-tg.auto_organize()
-
-# 시각화 + 편집 서버 시작
-tg.dashboard(port=8050)
-# → http://localhost:8050 에서 Neo4j 스타일 편집
-
-# 또는 static HTML export
-tg.visualize("graph.html")
-```
-
-### 수동 편집 API (코드로도 가능)
-
-```python
-# 카테고리 추가
-tg.add_category("payment", domain="commerce")
-
-# 관계 추가
-tg.add_relation("createOrder", "processPayment", "requires")
-tg.add_relation("listOrders", "cancelOrder", "precedes")
-
-# 관계 삭제
-tg.remove_relation("addPet", "deletePet", "conflicts_with")
-
-# 카테고리 할당
-tg.assign_category("createOrder", "orders")
-```
-
-## Mode 3: LLM-Enhanced
-
-LLM을 활용하여 더 정확한 관계 추론.
+Auto의 모든 것 + LLM을 활용하여 더 정확한 관계 추론.
 
 ### 워크플로우
 
@@ -140,7 +165,7 @@ LLM을 활용하여 더 정확한 관계 추론.
 1. Auto mode로 structural 관계 감지 (확실한 것)
 2. LLM에게 나머지 tool 쌍에 대해 관계 추론 요청
 3. LLM 결과를 confidence score와 함께 추가
-4. (선택) Dashboard에서 사람이 검증
+4. Dashboard에서 결과 확인 + 수정
 ```
 
 ### LLM Provider 추상화
@@ -278,7 +303,6 @@ def auto_organize_with_llm(
 
 ```python
 from graph_tool_call import ToolGraph
-from graph_tool_call.ontology import OllamaOntologyLLM
 
 tg = ToolGraph()
 tg.ingest_openapi("api-spec.json")
@@ -286,18 +310,21 @@ tg.ingest_openapi("api-spec.json")
 # Mode 1: Auto (기본, LLM 없음)
 tg.auto_organize()
 
-# Mode 2: Manual
-tg.add_relation("createOrder", "cancelOrder", "precedes")
-tg.visualize("graph.html")
-
-# Mode 3: LLM-Enhanced
+# Mode 2: LLM-Auto
+from graph_tool_call.ontology import OllamaOntologyLLM
 llm = OllamaOntologyLLM(model="qwen2.5:7b")
-tg.auto_organize(llm=llm)  # LLM 전달하면 자동으로 Mode 3
+tg.auto_organize(llm=llm)  # LLM 전달하면 자동으로 LLM-Auto
 
 # 또는 OpenAI API
 from graph_tool_call.ontology import OpenAIOntologyLLM
 llm = OpenAIOntologyLLM(api_key="...", model="gpt-4o-mini")
 tg.auto_organize(llm=llm)
+
+# 어떤 모드든 → Dashboard에서 시각화 + 수정
+tg.dashboard(port=8050)
+
+# 또는 static HTML export
+tg.visualize("graph.html")
 ```
 
 ## 구현 범위
@@ -311,5 +338,5 @@ tg.auto_organize(llm=llm)
 | **2** | OpenAI compatible provider | 클라우드 모델 연동 |
 | **2** | Batch 관계 추론 | 50개 단위 처리 |
 | **3** | llama.cpp provider | 최경량 로컬 추론 |
-| **3** | Dashboard 수동 편집 | Dash Cytoscape |
-| **3** | 관계 검증 UI | confirm/reject |
+| **3** | Dashboard (Pyvis → Dash Cytoscape) | 시각화 + 수동 편집 (공통) |
+| **3** | 관계 검증 UI | confirm/reject (공통) |
