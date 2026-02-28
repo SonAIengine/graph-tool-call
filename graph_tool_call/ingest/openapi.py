@@ -233,13 +233,9 @@ def _operation_to_tool(
     description = operation.get("summary") or operation.get("description", "")
 
     if is_swagger2:
-        parameters = _extract_params_swagger2(
-            operation, resolved_spec, required_only=required_only
-        )
+        parameters = _extract_params_swagger2(operation, resolved_spec, required_only=required_only)
     else:
-        parameters = _extract_params_openapi3(
-            operation, resolved_spec, required_only=required_only
-        )
+        parameters = _extract_params_openapi3(operation, resolved_spec, required_only=required_only)
 
     tags = operation.get("tags", [])
 

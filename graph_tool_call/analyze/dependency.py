@@ -10,11 +10,26 @@ from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.ontology.schema import RelationType
 
 # Parameter names too generic to be meaningful for name-based matching
-_GENERIC_PARAMS: frozenset[str] = frozenset({
-    "id", "name", "type", "status", "page", "limit", "offset",
-    "sort", "order", "filter", "q", "query", "format", "fields",
-    "include", "exclude",
-})
+_GENERIC_PARAMS: frozenset[str] = frozenset(
+    {
+        "id",
+        "name",
+        "type",
+        "status",
+        "page",
+        "limit",
+        "offset",
+        "sort",
+        "order",
+        "filter",
+        "q",
+        "query",
+        "format",
+        "fields",
+        "include",
+        "exclude",
+    }
+)
 
 # Canonical CRUD method ordering for PRECEDES detection
 _CRUD_ORDER: dict[str, int] = {"post": 0, "get": 1, "put": 2, "patch": 2, "delete": 3}
@@ -361,8 +376,7 @@ def _detect_shared_schemas(tools: list[ToolSchema]) -> list[DetectedRelation]:
                         relation_type=RelationType.COMPLEMENTARY,
                         confidence=0.85,
                         evidence=(
-                            f"{name_a} and {name_b} share schema refs: "
-                            f"{', '.join(sorted(shared))}"
+                            f"{name_a} and {name_b} share schema refs: {', '.join(sorted(shared))}"
                         ),
                         layer=1,
                     )
@@ -386,9 +400,22 @@ def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
         tokens = set(_normalize_name(tool.name))
         # Remove common verbs that don't indicate a resource
         tokens -= {
-            "get", "set", "create", "update", "delete", "remove",
-            "list", "fetch", "find", "search", "add", "put", "patch",
-            "post", "read", "write",
+            "get",
+            "set",
+            "create",
+            "update",
+            "delete",
+            "remove",
+            "list",
+            "fetch",
+            "find",
+            "search",
+            "add",
+            "put",
+            "patch",
+            "post",
+            "read",
+            "write",
         }
         tool_tokens[tool.name] = tokens
 

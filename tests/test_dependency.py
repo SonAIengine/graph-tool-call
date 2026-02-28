@@ -10,6 +10,7 @@ from graph_tool_call.ontology.schema import RelationType
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _pet_tools() -> list[ToolSchema]:
     """Standard Petstore-like CRUD tools for structural tests."""
     return [
@@ -153,7 +154,8 @@ def test_name_based_detection():
     relations = detect_dependencies(tools)
     # "user" token from getUser's name should match "user" in updateUserProfile's params
     user_relations = [
-        r for r in relations
+        r
+        for r in relations
         if r.layer == 2 and {r.source, r.target} == {"getUser", "updateUserProfile"}
     ]
     assert len(user_relations) > 0, "Name-based detection should find user relation"

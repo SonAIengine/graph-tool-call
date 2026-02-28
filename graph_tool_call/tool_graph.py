@@ -116,9 +116,7 @@ class ToolGraph:
 
             relations = _detect(tools, spec=spec.raw, min_confidence=min_confidence)
             for rel in relations:
-                self._builder.add_relation(
-                    rel.source, rel.target, rel.relation_type
-                )
+                self._builder.add_relation(rel.source, rel.target, rel.relation_type)
 
         self._invalidate_retrieval()
         return tools
@@ -182,9 +180,7 @@ class ToolGraph:
     ) -> list[ToolSchema]:
         """Retrieve the most relevant tools for a query."""
         engine = self._get_retrieval_engine()
-        return engine.retrieve(
-            query, top_k=top_k, max_graph_depth=max_graph_depth, mode=mode
-        )
+        return engine.retrieve(query, top_k=top_k, max_graph_depth=max_graph_depth, mode=mode)
 
     def _get_retrieval_engine(self) -> RetrievalEngine:
         if self._retrieval is None:

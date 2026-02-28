@@ -82,9 +82,7 @@ class BM25Scorer:
 
                 # BM25 term score
                 numerator = tf * (self._k1 + 1.0)
-                denominator = tf + self._k1 * (
-                    1.0 - self._b + self._b * doc_len / self._avg_dl
-                )
+                denominator = tf + self._k1 * (1.0 - self._b + self._b * doc_len / self._avg_dl)
                 doc_score += idf * numerator / denominator
 
             if doc_score > 0:
