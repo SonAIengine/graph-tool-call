@@ -96,17 +96,36 @@ tools = tg.retrieve("read a file and save changes", top_k=5)
 #    write_fileはベクトル類似度ではなくCOMPLEMENTARY関係で発見
 ```
 
-### Swaggerから自動生成（Phase 1）
+### Swagger / OpenAPIから自動生成
 
 ```python
+from graph_tool_call import ToolGraph
+
 tg = ToolGraph()
-tg.ingest_openapi("https://petstore.swagger.io/v2/swagger.json")
+tg.ingest_openapi("tests/fixtures/petstore_swagger2.json")
+# 対応: Swagger 2.0, OpenAPI 3.0, OpenAPI 3.1
+# 入力: ファイルパス (JSON/YAML), URL, または raw dict
 
-# 自動処理：20 endpoint → 20 tool → 34 関係 → 3 カテゴリ
-# CRUD依存関係、呼び出し順序、カテゴリグルーピング——すべて自動検出。
+# 自動処理: 5 endpoint → 5 tool → CRUD関係 → カテゴリ
+# 依存関係、呼び出し順序、カテゴリグルーピング——すべて自動検出。
 
-tools = tg.retrieve("register a new pet and upload photo", top_k=5)
-# → [addPet, uploadFile, getPetById, updatePet, findPetsByStatus]
+tools = tg.retrieve("create a new pet", top_k=5)
+# → [createPet, getPet, updatePet, listPets, deletePet]
+#    グラフ展開が完全なCRUDワークフローを取得
+```
+
+### Python関数から自動生成
+
+```python
+def read_file(path: str) -> str:
+    """ファイルの内容を読む。"""
+
+def write_file(path: str, content: str) -> None:
+    """ファイルに内容を書く。"""
+
+tg = ToolGraph()
+tg.ingest_functions([read_file, write_file])
+# type hintからパラメータを抽出、docstringから説明を抽出
 ```
 
 ## なぜベクトル検索だけでは足りないのか？
@@ -147,8 +166,8 @@ Ollamaで動く小さなモデル（`qwen2.5:1.5b`）でも検索品質は有意
 
 | Phase | 内容 | 状態 |
 |-------|------|------|
-| **0** | コアグラフエンジン + ハイブリッド検索 | ✅ 完了 (32 tests) |
-| **1** | OpenAPI収集、仕様正規化、依存関係・順序検出 | 進行中 |
+| **0** | コアグラフエンジン + ハイブリッド検索 | ✅ 完了 (39 tests) |
+| **1** | OpenAPI収集、BM25+RRF検索、依存関係検出 | ✅ 完了 (88 tests) |
 | **2** | 重複排除、エンベディング、オントロジーモード（Auto/LLM-Auto）、検索Tier | 計画中 |
 | **3** | MCP収集、Pyvis可視化、Neo4jエクスポート、CLI、PyPI公開 | 計画中 |
 | **4** | インタラクティブDashboard（Dash Cytoscape）、手動編集、コミュニティ | 計画中 |

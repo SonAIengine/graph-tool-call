@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +11,7 @@ from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema, parse_tool
 from graph_tool_call.ontology.builder import OntologyBuilder
 from graph_tool_call.ontology.schema import RelationType
-from graph_tool_call.retrieval.engine import RetrievalEngine
+from graph_tool_call.retrieval.engine import RetrievalEngine, SearchMode
 from graph_tool_call.serialization import load_graph, save_graph
 
 
@@ -57,6 +58,90 @@ class ToolGraph:
         """Add multiple tools (auto-detects format for each)."""
         return [self.add_tool(t) for t in tools]
 
+    # --- ingest ---
+
+    def ingest_openapi(
+        self,
+        source: dict[str, Any] | str,
+        *,
+        required_only: bool = False,
+        skip_deprecated: bool = True,
+        detect_dependencies: bool = True,
+        min_confidence: float = 0.7,
+    ) -> list[ToolSchema]:
+        """Ingest an OpenAPI/Swagger spec, register tools, and auto-detect relations.
+
+        Parameters
+        ----------
+        source:
+            A raw spec dict, a file path (JSON/YAML), or a URL (http/https).
+        required_only:
+            If True, only include required parameters.
+        skip_deprecated:
+            If True (default), skip deprecated operations.
+        detect_dependencies:
+            If True (default), run automatic dependency detection.
+        min_confidence:
+            Minimum confidence threshold for detected relations.
+
+        Returns
+        -------
+        list[ToolSchema]
+            The ingested tool schemas.
+        """
+        from graph_tool_call.ingest.openapi import ingest_openapi
+
+        tools, spec = ingest_openapi(
+            source, required_only=required_only, skip_deprecated=skip_deprecated
+        )
+
+        # Register tools
+        for tool in tools:
+            self._tools[tool.name] = tool
+            self._builder.add_tool(tool)
+
+        # Auto-categorize: use tool.domain (set by ingest) as category
+        categories_seen: set[str] = set()
+        for tool in tools:
+            if tool.domain:
+                if tool.domain not in categories_seen:
+                    if not self._graph.has_node(tool.domain):
+                        self._builder.add_category(tool.domain)
+                    categories_seen.add(tool.domain)
+                self._builder.assign_category(tool.name, tool.domain)
+
+        # Auto-detect dependencies
+        if detect_dependencies:
+            from graph_tool_call.analyze.dependency import detect_dependencies as _detect
+
+            relations = _detect(tools, spec=spec.raw, min_confidence=min_confidence)
+            for rel in relations:
+                self._builder.add_relation(
+                    rel.source, rel.target, rel.relation_type
+                )
+
+        self._invalidate_retrieval()
+        return tools
+
+    def ingest_functions(self, fns: Iterable[Callable[..., Any]]) -> list[ToolSchema]:
+        """Ingest Python callables into the tool graph.
+
+        Uses ``inspect.signature`` and type hints to extract parameters.
+
+        Returns
+        -------
+        list[ToolSchema]
+            The ingested tool schemas.
+        """
+        from graph_tool_call.ingest.functions import ingest_functions
+
+        tools = ingest_functions(fns)
+        for tool in tools:
+            self._tools[tool.name] = tool
+            self._builder.add_tool(tool)
+        self._invalidate_retrieval()
+        return tools
+
     # --- ontology ---
 
     def add_relation(
@@ -93,10 +178,13 @@ class ToolGraph:
         query: str,
         top_k: int = 10,
         max_graph_depth: int = 2,
+        mode: str | SearchMode = SearchMode.BASIC,
     ) -> list[ToolSchema]:
         """Retrieve the most relevant tools for a query."""
         engine = self._get_retrieval_engine()
-        return engine.retrieve(query, top_k=top_k, max_graph_depth=max_graph_depth)
+        return engine.retrieve(
+            query, top_k=top_k, max_graph_depth=max_graph_depth, mode=mode
+        )
 
     def _get_retrieval_engine(self) -> RetrievalEngine:
         if self._retrieval is None:

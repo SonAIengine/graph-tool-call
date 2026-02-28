@@ -5,7 +5,7 @@
 | Phase | 이름 | 핵심 산출물 | 상태 | 기간 |
 |-------|------|------------|------|------|
 | **0** | Core MVP | graph + retrieval 기본 동작 | ✅ 완료 | - |
-| **1** | Ingest + Dependency | OpenAPI ingest, dependency/ordering detection, retrieval 개선 | ⬜ 진행 예정 | 2주 |
+| **1** | Ingest + Dependency | OpenAPI ingest, dependency/ordering detection, retrieval 개선 | ✅ 완료 | - |
 | **2** | Analyze + Search | dedup, embedding, ontology modes (auto/LLM-auto), search modes | ⬜ 대기 | 2주 |
 | **3** | Production | MCP ingest, CLI, 시각화 dashboard, PyPI 배포 | ⬜ 대기 | 2주 |
 | **4** | Community | LangChain 등록, interactive dashboard, 블로그, 최적화 | ⬜ 대기 | 2주 |
@@ -24,47 +24,47 @@ graph-tool-call
 │   ├── 0-6. ToolGraph facade + serialization ✅
 │   └── 0-7. Tests (32 passing) ✅
 │
-├── Phase 1: Ingest + Dependency + Ordering ⬜
-│   ├── 1-1. 버그 수정 (tags TypeError, keyword scoring)
-│   ├── 1-2. Spec Normalization Layer
-│   │   ├── 1-2a. 버전 감지 (swagger 2.0 / openapi 3.0 / 3.1)
-│   │   ├── 1-2b. Swagger 2.0 → 3.0 구조 변환
-│   │   ├── 1-2c. nullable 정규화 (3가지 패턴 통일)
-│   │   └── 1-2d. $ref 경로 정규화
-│   ├── 1-3. OpenAPI Ingest
-│   │   ├── 1-3a. spec 로딩 (URL/파일, JSON/YAML)
-│   │   ├── 1-3b. $ref resolution
-│   │   ├── 1-3c. operation → ToolSchema 변환
-│   │   ├── 1-3d. 대형 request body 처리
-│   │   └── 1-3e. deprecated 필터링
-│   ├── 1-4. Dependency & Ordering Detection ← EXPANDED
-│   │   ├── 1-4a. Layer 1: path hierarchy + CRUD pattern
-│   │   ├── 1-4b. Layer 1: $ref 스키마 공유 감지
-│   │   ├── 1-4c. Layer 2: response→parameter name matching
-│   │   ├── 1-4d. naming convention 정규화
-│   │   ├── 1-4e. confidence score + cycle detection
-│   │   ├── 1-4f. false positive 필터링
-│   │   ├── 1-4g. PRECEDES RelationType 추가 ← NEW
-│   │   ├── 1-4h. CRUD workflow ordering ← NEW
-│   │   └── 1-4i. State machine detection (enum status) ← NEW
-│   ├── 1-5. Auto-categorization
-│   │   ├── 1-5a. tag 기반 카테고리 생성
-│   │   └── 1-5b. path prefix fallback (tag 없는 spec)
-│   ├── 1-6. Python callable ingest
-│   │   ├── 1-6a. inspect.signature → ToolSchema
-│   │   └── 1-6b. docstring → description
-│   ├── 1-7. Retrieval 개선
-│   │   ├── 1-7a. BM25-style keyword scoring
-│   │   ├── 1-7b. RRF score fusion
-│   │   ├── 1-7c. tags 기반 scoring 통합
-│   │   ├── 1-7d. SearchMode enum (BASIC/ENHANCED/FULL) ← NEW
-│   │   └── 1-7e. Model-Driven API 스켈레톤 ← NEW
-│   ├── 1-8. OpenAPI 작성 가이드 문서 ← NEW
-│   └── 1-9. Tests + Examples
-│       ├── 1-9a. Petstore E2E 테스트
-│       ├── 1-9b. Swagger 2.0/3.0/3.1 각각 테스트
-│       ├── 1-9c. Dependency + ordering detection 테스트
-│       └── 1-9d. examples/swagger_to_agent.py
+├── Phase 1: Ingest + Dependency + Ordering ✅
+│   ├── 1-1. 버그 수정 (tags TypeError, keyword scoring) ✅
+│   ├── 1-2. Spec Normalization Layer ✅
+│   │   ├── 1-2a. 버전 감지 (swagger 2.0 / openapi 3.0 / 3.1) ✅
+│   │   ├── 1-2b. Swagger 2.0 → 3.0 구조 변환 ✅
+│   │   ├── 1-2c. nullable 정규화 (3가지 패턴 통일) ✅
+│   │   └── 1-2d. $ref 경로 정규화 ✅
+│   ├── 1-3. OpenAPI Ingest ✅
+│   │   ├── 1-3a. spec 로딩 (URL/파일, JSON/YAML) ✅
+│   │   ├── 1-3b. $ref resolution ✅
+│   │   ├── 1-3c. operation → ToolSchema 변환 ✅
+│   │   ├── 1-3d. 대형 request body 처리 ✅
+│   │   └── 1-3e. deprecated 필터링 ✅
+│   ├── 1-4. Dependency & Ordering Detection ✅
+│   │   ├── 1-4a. Layer 1: path hierarchy + CRUD pattern ✅
+│   │   ├── 1-4b. Layer 1: $ref 스키마 공유 감지 ✅
+│   │   ├── 1-4c. Layer 2: response→parameter name matching ✅
+│   │   ├── 1-4d. naming convention 정규화 ✅
+│   │   ├── 1-4e. confidence score ✅
+│   │   ├── 1-4f. false positive 필터링 ✅
+│   │   ├── 1-4g. PRECEDES RelationType 추가 ✅
+│   │   ├── 1-4h. CRUD workflow ordering ✅
+│   │   └── 1-4i. State machine detection (enum status) ⬜ Phase 2로 이월
+│   ├── 1-5. Auto-categorization ✅
+│   │   ├── 1-5a. tag 기반 카테고리 생성 ✅
+│   │   └── 1-5b. path prefix fallback (tag 없는 spec) ✅
+│   ├── 1-6. Python callable ingest ✅
+│   │   ├── 1-6a. inspect.signature → ToolSchema ✅
+│   │   └── 1-6b. docstring → description ✅
+│   ├── 1-7. Retrieval 개선 ✅
+│   │   ├── 1-7a. BM25-style keyword scoring ✅
+│   │   ├── 1-7b. RRF score fusion ✅
+│   │   ├── 1-7c. tags 기반 scoring 통합 ✅
+│   │   ├── 1-7d. SearchMode enum (BASIC/ENHANCED/FULL) ✅
+│   │   └── 1-7e. Model-Driven API 스켈레톤 ⬜ Phase 3으로 이월
+│   ├── 1-8. OpenAPI 작성 가이드 문서 ✅
+│   └── 1-9. Tests + Examples ✅
+│       ├── 1-9a. Petstore E2E 테스트 ✅
+│       ├── 1-9b. Swagger 2.0/3.0/3.1 각각 테스트 ✅
+│       ├── 1-9c. Dependency + ordering detection 테스트 ✅
+│       └── 1-9d. examples/swagger_to_agent.py ⬜ Phase 2로 이월
 │
 ├── Phase 2: Analyze + Search Modes + Ontology Modes ⬜
 │   ├── 2-1. Deduplication pipeline
@@ -141,7 +141,7 @@ graph-tool-call
 ## 성공 기준
 
 ### 정량적
-- Petstore (20 endpoints) → dependency + ordering 감지 precision 80%+
+- Petstore (5 endpoints) → dependency + ordering 감지 ✅ (CRUD 패턴 전체 감지)
 - 500-tool set에서 Workflow Coverage 20%+ 개선 (vs 벡터만)
 - Retrieval latency: 100ms 이내 (500 tools, CPU, Tier 0)
 - Deduplication: 0.85 threshold에서 precision 90%+

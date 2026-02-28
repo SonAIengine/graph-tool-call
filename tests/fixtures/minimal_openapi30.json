@@ -1,0 +1,62 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "Users API", "version": "1.0.0"},
+  "servers": [{"url": "https://api.example.com/v1"}],
+  "paths": {
+    "/users": {
+      "get": {
+        "operationId": "listUsers",
+        "summary": "List users",
+        "tags": ["users"],
+        "parameters": [
+          {"name": "page", "in": "query", "schema": {"type": "integer"}, "description": "Page number"}
+        ],
+        "responses": {"200": {"description": "User list"}}
+      },
+      "post": {
+        "operationId": "createUser",
+        "summary": "Create a user",
+        "tags": ["users"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email"],
+                "properties": {
+                  "name": {"type": "string", "description": "User name"},
+                  "email": {"type": "string", "description": "User email"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {"201": {"description": "User created"}}
+      }
+    },
+    "/users/{userId}": {
+      "get": {
+        "operationId": "getUser",
+        "summary": "Get user by ID",
+        "tags": ["users"],
+        "parameters": [
+          {"name": "userId", "in": "path", "required": true, "schema": {"type": "string"}, "description": "User ID"}
+        ],
+        "responses": {"200": {"description": "A user"}}
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "email": {"type": "string"}
+        }
+      }
+    }
+  }
+}

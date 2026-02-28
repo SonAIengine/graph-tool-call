@@ -96,17 +96,36 @@ tools = tg.retrieve("read a file and save changes", top_k=5)
 #    write_file found via COMPLEMENTARY relation, not just vector similarity
 ```
 
-### From Swagger (Phase 1)
+### From Swagger / OpenAPI
 
 ```python
+from graph_tool_call import ToolGraph
+
 tg = ToolGraph()
-tg.ingest_openapi("https://petstore.swagger.io/v2/swagger.json")
+tg.ingest_openapi("tests/fixtures/petstore_swagger2.json")
+# Supports: Swagger 2.0, OpenAPI 3.0, OpenAPI 3.1
+# Accepts: file path (JSON/YAML), URL, or raw dict
 
-# Automatic: 20 endpoints → 20 tools → 34 relations → 3 categories
-# CRUD dependencies, call ordering, category groupings — all detected.
+# Automatic: 5 endpoints → 5 tools → CRUD relations → categories
+# Dependencies, call ordering, category groupings — all auto-detected.
 
-tools = tg.retrieve("register a new pet and upload photo", top_k=5)
-# → [addPet, uploadFile, getPetById, updatePet, findPetsByStatus]
+tools = tg.retrieve("create a new pet", top_k=5)
+# → [createPet, getPet, updatePet, listPets, deletePet]
+#    Graph expansion brings the full CRUD workflow
+```
+
+### From Python Functions
+
+```python
+def read_file(path: str) -> str:
+    """Read contents of a file."""
+
+def write_file(path: str, content: str) -> None:
+    """Write contents to a file."""
+
+tg = ToolGraph()
+tg.ingest_functions([read_file, write_file])
+# Parameters extracted from type hints, description from docstring
 ```
 
 ## Why Not Just Vector Search?
@@ -147,8 +166,8 @@ Even a tiny model running on Ollama (`qwen2.5:1.5b`) can meaningfully improve se
 
 | Phase | What | Status |
 |-------|------|--------|
-| **0** | Core graph engine + hybrid retrieval | ✅ Done (32 tests passing) |
-| **1** | OpenAPI ingest, spec normalization, dependency & ordering detection | In progress |
+| **0** | Core graph engine + hybrid retrieval | ✅ Done (39 tests) |
+| **1** | OpenAPI ingest, BM25+RRF retrieval, dependency detection | ✅ Done (88 tests) |
 | **2** | Deduplication, embeddings, ontology modes (Auto/LLM-Auto), search tiers | Planned |
 | **3** | MCP ingest, Pyvis visualization, Neo4j export, CLI, PyPI publish | Planned |
 | **4** | Interactive dashboard (Dash Cytoscape), manual editing, community | Planned |

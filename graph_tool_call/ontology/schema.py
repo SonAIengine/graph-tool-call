@@ -13,6 +13,7 @@ class RelationType(str, Enum):
     COMPLEMENTARY = "complementary"
     CONFLICTS_WITH = "conflicts_with"
     BELONGS_TO = "belongs_to"
+    PRECEDES = "precedes"
 
 
 class NodeType(str, Enum):
@@ -30,4 +31,5 @@ DEFAULT_RELATION_WEIGHTS: dict[str, float] = {
     RelationType.COMPLEMENTARY: 0.7,
     RelationType.CONFLICTS_WITH: 0.2,
     RelationType.BELONGS_TO: 0.5,
+    RelationType.PRECEDES: 0.9,
 }

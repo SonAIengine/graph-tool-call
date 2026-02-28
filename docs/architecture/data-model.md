@@ -18,8 +18,7 @@ class ToolParameter(BaseModel):
     type: str = "string"
     description: str = ""
     required: bool = False
-    default: Any = None
-    enum: list[Any] | None = None
+    enum: list[str] | None = None
 ```
 
 ### metadata 확장 (OpenAPI ingest 시)

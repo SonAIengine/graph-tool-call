@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import re
+from enum import Enum
 from typing import Any
 
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.ontology.schema import NodeType
 from graph_tool_call.retrieval.graph_search import GraphSearcher
+from graph_tool_call.retrieval.keyword import BM25Scorer
+
+
+class SearchMode(str, Enum):
+    """Retrieval search modes."""
+
+    BASIC = "basic"  # BM25 + graph + RRF (Phase 1)
+    ENHANCED = "enhanced"  # + embedding (Phase 2)
+    FULL = "full"  # + LLM reranking (Phase 2)
 
 
 class RetrievalEngine:
@@ -29,6 +39,13 @@ class RetrievalEngine:
         self._keyword_weight = keyword_weight
         self._embedding_weight = embedding_weight
         self._embedding_index: Any = None
+        self._bm25: BM25Scorer | None = None
+
+    def _get_bm25(self) -> BM25Scorer:
+        """Lazy-initialize BM25 scorer."""
+        if self._bm25 is None:
+            self._bm25 = BM25Scorer(self._tools)
+        return self._bm25
 
     def set_embedding_index(self, index: Any) -> None:
         """Attach an EmbeddingIndex for hybrid search."""
@@ -44,17 +61,22 @@ class RetrievalEngine:
         query: str,
         top_k: int = 10,
         max_graph_depth: int = 2,
+        mode: str | SearchMode = SearchMode.BASIC,
     ) -> list[ToolSchema]:
         """Retrieve the most relevant tools for a query.
 
         Steps:
-        1. Keyword matching → seed tools
+        1. BM25 keyword scoring -> seed tools
         2. Graph expansion from seeds
-        3. Optional embedding similarity
-        4. Score fusion → top-k
+        3. Optional embedding similarity (Phase 2)
+        4. RRF score fusion -> top-k
         """
-        # Step 1: keyword-based seed selection
-        keyword_scores = self._keyword_match(query)
+        # Step 1: BM25 keyword scoring
+        keyword_scores = self._get_bm25().score(query)
+
+        # Fallback to simple keyword match if BM25 returns nothing
+        if not keyword_scores:
+            keyword_scores = self._keyword_match(query)
 
         # Step 2: pick top seed tools and expand via graph
         sorted_by_score = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
@@ -70,23 +92,21 @@ class RetrievalEngine:
         embedding_scores: dict[str, float] = {}
         # (Phase 2: will integrate embedding_index.search here)
 
-        # Step 4: fuse scores
-        all_tools = set(keyword_scores) | set(graph_scores) | set(embedding_scores)
-        final_scores: list[tuple[str, float]] = []
+        # Step 4: RRF score fusion
+        score_dicts = [s for s in [keyword_scores, graph_scores, embedding_scores] if s]
+        if score_dicts:
+            fused_scores = self._rrf_fuse(*score_dicts)
+        else:
+            fused_scores = {}
 
-        for name in all_tools:
-            # Only include tool nodes
+        # Filter to TOOL nodes only and sort
+        final_scores: list[tuple[str, float]] = []
+        for name, score in fused_scores.items():
             if not self._graph.has_node(name):
                 continue
             attrs = self._graph.get_node_attrs(name)
             if attrs.get("node_type") != NodeType.TOOL:
                 continue
-
-            score = (
-                self._keyword_weight * keyword_scores.get(name, 0.0)
-                + self._graph_weight * graph_scores.get(name, 0.0)
-                + self._embedding_weight * embedding_scores.get(name, 0.0)
-            )
             final_scores.append((name, score))
 
         final_scores.sort(key=lambda x: x[1], reverse=True)
@@ -97,8 +117,28 @@ class RetrievalEngine:
                 result.append(self._tools[name])
         return result
 
+    @staticmethod
+    def _rrf_fuse(
+        *score_dicts: dict[str, float],
+        k: int = 60,
+    ) -> dict[str, float]:
+        """Reciprocal Rank Fusion over multiple score dictionaries.
+
+        For each scoring method, sort by score descending to get rank.
+        RRF_score(d) = sum(1/(k + rank_i(d)))
+        """
+        fused: dict[str, float] = {}
+        for scores in score_dicts:
+            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            for rank, (name, _) in enumerate(ranked, start=1):
+                fused[name] = fused.get(name, 0.0) + 1.0 / (k + rank)
+        return fused
+
     def _keyword_match(self, query: str) -> dict[str, float]:
-        """Simple keyword overlap scoring between query and tool name/description."""
+        """Simple keyword overlap scoring between query and tool name/description.
+
+        Kept as fallback for when BM25 returns empty results.
+        """
         query_tokens = set(self._tokenize(query))
         if not query_tokens:
             return {}
@@ -106,7 +146,8 @@ class RetrievalEngine:
         scores: dict[str, float] = {}
         for name, tool in self._tools.items():
             tool_tokens = set(self._tokenize(tool.name)) | set(self._tokenize(tool.description))
-            tool_tokens.update(self._tokenize(t) for t in tool.tags)
+            for t in tool.tags:
+                tool_tokens.update(self._tokenize(t))
 
             if not tool_tokens:
                 continue

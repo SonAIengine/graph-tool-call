@@ -96,17 +96,36 @@ tools = tg.retrieve("read a file and save changes", top_k=5)
 #    write_file 通过 COMPLEMENTARY 关系发现，而非向量相似度
 ```
 
-### 从 Swagger 自动生成（Phase 1）
+### 从 Swagger / OpenAPI 自动生成
 
 ```python
+from graph_tool_call import ToolGraph
+
 tg = ToolGraph()
-tg.ingest_openapi("https://petstore.swagger.io/v2/swagger.json")
+tg.ingest_openapi("tests/fixtures/petstore_swagger2.json")
+# 支持: Swagger 2.0, OpenAPI 3.0, OpenAPI 3.1
+# 输入: 文件路径 (JSON/YAML), URL, 或 raw dict
 
-# 自动处理：20 个 endpoint → 20 个 tool → 34 个关系 → 3 个分类
-# CRUD 依赖、调用顺序、分类分组——全部自动检测。
+# 自动处理: 5 个 endpoint → 5 个 tool → CRUD 关系 → 分类
+# 依赖关系、调用顺序、分类分组——全部自动检测。
 
-tools = tg.retrieve("register a new pet and upload photo", top_k=5)
-# → [addPet, uploadFile, getPetById, updatePet, findPetsByStatus]
+tools = tg.retrieve("create a new pet", top_k=5)
+# → [createPet, getPet, updatePet, listPets, deletePet]
+#    图扩展获取完整的 CRUD 工作流
+```
+
+### 从 Python 函数自动生成
+
+```python
+def read_file(path: str) -> str:
+    """读取文件内容。"""
+
+def write_file(path: str, content: str) -> None:
+    """写入文件内容。"""
+
+tg = ToolGraph()
+tg.ingest_functions([read_file, write_file])
+# 从 type hint 提取参数，从 docstring 提取描述
 ```
 
 ## 为什么仅靠向量搜索不够？
@@ -147,8 +166,8 @@ graph-tool-call 设计为**无需 LLM 即可工作**，**有 LLM 则效果更好
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
-| **0** | 核心图引擎 + 混合检索 | ✅ 完成 (32 tests) |
-| **1** | OpenAPI 采集、规范标准化、依赖和顺序检测 | 进行中 |
+| **0** | 核心图引擎 + 混合检索 | ✅ 完成 (39 tests) |
+| **1** | OpenAPI 采集、BM25+RRF 检索、依赖检测 | ✅ 完成 (88 tests) |
 | **2** | 去重、嵌入、本体模式（Auto/LLM-Auto）、搜索层级 | 计划中 |
 | **3** | MCP 采集、Pyvis 可视化、Neo4j 导出、CLI、PyPI 发布 | 计划中 |
 | **4** | 交互式 Dashboard（Dash Cytoscape）、手动编辑、社区 | 计划中 |

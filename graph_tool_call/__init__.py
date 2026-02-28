@@ -2,11 +2,13 @@
 
 from graph_tool_call.core.tool import ToolSchema, parse_tool
 from graph_tool_call.ontology.schema import NodeType, RelationType
+from graph_tool_call.retrieval.engine import SearchMode
 from graph_tool_call.tool_graph import ToolGraph
 
 __all__ = [
     "NodeType",
     "RelationType",
+    "SearchMode",
     "ToolGraph",
     "ToolSchema",
     "parse_tool",
