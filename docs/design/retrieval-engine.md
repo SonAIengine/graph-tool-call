@@ -54,11 +54,27 @@ BEIR 벤치마크 근거:
 벡터만으로는 write_file을 놓칠 수 있지만,
 COMPLEMENTARY 관계를 통해 graph expansion에서 자동 포함.
 
+## 3-Tier 검색 아키텍처 (NEW)
+
+상세: [design/search-modes.md](search-modes.md)
+
+```
+Tier 0: No-LLM (기본)     → BM25 + graph expansion, <50ms
+Tier 1: Small-LLM (선택)  → + query expansion (1.5B~3B), +200ms
+Tier 2: Full-LLM (선택)   → + intent decomposition (3B~7B+), +500ms~2s
+```
+
+두 가지 Mode:
+- **Pre-Query Search**: AI 호출 전, 사용자 입력으로 tool 후보 검색
+- **Model-Driven Search**: Agent LLM이 직접 tool graph 검색 API 호출
+
 ## 현재 문제점 → 개선
 
 | 문제 | Phase 1 개선 | Phase 2 개선 |
 |------|-------------|-------------|
 | token exact match | BM25-style TF-IDF | - |
 | embedding 미연결 | - | all-MiniLM-L6-v2 |
-| 가중합 scoring | RRF fusion | RRF + embedding |
+| 가중합 scoring | RRF fusion | wRRF + embedding |
 | tags TypeError | 버그 수정 | - |
+| LLM 없이만 동작 | SearchMode enum | Tier 1/2 구현 |
+| 모델 직접 검색 불가 | API 스켈레톤 | Model-Driven 완성 |

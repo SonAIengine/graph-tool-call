@@ -5,22 +5,44 @@
 **선행**: 1-3 (OpenAPI Ingest)
 **학술 근거**: RESTler (ICSE 2019), RestTestGen (ICST 2020)
 
+## 관계 타입
+
+```python
+class RelationType(str, Enum):
+    REQUIRES = "requires"               # A 없으면 B 호출 불가 (데이터 의존)
+    COMPLEMENTARY = "complementary"     # A와 B를 함께 쓰면 유용
+    SIMILAR_TO = "similar_to"           # A와 B가 유사 기능
+    CONFLICTS_WITH = "conflicts_with"   # A와 B가 충돌
+    BELONGS_TO = "belongs_to"           # 카테고리 소속
+    PRECEDES = "precedes"               # A → B 호출 순서 (워크플로우) ← NEW
+```
+
+**REQUIRES vs PRECEDES**:
+- REQUIRES: `addPet`의 response.id가 `getPetById`의 parameter.petId에 필요 (데이터)
+- PRECEDES: `listOrders`를 먼저 호출해야 `cancelOrder`가 의미있음 (워크플로우)
+
+상세: [design/call-ordering.md](call-ordering.md)
+
 ## 3-Layer 알고리즘
 
 ```
 Layer 1: Structural (Precision ~95%, Recall ~60%)
   ├─ path hierarchy: /users/{id}/orders → parent-child
   ├─ CRUD pattern: same base path + different HTTP method
-  └─ $ref schema 공유
+  ├─ $ref schema 공유
+  ├─ CRUD workflow ordering → PRECEDES ← NEW
+  └─ State machine detection (enum status) → PRECEDES ← NEW
 
 Layer 2: Name-based (Precision ~75%, Recall ~85%)
   ├─ response field → parameter name matching
   ├─ naming convention 정규화 (camelCase ↔ snake_case ↔ kebab-case)
-  └─ container + field concatenation (user.id → userId)
+  ├─ container + field concatenation (user.id → userId)
+  └─ action prefix ordering (initiate → verify → complete) ← NEW
 
 Layer 3: Semantic (Phase 2)
   ├─ embedding similarity
-  └─ LLM reasoning
+  ├─ LLM reasoning
+  └─ Arazzo Specification (워크플로우 명세) ← NEW
 
 Layer 1+2 결합: Precision ~80%, Recall ~85%
 ```
@@ -90,6 +112,30 @@ def normalize_name(name: str) -> list[str]:
 | Circular dependency | A → B → A | DFS cycle detection |
 | Same-endpoint self-ref | GET response.id → GET query.id | self-reference 제외 |
 
+## Layer 1 확장: CRUD Workflow Ordering (NEW)
+
+```python
+CRUD_WORKFLOW = {
+    "create": 0,    # POST
+    "read": 1,      # GET /{id}
+    "list": 1,      # GET /
+    "update": 2,    # PUT/PATCH
+    "delete": 3,    # DELETE
+}
+# create(0) PRECEDES read(1) PRECEDES update(2) PRECEDES delete(3)
+```
+
+## Layer 1 확장: State Machine Detection (NEW)
+
+```python
+# 스키마에서 status/state enum 필드를 찾아 상태 전이 추론
+# Order.status: ["pending", "confirmed", "shipped", "cancelled"]
+# → pending → confirmed: createOrder PRECEDES confirmOrder
+# → confirmed → shipped: confirmOrder PRECEDES shipOrder
+```
+
+상세 알고리즘: [design/call-ordering.md](call-ordering.md)
+
 ## 출력
 
 ```python
@@ -97,7 +143,7 @@ def normalize_name(name: str) -> list[str]:
 class DetectedRelation:
     source: str              # tool name
     target: str              # tool name
-    relation_type: RelationType
+    relation_type: RelationType  # REQUIRES, PRECEDES, COMPLEMENTARY, etc.
     confidence: float        # 0.0 ~ 1.0
     evidence: str            # 근거 설명
     layer: int               # 1 or 2
