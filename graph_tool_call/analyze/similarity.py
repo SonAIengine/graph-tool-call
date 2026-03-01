@@ -69,7 +69,8 @@ def _stage1_exact_hash(tools: dict[str, ToolSchema]) -> list[DuplicatePair]:
 def _stage2_name_fuzzy(tools: dict[str, ToolSchema], threshold: float) -> list[DuplicatePair]:
     """Stage 2: Name fuzzy matching with RapidFuzz. O(n^2) but fast (C++)."""
     try:
-        from rapidfuzz import fuzz
+        from rapidfuzz.distance import JaroWinkler
+        from rapidfuzz.fuzz import token_sort_ratio
     except ImportError:
         return []  # skip if rapidfuzz not installed
 
@@ -77,8 +78,8 @@ def _stage2_name_fuzzy(tools: dict[str, ToolSchema], threshold: float) -> list[D
     pairs: list[DuplicatePair] = []
     for i, a in enumerate(names):
         for b in names[i + 1 :]:
-            jw = fuzz.JaroWinkler.similarity(a.lower(), b.lower()) / 100.0
-            tsr = fuzz.token_sort_ratio(a.lower(), b.lower()) / 100.0
+            jw = JaroWinkler.similarity(a.lower(), b.lower())
+            tsr = token_sort_ratio(a.lower(), b.lower()) / 100.0
             score = max(jw, tsr)
             if score >= threshold:
                 pairs.append(DuplicatePair(tool_a=a, tool_b=b, score=score, stage=2))
