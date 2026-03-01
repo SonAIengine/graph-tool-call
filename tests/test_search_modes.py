@@ -284,6 +284,79 @@ class TestToolGraphSearchModes:
         assert len(results) >= 1
 
 
+# ---------- Embedding fallback (cross-lingual) ----------
+
+
+class TestEmbeddingFallback:
+    """keyword+graph 빈 결과일 때 embedding fallback 테스트."""
+
+    def test_korean_query_with_embedding_fallback(self):
+        pytest.importorskip("sentence_transformers")
+
+        from graph_tool_call import ToolGraph
+
+        tg = ToolGraph()
+        tg.add_tool(
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_user",
+                    "description": "Retrieve user information by ID",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"id": {"type": "string"}},
+                    },
+                },
+            }
+        )
+        tg.add_tool(
+            {
+                "type": "function",
+                "function": {
+                    "name": "list_users",
+                    "description": "List all users in the system",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        )
+        tg.add_tool(
+            {
+                "type": "function",
+                "function": {
+                    "name": "send_email",
+                    "description": "Send an email to a recipient",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"to": {"type": "string"}},
+                    },
+                },
+            }
+        )
+
+        tg.enable_embedding()
+        results = tg.retrieve("사용자 조회", top_k=3)
+        assert len(results) > 0, "한글 쿼리로 embedding fallback 결과가 있어야 함"
+
+    def test_english_query_no_fallback_needed(self):
+        """영어 쿼리는 keyword 매칭으로 충분, fallback 불필요."""
+        from graph_tool_call import ToolGraph
+
+        tg = ToolGraph()
+        tg.add_tool(
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_user",
+                    "description": "Retrieve user information",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        )
+
+        results = tg.retrieve("get user", top_k=3)
+        assert len(results) > 0
+
+
 # ---------- Helpers ----------
 
 

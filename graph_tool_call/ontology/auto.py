@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-async def auto_organize(
+def auto_organize(
     builder: OntologyBuilder,
     tools: list[Any],
     llm: Any = None,
@@ -40,7 +40,7 @@ async def auto_organize(
 
     # --- LLM-Auto mode (if LLM provided) ---
     if llm is not None:
-        await _llm_auto_organize(builder, tools, llm)
+        _llm_auto_organize(builder, tools, llm)
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +236,7 @@ def _derive_cluster_name(tool_names: list[str], tools: list[Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def _llm_auto_organize(
+def _llm_auto_organize(
     builder: OntologyBuilder,
     tools: list[Any],
     llm: Any,

@@ -37,6 +37,6 @@ jobs:
       - name: Install dependencies
         run: |
           pip install poetry
-          poetry install --with dev
+          poetry install --with dev ${{ matrix.python-version == '3.12' && '--all-extras' || '' }}
       - name: Run tests
         run: poetry run pytest -v

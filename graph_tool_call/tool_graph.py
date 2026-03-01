@@ -181,11 +181,11 @@ class ToolGraph:
         self._builder.assign_category(tool_name, category)
         self._invalidate_retrieval()
 
-    async def auto_organize(self, llm: Any = None) -> None:
+    def auto_organize(self, llm: Any = None) -> None:
         """Automatically organize tools using LLM (Phase 2)."""
         from graph_tool_call.ontology.auto import auto_organize
 
-        await auto_organize(self._builder, list(self._tools.values()), llm)
+        auto_organize(self._builder, list(self._tools.values()), llm)
 
     # --- deduplication ---
 

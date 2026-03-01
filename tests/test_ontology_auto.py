@@ -233,8 +233,7 @@ class TestMockLLM:
 
 
 class TestAutoOrganizeIntegration:
-    @pytest.mark.asyncio
-    async def test_auto_without_llm(self):
+    def test_auto_without_llm(self):
         builder = _make_builder()
         tools = [
             _tool("get_user", "Get user", tags=["user"]),
@@ -243,13 +242,12 @@ class TestAutoOrganizeIntegration:
         for t in tools:
             builder.add_tool(t)
 
-        await auto_organize(builder, tools)
+        auto_organize(builder, tools)
 
         # Tags should create "user" category
         assert builder._graph.has_node("user")
 
-    @pytest.mark.asyncio
-    async def test_auto_with_mock_llm(self):
+    def test_auto_with_mock_llm(self):
         builder = _make_builder()
         tools = [
             _tool("createUser", "Create a new user", params=["name", "email"]),
@@ -275,7 +273,7 @@ class TestAutoOrganizeIntegration:
             ),
         )
 
-        await auto_organize(builder, tools, llm=llm)
+        auto_organize(builder, tools, llm=llm)
 
         # LLM should have been called
         assert len(llm._calls) >= 1
@@ -288,8 +286,7 @@ class TestAutoOrganizeIntegration:
 
 
 class TestToolGraphAutoOrganize:
-    @pytest.mark.asyncio
-    async def test_auto_organize_no_error(self):
+    def test_auto_organize_no_error(self):
         from graph_tool_call import ToolGraph
 
         tg = ToolGraph()
@@ -305,4 +302,4 @@ class TestToolGraphAutoOrganize:
         )
 
         # Should not raise NotImplementedError anymore
-        await tg.auto_organize()
+        tg.auto_organize()

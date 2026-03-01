@@ -108,6 +108,19 @@ class RetrievalEngine:
             except (ValueError, ImportError):
                 pass
 
+        # Embedding fallback: keyword+graph 모두 빈 결과일 때 embedding으로 seed 생성
+        if not keyword_scores and not graph_scores and embedding_scores:
+            emb_seeds = [
+                name
+                for name, _ in sorted(embedding_scores.items(), key=lambda x: x[1], reverse=True)[
+                    :5
+                ]
+            ]
+            expanded = self._searcher.expand_from_seeds(
+                emb_seeds, max_depth=max_graph_depth, max_results=top_k * 3
+            )
+            graph_scores = dict(expanded)
+
         # Collect all score sources for wRRF
         score_sources: list[tuple[dict[str, float], float]] = [
             (keyword_scores, 1.0),
