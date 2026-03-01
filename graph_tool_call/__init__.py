@@ -1,11 +1,14 @@
 """graph-tool-call: Graph-structured tool retrieval for LLM agents."""
 
+from graph_tool_call.analyze.similarity import DuplicatePair, MergeStrategy
 from graph_tool_call.core.tool import ToolSchema, parse_tool
 from graph_tool_call.ontology.schema import NodeType, RelationType
 from graph_tool_call.retrieval.engine import SearchMode
 from graph_tool_call.tool_graph import ToolGraph
 
 __all__ = [
+    "DuplicatePair",
+    "MergeStrategy",
     "NodeType",
     "RelationType",
     "SearchMode",
@@ -14,4 +17,4 @@ __all__ = [
     "parse_tool",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"

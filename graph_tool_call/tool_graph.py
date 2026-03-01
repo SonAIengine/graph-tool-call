@@ -140,6 +140,24 @@ class ToolGraph:
         self._invalidate_retrieval()
         return tools
 
+    def ingest_arazzo(self, source: Any) -> list:
+        """Ingest an Arazzo 1.0.0 workflow spec, adding PRECEDES relations.
+
+        Only adds relations between tools already registered in the graph.
+
+        Returns
+        -------
+        list[ArazzoRelation]
+            The detected workflow relations.
+        """
+        from graph_tool_call.ingest.arazzo import ingest_arazzo
+
+        relations = ingest_arazzo(source, registered_tools=set(self._tools.keys()))
+        for rel in relations:
+            self._builder.add_relation(rel.source, rel.target, rel.relation_type)
+        self._invalidate_retrieval()
+        return relations
+
     # --- ontology ---
 
     def add_relation(
@@ -169,6 +187,63 @@ class ToolGraph:
 
         await auto_organize(self._builder, list(self._tools.values()), llm)
 
+    # --- deduplication ---
+
+    def find_duplicates(self, *, threshold: float = 0.85) -> list:
+        """Find duplicate tool pairs using the 5-stage pipeline.
+
+        Returns a list of ``DuplicatePair`` objects.
+        """
+        from graph_tool_call.analyze.similarity import find_duplicates
+
+        embedding_index = None
+        if self._retrieval is not None:
+            embedding_index = self._retrieval._embedding_index
+        return find_duplicates(self._tools, threshold=threshold, embedding_index=embedding_index)
+
+    def merge_duplicates(self, pairs: list, strategy: str = "keep_best") -> dict[str, str]:
+        """Merge detected duplicates and update the graph.
+
+        Returns a mapping of removed_name → kept_name.
+        """
+        from graph_tool_call.analyze.similarity import merge_duplicates as _merge
+
+        merged = _merge(self._tools, pairs, strategy=strategy)
+
+        # Apply merge: remove merged tools, add SIMILAR_TO edges for aliases
+        from graph_tool_call.analyze.similarity import MergeStrategy
+
+        strat = MergeStrategy(strategy) if isinstance(strategy, str) else strategy
+
+        for removed, kept in merged.items():
+            if strat == MergeStrategy.CREATE_ALIAS:
+                self._builder.add_relation(removed, kept, RelationType.SIMILAR_TO)
+            else:
+                if removed in self._tools:
+                    del self._tools[removed]
+                if self._graph.has_node(removed):
+                    self._graph.remove_node(removed)
+
+        if merged:
+            self._invalidate_retrieval()
+        return merged
+
+    # --- embedding ---
+
+    def enable_embedding(self, model_name: str = "all-MiniLM-L6-v2") -> None:
+        """Enable embedding-based hybrid search using a sentence-transformers model.
+
+        Builds embeddings for all registered tools and attaches the index
+        to the retrieval engine.  Weights are automatically rebalanced to
+        graph=0.5, keyword=0.2, embedding=0.3.
+        """
+        from graph_tool_call.retrieval.embedding import EmbeddingIndex
+
+        index = EmbeddingIndex(model_name=model_name)
+        index.build_from_tools(self._tools)
+        engine = self._get_retrieval_engine()
+        engine.set_embedding_index(index)
+
     # --- retrieval ---
 
     def retrieve(
@@ -177,10 +252,20 @@ class ToolGraph:
         top_k: int = 10,
         max_graph_depth: int = 2,
         mode: str | SearchMode = SearchMode.BASIC,
+        llm: Any = None,
     ) -> list[ToolSchema]:
-        """Retrieve the most relevant tools for a query."""
+        """Retrieve the most relevant tools for a query.
+
+        Parameters
+        ----------
+        llm:
+            Optional SearchLLM for ENHANCED/FULL modes.
+            If None, ENHANCED/FULL fall back to BASIC.
+        """
         engine = self._get_retrieval_engine()
-        return engine.retrieve(query, top_k=top_k, max_graph_depth=max_graph_depth, mode=mode)
+        return engine.retrieve(
+            query, top_k=top_k, max_graph_depth=max_graph_depth, mode=mode, llm=llm
+        )
 
     def _get_retrieval_engine(self) -> RetrievalEngine:
         if self._retrieval is None:

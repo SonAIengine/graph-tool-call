@@ -167,9 +167,9 @@ def test_min_confidence_filter():
     # With high threshold, some relations should be filtered out
     high_threshold = detect_dependencies(tools, min_confidence=0.99)
     low_threshold = detect_dependencies(tools, min_confidence=0.5)
-    assert len(high_threshold) <= len(low_threshold), (
-        "Higher threshold should yield fewer or equal relations"
-    )
+    assert len(high_threshold) <= len(
+        low_threshold
+    ), "Higher threshold should yield fewer or equal relations"
     # With max threshold, nothing should pass
     max_threshold = detect_dependencies(tools, min_confidence=1.0)
     assert len(max_threshold) == 0, "Threshold 1.0 should exclude all relations"
@@ -205,6 +205,6 @@ def test_generic_params_filtered():
     relations = detect_dependencies(tools, min_confidence=0.0)
     # Only "id" and "status" are generic — no resource-level overlap expected
     name_based = [r for r in relations if r.layer == 2]
-    assert len(name_based) == 0, (
-        "Generic params like 'id' and 'status' should not produce name-based relations"
-    )
+    assert (
+        len(name_based) == 0
+    ), "Generic params like 'id' and 'status' should not produce name-based relations"

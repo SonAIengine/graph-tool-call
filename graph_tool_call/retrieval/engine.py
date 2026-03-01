@@ -16,9 +16,9 @@ from graph_tool_call.retrieval.keyword import BM25Scorer
 class SearchMode(str, Enum):
     """Retrieval search modes."""
 
-    BASIC = "basic"  # BM25 + graph + RRF (Phase 1)
-    ENHANCED = "enhanced"  # + embedding (Phase 2)
-    FULL = "full"  # + LLM reranking (Phase 2)
+    BASIC = "basic"  # BM25 + graph + embedding + RRF
+    ENHANCED = "enhanced"  # + query expansion (Tier 1)
+    FULL = "full"  # + intent decomposition (Tier 2)
 
 
 class RetrievalEngine:
@@ -62,23 +62,33 @@ class RetrievalEngine:
         top_k: int = 10,
         max_graph_depth: int = 2,
         mode: str | SearchMode = SearchMode.BASIC,
+        llm: Any = None,
     ) -> list[ToolSchema]:
         """Retrieve the most relevant tools for a query.
 
-        Steps:
-        1. BM25 keyword scoring -> seed tools
-        2. Graph expansion from seeds
-        3. Optional embedding similarity (Phase 2)
-        4. RRF score fusion -> top-k
+        Parameters
+        ----------
+        query:
+            Natural language search query.
+        top_k:
+            Maximum number of results.
+        max_graph_depth:
+            BFS depth for graph expansion.
+        mode:
+            Search mode: BASIC, ENHANCED, or FULL.
+        llm:
+            Optional SearchLLM for ENHANCED/FULL modes.
+            If None, ENHANCED/FULL fall back to BASIC.
         """
-        # Step 1: BM25 keyword scoring
-        keyword_scores = self._get_bm25().score(query)
+        if isinstance(mode, str):
+            mode = SearchMode(mode)
 
-        # Fallback to simple keyword match if BM25 returns nothing
+        # --- BASIC pipeline (always runs) ---
+        keyword_scores = self._get_bm25().score(query)
         if not keyword_scores:
             keyword_scores = self._keyword_match(query)
 
-        # Step 2: pick top seed tools and expand via graph
+        # Graph expansion from keyword seeds
         sorted_by_score = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
         seed_tools = [name for name, _ in sorted_by_score[:5]]
         graph_scores: dict[str, float] = {}
@@ -88,14 +98,50 @@ class RetrievalEngine:
             )
             graph_scores = dict(expanded)
 
-        # Step 3: optional embedding scores
+        # Optional embedding scores
         embedding_scores: dict[str, float] = {}
-        # (Phase 2: will integrate embedding_index.search here)
+        if self._embedding_index is not None and self._embedding_index.size > 0:
+            try:
+                query_emb = self._embedding_index.encode(query)
+                emb_results = self._embedding_index.search(query_emb, top_k=top_k * 3)
+                embedding_scores = dict(emb_results)
+            except (ValueError, ImportError):
+                pass
 
-        # Step 4: RRF score fusion
-        score_dicts = [s for s in [keyword_scores, graph_scores, embedding_scores] if s]
-        if score_dicts:
-            fused_scores = self._rrf_fuse(*score_dicts)
+        # Collect all score sources for wRRF
+        score_sources: list[tuple[dict[str, float], float]] = [
+            (keyword_scores, 1.0),
+            (graph_scores, 1.0),
+            (embedding_scores, 1.0),
+        ]
+
+        # --- ENHANCED: query expansion (Tier 1) ---
+        if mode in (SearchMode.ENHANCED, SearchMode.FULL) and llm is not None:
+            expanded = llm.expand_query(query)
+            expanded_terms = expanded.keywords + expanded.synonyms + expanded.english_terms
+            if expanded_terms:
+                expanded_query = " ".join(expanded_terms)
+                expanded_scores = self._get_bm25().score(expanded_query)
+                if not expanded_scores:
+                    expanded_scores = self._keyword_match(expanded_query)
+                if expanded_scores:
+                    score_sources.append((expanded_scores, 0.7))
+
+        # --- FULL: intent decomposition (Tier 2) ---
+        if mode == SearchMode.FULL and llm is not None:
+            intents = llm.decompose_intents(query)
+            for intent in intents:
+                intent_query = intent.to_query()
+                intent_scores = self._get_bm25().score(intent_query)
+                if not intent_scores:
+                    intent_scores = self._keyword_match(intent_query)
+                if intent_scores:
+                    score_sources.append((intent_scores, 0.5))
+
+        # --- wRRF fusion ---
+        active_sources = [(s, w) for s, w in score_sources if s]
+        if active_sources:
+            fused_scores = self._wrrf_fuse(active_sources)
         else:
             fused_scores = {}
 
@@ -132,6 +178,23 @@ class RetrievalEngine:
             ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
             for rank, (name, _) in enumerate(ranked, start=1):
                 fused[name] = fused.get(name, 0.0) + 1.0 / (k + rank)
+        return fused
+
+    @staticmethod
+    def _wrrf_fuse(
+        weighted_sources: list[tuple[dict[str, float], float]],
+        k: int = 60,
+    ) -> dict[str, float]:
+        """Weighted Reciprocal Rank Fusion.
+
+        Each source has an associated weight.
+        wRRF_score(d) = sum(weight_i / (k + rank_i(d)))
+        """
+        fused: dict[str, float] = {}
+        for scores, weight in weighted_sources:
+            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            for rank, (name, _) in enumerate(ranked, start=1):
+                fused[name] = fused.get(name, 0.0) + weight / (k + rank)
         return fused
 
     def _keyword_match(self, query: str) -> dict[str, float]:
