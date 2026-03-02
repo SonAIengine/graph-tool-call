@@ -1,7 +1,7 @@
 # graph-tool-call 개발 가이드
 
 ## 프로젝트 개요
-LLM 에이전트를 위한 그래프 기반 도구 검색 엔진. NetworkX DiGraph + BM25 + Embedding + RRF 기반 하이브리드 검색.
+LLM 에이전트를 위한 그래프 기반 도구 검색 엔진. NetworkX DiGraph + BM25 + Embedding + MCP Annotation + wRRF 기반 하이브리드 검색.
 
 ## 개발 환경
 
@@ -82,21 +82,25 @@ select = ["E", "F", "I", "N", "W", "UP"]
 ## 주요 파일 구조
 ```
 graph_tool_call/
-  __init__.py          # public exports, __version__
-  tool_graph.py        # ToolGraph facade (모든 public API, from_url(), _discover_spec_urls())
-  core/tool.py         # ToolSchema (Pydantic BaseModel)
+  __init__.py          # public exports (MCPAnnotations, ToolSchema, ...), __version__
+  tool_graph.py        # ToolGraph facade (모든 public API, from_url(), ingest_mcp_tools())
+  core/tool.py         # MCPAnnotations, ToolSchema, parse_mcp_tool(), parse_tool()
   analyze/
     dependency.py      # 자동 의존관계 탐지
-    similarity.py      # 5-Stage 중복 탐지 파이프라인
+    similarity.py      # 5-Stage 중복 탐지 파이프라인 (annotation 보너스 포함)
   ingest/
-    openapi.py         # OpenAPI 3.x 파서 (description fallback 포함)
+    openapi.py         # OpenAPI 3.x 파서 (description fallback, HTTP→annotation 추론)
+    mcp.py             # MCP tool list ingest (inputSchema + annotations 파싱)
     arazzo.py           # Arazzo 1.0.0 워크플로우 파서
   ontology/
     auto.py            # auto_organize (Auto + LLM-Auto 모드)
+    builder.py         # OntologyBuilder (node에 annotations 저장)
     llm_provider.py    # OntologyLLM ABC + Ollama/OpenAI providers
     schema.py          # NodeType, RelationType enums
   retrieval/
-    engine.py          # RetrievalEngine (3-Tier: BASIC/ENHANCED/FULL)
+    engine.py          # RetrievalEngine (4-source wRRF: BM25+Graph+Embedding+Annotation)
+    intent.py          # QueryIntent + classify_intent() — 한/영 키워드 기반 zero-LLM
+    annotation_scorer.py # score_annotation_match() + compute_annotation_scores()
     embedding.py       # EmbeddingIndex (sentence-transformers)
     search_llm.py      # SearchLLM ABC + providers
 ```

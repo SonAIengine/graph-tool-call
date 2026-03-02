@@ -7,24 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Planned — Phase 2
-- 5-stage deduplication pipeline
-- Embedding search (all-MiniLM-L6-v2 / multilingual-e5)
-- Ontology modes: Auto (no LLM) / LLM-Auto (Ollama/vLLM/OpenAI)
-- Search Tier 1 (query expansion) and Tier 2 (intent decomposition)
-- Arazzo Specification support for workflow parsing
+### Added
+- **MCP Annotation-Aware Retrieval** — query intent와 tool annotation alignment 기반 retrieval signal
+  - `MCPAnnotations` 모델: `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`
+  - `parse_mcp_tool()` + `parse_tool()` MCP format 자동 감지 (`inputSchema` key)
+  - `ToolGraph.ingest_mcp_tools()` — MCP tool list ingest with server tagging
+  - Intent Classifier (`classify_intent()`) — 한/영 키워드 기반 zero-LLM query intent 분류
+  - Annotation Scorer (`score_annotation_match()`) — intent↔annotation alignment scoring
+  - RetrievalEngine에 annotation score를 4번째 wRRF source로 통합 (weight=0.2)
+  - OpenAPI ingest에서 HTTP method → MCP annotation 자동 추론 (RFC 7231 기반)
+  - OntologyBuilder에 annotation 정보 node attribute 저장
+  - Similarity Stage 3에 annotation 일치 보너스 (+0.1 max)
+  - `MCPAnnotations` public export (`from graph_tool_call import MCPAnnotations`)
+- **Tests**: 255개 (74개 신규)
+  - `test_mcp_annotations.py`, `test_ingest_mcp.py`, `test_intent_classifier.py`
+  - `test_annotation_scorer.py`, `test_annotation_retrieval.py`, `test_openapi_annotations.py`
 
-### Planned — Phase 3
-- MCP server tool ingest
+### Planned — Phase 3+
 - Pyvis HTML graph visualization with progressive disclosure
 - Neo4j Cypher / GraphML export
 - CLI tool (`graph-tool-call ingest/retrieve/visualize`)
-- Commerce domain presets (order/payment/shipping workflows)
-- PyPI distribution
-
-### Planned — Phase 4
 - Interactive Dashboard (Dash Cytoscape) — visualization + manual editing
 - LangChain community package
+
+## [0.3.0] - 2026-03-03
+
+### Added
+- **Deduplication**: 5-Stage duplicate detection pipeline
+  - Stage 1: SHA256 exact hash
+  - Stage 2: RapidFuzz name similarity (optional)
+  - Stage 3: Parameter key Jaccard + type compatibility
+  - Stage 4: Embedding cosine similarity (optional)
+  - Stage 5: Composite weighted score
+  - `find_duplicates()` / `merge_duplicates()` API with 3 strategies
+- **Embedding Search**: sentence-transformers integration
+  - `EmbeddingIndex` with `build_from_tools()` / `search()`
+  - `tg.enable_embedding()` one-liner setup
+  - Auto weight rebalancing (graph=0.5, keyword=0.2, embedding=0.3)
+- **Ontology Modes**:
+  - Auto mode: tag/path/CRUD/embedding clustering (no LLM)
+  - LLM-Auto mode: Ollama/OpenAI provider, batch relation inference, category suggestion
+  - `OntologyLLM` ABC + `OllamaLLM` / `OpenAILLM` providers
+- **Search Tiers**: 3-Tier architecture (BASIC/ENHANCED/FULL)
+  - Tier 1 (ENHANCED): query expansion via SearchLLM
+  - Tier 2 (FULL): intent decomposition via SearchLLM
+  - Weighted RRF (wRRF) for multi-source fusion
+- **Arazzo 1.0.0**: workflow parser → PRECEDES relations
+- **Layered Resilience**:
+  - Description fallback: empty summary/description → `METHOD /path [tags]`
+  - `ToolGraph.from_url()`: Swagger UI auto-discovery via swagger-config
+  - `_discover_spec_urls()`: SpringDoc v1/v2 config, swagger-initializer.js parsing
+- **BM25**: Korean bigram tokenization for compound words
+- **Tests**: 181 tests passing (93 new)
+
+### Changed
+- Score fusion upgraded from RRF to wRRF (weighted Reciprocal Rank Fusion)
+- Embedding fallback: when keyword+graph empty, embedding seeds graph expansion
 
 ## [0.2.0] - 2026-03-01
 
@@ -77,6 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SonAIengine/graph-tool-call/releases/tag/v0.1.0

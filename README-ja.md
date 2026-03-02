@@ -114,6 +114,36 @@ tools = tg.retrieve("create a new pet", top_k=5)
 #    グラフ展開が完全なCRUDワークフローを取得
 ```
 
+### MCPサーバーツールから自動生成
+
+```python
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph()
+
+# MCPツールリストを取り込み（アノテーションを保持）
+mcp_tools = [
+    {
+        "name": "read_file",
+        "description": "ファイルを読む",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+    },
+    {
+        "name": "delete_file",
+        "description": "ファイルを永久削除",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
+    },
+]
+tg.ingest_mcp_tools(mcp_tools, server_name="filesystem")
+
+# "ファイル削除" → destructiveツールが上位ランク（annotation-aware）
+tools = tg.retrieve("一時ファイルを削除", top_k=5)
+```
+
+MCPアノテーション（`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`）が検索シグナルとして活用されます。クエリの意図が自動分類され、ツールのアノテーションとアラインメントされます——読み取りクエリはread-onlyツールを、削除クエリはdestructiveツールを優先します。
+
 ### Python関数から自動生成
 
 ```python
@@ -134,6 +164,7 @@ tg.ingest_functions([read_file, write_file])
 |----------|-----------|-----------------|
 | *「注文をキャンセルして」* | `cancelOrder` を返す | `listOrders → getOrder → cancelOrder → processRefund`（完全なワークフロー）|
 | *「ファイルを読んで保存」* | `read_file` を返す | `read_file` + `write_file`（COMPLEMENTARY関係）|
+| *「古いレコードを削除」* | "削除"にマッチする任意のツール | destructiveツールが上位ランク（annotation-aware）|
 | 複数Swagger仕様に重複ツール | 結果に重複を含む | クロスソース自動重複排除 |
 | 1,200のAPIエンドポイント | 遅くノイズが多い | カテゴリに整理、正確なグラフ探索 |
 
@@ -154,12 +185,12 @@ Ollamaで動く小さなモデル（`qwen2.5:1.5b`）でも検索品質は有意
 | 機能 | ベクトルのみのソリューション | graph-tool-call |
 |------|------------------------|-----------------|
 | ツールソース | 手動登録 | Swagger/OpenAPI/MCPから自動収集 |
-| 検索方式 | フラットなベクトル類似度 | グラフ+ベクトルハイブリッド (RRF)、3-Tier |
+| 検索方式 | フラットなベクトル類似度 | グラフ+ベクトルハイブリッド (wRRF)、3-Tier |
+| 行動的意味論 | なし | MCP annotation-aware retrieval |
 | ツール関係 | なし | 6種類の関係タイプ、自動検出 |
 | 呼び出し順序 | なし | ステートマシン + CRUDワークフロー検出 |
 | 重複排除 | なし | クロスソース重複検出 |
 | オントロジー | なし | Auto / LLM-Auto モード |
-| 可視化 | なし | グラフDashboard + 手動編集 |
 | LLM依存 | 必須 | オプション（なくても動く、あればさらに良い）|
 
 ## ロードマップ
@@ -168,8 +199,9 @@ Ollamaで動く小さなモデル（`qwen2.5:1.5b`）でも検索品質は有意
 |-------|------|------|
 | **0** | コアグラフエンジン + ハイブリッド検索 | ✅ 完了 (39 tests) |
 | **1** | OpenAPI収集、BM25+RRF検索、依存関係検出 | ✅ 完了 (88 tests) |
-| **2** | 重複排除、エンベディング、オントロジーモード（Auto/LLM-Auto）、検索Tier | 計画中 |
-| **3** | MCP収集、Pyvis可視化、Neo4jエクスポート、CLI、PyPI公開 | 計画中 |
+| **2** | 重複排除、エンベディング、オントロジーモード（Auto/LLM-Auto）、検索Tier、`from_url()` | ✅ 完了 (181 tests) |
+| **2.5** | MCP Annotation-Aware Retrieval: intent classifier、annotation scoring、wRRF統合 | ✅ 完了 (255 tests) |
+| **3** | Pyvis可視化、Neo4jエクスポート、CLI、PyPI公開 | 計画中 |
 | **4** | インタラクティブDashboard（Dash Cytoscape）、手動編集、コミュニティ | 計画中 |
 
 ## ドキュメント

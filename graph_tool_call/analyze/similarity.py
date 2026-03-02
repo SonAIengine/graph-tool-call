@@ -91,6 +91,24 @@ def _stage2_name_fuzzy(tools: dict[str, ToolSchema], threshold: float) -> list[D
 # ---------------------------------------------------------------------------
 
 
+def _annotation_match_bonus(tool_a: ToolSchema, tool_b: ToolSchema) -> float:
+    """Compute annotation similarity bonus (max +0.1)."""
+    if tool_a.annotations is None or tool_b.annotations is None:
+        return 0.0
+    matches = 0
+    total = 0
+    for field in ("read_only_hint", "destructive_hint", "idempotent_hint", "open_world_hint"):
+        va = getattr(tool_a.annotations, field)
+        vb = getattr(tool_b.annotations, field)
+        if va is not None and vb is not None:
+            total += 1
+            if va == vb:
+                matches += 1
+    if total == 0:
+        return 0.0
+    return 0.1 * (matches / total)
+
+
 def _param_jaccard(tool_a: ToolSchema, tool_b: ToolSchema) -> float:
     """Compute Jaccard similarity of parameter names with type compatibility bonus."""
     keys_a = {p.name for p in tool_a.parameters}
@@ -112,9 +130,13 @@ def _param_jaccard(tool_a: ToolSchema, tool_b: ToolSchema) -> float:
         type_matches = sum(1 for k in intersection if types_a.get(k) == types_b.get(k))
         type_ratio = type_matches / len(intersection)
         # Blend: 70% jaccard + 30% type compatibility
-        return 0.7 * jaccard + 0.3 * type_ratio
+        base = 0.7 * jaccard + 0.3 * type_ratio
+    else:
+        base = jaccard
 
-    return jaccard
+    # Annotation match bonus (max +0.1)
+    bonus = _annotation_match_bonus(tool_a, tool_b)
+    return min(base + bonus, 1.0)
 
 
 def _stage3_schema_structural(

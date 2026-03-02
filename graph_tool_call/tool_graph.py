@@ -208,6 +208,50 @@ class ToolGraph:
         self._invalidate_retrieval()
         return tools
 
+    def ingest_mcp_tools(
+        self,
+        tools: list[dict[str, Any]],
+        *,
+        server_name: str | None = None,
+        detect_dependencies: bool = True,
+        min_confidence: float = 0.7,
+    ) -> list[ToolSchema]:
+        """Ingest MCP tool list, register tools, and auto-detect relations.
+
+        Parameters
+        ----------
+        tools:
+            List of MCP tool dicts (``name``, ``inputSchema``, ``annotations``).
+        server_name:
+            Optional MCP server name for tagging.
+        detect_dependencies:
+            If True (default), run automatic dependency detection.
+        min_confidence:
+            Minimum confidence threshold for detected relations.
+
+        Returns
+        -------
+        list[ToolSchema]
+            The ingested tool schemas.
+        """
+        from graph_tool_call.ingest.mcp import ingest_mcp_tools
+
+        schemas = ingest_mcp_tools(tools, server_name=server_name)
+
+        for schema in schemas:
+            self._tools[schema.name] = schema
+            self._builder.add_tool(schema)
+
+        if detect_dependencies and len(schemas) >= 2:
+            from graph_tool_call.analyze.dependency import detect_dependencies as _detect
+
+            relations = _detect(schemas, min_confidence=min_confidence)
+            for rel in relations:
+                self._builder.add_relation(rel.source, rel.target, rel.relation_type)
+
+        self._invalidate_retrieval()
+        return schemas
+
     def ingest_functions(self, fns: Iterable[Callable[..., Any]]) -> list[ToolSchema]:
         """Ingest Python callables into the tool graph.
 

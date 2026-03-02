@@ -13,4 +13,5 @@ graph-tool-call 개발 과정과 의사결정을 기록하는 devlog.
 
 ## Entries
 
+- [2026-03-03-annotation](./2026-03-03-annotation.md) — MCP Annotation-Aware Retrieval 구현 (Phase 2.5)
 - [2026-03-03](./2026-03-03.md) — Day 1: 방향 전환, ai-api-lint 분리, graph-tool-call 범용 개선

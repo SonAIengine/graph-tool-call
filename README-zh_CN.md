@@ -114,6 +114,36 @@ tools = tg.retrieve("create a new pet", top_k=5)
 #    图扩展获取完整的 CRUD 工作流
 ```
 
+### 从 MCP 服务器工具自动生成
+
+```python
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph()
+
+# 采集 MCP 工具列表（保留注解）
+mcp_tools = [
+    {
+        "name": "read_file",
+        "description": "读取文件",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+    },
+    {
+        "name": "delete_file",
+        "description": "永久删除文件",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
+    },
+]
+tg.ingest_mcp_tools(mcp_tools, server_name="filesystem")
+
+# "删除文件" → 破坏性工具排名更高（annotation-aware）
+tools = tg.retrieve("删除临时文件", top_k=5)
+```
+
+MCP 注解（`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`）被用作检索信号。查询意图自动分类并与工具注解对齐——读取查询优先返回只读工具，删除查询优先返回破坏性工具。
+
 ### 从 Python 函数自动生成
 
 ```python
@@ -134,6 +164,7 @@ tg.ingest_functions([read_file, write_file])
 |------|--------|-----------------|
 | *"取消我的订单"* | 返回 `cancelOrder` | 返回 `listOrders → getOrder → cancelOrder → processRefund`（完整工作流）|
 | *"读取并保存文件"* | 返回 `read_file` | 返回 `read_file` + `write_file`（通过 COMPLEMENTARY 关系）|
+| *"删除旧记录"* | 返回与"删除"匹配的任意工具 | 破坏性工具优先排名（annotation-aware）|
 | 多个 Swagger 规范中有重复工具 | 结果包含重复 | 跨源自动去重 |
 | 1,200 个 API endpoint | 缓慢且噪声多 | 按分类组织，精确图遍历 |
 
@@ -154,12 +185,12 @@ graph-tool-call 设计为**无需 LLM 即可工作**，**有 LLM 则效果更好
 | 功能 | 纯向量方案 | graph-tool-call |
 |------|----------|-----------------|
 | 工具来源 | 手动注册 | Swagger/OpenAPI/MCP 自动采集 |
-| 搜索方式 | 平面向量相似度 | 图 + 向量混合 (RRF)，3 层架构 |
+| 搜索方式 | 平面向量相似度 | 图 + 向量混合 (wRRF)，3 层架构 |
+| 行为语义 | 无 | MCP annotation-aware retrieval |
 | 工具关系 | 无 | 6 种关系类型，自动检测 |
 | 调用顺序 | 无 | 状态机 + CRUD 工作流检测 |
 | 去重 | 无 | 跨源重复检测 |
 | 本体 | 无 | Auto / LLM-Auto 模式 |
-| 可视化 | 无 | 图 Dashboard + 手动编辑 |
 | LLM 依赖 | 必需 | 可选（无也可用，有则更好）|
 
 ## 路线图
@@ -168,8 +199,9 @@ graph-tool-call 设计为**无需 LLM 即可工作**，**有 LLM 则效果更好
 |-------|------|------|
 | **0** | 核心图引擎 + 混合检索 | ✅ 完成 (39 tests) |
 | **1** | OpenAPI 采集、BM25+RRF 检索、依赖检测 | ✅ 完成 (88 tests) |
-| **2** | 去重、嵌入、本体模式（Auto/LLM-Auto）、搜索层级 | 计划中 |
-| **3** | MCP 采集、Pyvis 可视化、Neo4j 导出、CLI、PyPI 发布 | 计划中 |
+| **2** | 去重、嵌入、本体模式（Auto/LLM-Auto）、搜索层级、`from_url()` | ✅ 完成 (181 tests) |
+| **2.5** | MCP Annotation-Aware Retrieval：intent classifier、annotation scoring、wRRF 集成 | ✅ 完成 (255 tests) |
+| **3** | Pyvis 可视化、Neo4j 导出、CLI、PyPI 发布 | 计划中 |
 | **4** | 交互式 Dashboard（Dash Cytoscape）、手动编辑、社区 | 计划中 |
 
 ## 文档

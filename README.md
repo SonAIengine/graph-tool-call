@@ -130,6 +130,36 @@ tools = tg.retrieve("search products", top_k=5)
 
 `from_url()` automatically detects Swagger UI pages, discovers all spec groups via `swagger-config`, and ingests them into a single unified graph. Operations without descriptions get auto-generated fallbacks from their HTTP method, path, and tags.
 
+### From MCP Server Tools
+
+```python
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph()
+
+# Ingest MCP tool list (annotations are preserved)
+mcp_tools = [
+    {
+        "name": "read_file",
+        "description": "Read a file",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+    },
+    {
+        "name": "delete_file",
+        "description": "Delete a file permanently",
+        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}},
+        "annotations": {"readOnlyHint": False, "destructiveHint": True},
+    },
+]
+tg.ingest_mcp_tools(mcp_tools, server_name="filesystem")
+
+# "delete files" → destructive tools ranked higher (annotation-aware)
+tools = tg.retrieve("delete temporary files", top_k=5)
+```
+
+MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are used as retrieval signals. Query intent is automatically classified and aligned with tool annotations — read queries prefer read-only tools, delete queries prefer destructive tools.
+
 ### From Python Functions
 
 ```python
@@ -150,6 +180,7 @@ tg.ingest_functions([read_file, write_file])
 |----------|------------|-----------------|
 | *"cancel my order"* | Returns `cancelOrder` | Returns `listOrders → getOrder → cancelOrder → processRefund` (full workflow) |
 | *"read and save file"* | Returns `read_file` | Returns `read_file` + `write_file` (via COMPLEMENTARY) |
+| *"delete old records"* | Returns any tool matching "delete" | Destructive tools ranked first (annotation-aware) |
 | Multiple Swagger specs with overlapping tools | Duplicate tools in results | Auto-deduplication across sources |
 | 1,200 API endpoints | Slow, noisy results | Organized into categories, precise graph traversal |
 
@@ -170,12 +201,12 @@ Even a tiny model running on Ollama (`qwen2.5:1.5b`) can meaningfully improve se
 | Feature | Vector-only solutions | graph-tool-call |
 |---------|----------------------|-----------------|
 | Tool source | Manual registration | Auto-ingest from Swagger/OpenAPI/MCP |
-| Search method | Flat vector similarity | Graph + vector hybrid (RRF), 3-Tier |
+| Search method | Flat vector similarity | Graph + vector hybrid (wRRF), 3-Tier |
+| Behavioral semantics | None | MCP annotation-aware retrieval |
 | Tool relations | None | 6 relation types, auto-detected |
 | Call ordering | None | State machine + CRUD workflow detection |
 | Deduplication | None | Cross-source duplicate detection |
 | Ontology | None | Auto / LLM-Auto modes |
-| Visualization | None | Graph dashboard with manual editing |
 | LLM dependency | Required | Optional (better with, works without) |
 
 ## Roadmap
@@ -185,7 +216,8 @@ Even a tiny model running on Ollama (`qwen2.5:1.5b`) can meaningfully improve se
 | **0** | Core graph engine + hybrid retrieval | ✅ Done (39 tests) |
 | **1** | OpenAPI ingest, BM25+RRF retrieval, dependency detection | ✅ Done (88 tests) |
 | **2** | Deduplication, embeddings, ontology modes (Auto/LLM-Auto), search tiers, `from_url()` | ✅ Done (181 tests) |
-| **3** | MCP ingest, Pyvis visualization, Neo4j export, CLI, PyPI publish | Planned |
+| **2.5** | MCP Annotation-Aware Retrieval: intent classifier, annotation scoring, wRRF integration | ✅ Done (255 tests) |
+| **3** | Pyvis visualization, Neo4j export, CLI, PyPI publish | Planned |
 | **4** | Interactive dashboard (Dash Cytoscape), manual editing, community | Planned |
 
 ## Documentation

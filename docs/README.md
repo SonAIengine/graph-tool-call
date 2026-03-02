@@ -22,13 +22,14 @@ docs/
 │   ├── spec-normalization.md   # OpenAPI 2.0/3.0/3.1 정규화 레이어
 │   ├── ingest-openapi.md       # OpenAPI → ToolSchema 변환
 │   ├── dependency-detection.md # 3-Layer Dependency Detection
-│   ├── call-ordering.md        # API 호출 순서 감지 (PRECEDES) ← NEW
+│   ├── call-ordering.md        # API 호출 순서 감지 (PRECEDES)
 │   ├── deduplication.md        # 5-Stage Dedup Pipeline
-│   ├── retrieval-engine.md     # Hybrid Retrieval + RRF
-│   ├── search-modes.md         # 3-Tier 검색 아키텍처 ← NEW
-│   ├── ontology-modes.md       # Auto/Manual/LLM 온톨로지 모드 ← NEW
-│   ├── visualization-dashboard.md # 시각화 + 대시보드 ← NEW
-│   └── openapi-guide.md        # OpenAPI 작성 가이드 ← NEW
+│   ├── retrieval-engine.md     # Hybrid Retrieval + wRRF
+│   ├── annotation-retrieval.md # MCP Annotation-Aware Retrieval ← NEW
+│   ├── search-modes.md         # 3-Tier 검색 아키텍처
+│   ├── ontology-modes.md       # Auto/Manual/LLM 온톨로지 모드
+│   ├── visualization-dashboard.md # 시각화 + 대시보드
+│   └── openapi-guide.md        # OpenAPI 작성 가이드
 │
 └── research/                   # 리서치 노트
     ├── competitive-analysis.md # 경쟁 생태계 (RAG-MCP, LAPIS)
@@ -48,11 +49,17 @@ docs/
 4. **설계 깊이 파기**: `design/` 디렉토리
 5. **리서치 근거**: `research/` 디렉토리
 
-## 최근 추가 (v2)
+## 최근 추가 (v2.5)
+
+- **MCP Annotation-Aware Retrieval**: query intent ↔ tool annotation alignment
+- **MCP tool ingest**: `inputSchema` + `annotations` 파싱, `tg.ingest_mcp_tools()`
+- **Intent Classifier**: 한/영 키워드 기반 zero-LLM query intent 분류
+- **Annotation Scorer**: intent↔annotation alignment scoring → wRRF 4번째 source
+- **OpenAPI annotation 추론**: HTTP method → MCP annotation 자동 매핑 (RFC 7231)
+
+### v2
 
 - **API 호출 순서 감지**: PRECEDES 관계, 상태 머신, Arazzo spec
 - **3-Tier 검색**: No-LLM → Small-LLM → Full-LLM
 - **온톨로지 2모드**: Auto / LLM-Auto (Dashboard는 공통 시각화+편집 레이어)
-- **시각화**: Pyvis HTML → Dash Cytoscape Dashboard
 - **OpenAPI 가이드**: 온톨로지 최적화를 위한 spec 작성법
-- **커머스 패턴**: 주문/결제/배송 워크플로우 자동 감지

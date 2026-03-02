@@ -2,7 +2,7 @@
 
 ## ToolSchema
 
-tool의 통합 내부 표현. 모든 포맷(OpenAI, Anthropic, LangChain, OpenAPI)이 이 모델로 정규화됨.
+tool의 통합 내부 표현. 모든 포맷(OpenAI, Anthropic, LangChain, MCP, OpenAPI)이 이 모델로 정규화됨.
 
 ```python
 class ToolSchema(BaseModel):
@@ -12,6 +12,7 @@ class ToolSchema(BaseModel):
     tags: list[str] = []                   # 분류 태그
     domain: str | None = None              # 소속 도메인
     metadata: dict[str, Any] = {}          # 확장 메타데이터
+    annotations: MCPAnnotations | None = None  # MCP 행동적 의미 (NEW)
 
 class ToolParameter(BaseModel):
     name: str
@@ -20,6 +21,37 @@ class ToolParameter(BaseModel):
     required: bool = False
     enum: list[str] | None = None
 ```
+
+## MCPAnnotations
+
+MCP spec의 tool annotation — 도구의 행동적 의미(behavioral semantics)를 인코딩.
+
+```python
+class MCPAnnotations(BaseModel):
+    read_only_hint: bool | None = None     # True = 읽기 전용 (상태 변경 없음)
+    destructive_hint: bool | None = None   # True = 파괴적 (되돌릴 수 없음)
+    idempotent_hint: bool | None = None    # True = 멱등 (반복 호출 안전)
+    open_world_hint: bool | None = None    # True = 외부 세계와 상호작용
+```
+
+### 자동 추론 (OpenAPI ingest)
+
+HTTP method → MCP annotation 매핑 (RFC 7231 기반):
+
+| Method | readOnly | destructive | idempotent |
+|--------|:--------:|:-----------:|:----------:|
+| GET/HEAD/OPTIONS | True | False | True |
+| POST | False | False | False |
+| PUT | False | False | True |
+| PATCH | False | False | False |
+| DELETE | False | True | True |
+
+### Retrieval signal로 활용
+
+`classify_intent(query)` → `QueryIntent` → `score_annotation_match(intent, annotations)` → wRRF 4번째 source로 통합.
+- read query + readOnly tool → 높은 alignment score
+- delete query + destructive tool → 높은 alignment score
+- write query + readOnly tool → 0.0 (hard mismatch)
 
 ### metadata 확장 (OpenAPI ingest 시)
 

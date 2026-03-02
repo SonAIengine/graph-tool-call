@@ -47,11 +47,12 @@ OpenAPI/MCP/코드 → [수집] → [분석] → [조직화] → [검색] → Ag
 │  └──────────────┬──────────────────────────────┘  │
 │                 │                                  │
 │  ┌──────────────▼──────────────────────────────┐  │
-│  │  4. RETRIEVE (검색) — 3-Tier                  │  │
-│  │     Tier 0: BM25 + graph expansion (No LLM) │  │
+│  │  4. RETRIEVE (검색) — 3-Tier + Annotation     │  │
+│  │     Tier 0: BM25 + graph + annotation (0LLM)│  │
 │  │     Tier 1: + query expansion (Small LLM)   │  │
 │  │     Tier 2: + intent decomposition (Full)   │  │
-│  │     RRF Score fusion → Top-K                 │  │
+│  │     4-source wRRF fusion → Top-K             │  │
+│  │     Intent classifier → Annotation scorer   │  │
 │  └─────────────────────────────────────────────┘  │
 │                                                   │
 │  ┌─────────────────────────────────────────────┐  │
@@ -75,12 +76,13 @@ graph_tool_call/
 ├── core/                          # 핵심 데이터 모델
 │   ├── protocol.py                # GraphEngine Protocol
 │   ├── graph.py                   # NetworkX 구현
-│   └── tool.py                    # ToolSchema + 포맷 파서
+│   └── tool.py                    # MCPAnnotations + ToolSchema + 포맷 파서
 │
 ├── ingest/                        # 수집/변환 레이어
-│   ├── openapi.py                 # OpenAPI/Swagger → ToolSchema[]
+│   ├── openapi.py                 # OpenAPI/Swagger → ToolSchema[] (annotation 자동 추론)
 │   ├── normalizer.py              # Swagger 2.0/3.0/3.1 정규화
-│   ├── mcp.py                     # MCP server → ToolSchema[]
+│   ├── mcp.py                     # MCP tool list → ToolSchema[] (annotations 보존)
+│   ├── arazzo.py                  # Arazzo 1.0.0 워크플로우 파서
 │   └── functions.py               # Python callable → ToolSchema
 │
 ├── analyze/                       # 분석 레이어
@@ -95,7 +97,9 @@ graph_tool_call/
 │   └── llm_provider.py            # OntologyLLM (Ollama/vLLM/OpenAI)
 │
 ├── retrieval/                     # 검색 레이어
-│   ├── engine.py                  # Hybrid retrieval + RRF fusion
+│   ├── engine.py                  # 4-source wRRF retrieval (BM25+Graph+Embedding+Annotation)
+│   ├── intent.py                  # QueryIntent + classify_intent() (한/영 zero-LLM)
+│   ├── annotation_scorer.py       # Intent↔Annotation alignment scoring
 │   ├── graph_search.py            # 그래프 탐색 (BFS)
 │   ├── keyword.py                 # BM25-style keyword scoring
 │   ├── embedding.py               # 임베딩 유사도

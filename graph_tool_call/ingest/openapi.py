@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from graph_tool_call.core.tool import ToolParameter, ToolSchema
+from graph_tool_call.core.tool import MCPAnnotations, ToolParameter, ToolSchema
 from graph_tool_call.ingest.normalizer import NormalizedSpec, normalize
 
 # ---------------------------------------------------------------------------
@@ -221,6 +221,22 @@ def _extract_params_openapi3(
     return params
 
 
+_ANNOTATION_BY_METHOD: dict[str, MCPAnnotations] = {
+    "get": MCPAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True),
+    "head": MCPAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True),
+    "options": MCPAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True),
+    "post": MCPAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False),
+    "put": MCPAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True),
+    "patch": MCPAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False),
+    "delete": MCPAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True),
+}
+
+
+def _infer_annotations(method: str) -> MCPAnnotations | None:
+    """Infer MCP annotations from HTTP method (RFC 7231)."""
+    return _ANNOTATION_BY_METHOD.get(method.lower())
+
+
 def _operation_to_tool(
     operation_id: str,
     operation: dict[str, Any],
@@ -276,6 +292,7 @@ def _operation_to_tool(
         parameters=parameters,
         tags=tags,
         metadata=metadata,
+        annotations=_infer_annotations(method),
     )
 
 

@@ -31,6 +31,7 @@ class RetrievalEngine:
         graph_weight: float = 0.7,
         keyword_weight: float = 0.3,
         embedding_weight: float = 0.0,
+        annotation_weight: float = 0.2,
     ) -> None:
         self._graph = graph
         self._tools = tools
@@ -38,6 +39,7 @@ class RetrievalEngine:
         self._graph_weight = graph_weight
         self._keyword_weight = keyword_weight
         self._embedding_weight = embedding_weight
+        self._annotation_weight = annotation_weight
         self._embedding_index: Any = None
         self._bm25: BM25Scorer | None = None
 
@@ -121,11 +123,19 @@ class RetrievalEngine:
             )
             graph_scores = dict(expanded)
 
+        # Annotation-aware scoring
+        from graph_tool_call.retrieval.annotation_scorer import compute_annotation_scores
+        from graph_tool_call.retrieval.intent import classify_intent
+
+        query_intent = classify_intent(query)
+        annotation_scores = compute_annotation_scores(query_intent, self._tools)
+
         # Collect all score sources for wRRF
         score_sources: list[tuple[dict[str, float], float]] = [
             (keyword_scores, 1.0),
             (graph_scores, 1.0),
             (embedding_scores, 1.0),
+            (annotation_scores, self._annotation_weight),
         ]
 
         # --- ENHANCED: query expansion (Tier 1) ---

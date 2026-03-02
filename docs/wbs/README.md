@@ -6,8 +6,9 @@
 |-------|------|------------|------|------|
 | **0** | Core MVP | graph + retrieval 기본 동작 | ✅ 완료 | - |
 | **1** | Ingest + Dependency | OpenAPI ingest, dependency/ordering detection, retrieval 개선 | ✅ 완료 | - |
-| **2** | Analyze + Search | dedup, embedding, ontology modes (auto/LLM-auto), search modes | ⬜ 대기 | 2주 |
-| **3** | Production | MCP ingest, CLI, 시각화 dashboard, PyPI 배포 | ⬜ 대기 | 2주 |
+| **2** | Analyze + Search | dedup, embedding, ontology modes, search tiers, from_url() | ✅ 완료 | - |
+| **2.5** | MCP Annotation | MCP ingest, intent classifier, annotation-aware retrieval | ✅ 완료 | - |
+| **3** | Production | CLI, 시각화 dashboard, PyPI 배포 | ⬜ 대기 | 2주 |
 | **4** | Community | LangChain 등록, interactive dashboard, 블로그, 최적화 | ⬜ 대기 | 2주 |
 
 ## WBS 전체 트리
@@ -66,7 +67,7 @@ graph-tool-call
 │       ├── 1-9c. Dependency + ordering detection 테스트 ✅
 │       └── 1-9d. examples/swagger_to_agent.py ⬜ Phase 2로 이월
 │
-├── Phase 2: Analyze + Search Modes + Ontology Modes ⬜
+├── Phase 2: Analyze + Search Modes + Ontology Modes ✅
 │   ├── 2-1. Deduplication pipeline
 │   │   ├── 2-1a. Stage 1-3: hash + name fuzzy + schema Jaccard
 │   │   ├── 2-1b. Stage 4-5: semantic + composite score
@@ -98,8 +99,18 @@ graph-tool-call
 │       ├── 2-6c. Tier별 Recall/Precision 비교 ← NEW
 │       └── 2-6d. baseline 비교 (all-tools, random, embedding-only)
 │
+├── Phase 2.5: MCP Annotation-Aware Retrieval ✅
+│   ├── 2.5-1. MCPAnnotations 모델 + ToolSchema 확장 ✅
+│   ├── 2.5-2. OpenAPI ingest HTTP→annotation 자동 추론 (RFC 7231) ✅
+│   ├── 2.5-3. MCP tool list ingest (ingest/mcp.py) ✅
+│   ├── 2.5-4. Intent Classifier (한/영 키워드, zero-LLM) ✅
+│   ├── 2.5-5. Annotation Scorer (intent↔annotation alignment) ✅
+│   ├── 2.5-6. RetrievalEngine 4-source wRRF 통합 ✅
+│   ├── 2.5-7. 부가 통합 (builder, similarity, exports) ✅
+│   └── 2.5-8. 테스트 74개 추가 (255개 total) ✅
+│
 ├── Phase 3: Production + Visualization ⬜
-│   ├── 3-1. MCP server ingest
+│   ├── 3-1. (완료 — Phase 2.5로 이동) MCP server ingest ✅
 │   ├── 3-2. Conflict detection 강화
 │   ├── 3-3. CLI (ingest/analyze/retrieve)
 │   ├── 3-4. Visualization — Static HTML ← EXPANDED

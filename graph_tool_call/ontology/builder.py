@@ -22,13 +22,15 @@ class OntologyBuilder:
 
     def add_tool(self, tool: ToolSchema) -> None:
         """Register a tool as a node in the graph."""
-        self._graph.add_node(
-            tool.name,
-            node_type=NodeType.TOOL,
-            description=tool.description,
-            tags=tool.tags,
-            domain=tool.domain,
-        )
+        kwargs: dict = {
+            "node_type": NodeType.TOOL,
+            "description": tool.description,
+            "tags": tool.tags,
+            "domain": tool.domain,
+        }
+        if tool.annotations is not None:
+            kwargs["annotations"] = tool.annotations.to_mcp_dict()
+        self._graph.add_node(tool.name, **kwargs)
 
     def add_tools(self, tools: list[ToolSchema]) -> None:
         for t in tools:

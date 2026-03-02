@@ -1,9 +1,9 @@
 # Retrieval Engine — 설계 문서
 
-**WBS**: 1-7, 2-2
-**파일**: `retrieval/engine.py`, `retrieval/keyword.py`, `retrieval/embedding.py`
+**WBS**: 1-7, 2-2, 2.5
+**파일**: `retrieval/engine.py`, `retrieval/keyword.py`, `retrieval/embedding.py`, `retrieval/intent.py`, `retrieval/annotation_scorer.py`
 
-## Hybrid 검색 파이프라인
+## Hybrid 검색 파이프라인 (4-source wRRF)
 
 ```
 Query: "사용자 파일을 읽고 DB에 저장해줘"
@@ -12,7 +12,7 @@ Query: "사용자 파일을 읽고 DB에 저장해줘"
   │   tokenize + TF-IDF weighting
   │   → read_file: 0.42, write_file: 0.15, query_db: 0.38
   │
-  ├─ [2] Embedding Cosine Score (optional, Phase 2)
+  ├─ [2] Embedding Cosine Score (optional)
   │   all-MiniLM-L6-v2 (384d)
   │   → read_file: 0.78, write_file: 0.31, save_to_db: 0.72
   │
@@ -21,8 +21,14 @@ Query: "사용자 파일을 읽고 DB에 저장해줘"
   │   relation weight × distance decay
   │   → write_file: 0.7 (COMPLEMENTARY of read_file)
   │
-  └─ [4] RRF Score Fusion
-      final = Σ 1/(k + rank_i) for each method
+  ├─ [4] Annotation Score (NEW — Phase 2.5)
+  │   classify_intent(query) → QueryIntent
+  │   compute_annotation_scores(intent, tools) → alignment scores
+  │   → read_file: 0.85 (readOnly match), delete_file: 0.0 (mismatch)
+  │
+  └─ [5] wRRF Score Fusion
+      sources = [(BM25, 1.0), (Graph, 1.0), (Embedding, 1.0), (Annotation, 0.2)]
+      final = Σ weight_i/(k + rank_i) for each source
       → Top-K 반환
 ```
 
@@ -68,13 +74,24 @@ Tier 2: Full-LLM (선택)   → + intent decomposition (3B~7B+), +500ms~2s
 - **Pre-Query Search**: AI 호출 전, 사용자 입력으로 tool 후보 검색
 - **Model-Driven Search**: Agent LLM이 직접 tool graph 검색 API 호출
 
-## 현재 문제점 → 개선
+## Annotation-Aware Retrieval (Phase 2.5)
 
-| 문제 | Phase 1 개선 | Phase 2 개선 |
-|------|-------------|-------------|
-| token exact match | BM25-style TF-IDF | - |
-| embedding 미연결 | - | all-MiniLM-L6-v2 |
-| 가중합 scoring | RRF fusion | wRRF + embedding |
-| tags TypeError | 버그 수정 | - |
-| LLM 없이만 동작 | SearchMode enum | Tier 1/2 구현 |
-| 모델 직접 검색 불가 | API 스켈레톤 | Model-Driven 완성 |
+상세: [design/annotation-retrieval.md](annotation-retrieval.md)
+
+| 구성 요소 | 역할 |
+|-----------|------|
+| Intent Classifier | query → read/write/delete intent (한/영 키워드) |
+| Annotation Scorer | intent ↔ annotation alignment (0.0~1.0) |
+| wRRF 4th source | annotation_scores, weight=0.2 (보조 signal) |
+| OpenAPI 추론 | HTTP method → annotation 자동 매핑 |
+
+## 개선 이력
+
+| 문제 | Phase 1 개선 | Phase 2 개선 | Phase 2.5 개선 |
+|------|-------------|-------------|---------------|
+| token exact match | BM25-style TF-IDF | - | - |
+| embedding 미연결 | - | all-MiniLM-L6-v2 | - |
+| 가중합 scoring | RRF fusion | wRRF + embedding | + annotation source |
+| tags TypeError | 버그 수정 | - | - |
+| LLM 없이만 동작 | SearchMode enum | Tier 1/2 구현 | - |
+| 행동적 의미 무시 | - | - | intent↔annotation alignment |

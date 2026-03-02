@@ -1,10 +1,49 @@
-"""Tool schema: unified internal representation for OpenAI / Anthropic / LangChain tools."""
+"""Tool schema: unified internal representation for OpenAI / Anthropic / LangChain / MCP tools."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+# camelCase → snake_case mapping for MCP annotations
+_MCP_ANNOTATION_MAP = {
+    "readOnlyHint": "read_only_hint",
+    "destructiveHint": "destructive_hint",
+    "idempotentHint": "idempotent_hint",
+    "openWorldHint": "open_world_hint",
+}
+_MCP_ANNOTATION_REVERSE = {v: k for k, v in _MCP_ANNOTATION_MAP.items()}
+
+
+class MCPAnnotations(BaseModel):
+    """MCP tool annotations (behavioral semantics).
+
+    See: https://spec.modelcontextprotocol.io/2025-03-26/server/tools/
+    """
+
+    read_only_hint: bool | None = None
+    destructive_hint: bool | None = None
+    idempotent_hint: bool | None = None
+    open_world_hint: bool | None = None
+
+    @classmethod
+    def from_mcp_dict(cls, data: dict[str, Any]) -> MCPAnnotations:
+        """Parse from MCP camelCase dict."""
+        kwargs = {}
+        for camel, snake in _MCP_ANNOTATION_MAP.items():
+            if camel in data:
+                kwargs[snake] = data[camel]
+        return cls(**kwargs)
+
+    def to_mcp_dict(self) -> dict[str, Any]:
+        """Serialize to MCP camelCase dict (omitting None values)."""
+        result: dict[str, Any] = {}
+        for snake, camel in _MCP_ANNOTATION_REVERSE.items():
+            val = getattr(self, snake)
+            if val is not None:
+                result[camel] = val
+        return result
 
 
 class ToolParameter(BaseModel):
@@ -26,6 +65,7 @@ class ToolSchema(BaseModel):
     tags: list[str] = Field(default_factory=list)
     domain: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    annotations: MCPAnnotations | None = None
 
     # keep the original callable if available (for LangChain tool execution)
     _callable: Any = None
@@ -135,6 +175,41 @@ def parse_langchain_tool(tool: Any) -> ToolSchema:
     return ts
 
 
+def parse_mcp_tool(tool: dict[str, Any]) -> ToolSchema:
+    """Parse MCP tool format.
+
+    Expected shape::
+
+        {"name": ..., "description": ..., "inputSchema": {"type": "object", "properties": ...},
+         "annotations": {"readOnlyHint": true, ...}}
+    """
+    params: list[ToolParameter] = []
+    raw_schema = tool.get("inputSchema", {})
+    required_names = set(raw_schema.get("required", []))
+    for pname, pschema in raw_schema.get("properties", {}).items():
+        params.append(
+            ToolParameter(
+                name=pname,
+                type=pschema.get("type", "string"),
+                description=pschema.get("description", ""),
+                required=pname in required_names,
+                enum=pschema.get("enum"),
+            )
+        )
+
+    annotations = None
+    raw_annotations = tool.get("annotations")
+    if isinstance(raw_annotations, dict):
+        annotations = MCPAnnotations.from_mcp_dict(raw_annotations)
+
+    return ToolSchema(
+        name=tool["name"],
+        description=tool.get("description", ""),
+        parameters=params,
+        annotations=annotations,
+    )
+
+
 def parse_tool(tool: Any) -> ToolSchema:
     """Auto-detect format and parse into ToolSchema."""
     # Already a ToolSchema
@@ -143,6 +218,8 @@ def parse_tool(tool: Any) -> ToolSchema:
 
     # Dict-based formats
     if isinstance(tool, dict):
+        if "inputSchema" in tool:
+            return parse_mcp_tool(tool)
         if "input_schema" in tool:
             return parse_anthropic_tool(tool)
         return parse_openai_tool(tool)
