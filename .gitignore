@@ -24,3 +24,6 @@ htmlcov/
 # Environment
 .env
 .env.local
+
+# Personal memo
+memo/

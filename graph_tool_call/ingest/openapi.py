@@ -183,6 +183,8 @@ def _extract_params_openapi3(
 
     # Path / query / header / cookie parameters
     for p in operation.get("parameters", []):
+        if "name" not in p:
+            continue  # skip malformed parameters (missing required 'name' field)
         schema = p.get("schema", {})
         is_required = p.get("required", False)
         if required_only and not is_required:

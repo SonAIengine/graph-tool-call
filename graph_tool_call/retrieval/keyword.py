@@ -103,13 +103,31 @@ class BM25Scorer:
         return tokens
 
     @staticmethod
+    def _korean_bigrams(text: str) -> list[str]:
+        """Generate character-level bigrams from Korean (Hangul) text.
+
+        Only processes characters in the Hangul syllable range (U+AC00–U+D7AF).
+        Returns empty list if fewer than 2 Korean characters are found.
+
+        Examples:
+            "정기주문해지하기" -> ["정기", "기주", "주문", "문해", "해지", "지하", "하기"]
+            "a" -> []
+            "한" -> []
+        """
+        korean_chars = [ch for ch in text if "\uac00" <= ch <= "\ud7af"]
+        if len(korean_chars) < 2:
+            return []
+        return [korean_chars[i] + korean_chars[i + 1] for i in range(len(korean_chars) - 1)]
+
+    @staticmethod
     def _tokenize(text: str) -> list[str]:
-        """Improved tokenizer: splits camelCase, snake_case, kebab-case.
+        """Improved tokenizer: splits camelCase, snake_case, kebab-case, Korean bigrams.
 
         Examples:
             "getUserById" -> ["get", "user", "by", "id"]
             "list_all_pets" -> ["list", "all", "pets"]
             "send-email" -> ["send", "email"]
+            "정기주문해지" -> ["정기주문해지", "정기", "기주", "주문", "문해", "해지"]
         """
         # Step 1: Split on separators (underscore, hyphen, space, punctuation)
         parts = re.split(r"[\s_\-/.,;:!?()]+", text)
@@ -126,10 +144,14 @@ class BM25Scorer:
             # e.g. "HTMLParser" -> "HTML Parser"
             camel_split = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", camel_split)
             sub_parts = camel_split.split()
-            # Step 3: Lowercase all
+            # Step 3: Lowercase all and add Korean bigrams
             for sp in sub_parts:
                 lowered = sp.lower()
                 if lowered:
                     tokens.append(lowered)
+                    # Add Korean bigrams if the token contains Korean characters
+                    if re.search(r"[\uac00-\ud7af]", lowered):
+                        bigrams = BM25Scorer._korean_bigrams(lowered)
+                        tokens.extend(bigrams)
 
         return tokens

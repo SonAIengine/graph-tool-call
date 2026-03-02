@@ -138,3 +138,39 @@ class TestIngestFromDict:
         tools, normalized = ingest_openapi(spec)
         assert len(tools) == 3
         assert all(isinstance(t, ToolSchema) for t in tools)
+
+
+class TestMalformedParameters:
+    def test_malformed_param_without_name_skipped(self) -> None:
+        """Parameters missing the 'name' field should be silently skipped."""
+        spec: dict = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "listItems",
+                        "summary": "List items",
+                        "parameters": [
+                            # Malformed: missing 'name' field
+                            {"in": "query", "schema": {"type": "string"}},
+                            # Valid parameter
+                            {
+                                "name": "limit",
+                                "in": "query",
+                                "schema": {"type": "integer"},
+                                "required": False,
+                            },
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        assert len(tools) == 1
+        tool = tools[0]
+        assert tool.name == "listItems"
+        # Only the valid 'limit' parameter should be present
+        param_names = [p.name for p in tool.parameters]
+        assert param_names == ["limit"]
