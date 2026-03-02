@@ -23,6 +23,11 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 
+[tool.poetry.urls]
+Homepage = "https://github.com/SonAIengine/graph-tool-call"
+Repository = "https://github.com/SonAIengine/graph-tool-call"
+"Bug Tracker" = "https://github.com/SonAIengine/graph-tool-call/issues"
+
 [tool.poetry.dependencies]
 python = "^3.10"
 networkx = "^3.0"
