@@ -114,6 +114,22 @@ tools = tg.retrieve("create a new pet", top_k=5)
 #    Graph expansion brings the full CRUD workflow
 ```
 
+### From Swagger UI URL
+
+```python
+from graph_tool_call import ToolGraph
+
+# Auto-discovers all API groups from Swagger UI
+tg = ToolGraph.from_url("https://api.example.com/swagger-ui/index.html")
+
+# Also works with direct spec URLs
+tg = ToolGraph.from_url("https://api.example.com/v3/api-docs")
+
+tools = tg.retrieve("search products", top_k=5)
+```
+
+`from_url()` automatically detects Swagger UI pages, discovers all spec groups via `swagger-config`, and ingests them into a single unified graph. Operations without descriptions get auto-generated fallbacks from their HTTP method, path, and tags.
+
 ### From Python Functions
 
 ```python
@@ -168,7 +184,7 @@ Even a tiny model running on Ollama (`qwen2.5:1.5b`) can meaningfully improve se
 |-------|------|--------|
 | **0** | Core graph engine + hybrid retrieval | ✅ Done (39 tests) |
 | **1** | OpenAPI ingest, BM25+RRF retrieval, dependency detection | ✅ Done (88 tests) |
-| **2** | Deduplication, embeddings, ontology modes (Auto/LLM-Auto), search tiers | Planned |
+| **2** | Deduplication, embeddings, ontology modes (Auto/LLM-Auto), search tiers, `from_url()` | ✅ Done (181 tests) |
 | **3** | MCP ingest, Pyvis visualization, Neo4j export, CLI, PyPI publish | Planned |
 | **4** | Interactive dashboard (Dash Cytoscape), manual editing, community | Planned |
 

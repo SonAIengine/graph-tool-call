@@ -233,13 +233,19 @@ def _operation_to_tool(
 ) -> ToolSchema:
     """Convert a single OpenAPI operation into a ToolSchema."""
     description = operation.get("summary") or operation.get("description", "")
+    tags = operation.get("tags", [])
+
+    # Fallback: auto-generate description from method + path + tags
+    if not description.strip():
+        parts = [method.upper(), path]
+        if tags:
+            parts.append(f"[{', '.join(tags)}]")
+        description = " ".join(parts)
 
     if is_swagger2:
         parameters = _extract_params_swagger2(operation, resolved_spec, required_only=required_only)
     else:
         parameters = _extract_params_openapi3(operation, resolved_spec, required_only=required_only)
-
-    tags = operation.get("tags", [])
 
     # Build response schema metadata
     responses = operation.get("responses", {})

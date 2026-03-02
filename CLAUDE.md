@@ -83,13 +83,13 @@ select = ["E", "F", "I", "N", "W", "UP"]
 ```
 graph_tool_call/
   __init__.py          # public exports, __version__
-  tool_graph.py        # ToolGraph facade (모든 public API)
+  tool_graph.py        # ToolGraph facade (모든 public API, from_url(), _discover_spec_urls())
   core/tool.py         # ToolSchema (Pydantic BaseModel)
   analyze/
     dependency.py      # 자동 의존관계 탐지
     similarity.py      # 5-Stage 중복 탐지 파이프라인
   ingest/
-    openapi.py         # OpenAPI 3.x 파서
+    openapi.py         # OpenAPI 3.x 파서 (description fallback 포함)
     arazzo.py           # Arazzo 1.0.0 워크플로우 파서
   ontology/
     auto.py            # auto_organize (Auto + LLM-Auto 모드)
@@ -100,3 +100,16 @@ graph_tool_call/
     embedding.py       # EmbeddingIndex (sentence-transformers)
     search_llm.py      # SearchLLM ABC + providers
 ```
+
+## 강건화 (Layered Resilience)
+
+### Description Fallback
+`ingest/openapi.py`의 `_operation_to_tool()`에서 summary/description이 비어있으면 자동 생성:
+```
+{METHOD} {path} [{tags}]  →  예: "GET /items [items]"
+```
+
+### from_url()
+`ToolGraph.from_url(url)` — Swagger UI URL에서 swagger-config 자동 탐색 후 여러 spec 통합 ingest.
+- `/swagger-ui/` 포함 URL → swagger-config 파싱 → urls[].url 추출
+- 일반 spec URL → 직접 ingest

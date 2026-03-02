@@ -140,6 +140,82 @@ class TestIngestFromDict:
         assert all(isinstance(t, ToolSchema) for t in tools)
 
 
+class TestDescriptionFallback:
+    def test_empty_description_gets_fallback(self) -> None:
+        """Operations with no summary/description get auto-generated description."""
+        spec: dict = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "listItems",
+                        "tags": ["items"],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        assert len(tools) == 1
+        assert tools[0].description == "GET /items [items]"
+
+    def test_empty_description_no_tags(self) -> None:
+        """Fallback without tags."""
+        spec: dict = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/items/{id}": {
+                    "delete": {
+                        "operationId": "deleteItem",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        assert tools[0].description == "DELETE /items/{id}"
+
+    def test_has_summary_no_fallback(self) -> None:
+        """Operations with summary should keep it, not generate fallback."""
+        spec: dict = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "listItems",
+                        "summary": "List all items",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        assert tools[0].description == "List all items"
+
+    def test_whitespace_only_description_gets_fallback(self) -> None:
+        """Description that's only whitespace should trigger fallback."""
+        spec: dict = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/items": {
+                    "post": {
+                        "operationId": "createItem",
+                        "summary": "   ",
+                        "description": "  ",
+                        "tags": ["items", "crud"],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        assert tools[0].description == "POST /items [items, crud]"
+
+
 class TestMalformedParameters:
     def test_malformed_param_without_name_skipped(self) -> None:
         """Parameters missing the 'name' field should be silently skipped."""
