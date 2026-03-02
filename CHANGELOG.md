@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned — Phase 3+
+- Pyvis HTML graph visualization with progressive disclosure
+- Neo4j Cypher / GraphML export
+- CLI tool (`graph-tool-call ingest/retrieve/visualize`)
+- Interactive Dashboard (Dash Cytoscape) — visualization + manual editing
+- LangChain community package
+
+## [0.4.0] - 2026-03-03
+
 ### Added
 - **MCP Annotation-Aware Retrieval** — query intent와 tool annotation alignment 기반 retrieval signal
   - `MCPAnnotations` 모델: `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`
@@ -22,13 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 255개 (74개 신규)
   - `test_mcp_annotations.py`, `test_ingest_mcp.py`, `test_intent_classifier.py`
   - `test_annotation_scorer.py`, `test_annotation_retrieval.py`, `test_openapi_annotations.py`
-
-### Planned — Phase 3+
-- Pyvis HTML graph visualization with progressive disclosure
-- Neo4j Cypher / GraphML export
-- CLI tool (`graph-tool-call ingest/retrieve/visualize`)
-- Interactive Dashboard (Dash Cytoscape) — visualization + manual editing
-- LangChain community package
 
 ## [0.3.0] - 2026-03-03
 
@@ -115,7 +117,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SonAIengine/graph-tool-call/releases/tag/v0.1.0
