@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.request
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 from graph_tool_call.core.graph import NetworkXGraph
 from graph_tool_call.core.protocol import GraphEngine
@@ -18,37 +19,87 @@ from graph_tool_call.retrieval.engine import RetrievalEngine, SearchMode
 from graph_tool_call.serialization import load_graph, save_graph
 
 
+def _encode_spec_url(base: str, raw_url: str) -> str:
+    """Convert a raw spec URL (possibly with spaces/unicode) to an absolute, encoded URL."""
+    absolute = urljoin(base + "/", raw_url)
+    # Re-encode the path portion to handle spaces and non-ASCII characters
+    # Split at the scheme+host boundary, encode only the path
+    if "://" in absolute:
+        scheme_host, _, path = absolute.partition("://")
+        host, _, path_part = path.partition("/")
+        encoded_path = quote("/" + path_part, safe="/:@!$&'()*+,;=-._~")
+        return f"{scheme_host}://{host}{encoded_path}"
+    return absolute
+
+
 def _discover_spec_urls(url: str) -> list[str]:
     """Discover OpenAPI spec URLs from a Swagger UI or direct spec URL.
 
     If the URL contains ``/swagger-ui``, attempts to find the swagger-config
     endpoint and extract spec URLs from it. Otherwise returns the URL as-is.
+
+    Discovery order:
+    1. Common swagger-config endpoints (SpringDoc v1/v2)
+    2. Parse ``swagger-initializer.js`` to extract ``configUrl``
+    3. Fallback to ``{base}/v3/api-docs``
     """
-    # Detect Swagger UI URLs
     swagger_ui_marker = "/swagger-ui"
-    if swagger_ui_marker in url:
-        base = url[: url.index(swagger_ui_marker)]
-        # Try swagger-config endpoint
-        config_urls_to_try = [
-            f"{base}/swagger-config",
-            f"{base}/v3/api-docs/swagger-config",
-        ]
-        for config_url in config_urls_to_try:
-            try:
-                with urllib.request.urlopen(config_url) as resp:  # noqa: S310
-                    config = json.loads(resp.read().decode("utf-8"))
-                urls = config.get("urls", [])
-                if urls:
-                    return [urljoin(base + "/", u["url"]) for u in urls if "url" in u]
-            except Exception:  # noqa: BLE001
-                continue
+    if swagger_ui_marker not in url:
+        return [url]
 
-        # Fallback: try v3/api-docs directly
-        fallback_url = f"{base}/v3/api-docs"
-        return [fallback_url]
+    base = url[: url.index(swagger_ui_marker)]
+    ui_base = url[: url.index(swagger_ui_marker)] + "/swagger-ui"
 
-    # Not a Swagger UI URL — use as-is
-    return [url]
+    # Step 1: Try common swagger-config endpoints
+    config_urls_to_try = [
+        f"{base}/swagger-config",
+        f"{base}/v3/api-docs/swagger-config",
+        f"{base}/api-docs/swagger-config",
+    ]
+    for config_url in config_urls_to_try:
+        result = _try_swagger_config(config_url, base)
+        if result:
+            return result
+
+    # Step 2: Parse swagger-initializer.js to find configUrl
+    init_js_url = f"{ui_base}/swagger-initializer.js"
+    try:
+        with urllib.request.urlopen(init_js_url) as resp:  # noqa: S310
+            js_text = resp.read().decode("utf-8")
+        # Extract configUrl from JS: "configUrl" : "/api/bo/api-docs/swagger-config"
+        match = re.search(r'"configUrl"\s*:\s*"([^"]+)"', js_text)
+        if match:
+            config_path = match.group(1)
+            # Build absolute config URL
+            if config_path.startswith("/"):
+                # Absolute path — combine with scheme+host
+                from urllib.parse import urlparse
+
+                parsed = urlparse(url)
+                config_url = f"{parsed.scheme}://{parsed.netloc}{config_path}"
+            else:
+                config_url = urljoin(base + "/", config_path)
+            result = _try_swagger_config(config_url, base)
+            if result:
+                return result
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Step 3: Fallback
+    return [f"{base}/v3/api-docs"]
+
+
+def _try_swagger_config(config_url: str, base: str) -> list[str] | None:
+    """Try fetching a swagger-config URL and extract spec URLs."""
+    try:
+        with urllib.request.urlopen(config_url) as resp:  # noqa: S310
+            config = json.loads(resp.read().decode("utf-8"))
+        urls = config.get("urls", [])
+        if urls:
+            return [_encode_spec_url(base, u["url"]) for u in urls if "url" in u]
+    except Exception:  # noqa: BLE001
+        pass
+    return None
 
 
 class ToolGraph:
