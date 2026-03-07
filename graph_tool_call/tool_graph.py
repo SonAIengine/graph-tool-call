@@ -313,10 +313,42 @@ class ToolGraph:
         self._invalidate_retrieval()
 
     def auto_organize(self, llm: Any = None) -> None:
-        """Automatically organize tools using LLM (Phase 2)."""
+        """Automatically organize tools using LLM (Phase 2).
+
+        Parameters
+        ----------
+        llm:
+            Any of: OntologyLLM instance, callable(str)->str, OpenAI client,
+            or string shorthand like ``"ollama/qwen2.5:7b"``.
+            If None, runs auto-mode only (tags/domain/embedding clustering).
+        """
         from graph_tool_call.ontology.auto import auto_organize
 
-        auto_organize(self._builder, list(self._tools.values()), llm)
+        wrapped = None
+        if llm is not None:
+            from graph_tool_call.ontology.llm_provider import wrap_llm
+
+            wrapped = wrap_llm(llm)
+        auto_organize(self._builder, list(self._tools.values()), wrapped)
+
+    def build_ontology(self, llm: Any = None, *, lint: bool = False, lint_level: int = 2) -> None:
+        """Build a complete ontology from registered tools.
+
+        Convenience method that runs auto-organization (and optionally LLM
+        enhancement) on all currently registered tools.
+
+        Parameters
+        ----------
+        llm:
+            Any of: OntologyLLM instance, callable(str)->str, OpenAI client,
+            or string shorthand like ``"ollama/qwen2.5:7b"``.
+        lint:
+            If True and tools were ingested from OpenAPI specs, re-lint is skipped
+            (lint should be applied during ingest, not after).
+        lint_level:
+            Unused (reserved for future use). Lint is applied during ingest.
+        """
+        self.auto_organize(llm=llm)
 
     # --- deduplication ---
 

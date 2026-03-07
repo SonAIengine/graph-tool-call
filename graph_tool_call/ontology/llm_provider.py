@@ -283,3 +283,133 @@ class OpenAICompatibleOntologyLLM(OntologyLLM):
             if choices:
                 return choices[0].get("message", {}).get("content", "")
             return ""
+
+
+# ---------------------------------------------------------------------------
+# Callable Adapter
+# ---------------------------------------------------------------------------
+
+
+class CallableOntologyLLM(OntologyLLM):
+    """Wraps any callable ``(str) -> str`` as an OntologyLLM."""
+
+    def __init__(self, fn: Any) -> None:
+        self._fn = fn
+
+    def generate(self, prompt: str) -> str:
+        result = self._fn(prompt)
+        if isinstance(result, str):
+            return result
+        return str(result)
+
+
+# ---------------------------------------------------------------------------
+# OpenAI Client Adapter
+# ---------------------------------------------------------------------------
+
+
+class OpenAIClientOntologyLLM(OntologyLLM):
+    """Wraps an OpenAI client instance (openai.OpenAI or similar)."""
+
+    def __init__(self, client: Any, model: str = "gpt-4o-mini") -> None:
+        self._client = client
+        self._model = model
+
+    def generate(self, prompt: str) -> str:
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+        )
+        return response.choices[0].message.content or ""
+
+
+# ---------------------------------------------------------------------------
+# Auto-wrap any LLM input
+# ---------------------------------------------------------------------------
+
+
+def wrap_llm(llm: Any) -> OntologyLLM:
+    """Auto-detect LLM type and wrap as OntologyLLM.
+
+    Supported inputs:
+
+    - ``OntologyLLM`` instance — returned as-is
+    - ``callable(str) -> str`` — wrapped with CallableOntologyLLM
+    - OpenAI client (has ``chat.completions``) — wrapped with OpenAIClientOntologyLLM
+    - ``str`` shorthand — parsed as provider/model:
+        - ``"ollama/qwen2.5:7b"`` → OllamaOntologyLLM
+        - ``"openai/gpt-4o-mini"`` → OpenAICompatibleOntologyLLM
+        - ``"litellm/..."`` → uses litellm.completion via CallableOntologyLLM
+
+    Examples::
+
+        wrap_llm(OllamaOntologyLLM())           # pass-through
+        wrap_llm(lambda p: my_llm(p))            # callable
+        wrap_llm(openai.OpenAI())                # OpenAI client
+        wrap_llm("ollama/qwen2.5:7b")            # string shorthand
+    """
+    if isinstance(llm, OntologyLLM):
+        return llm
+
+    # String shorthand: "provider/model"
+    if isinstance(llm, str):
+        return _wrap_string(llm)
+
+    # OpenAI-like client: has chat.completions.create
+    if hasattr(llm, "chat") and hasattr(llm.chat, "completions"):
+        return OpenAIClientOntologyLLM(llm)
+
+    # Callable: (str) -> str
+    if callable(llm):
+        return CallableOntologyLLM(llm)
+
+    msg = (
+        f"Cannot auto-wrap {type(llm).__name__} as OntologyLLM. "
+        "Pass an OntologyLLM instance, a callable(str)->str, "
+        "an OpenAI client, or a string like 'ollama/qwen2.5:7b'."
+    )
+    raise TypeError(msg)
+
+
+def _wrap_string(spec: str) -> OntologyLLM:
+    """Parse a 'provider/model' string into an OntologyLLM."""
+    if "/" not in spec:
+        msg = f"LLM string must be 'provider/model', got: {spec!r}"
+        raise ValueError(msg)
+
+    provider, model = spec.split("/", 1)
+    provider = provider.lower()
+
+    if provider == "ollama":
+        return OllamaOntologyLLM(model=model)
+
+    if provider == "openai":
+        import os
+
+        return OpenAICompatibleOntologyLLM(
+            model=model,
+            api_key=os.environ.get("OPENAI_API_KEY", ""),
+        )
+
+    if provider == "litellm":
+
+        def _litellm_fn(prompt: str) -> str:
+            try:
+                import litellm
+            except ImportError:
+                raise ImportError(
+                    "litellm is required for 'litellm/...' shorthand. "
+                    "Install with: pip install litellm"
+                )
+            response = litellm.completion(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+            )
+            return response.choices[0].message.content or ""
+
+        return CallableOntologyLLM(_litellm_fn)
+
+    # Generic OpenAI-compatible with provider as base_url hint
+    return OpenAICompatibleOntologyLLM(model=model)
