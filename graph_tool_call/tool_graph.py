@@ -448,23 +448,50 @@ class ToolGraph:
         skip_deprecated: bool = True,
         detect_dependencies: bool = True,
         min_confidence: float = 0.7,
+        lint: bool = False,
+        lint_level: int = 2,
+        llm: Any = None,
     ) -> ToolGraph:
         """Create a ToolGraph by fetching OpenAPI spec(s) from a URL.
 
         Supports:
         - Direct spec URLs (JSON/YAML)
         - Swagger UI URLs (auto-discovers specs via swagger-config)
+
+        Parameters
+        ----------
+        lint:
+            If True, run ai-api-lint auto-fix on the spec before ingest.
+            Requires: ``pip install graph-tool-call[lint]``
+        lint_level:
+            Fixer level (1=safe only, 2=safe+inferred). Default 2.
+        llm:
+            Optional OntologyLLM instance for LLM-enhanced ontology construction.
+            Runs auto_organize() with LLM after all specs are ingested.
         """
+        from graph_tool_call.ingest.openapi import _load_spec
+
         spec_urls = _discover_spec_urls(url)
         tg = cls()
         for spec_url in spec_urls:
+            raw_spec = _load_spec(spec_url)
+
+            if lint:
+                from graph_tool_call.ingest.lint import lint_and_fix_spec
+
+                raw_spec, _ = lint_and_fix_spec(raw_spec, max_level=lint_level)
+
             tg.ingest_openapi(
-                spec_url,
+                raw_spec,
                 required_only=required_only,
                 skip_deprecated=skip_deprecated,
                 detect_dependencies=detect_dependencies,
                 min_confidence=min_confidence,
             )
+
+        if llm is not None:
+            tg.auto_organize(llm=llm)
+
         return tg
 
     # --- serialization ---

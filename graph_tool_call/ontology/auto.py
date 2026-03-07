@@ -283,3 +283,15 @@ def _llm_auto_organize(
                     builder.assign_category(tname, cat_name_clean)
                 except (KeyError, ValueError):
                     pass
+
+    # Enrich keywords for BM25 search quality
+    keywords = llm.enrich_keywords(summaries)
+    for tool_name, kws in keywords.items():
+        if tool_name not in tool_names:
+            continue
+        if not builder._graph.has_node(tool_name):
+            continue
+        attrs = builder._graph.get_node_attrs(tool_name)
+        existing_tags = attrs.get("tags", [])
+        new_tags = list(set(existing_tags + [k.lower() for k in kws]))
+        builder._graph.set_node_attrs(tool_name, tags=new_tags)

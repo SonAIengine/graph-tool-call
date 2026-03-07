@@ -66,6 +66,22 @@ Output a JSON object:
 }}
 Only output the JSON object, nothing else."""
 
+_KEYWORD_ENRICHMENT_PROMPT = """\
+For each API tool below, generate 3-5 English search keywords that would help \
+find the tool via keyword search. Include synonyms, domain terms, and common \
+query patterns. If the description is in a non-English language, also include \
+translated terms.
+
+Tools:
+{tools_list}
+
+Output a JSON object:
+{{
+  "tool_name": ["keyword1", "keyword2", "keyword3"],
+  ...
+}}
+Only output the JSON object, nothing else."""
+
 
 def _format_tools_list(tools: list[ToolSummary]) -> str:
     lines = []
@@ -161,6 +177,33 @@ class OntologyLLM(ABC):
             pass
 
         return {}
+
+    def enrich_keywords(
+        self,
+        tools: list[ToolSummary],
+        batch_size: int = 50,
+    ) -> dict[str, list[str]]:
+        """Generate English search keywords for tools to improve BM25 retrieval.
+
+        Returns a dict of tool_name -> list of keywords.
+        """
+        all_keywords: dict[str, list[str]] = {}
+
+        for i in range(0, len(tools), batch_size):
+            batch = tools[i : i + batch_size]
+            prompt = _KEYWORD_ENRICHMENT_PROMPT.format(tools_list=_format_tools_list(batch))
+            response = self.generate(prompt)
+
+            try:
+                parsed = _extract_json(response)
+                if isinstance(parsed, dict):
+                    for name, keywords in parsed.items():
+                        if isinstance(keywords, list):
+                            all_keywords[name] = [str(k) for k in keywords]
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+
+        return all_keywords
 
 
 # ---------------------------------------------------------------------------
