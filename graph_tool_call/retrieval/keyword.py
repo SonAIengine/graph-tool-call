@@ -7,6 +7,56 @@ import re
 
 from graph_tool_call.core.tool import ToolSchema
 
+# High-frequency tokens in API tool descriptions that carry little discriminative value.
+# These appear in many tools and pollute BM25 scoring (e.g., "조회" appears in 80%+ of Korean APIs).
+_STOPWORDS = frozenset(
+    {
+        # Korean API verbs (extremely high DF)
+        "조회",
+        "목록",
+        "확인",
+        "관리",
+        "등록",
+        "수정",
+        "삭제",
+        "저장",
+        "처리",
+        "검색",
+        "정보",
+        "상세",
+        "데이터",
+        "설정",
+        "변경",
+        # English API verbs (extremely high DF)
+        "get",
+        "list",
+        "set",
+        "update",
+        "delete",
+        "create",
+        "save",
+        "find",
+        "check",
+        "search",
+        "info",
+        "data",
+        "detail",
+        "query",
+        # Common filler
+        "the",
+        "a",
+        "an",
+        "of",
+        "for",
+        "to",
+        "in",
+        "by",
+        "is",
+        "and",
+        "or",
+    }
+)
+
 
 class BM25Scorer:
     """BM25 scoring for tool corpus.
@@ -57,9 +107,12 @@ class BM25Scorer:
 
         Returns dict of tool_name -> BM25 score (only non-zero scores).
         """
-        query_tokens = self._tokenize(query)
-        if not query_tokens:
+        raw_tokens = self._tokenize(query)
+        if not raw_tokens:
             return {}
+        # Remove stopwords from query; keep all if everything is a stopword
+        filtered = [t for t in raw_tokens if t not in _STOPWORDS]
+        query_tokens = filtered if filtered else raw_tokens
 
         scores: dict[str, float] = {}
         for name, doc_tokens in self._tool_tokens.items():

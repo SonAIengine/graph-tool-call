@@ -167,11 +167,11 @@ class RetrievalEngine:
         query_intent = classify_intent(query)
         annotation_scores = compute_annotation_scores(query_intent, self._tools)
 
-        # Collect all score sources for wRRF
+        # Collect all score sources for wRRF (use configured weights)
         score_sources: list[tuple[dict[str, float], float]] = [
-            (keyword_scores, 1.0),
-            (graph_scores, 1.0),
-            (embedding_scores, 1.0),
+            (keyword_scores, self._keyword_weight),
+            (graph_scores, self._graph_weight),
+            (embedding_scores, self._embedding_weight),
             (annotation_scores, self._annotation_weight),
         ]
 
