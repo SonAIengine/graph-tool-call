@@ -42,6 +42,8 @@ class RetrievalEngine:
         self._annotation_weight = annotation_weight
         self._embedding_index: Any = None
         self._bm25: BM25Scorer | None = None
+        self._reranker: Any = None
+        self._diversity_lambda: float | None = None
 
     def _get_bm25(self) -> BM25Scorer:
         """Lazy-initialize BM25 scorer."""
@@ -58,6 +60,20 @@ class RetrievalEngine:
             self._keyword_weight = 0.2
             self._embedding_weight = 0.3
 
+    def set_reranker(self, reranker: Any) -> None:
+        """Attach a CrossEncoderReranker for second-stage reranking."""
+        self._reranker = reranker
+
+    def set_diversity(self, lambda_: float = 0.7) -> None:
+        """Enable MMR diversity reranking.
+
+        Parameters
+        ----------
+        lambda_:
+            Balance between relevance (1.0) and diversity (0.0). Default 0.7.
+        """
+        self._diversity_lambda = lambda_
+
     def retrieve(
         self,
         query: str,
@@ -65,6 +81,7 @@ class RetrievalEngine:
         max_graph_depth: int = 2,
         mode: str | SearchMode = SearchMode.BASIC,
         llm: Any = None,
+        history: list[str] | None = None,
     ) -> list[ToolSchema]:
         """Retrieve the most relevant tools for a query.
 
@@ -81,18 +98,38 @@ class RetrievalEngine:
         llm:
             Optional SearchLLM for ENHANCED/FULL modes.
             If None, ENHANCED/FULL fall back to BASIC.
+        history:
+            Optional list of previously called tool names in the current session.
+            Enables history-aware retrieval: boosts tools related to prior calls
+            and uses them as additional graph seeds.
         """
         if isinstance(mode, str):
             mode = SearchMode(mode)
 
+        # --- History-aware query augmentation ---
+        effective_query = query
+        if history:
+            # Append prior tool names/descriptions as context
+            history_context = []
+            for tool_name in history:
+                if tool_name in self._tools:
+                    t = self._tools[tool_name]
+                    history_context.append(f"{t.name} {t.description}")
+            if history_context:
+                effective_query = query + " " + " ".join(history_context)
+
         # --- BASIC pipeline (always runs) ---
-        keyword_scores = self._get_bm25().score(query)
+        keyword_scores = self._get_bm25().score(effective_query)
         if not keyword_scores:
             keyword_scores = self._keyword_match(query)
 
-        # Graph expansion from keyword seeds
+        # Graph expansion from keyword seeds + history seeds
         sorted_by_score = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
         seed_tools = [name for name, _ in sorted_by_score[:5]]
+        if history:
+            for tool_name in history:
+                if tool_name in self._tools and tool_name not in seed_tools:
+                    seed_tools.append(tool_name)
         graph_scores: dict[str, float] = {}
         if seed_tools:
             expanded = self._searcher.expand_from_seeds(
@@ -169,22 +206,47 @@ class RetrievalEngine:
             fused_scores = {}
 
         # Filter to TOOL nodes only and sort
-        final_scores: list[tuple[str, float]] = []
+        final_scores: dict[str, float] = {}
         for name, score in fused_scores.items():
             if not self._graph.has_node(name):
                 continue
             attrs = self._graph.get_node_attrs(name)
             if attrs.get("node_type") != NodeType.TOOL:
                 continue
-            final_scores.append((name, score))
+            final_scores[name] = score
 
-        final_scores.sort(key=lambda x: x[1], reverse=True)
+        # History boost: slightly demote already-used tools to favor new discoveries
+        if history:
+            for tool_name in history:
+                if tool_name in final_scores:
+                    final_scores[tool_name] *= 0.8
 
-        result: list[ToolSchema] = []
-        for name, _ in final_scores[:top_k]:
+        ranked = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)
+
+        # Determine how many candidates to pass to post-processing
+        rerank_pool = top_k * 3 if (self._reranker or self._diversity_lambda) else top_k
+        candidates: list[ToolSchema] = []
+        for name, _ in ranked[:rerank_pool]:
             if name in self._tools:
-                result.append(self._tools[name])
-        return result
+                candidates.append(self._tools[name])
+
+        # --- Cross-encoder reranking ---
+        if self._reranker is not None and candidates:
+            candidates = self._reranker.rerank(query, candidates, top_k=top_k * 2)
+
+        # --- MMR diversity reranking ---
+        if self._diversity_lambda is not None and candidates:
+            from graph_tool_call.retrieval.diversity import mmr_rerank
+
+            candidates = mmr_rerank(
+                candidates,
+                final_scores,
+                lambda_=self._diversity_lambda,
+                top_k=top_k,
+                embedding_index=self._embedding_index,
+            )
+
+        return candidates[:top_k]
 
     @staticmethod
     def _rrf_fuse(

@@ -375,6 +375,29 @@ class ToolGraph:
         engine = self._get_retrieval_engine()
         engine.set_embedding_index(index)
 
+    def enable_reranker(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> None:
+        """Enable cross-encoder reranking for improved precision.
+
+        Adds a second-stage reranker after wRRF fusion. The cross-encoder
+        jointly encodes (query, tool_description) pairs for more precise scoring.
+        """
+        from graph_tool_call.retrieval.reranker import CrossEncoderReranker
+
+        reranker = CrossEncoderReranker(model_name=model_name)
+        engine = self._get_retrieval_engine()
+        engine.set_reranker(reranker)
+
+    def enable_diversity(self, lambda_: float = 0.7) -> None:
+        """Enable MMR diversity reranking to reduce redundant results.
+
+        Parameters
+        ----------
+        lambda_:
+            Balance between relevance (1.0) and diversity (0.0). Default 0.7.
+        """
+        engine = self._get_retrieval_engine()
+        engine.set_diversity(lambda_)
+
     # --- retrieval ---
 
     def retrieve(
@@ -384,6 +407,7 @@ class ToolGraph:
         max_graph_depth: int = 2,
         mode: str | SearchMode = SearchMode.BASIC,
         llm: Any = None,
+        history: list[str] | None = None,
     ) -> list[ToolSchema]:
         """Retrieve the most relevant tools for a query.
 
@@ -392,10 +416,17 @@ class ToolGraph:
         llm:
             Optional SearchLLM for ENHANCED/FULL modes.
             If None, ENHANCED/FULL fall back to BASIC.
+        history:
+            Optional list of previously called tool names for history-aware retrieval.
         """
         engine = self._get_retrieval_engine()
         return engine.retrieve(
-            query, top_k=top_k, max_graph_depth=max_graph_depth, mode=mode, llm=llm
+            query,
+            top_k=top_k,
+            max_graph_depth=max_graph_depth,
+            mode=mode,
+            llm=llm,
+            history=history,
         )
 
     def _get_retrieval_engine(self) -> RetrievalEngine:
