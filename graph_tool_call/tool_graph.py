@@ -450,6 +450,26 @@ class ToolGraph:
         tg._tools = tools
         return tg
 
+    # --- visualization / export ---
+
+    def export_html(self, path: str | Path, *, physics: bool = True) -> None:
+        """Export the graph to an interactive HTML file (requires pyvis)."""
+        from graph_tool_call.visualization.html_export import export_html
+
+        export_html(self._graph, self._tools, path, physics=physics)
+
+    def export_graphml(self, path: str | Path) -> None:
+        """Export the graph to GraphML format (compatible with Gephi, yEd)."""
+        from graph_tool_call.visualization.graphml_export import export_graphml
+
+        export_graphml(self._graph, self._tools, path)
+
+    def export_cypher(self, path: str | Path) -> None:
+        """Export the graph as Neo4j Cypher CREATE statements."""
+        from graph_tool_call.visualization.cypher_export import export_cypher
+
+        export_cypher(self._graph, self._tools, path)
+
     # --- info ---
 
     def __repr__(self) -> str:
