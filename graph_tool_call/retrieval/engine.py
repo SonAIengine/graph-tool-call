@@ -60,6 +60,24 @@ class RetrievalEngine:
             self._keyword_weight = 0.2
             self._embedding_weight = 0.3
 
+    def set_weights(
+        self,
+        *,
+        keyword: float | None = None,
+        graph: float | None = None,
+        embedding: float | None = None,
+        annotation: float | None = None,
+    ) -> None:
+        """Manually set wRRF fusion weights."""
+        if keyword is not None:
+            self._keyword_weight = keyword
+        if graph is not None:
+            self._graph_weight = graph
+        if embedding is not None:
+            self._embedding_weight = embedding
+        if annotation is not None:
+            self._annotation_weight = annotation
+
     def set_reranker(self, reranker: Any) -> None:
         """Attach a CrossEncoderReranker for second-stage reranking."""
         self._reranker = reranker

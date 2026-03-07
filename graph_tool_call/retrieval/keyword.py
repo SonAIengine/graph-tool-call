@@ -7,42 +7,10 @@ import re
 
 from graph_tool_call.core.tool import ToolSchema
 
-# High-frequency tokens in API tool descriptions that carry little discriminative value.
-# These appear in many tools and pollute BM25 scoring (e.g., "조회" appears in 80%+ of Korean APIs).
-_STOPWORDS = frozenset(
+# Baseline stopwords — always removed regardless of corpus.
+# These are common filler words that never carry discriminative value.
+_BASE_STOPWORDS = frozenset(
     {
-        # Korean API verbs (extremely high DF)
-        "조회",
-        "목록",
-        "확인",
-        "관리",
-        "등록",
-        "수정",
-        "삭제",
-        "저장",
-        "처리",
-        "검색",
-        "정보",
-        "상세",
-        "데이터",
-        "설정",
-        "변경",
-        # English API verbs (extremely high DF)
-        "get",
-        "list",
-        "set",
-        "update",
-        "delete",
-        "create",
-        "save",
-        "find",
-        "check",
-        "search",
-        "info",
-        "data",
-        "detail",
-        "query",
-        # Common filler
         "the",
         "a",
         "an",
@@ -71,15 +39,18 @@ class BM25Scorer:
         tools: dict[str, ToolSchema],
         k1: float = 1.2,
         b: float = 0.75,
+        stopword_df_threshold: float = 0.5,
     ) -> None:
         self._k1 = k1
         self._b = b
         self._tools = tools
+        self._stopword_df_threshold = stopword_df_threshold
         self._doc_freqs: dict[str, int] = {}  # term -> number of docs containing it
         self._doc_lens: dict[str, int] = {}  # tool_name -> doc length
         self._avg_dl: float = 0.0
         self._n_docs: int = 0
         self._tool_tokens: dict[str, list[str]] = {}  # tool_name -> token list
+        self._stopwords: frozenset[str] = _BASE_STOPWORDS
         self._build_index()
 
     def _build_index(self) -> None:
@@ -102,6 +73,15 @@ class BM25Scorer:
 
         self._avg_dl = total_len / self._n_docs if self._n_docs > 0 else 0.0
 
+        # Auto-compute stopwords: tokens appearing in >threshold% of documents
+        if self._n_docs >= 10:
+            auto_stops = {
+                term
+                for term, df in self._doc_freqs.items()
+                if df / self._n_docs >= self._stopword_df_threshold and len(term) <= 4
+            }
+            self._stopwords = _BASE_STOPWORDS | frozenset(auto_stops)
+
     def score(self, query: str) -> dict[str, float]:
         """Score all tools against query using BM25.
 
@@ -111,7 +91,7 @@ class BM25Scorer:
         if not raw_tokens:
             return {}
         # Remove stopwords from query; keep all if everything is a stopword
-        filtered = [t for t in raw_tokens if t not in _STOPWORDS]
+        filtered = [t for t in raw_tokens if t not in self._stopwords]
         query_tokens = filtered if filtered else raw_tokens
 
         scores: dict[str, float] = {}

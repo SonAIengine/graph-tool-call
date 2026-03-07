@@ -442,6 +442,27 @@ class ToolGraph:
         engine = self._get_retrieval_engine()
         engine.set_diversity(lambda_)
 
+    def set_weights(
+        self,
+        *,
+        keyword: float | None = None,
+        graph: float | None = None,
+        embedding: float | None = None,
+        annotation: float | None = None,
+    ) -> None:
+        """Set wRRF fusion weights for retrieval.
+
+        Default weights: keyword=0.3 (0.2 with embedding), graph=0.7 (0.5),
+        embedding=0.0 (0.3 when enabled), annotation=0.2.
+
+        Example::
+
+            tg.enable_embedding("openai/text-embedding-3-large")
+            tg.set_weights(embedding=0.5, keyword=0.1)  # boost embedding
+        """
+        engine = self._get_retrieval_engine()
+        engine.set_weights(keyword=keyword, graph=graph, embedding=embedding, annotation=annotation)
+
     # --- retrieval ---
 
     def retrieve(
