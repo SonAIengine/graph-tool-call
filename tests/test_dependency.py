@@ -183,6 +183,63 @@ def test_no_self_reference():
     assert len(self_refs) == 0, "No self-referencing relations should exist"
 
 
+def test_response_request_data_flow():
+    """Tool A's response schema matching Tool B's request schema → PRECEDES."""
+    tools = [
+        ToolSchema(
+            name="createUser",
+            description="Create a new user",
+            metadata={
+                "method": "post",
+                "path": "/users",
+                "response_schema": {"$ref": "#/components/schemas/User"},
+            },
+        ),
+        ToolSchema(
+            name="updateUser",
+            description="Update user profile",
+            metadata={
+                "method": "put",
+                "path": "/users/{userId}",
+                "request_body": {"$ref": "#/components/schemas/User"},
+            },
+        ),
+    ]
+    relations = detect_dependencies(tools, min_confidence=0.7)
+    rel = _find_relation(relations, "createUser", "updateUser", RelationType.PRECEDES)
+    assert rel is not None, "Response→Request data flow should produce PRECEDES"
+    assert rel.confidence >= 0.9
+    assert rel.layer == 1
+    assert "response feeds into" in rel.evidence
+
+
+def test_response_flow_no_false_positive():
+    """Tools with no shared response→request refs should not get PRECEDES from data flow."""
+    tools = [
+        ToolSchema(
+            name="listOrders",
+            description="List orders",
+            metadata={
+                "method": "get",
+                "path": "/orders",
+                "response_schema": {"$ref": "#/components/schemas/OrderList"},
+            },
+        ),
+        ToolSchema(
+            name="createPayment",
+            description="Create payment",
+            metadata={
+                "method": "post",
+                "path": "/payments",
+                "request_body": {"$ref": "#/components/schemas/Payment"},
+            },
+        ),
+    ]
+    relations = detect_dependencies(tools, min_confidence=0.0)
+    flow_rels = [r for r in relations if r.evidence and "response feeds into" in r.evidence]
+    assert len(flow_rels) == 0, "No data flow PRECEDES between unrelated schemas"
+
+
 def test_generic_params_filtered():
     """Generic param names like 'id' alone should not cause false matches."""
     tools = [

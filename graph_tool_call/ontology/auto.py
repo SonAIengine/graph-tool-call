@@ -133,14 +133,16 @@ def _auto_cluster_by_embedding(builder: OntologyBuilder, tools: list[Any]) -> No
     n_clusters = min(n_clusters, n)
 
     # Assign clusters by similarity to centroid seeds
-    # Pick n_clusters seeds spread across the tool list
+    # Pick n_clusters seeds spread across the tool list (deterministic)
+    # Sort names first to ensure consistent ordering regardless of dict iteration
+    sorted_indices = np.argsort(names)
     step = max(1, n // n_clusters)
-    seed_indices = list(range(0, n, step))[:n_clusters]
+    seed_indices = sorted_indices[::step][:n_clusters].tolist()
     centroids = matrix[seed_indices].copy()
 
-    # K-means-style assignment (3 iterations)
+    # K-means-style assignment (5 iterations for better convergence)
     labels = np.zeros(n, dtype=int)
-    for _ in range(3):
+    for _ in range(5):
         # Assign
         sims = matrix @ centroids.T  # (n, k)
         labels = np.argmax(sims, axis=1)

@@ -342,7 +342,12 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
 
 
 def _detect_shared_schemas(tools: list[ToolSchema]) -> list[DetectedRelation]:
-    """Detect COMPLEMENTARY relations from shared ``$ref`` schema references."""
+    """Detect COMPLEMENTARY/PRECEDES relations from shared schema references.
+
+    Checks both request body and response schemas:
+    - Shared $ref in any metadata → COMPLEMENTARY
+    - Tool A's response $ref matches Tool B's request $ref → PRECEDES (data flow)
+    """
     relations: list[DetectedRelation] = []
 
     def _collect_refs(obj: Any) -> set[str]:
@@ -358,12 +363,28 @@ def _detect_shared_schemas(tools: list[ToolSchema]) -> list[DetectedRelation]:
                 refs.update(_collect_refs(item))
         return refs
 
+    # Collect all refs, plus separate response/request refs for data flow detection
     tool_refs: dict[str, set[str]] = {}
+    tool_response_refs: dict[str, set[str]] = {}
+    tool_request_refs: dict[str, set[str]] = {}
+
     for tool in tools:
         refs = _collect_refs(tool.metadata)
         if refs:
             tool_refs[tool.name] = refs
+        # Response schema refs
+        resp_schema = tool.metadata.get("response_schema")
+        if resp_schema:
+            resp_refs = _collect_refs(resp_schema)
+            if resp_refs:
+                tool_response_refs[tool.name] = resp_refs
+        # Request body refs (from metadata excluding response_schema)
+        req_meta = {k: v for k, v in tool.metadata.items() if k != "response_schema"}
+        req_refs = _collect_refs(req_meta)
+        if req_refs:
+            tool_request_refs[tool.name] = req_refs
 
+    # Shared schema refs → COMPLEMENTARY
     names = list(tool_refs.keys())
     for i, name_a in enumerate(names):
         for name_b in names[i + 1 :]:
@@ -377,6 +398,27 @@ def _detect_shared_schemas(tools: list[ToolSchema]) -> list[DetectedRelation]:
                         confidence=0.85,
                         evidence=(
                             f"{name_a} and {name_b} share schema refs: {', '.join(sorted(shared))}"
+                        ),
+                        layer=1,
+                    )
+                )
+
+    # Response→Request data flow → PRECEDES
+    for producer, resp_refs in tool_response_refs.items():
+        for consumer, req_refs in tool_request_refs.items():
+            if producer == consumer:
+                continue
+            shared = resp_refs & req_refs
+            if shared:
+                relations.append(
+                    DetectedRelation(
+                        source=producer,
+                        target=consumer,
+                        relation_type=RelationType.PRECEDES,
+                        confidence=0.9,
+                        evidence=(
+                            f"{producer}'s response feeds into {consumer}'s request "
+                            f"via shared schema: {', '.join(sorted(shared))}"
                         ),
                         layer=1,
                     )
@@ -441,12 +483,14 @@ def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
             params_b = tool_param_tokens[tool_b.name]
             shared = resource_a & params_b
             if shared:
+                # Higher confidence when multiple tokens match
+                conf = 0.85 if len(shared) >= 2 else 0.8
                 relations.append(
                     DetectedRelation(
                         source=tool_a.name,
                         target=tool_b.name,
                         relation_type=RelationType.REQUIRES,
-                        confidence=0.7,
+                        confidence=conf,
                         evidence=(
                             f"{tool_b.name} has params matching {tool_a.name}'s "
                             f"resource tokens: {', '.join(sorted(shared))}"
