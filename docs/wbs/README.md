@@ -8,7 +8,7 @@
 | **1** | Ingest + Dependency | OpenAPI ingest, dependency/ordering detection, retrieval 개선 | ✅ 완료 | - |
 | **2** | Analyze + Search | dedup, embedding, ontology modes, search tiers, from_url() | ✅ 완료 | - |
 | **2.5** | MCP Annotation | MCP ingest, intent classifier, annotation-aware retrieval | ✅ 완료 | - |
-| **3** | Production | CLI, 시각화 dashboard, PyPI 배포 | ⬜ 대기 | 2주 |
+| **3** | Production | CLI, 시각화, conflict detection, commerce preset | ✅ 완료 | - |
 | **4** | Community | LangChain 등록, interactive dashboard, 블로그, 최적화 | ⬜ 대기 | 2주 |
 
 ## WBS 전체 트리
@@ -109,23 +109,23 @@ graph-tool-call
 │   ├── 2.5-7. 부가 통합 (builder, similarity, exports) ✅
 │   └── 2.5-8. 테스트 74개 추가 (255개 total) ✅
 │
-├── Phase 3: Production + Visualization ⬜
+├── Phase 3: Production + Visualization ✅
 │   ├── 3-1. (완료 — Phase 2.5로 이동) MCP server ingest ✅
-│   ├── 3-2. Conflict detection 강화
-│   ├── 3-3. CLI (ingest/analyze/retrieve)
-│   ├── 3-4. Visualization — Static HTML ← EXPANDED
-│   │   ├── 3-4a. Pyvis HTML export
-│   │   ├── 3-4b. Progressive disclosure (1000+ 노드)
-│   │   ├── 3-4c. Neo4j Cypher export ← NEW
-│   │   └── 3-4d. GraphML export ← NEW
-│   ├── 3-5. Model-Driven Search 완성 ← NEW
-│   │   ├── 3-5a. search_tools LLM tool 노출
-│   │   ├── 3-5b. get_workflow 워크플로우 조회
-│   │   └── 3-5c. browse_categories 트리 조회
-│   ├── 3-6. llama.cpp provider ← NEW
-│   ├── 3-7. 커머스 도메인 프리셋 ← NEW
-│   ├── 3-8. GitHub Actions CI ✅ (완료)
-│   └── 3-9. PyPI 배포
+│   ├── 3-2. Conflict detection 강화 ✅
+│   ├── 3-3. CLI (ingest/analyze/retrieve/visualize/info) ✅
+│   ├── 3-4. Visualization — Static HTML ✅
+│   │   ├── 3-4a. Pyvis HTML export ✅
+│   │   ├── 3-4b. Progressive disclosure (standalone vis.js) ✅
+│   │   ├── 3-4c. Neo4j Cypher export ✅
+│   │   └── 3-4d. GraphML export ✅
+│   ├── 3-5. Model-Driven Search 완성 ✅
+│   │   ├── 3-5a. search_tools LLM tool 노출 ✅
+│   │   ├── 3-5b. get_workflow 워크플로우 조회 ✅
+│   │   └── 3-5c. browse_categories 트리 조회 ✅
+│   ├── 3-6. llama.cpp provider ⬜ Phase 4로 이월
+│   ├── 3-7. 커머스 도메인 프리셋 ✅
+│   ├── 3-8. GitHub Actions CI ✅
+│   └── 3-9. PyPI 배포 ⬜ Phase 4로 이월
 │
 └── Phase 4: Community + Dashboard ⬜
     ├── 4-1. Interactive Dashboard (Dash Cytoscape) ← NEW

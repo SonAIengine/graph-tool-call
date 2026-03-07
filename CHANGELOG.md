@@ -7,12 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Planned — Phase 3+
-- Pyvis HTML graph visualization with progressive disclosure
-- Neo4j Cypher / GraphML export
-- CLI tool (`graph-tool-call ingest/retrieve/visualize`)
+### Planned — Phase 4
 - Interactive Dashboard (Dash Cytoscape) — visualization + manual editing
 - LangChain community package
+- llama.cpp provider
+
+## [0.5.0] - 2026-03-07
+
+### Added
+- **CLI**: `python -m graph_tool_call` / `graph-tool-call` command
+  - `ingest` — OpenAPI spec → graph.json
+  - `analyze` — graph analysis + duplicate detection
+  - `retrieve` — natural language tool search
+  - `visualize` — export to HTML/GraphML/Cypher
+  - `info` — graph summary (node/edge counts, categories)
+- **Visualization**:
+  - Pyvis HTML export — NodeType별 색상, degree 비례 노드 크기, RelationType별 엣지 스타일
+  - Standalone HTML export (vis.js CDN, pyvis 불필요)
+  - Progressive disclosure — 카테고리 더블클릭 시 하위 tool 토글 (1000+ 노드 대응)
+  - GraphML export — Gephi, yEd 호환
+  - Neo4j Cypher export — CREATE statement 생성
+- **Conflict Detection**: `analyze/conflict.py`
+  - 동일 리소스 PUT/DELETE 충돌 자동 감지
+  - MCP annotation 기반 destructive vs non-destructive writer 충돌
+  - `tg.detect_conflicts()` / `tg.apply_conflicts()` API
+- **Commerce Preset**: `presets/commerce.py`
+  - cart→order→payment→shipping→delivery→return→refund 워크플로우 자동 감지
+  - `is_commerce_api()` — 3+ 커머스 스테이지 탐지
+  - `tg.apply_commerce_preset()` — PRECEDES 관계 자동 추가
+- **Model-Driven Search API**: `retrieval/model_driven.py`
+  - `tg.search_api.search_tools(query)` — LLM function calling 노출용
+  - `tg.search_api.get_workflow(tool_name)` — PRECEDES 체인 반환
+  - `tg.search_api.browse_categories()` — 계층 트리 JSON
+- **Examples**: `swagger_to_agent.py` — Petstore E2E (ingest→retrieve→export)
+- **Tests**: 279개 (42개 신규)
+- pyproject.toml `[tool.poetry.scripts]` entry point
+- `visualization` extras group (pyvis)
 
 ## [0.4.0] - 2026-03-03
 
@@ -117,7 +147,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.1.0...v0.2.0
