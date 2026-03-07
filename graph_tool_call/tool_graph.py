@@ -450,6 +450,42 @@ class ToolGraph:
         tg._tools = tools
         return tg
 
+    # --- conflict detection ---
+
+    def detect_conflicts(self, *, min_confidence: float = 0.6) -> list:
+        """Detect conflicting tool pairs based on write operations and annotations.
+
+        Returns a list of ``ConflictResult`` objects.
+        """
+        from graph_tool_call.analyze.conflict import detect_conflicts
+
+        return detect_conflicts(list(self._tools.values()), min_confidence=min_confidence)
+
+    def apply_conflicts(self, conflicts: list | None = None, *, min_confidence: float = 0.6) -> int:
+        """Detect and apply CONFLICTS_WITH relations. Returns count of relations added."""
+        from graph_tool_call.analyze.conflict import apply_conflicts, detect_conflicts
+
+        if conflicts is None:
+            conflicts = detect_conflicts(list(self._tools.values()), min_confidence=min_confidence)
+        added = apply_conflicts(self, conflicts)
+        if added:
+            self._invalidate_retrieval()
+        return added
+
+    # --- presets ---
+
+    def apply_commerce_preset(self, *, min_confidence: float = 0.7) -> int:
+        """Apply commerce domain workflow patterns (PRECEDES relations).
+
+        Returns the number of relations added.
+        """
+        from graph_tool_call.presets.commerce import apply_commerce_preset
+
+        added = apply_commerce_preset(self, min_confidence=min_confidence)
+        if added:
+            self._invalidate_retrieval()
+        return added
+
     # --- model-driven search API ---
 
     @property
@@ -461,11 +497,34 @@ class ToolGraph:
 
     # --- visualization / export ---
 
-    def export_html(self, path: str | Path, *, physics: bool = True) -> None:
-        """Export the graph to an interactive HTML file (requires pyvis)."""
-        from graph_tool_call.visualization.html_export import export_html
+    def export_html(
+        self,
+        path: str | Path,
+        *,
+        physics: bool = True,
+        standalone: bool = False,
+        progressive: bool = False,
+    ) -> None:
+        """Export the graph to an interactive HTML file.
 
-        export_html(self._graph, self._tools, path, physics=physics)
+        Parameters
+        ----------
+        standalone:
+            If True, use vis.js CDN directly (no pyvis dependency).
+        progressive:
+            If True (implies standalone), enable progressive disclosure —
+            tools are hidden until their category is double-clicked.
+        """
+        if progressive:
+            standalone = True
+        if standalone:
+            from graph_tool_call.visualization.html_export import export_html_standalone
+
+            export_html_standalone(self._graph, self._tools, path, progressive=progressive)
+        else:
+            from graph_tool_call.visualization.html_export import export_html
+
+            export_html(self._graph, self._tools, path, physics=physics)
 
     def export_graphml(self, path: str | Path) -> None:
         """Export the graph to GraphML format (compatible with Gephi, yEd)."""
