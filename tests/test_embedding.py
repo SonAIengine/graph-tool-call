@@ -127,9 +127,9 @@ class TestBuildFromTools:
 
 
 class TestErrors:
-    def test_encode_without_model_name(self):
-        idx = EmbeddingIndex()  # no model_name
-        with pytest.raises(ValueError, match="No model_name"):
+    def test_encode_without_provider(self):
+        idx = EmbeddingIndex()  # no model_name, no provider
+        with pytest.raises(ValueError, match="No embedding provider"):
             idx.encode("test")
 
     def test_numpy_import_error_message(self, monkeypatch):

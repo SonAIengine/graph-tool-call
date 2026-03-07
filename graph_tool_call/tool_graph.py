@@ -393,16 +393,28 @@ class ToolGraph:
 
     # --- embedding ---
 
-    def enable_embedding(self, model_name: str = "all-MiniLM-L6-v2") -> None:
-        """Enable embedding-based hybrid search using a sentence-transformers model.
+    def enable_embedding(self, embedding: Any = "sentence-transformers/all-MiniLM-L6-v2") -> None:
+        """Enable embedding-based hybrid search.
 
         Builds embeddings for all registered tools and attaches the index
         to the retrieval engine.  Weights are automatically rebalanced to
         graph=0.5, keyword=0.2, embedding=0.3.
-        """
-        from graph_tool_call.retrieval.embedding import EmbeddingIndex
 
-        index = EmbeddingIndex(model_name=model_name)
+        Parameters
+        ----------
+        embedding:
+            Any of:
+
+            - ``str`` shorthand: ``"openai/text-embedding-3-large"``,
+              ``"ollama/nomic-embed-text"``,
+              ``"sentence-transformers/all-MiniLM-L6-v2"``
+            - ``callable(list[str]) -> list[list[float]]``
+            - ``EmbeddingProvider`` instance
+        """
+        from graph_tool_call.retrieval.embedding import EmbeddingIndex, wrap_embedding
+
+        provider = wrap_embedding(embedding)
+        index = EmbeddingIndex(provider=provider)
         index.build_from_tools(self._tools)
         engine = self._get_retrieval_engine()
         engine.set_embedding_index(index)
