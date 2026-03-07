@@ -450,6 +450,15 @@ class ToolGraph:
         tg._tools = tools
         return tg
 
+    # --- model-driven search API ---
+
+    @property
+    def search_api(self) -> Any:
+        """Get the Model-Driven Search API for LLM function-calling integration."""
+        from graph_tool_call.retrieval.model_driven import ToolGraphSearchAPI
+
+        return ToolGraphSearchAPI(self._graph, self._tools, retrieve_fn=self.retrieve)
+
     # --- visualization / export ---
 
     def export_html(self, path: str | Path, *, physics: bool = True) -> None:
