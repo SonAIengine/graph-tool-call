@@ -2,7 +2,7 @@
 
 # graph-tool-call
 
-**Tool Lifecycle Management for LLM Agents**
+**Graph-based Tool Retrieval for LLM Agents**
 
 Ingest, Analyze, Organize, Retrieve.
 
@@ -31,7 +31,14 @@ When a user says *"cancel my order and process a refund"*, vector search might f
 
 ## The Solution
 
-**graph-tool-call** models tool relationships as a graph:
+**graph-tool-call** models tool relationships as a graph and retrieves tools using a multi-signal hybrid search pipeline:
+
+```
+OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Agent
+                    (convert)  (relations)  (graph)     (wRRF hybrid)
+```
+
+**4-source wRRF fusion**: BM25 keyword matching + graph traversal + embedding similarity + MCP annotation scoring — combined via weighted Reciprocal Rank Fusion.
 
 ```
                     ┌──────────┐
@@ -41,42 +48,102 @@ When a user says *"cancel my order and process a refund"*, vector search might f
    ┌──────────┐                    ┌───────────┐
    │ getOrder │                    │cancelOrder│
    └──────────┘                    └─────┬─────┘
-                                         │ COMPLEMENTARY
-                                         ▼
-                                  ┌──────────────┐
-                                  │processRefund │
-                                  └──────────────┘
+                                        │ COMPLEMENTARY
+                                        ▼
+                                 ┌──────────────┐
+                                 │processRefund │
+                                 └──────────────┘
 ```
 
-Instead of treating each tool as an independent vector, graph-tool-call understands:
-- **REQUIRES** — `getOrder` needs an ID from `listOrders`
-- **PRECEDES** — you must list orders before you can cancel one
-- **COMPLEMENTARY** — cancellation and refund often go together
-- **SIMILAR_TO** — `getOrder` and `listOrders` serve related purposes
-- **CONFLICTS_WITH** — `updateOrder` and `deleteOrder` shouldn't run together
+## Benchmark
 
-This means when you search for *"cancel order"*, you don't just get `cancelOrder` — you get the **complete workflow**: list → get → cancel → refund.
+Reproducible benchmarks using public OpenAPI specs and MCP tool definitions. All results are deterministic (no LLM involved in retrieval).
 
-## How It Works
+### Datasets
 
+| Dataset | Source | Tools | Queries | Description |
+|---------|--------|------:|--------:|-------------|
+| **Petstore 3.0** | [OpenAPI](https://petstore3.swagger.io) | 19 | 20 | Standard pet store CRUD — easy baseline |
+| **GitHub REST API** | OpenAPI subset | 50 | 40 | Repos, issues, PRs, search, CI — medium difficulty |
+| **Mixed MCP** | MCP tools | 38 | 30 | Filesystem + GitHub MCP with annotations — cross-domain |
+
+### Retrieval Recall@K (BM25 + Graph, no embedding)
+
+| Dataset | Recall@3 | Recall@5 | Recall@10 |
+|---------|:--------:|:--------:|:---------:|
+| Petstore 3.0 (19 tools) | 93.3% | **98.3%** | 98.3% |
+| GitHub REST API (50 tools) | 77.5% | **85.0%** | 87.5% |
+| Mixed MCP (38 tools) | 90.0% | **96.7%** | 100.0% |
+
+<details>
+<summary>Breakdown by category</summary>
+
+**Petstore** — Recall@5
+
+| Category | Recall | Queries |
+|----------|:------:|:-------:|
+| read | 100.0% | 8 |
+| write | 100.0% | 8 |
+| delete | 100.0% | 3 |
+| workflow | 66.7% | 1 |
+
+**GitHub** — Recall@5
+
+| Category | Recall | Queries |
+|----------|:------:|:-------:|
+| write | 94.1% | 17 |
+| read | 80.0% | 20 |
+| delete | 66.7% | 3 |
+
+**Mixed MCP** — Recall@5
+
+| Category | Recall | Queries |
+|----------|:------:|:-------:|
+| read | 100.0% | 15 |
+| write | 93.3% | 15 |
+
+</details>
+
+### Embedding Impact (BM25 + Graph + Embedding)
+
+Adding embedding (Qwen3-Embedding-4B) to the hybrid pipeline:
+
+| Dataset | BM25 only | BM25 + Embedding | Degraded queries |
+|---------|:---------:|:-----------------:|:----------------:|
+| Petstore | 98.3% | 98.3% | **0** |
+| GitHub | 85.0% | 85.0% | **0** |
+| Mixed MCP | 96.7% | 96.7% | **0** |
+
+Zero degradation across all datasets — embedding is safe to add without hurting existing BM25+graph performance.
+
+### E2E: Baseline vs Retrieve (with LLM)
+
+Full pipeline comparison: sending **all tools** to the LLM vs sending only the **top-5 retrieved** tools.
+
+Model: qwen3.5:4b (Ollama, 4-bit quantized)
+
+| Dataset | Baseline (all tools) | Retrieve (top-5) | Token Reduction |
+|---------|:--------------------:|:----------------:|:---------------:|
+| Petstore (19 tools) | 60.0% | **75.0%** | ~70% |
+| GitHub (50 tools) | 20.0% | 20.0% | ~60% |
+
+Even a small 4B model benefits significantly from retrieval filtering — **+15% accuracy** on Petstore with **70% fewer input tokens**. Larger models (8B+) with higher baseline accuracy would benefit even more from token reduction.
+
+### Run Benchmarks Yourself
+
+```bash
+# Retrieval-only (fast, deterministic)
+python -m benchmarks.run_benchmark
+
+# With embedding comparison
+python -m benchmarks.run_embedding_benchmark --embedding "ollama/nomic-embed-text"
+
+# E2E with LLM
+python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b
+
+# Single dataset, verbose
+python -m benchmarks.run_benchmark -d petstore -v --top-k 10
 ```
-OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Agent
-                    (convert)  (relations)  (graph)     (hybrid+rerank)
-```
-
-**1. Ingest** — Point it at a Swagger spec, MCP server, or Python functions. Tools are auto-converted into a unified schema. Optional [ai-api-lint](https://github.com/SonAIengine/ai-api-lint) integration auto-fixes poor OpenAPI specs before ingest.
-
-**2. Analyze** — Relationships are automatically detected: path hierarchies, CRUD patterns, shared schemas, response→request data flow chains, state machines.
-
-**3. Organize** — Tools are grouped into an ontology graph. Two modes:
-  - **Auto** — purely algorithmic (tags, paths, CRUD patterns). No LLM needed.
-  - **LLM-Auto** — enhanced with LLM reasoning. Better categories, richer relations, keyword enrichment. Pass any LLM — callable, OpenAI client, or string shorthand like `"ollama/qwen2.5:7b"`.
-
-**4. Retrieve** — Multi-stage hybrid search pipeline:
-  - **Stage 1**: wRRF fusion (BM25 + graph traversal + embedding + MCP annotation scoring)
-  - **Stage 2**: Cross-encoder reranking (optional, for precision)
-  - **Stage 3**: MMR diversity reranking (optional, reduces redundancy)
-  - History-aware retrieval demotes already-used tools and augments graph seeds.
 
 ## Installation
 
@@ -103,8 +170,6 @@ pip install graph-tool-call[langchain]         # + LangChain tool adapter
 
 ### 30-Second Example
 
-Copy-paste this to see it work immediately:
-
 ```python
 from graph_tool_call import ToolGraph
 
@@ -117,7 +182,7 @@ tg = ToolGraph.from_url(
 print(tg)
 # → ToolGraph(tools=19, nodes=22, edges=100)
 
-# Search for tools
+# Search for tools — 98.3% Recall@5 on this spec
 tools = tg.retrieve("create a new pet", top_k=5)
 for t in tools:
     print(f"  {t.name}: {t.description}")
@@ -221,7 +286,7 @@ tg.add_relation("get_weather", "get_forecast", "complementary")
 
 ## Embedding (Hybrid Search)
 
-Add embedding-based semantic search on top of BM25 + graph. Supports multiple providers out of the box.
+Add embedding-based semantic search on top of BM25 + graph. Any OpenAI-compatible endpoint works.
 
 ```bash
 pip install graph-tool-call[embedding]
@@ -236,6 +301,12 @@ tg.enable_embedding("openai/text-embedding-3-large")
 
 # Ollama
 tg.enable_embedding("ollama/nomic-embed-text")
+
+# vLLM / llama.cpp / any OpenAI-compatible server
+tg.enable_embedding("vllm/Qwen/Qwen3-Embedding-0.6B")
+tg.enable_embedding("vllm/model@http://gpu-box:8000/v1")
+tg.enable_embedding("llamacpp/model@http://192.168.1.10:8080/v1")
+tg.enable_embedding("http://localhost:8000/v1@my-model")  # URL@model format
 
 # Custom callable
 tg.enable_embedding(lambda texts: my_embed_fn(texts))
@@ -346,15 +417,6 @@ merged = tg.merge_duplicates(duplicates)
 # merged = {"getUser_1": "getUser", ...}
 ```
 
-### Conflict Detection
-
-Detect tools that shouldn't run together (e.g., `updateOrder` and `deleteOrder`):
-
-```python
-tg.apply_conflicts()
-# Adds CONFLICTS_WITH edges between conflicting tool pairs
-```
-
 ### Export & Visualization
 
 ```python
@@ -390,18 +452,6 @@ tg = ToolGraph.from_url(url, lint=True)  # auto-fix during ingest
 | *"now cancel it"* (with history) | No context, same results | Demotes used tools, boosts next-step tools |
 | Multiple Swagger specs with overlapping tools | Duplicate tools in results | Auto-deduplication across sources |
 | 1,200 API endpoints | Slow, noisy results | Organized into categories, precise graph traversal |
-
-## 3-Tier Search: Use What You Have
-
-graph-tool-call is designed to work **without any LLM** and get **better with one**:
-
-| Tier | What you need | What it does | Improvement |
-|------|--------------|--------------|-------------|
-| **0** | Nothing | BM25 keywords + graph expansion + RRF fusion | Baseline |
-| **1** | Small LLM (1.5B~3B) | + query expansion, synonyms, translation | Recall +15~25% |
-| **2** | Full LLM (7B+) | + intent decomposition, iterative refinement | Recall +30~40% |
-
-Even a tiny model running on Ollama (`qwen2.5:1.5b`) can meaningfully improve search quality. No GPU required for Tier 0.
 
 ## Full API Reference
 
@@ -477,6 +527,9 @@ poetry run pytest -v
 # Lint
 poetry run ruff check .
 poetry run ruff format --check .
+
+# Run benchmarks
+python -m benchmarks.run_benchmark -v
 ```
 
 ## License
