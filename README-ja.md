@@ -2,10 +2,11 @@
 
 # graph-tool-call
 
-**LLM Agentのためのツールライフサイクル管理**
+**LLM Agentのためのグラフベースツール検索エンジン**
 
 収集、分析、組織化、検索。
 
+[![PyPI](https://img.shields.io/pypi/v/graph-tool-call.svg)](https://pypi.org/project/graph-tool-call/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml/badge.svg)](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml)
@@ -30,7 +31,14 @@ LLM Agentが使えるツールはどんどん増えています。ECプラット
 
 ## ソリューション
 
-**graph-tool-call** はツール間の関係をグラフとしてモデル化します：
+**graph-tool-call** はツール間の関係をグラフとしてモデル化し、マルチシグナルハイブリッドパイプラインで検索します：
+
+```
+OpenAPI/MCP/コード → [収集] → [分析] → [組織化] → [検索] → Agent
+                      (変換)  (関係発見) (グラフ)   (wRRF ハイブリッド)
+```
+
+**4-source wRRF 融合**: BM25キーワードマッチング + グラフ探索 + エンベディング類似度 + MCPアノテーションスコアリング — weighted Reciprocal Rank Fusionで結合。
 
 ```
                     ┌──────────┐
@@ -40,88 +48,174 @@ LLM Agentが使えるツールはどんどん増えています。ECプラット
    ┌──────────┐                    ┌───────────┐
    │ getOrder │                    │cancelOrder│
    └──────────┘                    └─────┬─────┘
-                                         │ COMPLEMENTARY
-                                         ▼
-                                  ┌──────────────┐
-                                  │processRefund │
-                                  └──────────────┘
+                                        │ COMPLEMENTARY
+                                        ▼
+                                 ┌──────────────┐
+                                 │processRefund │
+                                 └──────────────┘
 ```
 
-各ツールを独立したベクトルとして扱う代わりに、graph-tool-callは理解します：
-- **REQUIRES** — `getOrder` は `listOrders` のIDが必要
-- **PRECEDES** — 注文一覧を照会してからでないとキャンセルできない
-- **COMPLEMENTARY** — キャンセルと返金は一緒に使われる
-- **SIMILAR_TO** — `getOrder` と `listOrders` は関連機能
-- **CONFLICTS_WITH** — `updateOrder` と `deleteOrder` は同時実行不可
+## ベンチマーク
 
-*「注文キャンセル」*を検索すると、`cancelOrder` だけでなく**完全なワークフロー**が返されます：一覧照会 → 詳細照会 → キャンセル → 返金。
+> **LLMは正しいツールを選べるか？**
+> LLMにユーザーリクエストとツール定義を渡し、正しいツールを呼び出すか確認しました。
+> - **使用前**: **全ての**ツール定義をLLMに渡す。
+> - **使用後**: graph-tool-callが検索した**上位5件**のみ渡す。
 
-## 仕組み
+すべてのベンチマークは誰でもダウンロードして再現できる公開仕様を使用しています: [Petstore OpenAPI](https://petstore3.swagger.io), [Kubernetes core/v1 API](https://github.com/kubernetes/kubernetes), GitHub REST API, MCP tool サーバー。
 
+### 結果: graph-tool-callはLLMを助けるか？
+
+モデル: qwen3.5:4b (4-bit量子化, Ollama)。各クエリでLLMが正しいツールを呼び出すか評価。
+
+| API | 全ツール数 | 使用前 (全ツール → LLM) | 使用後 (top-5 → LLM) | 変化 |
+|-----|:----------:|:----------------------:|:-------------------:|:-----|
+| Petstore | 19 | 60% | **75%** | **精度 +15pp**、トークン70%削減 |
+| GitHub | 50 | 20% | 20% | 同等精度、**トークン60%削減** |
+| **Kubernetes** | **248** | **実行不可** | **60%** | 248ツール = 10万トークン。小型モデルのコンテキストに入らない。**検索なしではそもそも不可能。** |
+
+ポイント: ツール数が増えるほど、全てをLLMに渡す方式は限界に達します。**248ツール**ではモデルが受け取ることすらできません — graph-tool-callが5件にフィルタリングして初めて**60%の精度**を達成します。
+
+### 検索はどれほど正確か？
+
+LLMが見る前に、graph-tool-callがまず正しいツールを**見つける**必要があります。**Recall@K**で測定します: *「正解ツールが上位K件の結果に含まれるか？」*
+
+| API | 全ツール数 | Recall@3 | Recall@5 | Recall@10 |
+|-----|:----------:|:--------:|:--------:|:---------:|
+| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
+| GitHub REST | 50 | 77.5% | **85.0%** | 87.5% |
+| MCP (filesystem + GitHub) | 38 | 90.0% | **96.7%** | 100.0% |
+| Kubernetes | 248 | 60.0% | **64.0%** | 72.0% |
+
+19ツールで正解がtop-5に含まれる確率**98%**。248ツールでも**Recall@10 = 72%** — エンベディングモデルなしでBM25 + グラフ探索のみで達成した数値です。
+
+<details>
+<summary>タスクタイプ別詳細分析</summary>
+
+**Petstore** (19 tools) — Recall@5
+
+| タスクタイプ | Recall | クエリ数 |
+|----------|:------:|:------:|
+| read | 100.0% | 8 |
+| write | 100.0% | 8 |
+| delete | 100.0% | 3 |
+| workflow (マルチツール) | 66.7% | 1 |
+
+**GitHub** (50 tools) — Recall@5
+
+| タスクタイプ | Recall | クエリ数 |
+|----------|:------:|:------:|
+| write | 94.1% | 17 |
+| read | 80.0% | 20 |
+| delete | 66.7% | 3 |
+
+**Kubernetes** (248 tools) — Recall@5
+
+| タスクタイプ | Recall | クエリ数 |
+|----------|:------:|:------:|
+| write | 80.0% | 15 |
+| delete | 75.0% | 8 |
+| read | 51.9% | 27 |
+
+</details>
+
+### エンベディングを追加しても性能は低下しない
+
+BM25 + グラフの上にエンベディングモデル(Qwen3-Embedding-4B)を追加した結果: 全データセットで**低下したクエリ0件** — 安心して有効化できます。
+
+| API | エンベディングなし | エンベディング追加 | 低下したクエリ |
+|-----|:---------:|:----------:|:----------:|
+| Petstore | 98.3% | 98.3% | **0** |
+| GitHub | 85.0% | 85.0% | **0** |
+| MCP | 96.7% | 96.7% | **0** |
+
+### 自分で再現する
+
+```bash
+# 検索品質の測定（高速、LLM不要）
+python -m benchmarks.run_benchmark
+python -m benchmarks.run_benchmark -d k8s -v          # Kubernetes 248 tools
+
+# LLM込みE2Eテスト
+python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b
+
+# エンベディング比較
+python -m benchmarks.run_embedding_benchmark --embedding "ollama/nomic-embed-text"
 ```
-OpenAPI/MCP/コード → [収集] → [分析] → [組織化] → [検索] → Agent
-                      (変換)  (関係発見) (グラフ)   (ハイブリッド)
+
+## インストール
+
+```bash
+pip install graph-tool-call                    # core (BM25 + graph)
+pip install graph-tool-call[embedding]         # + エンベディング、cross-encoder reranker
+pip install graph-tool-call[openapi]           # + OpenAPI YAMLサポート
+pip install graph-tool-call[all]               # すべて
 ```
 
-**1. 収集（Ingest）** — Swagger仕様、MCPサーバー、Python関数を指定するだけ。ツールが統一スキーマに自動変換されます。
+<details>
+<summary>すべてのextras</summary>
 
-**2. 分析（Analyze）** — 関係が自動検出されます：パス階層、CRUDパターン、共有スキーマ、response-parameterチェーン、ステートマシン。
+```bash
+pip install graph-tool-call[lint]              # + ai-api-lint spec自動修正
+pip install graph-tool-call[similarity]        # + rapidfuzz 重複検出
+pip install graph-tool-call[visualization]     # + pyvis HTMLグラフエクスポート
+pip install graph-tool-call[langchain]         # + LangChain toolアダプター
+```
 
-**3. 組織化（Organize）** — ツールがオントロジーグラフにグループ化されます。2つのモード：
-  - **Auto** — 純粋なアルゴリズム（tag、path、CRUDパターン）。LLM不要。
-  - **LLM-Auto** — LLM推論で強化（Ollama、vLLM、OpenAI）。より良い分類、より豊かな関係。
-
-**4. 検索（Retrieve）** — キーワードマッチング、グラフ探索、（オプションの）エンベディングを組み合わせたハイブリッド検索。LLMなしでも十分動作。LLMがあればさらに向上。
+</details>
 
 ## クイックスタート
 
-```bash
-pip install graph-tool-call
-```
+### 30秒の例
 
 ```python
 from graph_tool_call import ToolGraph
 
-tg = ToolGraph()
+# 公式Petstore APIからtool graphを生成
+tg = ToolGraph.from_url(
+    "https://petstore3.swagger.io/api/v3/openapi.json",
+    cache="petstore.json",  # ローカル保存 → 次回ロード時に即使用
+)
 
-# ツール登録（OpenAI / Anthropic / LangChain フォーマットを自動検出）
-tg.add_tools(your_tools_list)
+print(tg)
+# → ToolGraph(tools=19, nodes=22, edges=100)
 
-# 関係を定義
-tg.add_relation("read_file", "write_file", "complementary")
-
-# 検索 — グラフ展開が関連ツールを自動発見
-tools = tg.retrieve("read a file and save changes", top_k=5)
-# → [read_file, write_file, list_dir, ...]
-#    write_fileはベクトル類似度ではなくCOMPLEMENTARY関係で発見
+# ツール検索 — この仕様でRecall@5 98.3%
+tools = tg.retrieve("新しいペットを登録", top_k=5)
+for t in tools:
+    print(f"  {t.name}: {t.description}")
+# → addPet: Add a new pet to the store.
+#   updatePet: Update an existing pet.
+#   getPetById: Find pet by ID.
+#   ...グラフ展開が完全なCRUDワークフローを取得
 ```
 
-### Swagger / OpenAPIから自動生成
+### Swagger / OpenAPIから生成
 
 ```python
 from graph_tool_call import ToolGraph
 
+# ファイルから（JSON/YAML）
 tg = ToolGraph()
-tg.ingest_openapi("tests/fixtures/petstore_swagger2.json")
+tg.ingest_openapi("path/to/openapi.json")
+
+# URLから — Swagger UIの全spec群を自動探索
+tg = ToolGraph.from_url("https://api.example.com/swagger-ui/index.html")
+
+# キャッシュ — 一度ビルド、即座に再利用
+tg = ToolGraph.from_url(
+    "https://api.example.com/swagger-ui/index.html",
+    cache="my_api.json",  # 初回: fetch + build + save
+)                          # 以降: ファイルからロード（ネットワーク不要）
+
 # 対応: Swagger 2.0, OpenAPI 3.0, OpenAPI 3.1
-# 入力: ファイルパス (JSON/YAML), URL, または raw dict
-
-# 自動処理: 5 endpoint → 5 tool → CRUD関係 → カテゴリ
-# 依存関係、呼び出し順序、カテゴリグルーピング——すべて自動検出。
-
-tools = tg.retrieve("create a new pet", top_k=5)
-# → [createPet, getPet, updatePet, listPets, deletePet]
-#    グラフ展開が完全なCRUDワークフローを取得
 ```
 
-### MCPサーバーツールから自動生成
+### MCPサーバーツールから生成
 
 ```python
 from graph_tool_call import ToolGraph
 
-tg = ToolGraph()
-
-# MCPツールリストを取り込み（アノテーションを保持）
 mcp_tools = [
     {
         "name": "read_file",
@@ -136,17 +230,21 @@ mcp_tools = [
         "annotations": {"readOnlyHint": False, "destructiveHint": True},
     },
 ]
+
+tg = ToolGraph()
 tg.ingest_mcp_tools(mcp_tools, server_name="filesystem")
 
-# "ファイル削除" → destructiveツールが上位ランク（annotation-aware）
+# Annotation-aware: "ファイル削除" → destructiveツールが上位ランク
 tools = tg.retrieve("一時ファイルを削除", top_k=5)
 ```
 
-MCPアノテーション（`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`）が検索シグナルとして活用されます。クエリの意図が自動分類され、ツールのアノテーションとアラインメントされます——読み取りクエリはread-onlyツールを、削除クエリはdestructiveツールを優先します。
+MCPアノテーション（`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`）が検索シグナルとして活用されます。クエリの意図が自動分類され、ツールのアノテーションとマッチング — 読み取りクエリはread-onlyツールを、削除クエリはdestructiveツールを優先します。
 
-### Python関数から自動生成
+### Python関数から生成
 
 ```python
+from graph_tool_call import ToolGraph
+
 def read_file(path: str) -> str:
     """ファイルの内容を読む。"""
 
@@ -155,7 +253,191 @@ def write_file(path: str, content: str) -> None:
 
 tg = ToolGraph()
 tg.ingest_functions([read_file, write_file])
-# type hintからパラメータを抽出、docstringから説明を抽出
+# type hintからパラメータ、docstringから説明を自動抽出
+```
+
+### 手動ツール登録
+
+```python
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph()
+
+# OpenAI function-callingフォーマット — 自動検出
+tg.add_tools([
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "都市の現在の天気を取得",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+            },
+        },
+    },
+])
+
+# 関係を手動定義
+tg.add_relation("get_weather", "get_forecast", "complementary")
+```
+
+## エンベディング（ハイブリッド検索）
+
+BM25 + グラフの上にエンベディングベースのセマンティック検索を追加。OpenAI互換エンドポイントならどこでも使用可能。
+
+```bash
+pip install graph-tool-call[embedding]
+```
+
+```python
+# Sentence-transformers（ローカル、APIキー不要）
+tg.enable_embedding("sentence-transformers/all-MiniLM-L6-v2")
+
+# OpenAI
+tg.enable_embedding("openai/text-embedding-3-large")
+
+# Ollama
+tg.enable_embedding("ollama/nomic-embed-text")
+
+# vLLM / llama.cpp / OpenAI互換サーバー
+tg.enable_embedding("vllm/Qwen/Qwen3-Embedding-0.6B")
+tg.enable_embedding("vllm/model@http://gpu-box:8000/v1")
+tg.enable_embedding("llamacpp/model@http://192.168.1.10:8080/v1")
+tg.enable_embedding("http://localhost:8000/v1@my-model")  # URL@modelフォーマット
+
+# カスタムcallable
+tg.enable_embedding(lambda texts: my_embed_fn(texts))
+```
+
+エンベディング有効化時にウェイトが自動再調整されます。手動チューニングも可能：
+
+```python
+tg.set_weights(keyword=0.1, graph=0.4, embedding=0.5)
+```
+
+## 保存 & ロード
+
+一度ビルドすればどこでも再利用。グラフ構造全体（ノード、エッジ、関係タイプ、ウェイト）が保持されます。
+
+```python
+# 保存
+tg.save("my_graph.json")
+
+# ロード
+tg = ToolGraph.load("my_graph.json")
+
+# from_url()のcache=オプションで自動保存/ロード
+tg = ToolGraph.from_url(url, cache="my_graph.json")
+```
+
+## 高度な機能
+
+### Cross-Encoderリランキング
+
+Cross-encoderモデルで二次リランキング。`(query, tool_description)` ペアを同時にエンコードし、独立エンベディング比較より正確なスコアリング。
+
+```python
+tg.enable_reranker()  # デフォルト: cross-encoder/ms-marco-MiniLM-L-6-v2
+tools = tg.retrieve("注文キャンセル", top_k=5)
+# wRRFで先にランキング → cross-encoderで再スコアリング
+```
+
+### MMR多様性
+
+Maximal Marginal Relevanceリランキングで重複結果を削減。
+
+```python
+tg.enable_diversity(lambda_=0.7)  # 0.7 = 関連性重視 + わずかな多様性
+```
+
+### History-Aware検索
+
+以前に呼び出したツール名を渡すとコンテキストが改善されます。使用済みツールはダウンランク、グラフ隣接ツールがシードとして展開。
+
+```python
+# 最初の呼び出し
+tools = tg.retrieve("注文を探す")
+# → [listOrders, getOrder, ...]
+
+# 二回目の呼び出し — history-aware
+tools = tg.retrieve("次はキャンセルして", history=["listOrders", "getOrder"])
+# → [cancelOrder, processRefund, ...]
+#    listOrders/getOrderダウンランク、cancelOrderがグラフ近接性でアップランク
+```
+
+### wRRFウェイトチューニング
+
+各スコアリングソースのweighted Reciprocal Rank Fusionウェイト調整：
+
+```python
+tg.set_weights(
+    keyword=0.2,     # BM25テキストマッチング
+    graph=0.5,       # グラフ探索（関係ベース）
+    embedding=0.3,   # セマンティック類似度
+    annotation=0.2,  # MCPアノテーションマッチング
+)
+```
+
+### LLM強化オントロジー
+
+LLMでより豊かなツールオントロジーを構築。カテゴリ、関係推論、検索キーワード生成（非英語ツール説明に特に有用）。
+
+```python
+# 以下すべて使用可能 — wrap_llm()が自動検出
+tg.auto_organize(llm="ollama/qwen2.5:7b")           # 文字列ショートハンド
+tg.auto_organize(llm=lambda p: my_llm(p))            # callable
+tg.auto_organize(llm=openai.OpenAI())                # OpenAIクライアント
+tg.auto_organize(llm="litellm/claude-sonnet-4-20250514")    # litellm経由
+```
+
+<details>
+<summary>サポートするLLM入力</summary>
+
+| 入力 | ラッピングタイプ |
+|------|----------|
+| `OntologyLLM` インスタンス | そのまま使用 |
+| `callable(str) -> str` | `CallableOntologyLLM` |
+| OpenAIクライアント（`chat.completions` 保有） | `OpenAIClientOntologyLLM` |
+| `"ollama/model"` | `OllamaOntologyLLM` |
+| `"openai/model"` | `OpenAICompatibleOntologyLLM` |
+| `"litellm/model"` | litellm.completionラッパー |
+
+</details>
+
+### 重複検出
+
+複数のAPI仕様から重複ツールを検出して統合：
+
+```python
+duplicates = tg.find_duplicates(threshold=0.85)
+merged = tg.merge_duplicates(duplicates)
+# merged = {"getUser_1": "getUser", ...}
+```
+
+### エクスポート & 可視化
+
+```python
+# インタラクティブHTML（vis.js）
+tg.export_html("graph.html", progressive=True)
+
+# GraphML（Gephi, yEd用）
+tg.export_graphml("graph.graphml")
+
+# Neo4j Cypher
+tg.export_cypher("graph.cypher")
+```
+
+### API Spec Lint統合
+
+[ai-api-lint](https://github.com/SonAIengine/ai-api-lint)で収集前にOpenAPI仕様を自動修正：
+
+```bash
+pip install graph-tool-call[lint]
+```
+
+```python
+tg = ToolGraph.from_url(url, lint=True)  # 収集中に自動修正
 ```
 
 ## なぜベクトル検索だけでは足りないのか？
@@ -165,44 +447,56 @@ tg.ingest_functions([read_file, write_file])
 | *「注文をキャンセルして」* | `cancelOrder` を返す | `listOrders → getOrder → cancelOrder → processRefund`（完全なワークフロー）|
 | *「ファイルを読んで保存」* | `read_file` を返す | `read_file` + `write_file`（COMPLEMENTARY関係）|
 | *「古いレコードを削除」* | "削除"にマッチする任意のツール | destructiveツールが上位ランク（annotation-aware）|
+| *「次はキャンセルして」*（history） | コンテキストなし、同じ結果 | 使用済みツールをダウンランク、次のステップのツールをアップランク |
 | 複数Swagger仕様に重複ツール | 結果に重複を含む | クロスソース自動重複排除 |
 | 1,200のAPIエンドポイント | 遅くノイズが多い | カテゴリに整理、正確なグラフ探索 |
 
-## 3-Tier検索：持っているものを使う
+## 全APIリファレンス
 
-graph-tool-callは**LLMなしでも動作**し、**あればさらに向上**するように設計されています：
+<details>
+<summary>ToolGraph メソッド</summary>
 
-| Tier | 必要なもの | 何をするか | 改善効果 |
-|------|----------|-----------|---------|
-| **0** | 何も不要 | BM25キーワード + グラフ展開 + RRF融合 | ベースライン |
-| **1** | 小型LLM (1.5B~3B) | + クエリ拡張、同義語、翻訳 | Recall +15~25% |
-| **2** | 大型LLM (7B+) | + 意図分解、反復改善 | Recall +30~40% |
+| メソッド | 説明 |
+|--------|------|
+| `add_tool(tool)` | 単一ツール追加（フォーマット自動検出） |
+| `add_tools(tools)` | 複数ツール追加 |
+| `ingest_openapi(source)` | OpenAPI/Swagger仕様から収集 |
+| `ingest_mcp_tools(tools)` | MCPツールリストから収集 |
+| `ingest_functions(fns)` | Python callableから収集 |
+| `ingest_arazzo(source)` | Arazzo 1.0.0ワークフロー仕様収集 |
+| `from_url(url, cache=...)` | Swagger UIまたはspec URLからビルド |
+| `add_relation(src, tgt, type)` | 手動関係追加 |
+| `auto_organize(llm=...)` | ツール自動分類 |
+| `build_ontology(llm=...)` | 完全オントロジービルド |
+| `retrieve(query, top_k=10)` | ツール検索 |
+| `enable_embedding(provider)` | ハイブリッドエンベディング検索を有効化 |
+| `enable_reranker(model)` | cross-encoderリランキングを有効化 |
+| `enable_diversity(lambda_)` | MMR多様性を有効化 |
+| `set_weights(...)` | wRRF融合ウェイトチューニング |
+| `find_duplicates(threshold)` | 重複ツール検出 |
+| `merge_duplicates(pairs)` | 検出された重複を統合 |
+| `apply_conflicts()` | CONFLICTS_WITHエッジ検出/追加 |
+| `save(path)` / `load(path)` | シリアライズ / デシリアライズ |
+| `export_html(path)` | インタラクティブHTML可視化エクスポート |
+| `export_graphml(path)` | GraphMLフォーマットエクスポート |
+| `export_cypher(path)` | Neo4j Cypher文エクスポート |
 
-Ollamaで動く小さなモデル（`qwen2.5:1.5b`）でも検索品質は有意に向上します。Tier 0はGPUすら不要です。
+</details>
 
 ## 機能比較
 
 | 機能 | ベクトルのみのソリューション | graph-tool-call |
 |------|------------------------|-----------------|
 | ツールソース | 手動登録 | Swagger/OpenAPI/MCPから自動収集 |
-| 検索方式 | フラットなベクトル類似度 | グラフ+ベクトルハイブリッド (wRRF)、3-Tier |
+| 検索方式 | 単純なベクトル類似度 | 多段階ハイブリッド (wRRF + rerank + MMR) |
 | 行動的意味論 | なし | MCP annotation-aware retrieval |
 | ツール関係 | なし | 6種類の関係タイプ、自動検出 |
-| 呼び出し順序 | なし | ステートマシン + CRUDワークフロー検出 |
+| 呼び出し順序 | なし | ステートマシン + CRUD + response→requestデータフロー |
 | 重複排除 | なし | クロスソース重複検出 |
-| オントロジー | なし | Auto / LLM-Auto モード |
-| LLM依存 | 必須 | オプション（なくても動く、あればさらに良い）|
-
-## ロードマップ
-
-| Phase | 内容 | 状態 |
-|-------|------|------|
-| **0** | コアグラフエンジン + ハイブリッド検索 | ✅ 完了 (39 tests) |
-| **1** | OpenAPI収集、BM25+RRF検索、依存関係検出 | ✅ 完了 (88 tests) |
-| **2** | 重複排除、エンベディング、オントロジーモード（Auto/LLM-Auto）、検索Tier、`from_url()` | ✅ 完了 (181 tests) |
-| **2.5** | MCP Annotation-Aware Retrieval: intent classifier、annotation scoring、wRRF統合 | ✅ 完了 (255 tests) |
-| **3** | Pyvis可視化、Neo4jエクスポート、CLI、PyPI公開 | 計画中 |
-| **4** | インタラクティブDashboard（Dash Cytoscape）、手動編集、コミュニティ | 計画中 |
+| オントロジー | なし | Auto / LLM-Auto モード（任意のLLM） |
+| History | なし | 使用済みツールダウンランク、次のステップアップランク |
+| 仕様品質 | 良い仕様を前提 | ai-api-lint自動修正統合 |
+| LLM依存 | 必須 | オプション（なくても動く、あればさらに良い） |
 
 ## ドキュメント
 
@@ -230,6 +524,10 @@ poetry run pytest -v
 
 # リント
 poetry run ruff check .
+poetry run ruff format --check .
+
+# ベンチマーク実行
+python -m benchmarks.run_benchmark -v
 ```
 
 ## ライセンス
