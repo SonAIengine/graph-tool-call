@@ -25,6 +25,65 @@ _BASE_STOPWORDS = frozenset(
     }
 )
 
+# CRUD/action verbs that must never be auto-stopworded — they carry intent.
+_PROTECTED_TERMS = frozenset(
+    {
+        "list",
+        "get",
+        "read",
+        "creat",  # stemmed form of "create"
+        "delet",  # stemmed form of "delete"
+        "updat",  # stemmed form of "update"
+        "patch",
+        "put",
+        "post",
+        "watch",
+        "find",
+        "search",
+        "writ",  # stemmed form of "write"
+        "send",
+        "add",
+        "remov",  # stemmed form of "remove"
+        "set",
+    }
+)
+
+# Suffix-stripping rules applied in order. Each entry: (suffix, min_stem_len).
+# min_stem_len prevents over-stemming (e.g. "us" → "u").
+_STEM_RULES: list[tuple[str, int]] = [
+    ("ies", 2),  # queries → quer, bodies → bodi
+    ("ied", 2),  # applied → appl
+    ("ing", 3),  # running → runn, listing → list
+    ("tion", 3),  # creation → crea, deletion → dele
+    ("sion", 3),  # permission → permis
+    ("ment", 3),  # deployment → deploy
+    ("ness", 3),  # readiness → readi
+    ("able", 3),  # readable → read
+    ("ible", 3),  # accessible → access
+    ("ous", 3),  # dangerous → danger
+    ("ive", 3),  # destructive → destruct
+    ("ful", 3),  # successful → success
+    ("es", 3),  # namespaces → namespac, resources → resourc
+    ("ed", 3),  # namespaced → namespac, created → creat
+    ("er", 3),  # controller → controll
+    ("ly", 3),  # permanently → permanent
+    ("s", 3),  # pods → pod, secrets → secret
+]
+
+
+def _stem(token: str) -> str:
+    """Lightweight suffix-stripping stemmer for API/tool vocabulary.
+
+    Not a full Porter/Snowball — just enough to normalize plural/tense forms
+    that commonly appear in OpenAPI operationIds and tool descriptions.
+    """
+    if len(token) <= 3:
+        return token
+    for suffix, min_len in _STEM_RULES:
+        if token.endswith(suffix) and len(token) - len(suffix) >= min_len:
+            return token[: -len(suffix)]
+    return token
+
 
 class BM25Scorer:
     """BM25 scoring for tool corpus.
@@ -74,11 +133,14 @@ class BM25Scorer:
         self._avg_dl = total_len / self._n_docs if self._n_docs > 0 else 0.0
 
         # Auto-compute stopwords: tokens appearing in >threshold% of documents
+        # but never remove CRUD/action verbs — they carry retrieval intent.
         if self._n_docs >= 10:
             auto_stops = {
                 term
                 for term, df in self._doc_freqs.items()
-                if df / self._n_docs >= self._stopword_df_threshold and len(term) <= 4
+                if df / self._n_docs >= self._stopword_df_threshold
+                and len(term) <= 4
+                and term not in _PROTECTED_TERMS
             }
             self._stopwords = _BASE_STOPWORDS | frozenset(auto_stops)
 
@@ -154,12 +216,15 @@ class BM25Scorer:
 
     @staticmethod
     def _tokenize(text: str) -> list[str]:
-        """Improved tokenizer: splits camelCase, snake_case, kebab-case, Korean bigrams.
+        """Tokenizer with camelCase splitting, stemming, and Korean bigrams.
+
+        Emits both the original lowered token and its stemmed form (if different)
+        so that "pods" matches "pod" and "namespaced" matches "namespace".
 
         Examples:
             "getUserById" -> ["get", "user", "by", "id"]
-            "list_all_pets" -> ["list", "all", "pets"]
-            "send-email" -> ["send", "email"]
+            "list_all_pets" -> ["list", "all", "pet", "pets"]
+            "namespaced" -> ["namespac", "namespaced"]
             "정기주문해지" -> ["정기주문해지", "정기", "기주", "주문", "문해", "해지"]
         """
         # Step 1: Split on separators (underscore, hyphen, space, punctuation)
@@ -170,21 +235,21 @@ class BM25Scorer:
             if not part:
                 continue
             # Step 2: Further split camelCase
-            # Insert boundary before uppercase letters that follow lowercase letters
-            # e.g. "getUserById" -> "get User By Id"
             camel_split = re.sub(r"([a-z])([A-Z])", r"\1 \2", part)
-            # Also split sequences of uppercase followed by lowercase
-            # e.g. "HTMLParser" -> "HTML Parser"
             camel_split = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", camel_split)
             sub_parts = camel_split.split()
-            # Step 3: Lowercase all and add Korean bigrams
+            # Step 3: Lowercase, stem, and add Korean bigrams
             for sp in sub_parts:
                 lowered = sp.lower()
-                if lowered:
+                if not lowered:
+                    continue
+                stemmed = _stem(lowered)
+                tokens.append(stemmed)
+                if stemmed != lowered:
                     tokens.append(lowered)
-                    # Add Korean bigrams if the token contains Korean characters
-                    if re.search(r"[\uac00-\ud7af]", lowered):
-                        bigrams = BM25Scorer._korean_bigrams(lowered)
-                        tokens.extend(bigrams)
+                # Add Korean bigrams if the token contains Korean characters
+                if re.search(r"[\uac00-\ud7af]", lowered):
+                    bigrams = BM25Scorer._korean_bigrams(lowered)
+                    tokens.extend(bigrams)
 
         return tokens

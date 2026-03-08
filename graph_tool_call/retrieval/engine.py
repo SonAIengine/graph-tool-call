@@ -80,10 +80,11 @@ class RetrievalEngine:
     def set_embedding_index(self, index: Any) -> None:
         """Attach an EmbeddingIndex for hybrid search."""
         self._embedding_index = index
-        # Rebalance weights when embedding is available
+        # Rebalance weights when embedding is available.
+        # Keep BM25 influence strong — it's precise for exact keyword matches.
         if self._embedding_weight == 0.0:
-            self._graph_weight = 0.5
-            self._keyword_weight = 0.2
+            self._graph_weight = 0.45
+            self._keyword_weight = 0.25
             self._embedding_weight = 0.3
 
     def set_weights(
@@ -171,18 +172,25 @@ class RetrievalEngine:
             except (ValueError, ImportError):
                 pass
 
-        # Embedding fallback: keyword+graph 모두 빈 결과일 때 embedding으로 seed 생성
-        if not keyword_scores and not graph_scores and embedding_scores:
-            emb_seeds = [
-                name
-                for name, _ in sorted(embedding_scores.items(), key=lambda x: x[1], reverse=True)[
-                    :5
-                ]
-            ]
-            expanded = self._searcher.expand_from_seeds(
-                emb_seeds, max_depth=max_graph_depth, max_results=top_k * 3
-            )
-            graph_scores = dict(expanded)
+        # Embedding-augmented graph seeds: add top embedding hits as extra seeds
+        # so graph expansion benefits from semantic matches, not just BM25 keywords.
+        if embedding_scores:
+            emb_top = sorted(embedding_scores.items(), key=lambda x: x[1], reverse=True)
+            for name, _ in emb_top[:3]:
+                if name not in seed_tools:
+                    seed_tools.append(name)
+            if seed_tools and not graph_scores:
+                expanded = self._searcher.expand_from_seeds(
+                    seed_tools, max_depth=max_graph_depth, max_results=top_k * 3
+                )
+                graph_scores = dict(expanded)
+            elif seed_tools:
+                extra = self._searcher.expand_from_seeds(
+                    seed_tools, max_depth=max_graph_depth, max_results=top_k * 3
+                )
+                for name, score in extra:
+                    if name not in graph_scores or score > graph_scores[name]:
+                        graph_scores[name] = score
 
         # Annotation-aware scoring
         from graph_tool_call.retrieval.annotation_scorer import compute_annotation_scores

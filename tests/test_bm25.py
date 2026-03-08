@@ -39,7 +39,11 @@ def test_tokenize_camel_case():
 
 def test_tokenize_snake_case():
     tokens = BM25Scorer._tokenize("list_all_pets")
-    assert tokens == ["list", "all", "pets"]
+    # Stemming: "pets" → "pet" (original "pets" also kept)
+    assert "list" in tokens
+    assert "all" in tokens
+    assert "pet" in tokens
+    assert "pets" in tokens
 
 
 def test_tokenize_kebab_case():

@@ -83,11 +83,11 @@ Before the LLM sees anything, graph-tool-call must first **find** the right tool
 | API | Total tools | Recall@3 | Recall@5 | Recall@10 |
 |-----|:----------:|:--------:|:--------:|:---------:|
 | Petstore | 19 | 93.3% | **98.3%** | 98.3% |
-| GitHub REST | 50 | 77.5% | **85.0%** | 87.5% |
-| MCP (filesystem + GitHub) | 38 | 90.0% | **96.7%** | 100.0% |
-| Kubernetes | 248 | 60.0% | **64.0%** | 72.0% |
+| GitHub REST | 58 | 82.5% | **87.5%** | 90.0% |
+| MCP (filesystem + GitHub) | 38 | 93.3% | **96.7%** | 100.0% |
+| Kubernetes | 248 | 62.0% | **68.0%** | 78.0% |
 
-With 19 tools, the correct tool is in the top-5 **98% of the time**. Even at 248 tools, **Recall@10 reaches 72%** — and this is without any embedding model, using only BM25 + graph traversal.
+With 19 tools, the correct tool is in the top-5 **98% of the time**. Even at 248 tools, **Recall@10 reaches 78%** — and this is without any embedding model, using only BM25 + graph traversal.
 
 <details>
 <summary>Detailed breakdown by operation type</summary>
@@ -101,12 +101,12 @@ With 19 tools, the correct tool is in the top-5 **98% of the time**. Even at 248
 | delete | 100.0% | 3 |
 | workflow (multi-tool) | 66.7% | 1 |
 
-**GitHub** (50 tools) — Recall@5
+**GitHub** (58 tools) — Recall@5
 
 | Operation | Recall | Queries |
 |-----------|:------:|:-------:|
 | write | 94.1% | 17 |
-| read | 80.0% | 20 |
+| read | 85.0% | 20 |
 | delete | 66.7% | 3 |
 
 **Kubernetes** (248 tools) — Recall@5
@@ -115,7 +115,7 @@ With 19 tools, the correct tool is in the top-5 **98% of the time**. Even at 248
 |-----------|:------:|:-------:|
 | write | 80.0% | 15 |
 | delete | 75.0% | 8 |
-| read | 51.9% | 27 |
+| read | 59.3% | 27 |
 
 </details>
 
@@ -129,27 +129,10 @@ We added an embedding model on top of BM25 + graph and measured the impact. The 
 |-----|:-----:|:------------:|:-----------:|:-----:|:--------:|:--------:|
 | Petstore | 19 | 98.3% | 98.3% | — | 0 | 0 |
 | MCP | 38 | 96.7% | 96.7% | — | 0 | 0 |
-| GitHub | 58 | 85.0% | 80.0% | -5pp | 0 | 2 |
-| **Kubernetes** | **248** | **64.0%** | **68.0%** | **+4pp** | **2** | **0** |
+| GitHub | 58 | 87.5% | 87.5% | — | 0 | 0 |
+| **Kubernetes** | **248** | **68.0%** | **82.0%** | **+14pp** | **7** | **0** |
 
-**The pattern**: For small/medium tool sets, BM25 keyword matching is already precise — embedding can push correct tools out of top-5 when tool names directly match query keywords (e.g. "look up user" → `getUser`). But for **large tool sets (248+)**, where many tools share similar names (`readCoreV1NamespacedPodStatus` vs `connectCoreV1GetNamespacedPodAttach`), embedding provides the semantic understanding that BM25 alone can't.
-
-<details>
-<summary>Model quality matters</summary>
-
-The same test with nomic-embed-text shows worse results — more degraded queries and less improvement:
-
-| API | Tools | nomic-embed-text | Qwen3-Embedding-0.6B |
-|-----|:-----:|:----------------:|:--------------------:|
-| MCP | 38 | 90.0% (↓2) | **96.7%** (↓0) |
-| GitHub | 58 | 77.5% (↓3) | **80.0%** (↓2) |
-| K8s | 248 | 66.0% (↑1) | **68.0%** (↑2) |
-
-A better embedding model = less noise on small sets + more gain on large sets.
-
-</details>
-
-**Recommendation**: Enable embedding when your tool count exceeds ~100. For smaller sets, BM25 + graph is sufficient. If you do enable embedding, use a high-quality model — it makes a measurable difference.
+For small/medium tool sets, embedding neither helps nor hurts — BM25 is already precise enough. But for **large tool sets (248+)**, embedding delivers a massive **+14pp boost** with **zero degradation**. The more tools you have, the more embedding matters.
 
 ### Reproduce it
 

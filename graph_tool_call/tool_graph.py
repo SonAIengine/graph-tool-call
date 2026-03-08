@@ -473,7 +473,7 @@ class ToolGraph:
 
         Builds embeddings for all registered tools and attaches the index
         to the retrieval engine.  Weights are automatically rebalanced to
-        graph=0.5, keyword=0.2, embedding=0.3.
+        graph=0.45, keyword=0.25, embedding=0.3.
 
         Parameters
         ----------

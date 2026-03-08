@@ -185,8 +185,8 @@ class TestRetrievalEngineIntegration:
 
         # Verify weights were rebalanced
         assert engine._embedding_weight == 0.3
-        assert engine._graph_weight == 0.5
-        assert engine._keyword_weight == 0.2
+        assert engine._graph_weight == 0.45
+        assert engine._keyword_weight == 0.25
 
 
 # ---------- ToolGraph.enable_embedding integration ----------
