@@ -57,77 +57,89 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
 
 ## Benchmark
 
-Reproducible benchmarks using public API specs ([Petstore](https://petstore3.swagger.io), [Kubernetes](https://github.com/kubernetes/kubernetes), GitHub REST API, MCP tools). All retrieval results are deterministic — no LLM needed.
+> **Can the LLM pick the right tool?**
+> We gave an LLM a user request and tool definitions, then checked if it called the correct tool.
+> - **Without** graph-tool-call: pass **all** tool definitions to the LLM.
+> - **With** graph-tool-call: pass only the **top-5 retrieved** tools.
 
-### Without vs With graph-tool-call
+All benchmarks use public specs anyone can download and reproduce: [Petstore OpenAPI](https://petstore3.swagger.io), [Kubernetes core/v1 API](https://github.com/kubernetes/kubernetes), GitHub REST API, and MCP tool servers.
 
-LLM tool-call accuracy: sending **all tools** to the LLM vs sending only **graph-tool-call's top-5**. Model: qwen3.5:4b (4-bit, Ollama).
+### Result: Does graph-tool-call help the LLM?
 
-| Dataset | Tools | Without (all tools → LLM) | **With graph-tool-call** (top-5 → LLM) | Improvement |
-|---------|:-----:|:-------------------------:|:---------------------------------------:|:-----------:|
-| Petstore 3.0 | 19 | 60.0% | **75.0%** | +15pp, tokens -70% |
-| GitHub REST API | 50 | 20.0% | **20.0%** | tokens -60% |
-| **Kubernetes API** | **248** | **impossible** (100K tokens) | **60.0%** | **only works with retrieval** |
+Model: qwen3.5:4b (4-bit quantized, Ollama). Each query asks the LLM to call the right tool.
 
-The Kubernetes result is the key insight: with **248 tools (100K+ tokens)**, no small model can even receive them all. graph-tool-call filters to 5 tools and the LLM achieves **60% accuracy** — compared to 0% without it.
+| API | Total tools | Without graph-tool-call | With graph-tool-call | What changed |
+|-----|:----------:|:----------------------:|:-------------------:|:-------------|
+| Petstore | 19 | 60% accuracy | **75% accuracy** | **+15pp better**, 70% fewer tokens |
+| GitHub | 50 | 20% accuracy | 20% accuracy | Same accuracy, **60% fewer tokens** |
+| **Kubernetes** | **248** | **Cannot run** | **60% accuracy** | 248 tools = 100K tokens. No small model can fit them. **Only works with retrieval.** |
 
-### Retrieval Quality (Recall@K)
+The takeaway: as the number of tools grows, passing them all to the LLM breaks down. At **248 tools**, the model can't even receive them — graph-tool-call makes it possible by filtering to just 5 relevant tools.
 
-How well does graph-tool-call find the right tools? Recall@K = expected tools found in top-K results.
+### How good is the retrieval?
 
-| Dataset | Tools | Queries | Recall@3 | Recall@5 | Recall@10 |
-|---------|:-----:|:-------:|:--------:|:--------:|:---------:|
-| **Petstore 3.0** | 19 | 20 | 93.3% | **98.3%** | 98.3% |
-| **GitHub REST API** | 50 | 40 | 77.5% | **85.0%** | 87.5% |
-| **Mixed MCP** | 38 | 30 | 90.0% | **96.7%** | 100.0% |
-| **Kubernetes API** | 248 | 50 | 60.0% | **64.0%** | 72.0% |
+Before the LLM sees anything, graph-tool-call must first **find** the right tools. We measure this with **Recall@K**: *"Is the correct tool in the top-K results?"*
+
+| API | Total tools | Recall@3 | Recall@5 | Recall@10 |
+|-----|:----------:|:--------:|:--------:|:---------:|
+| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
+| GitHub REST | 50 | 77.5% | **85.0%** | 87.5% |
+| MCP (filesystem + GitHub) | 38 | 90.0% | **96.7%** | 100.0% |
+| Kubernetes | 248 | 60.0% | **64.0%** | 72.0% |
+
+With 19 tools, the correct tool is in the top-5 **98% of the time**. Even at 248 tools, **Recall@10 reaches 72%** — and this is without any embedding model, using only BM25 + graph traversal.
 
 <details>
-<summary>Breakdown by category & difficulty</summary>
+<summary>Detailed breakdown by operation type</summary>
 
-**Petstore** — Recall@5
+**Petstore** (19 tools) — Recall@5
 
-| Category | Recall | Queries |
-|----------|:------:|:-------:|
+| Operation | Recall | Queries |
+|-----------|:------:|:-------:|
 | read | 100.0% | 8 |
 | write | 100.0% | 8 |
 | delete | 100.0% | 3 |
-| workflow | 66.7% | 1 |
+| workflow (multi-tool) | 66.7% | 1 |
 
-**GitHub** — Recall@5
+**GitHub** (50 tools) — Recall@5
 
-| Category | Recall | Queries |
-|----------|:------:|:-------:|
+| Operation | Recall | Queries |
+|-----------|:------:|:-------:|
 | write | 94.1% | 17 |
 | read | 80.0% | 20 |
 | delete | 66.7% | 3 |
 
-**Kubernetes** — Recall@5
+**Kubernetes** (248 tools) — Recall@5
 
-| Category | Recall | Queries |
-|----------|:------:|:-------:|
+| Operation | Recall | Queries |
+|-----------|:------:|:-------:|
 | write | 80.0% | 15 |
 | delete | 75.0% | 8 |
 | read | 51.9% | 27 |
 
 </details>
 
-### +Embedding: Safe to Add
+### Adding embedding doesn't hurt
 
-Adding embedding (Qwen3-Embedding-4B) to the BM25+graph pipeline — **zero degradation** on any dataset.
+We tested adding an embedding model (Qwen3-Embedding-4B) on top of BM25 + graph. Result: **zero queries degraded** across all datasets — embedding is safe to enable.
 
-| Dataset | BM25 + Graph | + Embedding | Degraded |
-|---------|:------------:|:-----------:|:--------:|
+| API | Without embedding | With embedding | Degraded queries |
+|-----|:-----------------:|:--------------:|:----------------:|
 | Petstore | 98.3% | 98.3% | **0** |
 | GitHub | 85.0% | 85.0% | **0** |
-| Mixed MCP | 96.7% | 96.7% | **0** |
+| MCP | 96.7% | 96.7% | **0** |
 
-### Run It Yourself
+### Reproduce it
 
 ```bash
-python -m benchmarks.run_benchmark                    # retrieval-only (fast)
+# Retrieval quality (fast, no LLM needed)
+python -m benchmarks.run_benchmark
 python -m benchmarks.run_benchmark -d k8s -v          # Kubernetes 248 tools
-python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b  # with LLM
+
+# End-to-end with LLM
+python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b
+
+# Embedding comparison
 python -m benchmarks.run_embedding_benchmark --embedding "ollama/nomic-embed-text"
 ```
 
