@@ -57,26 +57,31 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
 
 ## Benchmark
 
-Reproducible benchmarks using public OpenAPI specs and MCP tool definitions. All results are deterministic (no LLM involved in retrieval).
+Reproducible benchmarks using public API specs ([Petstore OpenAPI](https://petstore3.swagger.io), GitHub REST API, MCP tools). All retrieval results are deterministic — no LLM needed.
 
-### Datasets
+### Without vs With graph-tool-call
 
-| Dataset | Source | Tools | Queries | Description |
-|---------|--------|------:|--------:|-------------|
-| **Petstore 3.0** | [OpenAPI](https://petstore3.swagger.io) | 19 | 20 | Standard pet store CRUD — easy baseline |
-| **GitHub REST API** | OpenAPI subset | 50 | 40 | Repos, issues, PRs, search, CI — medium difficulty |
-| **Mixed MCP** | MCP tools | 38 | 30 | Filesystem + GitHub MCP with annotations — cross-domain |
+LLM tool-call accuracy when sending **all tools** vs **only top-5 retrieved** tools. Model: qwen3.5:4b (4-bit, Ollama).
 
-### Retrieval Recall@K (BM25 + Graph, no embedding)
+| Dataset | Tools | Without (all tools → LLM) | **With graph-tool-call** (top-5 → LLM) | Input Tokens | Improvement |
+|---------|:-----:|:-------------------------:|:---------------------------------------:|:------------:|:-----------:|
+| Petstore 3.0 | 19 | 60.0% | **75.0%** | **-70%** | +15pp |
+| GitHub REST API | 50 | 20.0% | **20.0%** | **-60%** | same accuracy, 60% fewer tokens |
 
-| Dataset | Recall@3 | Recall@5 | Recall@10 |
-|---------|:--------:|:--------:|:---------:|
-| Petstore 3.0 (19 tools) | 93.3% | **98.3%** | 98.3% |
-| GitHub REST API (50 tools) | 77.5% | **85.0%** | 87.5% |
-| Mixed MCP (38 tools) | 90.0% | **96.7%** | 100.0% |
+With only 19 tools, retrieval already boosts accuracy by **+15 percentage points**. As tool count grows (50+), the token savings become critical — **60% fewer tokens** means faster responses and lower cost, even when accuracy is comparable.
+
+### Retrieval Quality (Recall@K)
+
+How well does graph-tool-call find the right tools? Recall@K measures if the expected tools appear in the top-K results.
+
+| Dataset | Tools | Queries | Recall@3 | Recall@5 | Recall@10 |
+|---------|:-----:|:-------:|:--------:|:--------:|:---------:|
+| **Petstore 3.0** | 19 | 20 | 93.3% | **98.3%** | 98.3% |
+| **GitHub REST API** | 50 | 40 | 77.5% | **85.0%** | 87.5% |
+| **Mixed MCP** | 38 | 30 | 90.0% | **96.7%** | 100.0% |
 
 <details>
-<summary>Breakdown by category</summary>
+<summary>Breakdown by category & difficulty</summary>
 
 **Petstore** — Recall@5
 
@@ -104,45 +109,23 @@ Reproducible benchmarks using public OpenAPI specs and MCP tool definitions. All
 
 </details>
 
-### Embedding Impact (BM25 + Graph + Embedding)
+### +Embedding: Safe to Add
 
-Adding embedding (Qwen3-Embedding-4B) to the hybrid pipeline:
+Adding embedding (Qwen3-Embedding-4B) to the BM25+graph pipeline — **zero degradation** on any dataset.
 
-| Dataset | BM25 only | BM25 + Embedding | Degraded queries |
-|---------|:---------:|:-----------------:|:----------------:|
+| Dataset | BM25 + Graph | + Embedding | Degraded |
+|---------|:------------:|:-----------:|:--------:|
 | Petstore | 98.3% | 98.3% | **0** |
 | GitHub | 85.0% | 85.0% | **0** |
 | Mixed MCP | 96.7% | 96.7% | **0** |
 
-Zero degradation across all datasets — embedding is safe to add without hurting existing BM25+graph performance.
-
-### E2E: Baseline vs Retrieve (with LLM)
-
-Full pipeline comparison: sending **all tools** to the LLM vs sending only the **top-5 retrieved** tools.
-
-Model: qwen3.5:4b (Ollama, 4-bit quantized)
-
-| Dataset | Baseline (all tools) | Retrieve (top-5) | Token Reduction |
-|---------|:--------------------:|:----------------:|:---------------:|
-| Petstore (19 tools) | 60.0% | **75.0%** | ~70% |
-| GitHub (50 tools) | 20.0% | 20.0% | ~60% |
-
-Even a small 4B model benefits significantly from retrieval filtering — **+15% accuracy** on Petstore with **70% fewer input tokens**. Larger models (8B+) with higher baseline accuracy would benefit even more from token reduction.
-
-### Run Benchmarks Yourself
+### Run It Yourself
 
 ```bash
-# Retrieval-only (fast, deterministic)
-python -m benchmarks.run_benchmark
-
-# With embedding comparison
+python -m benchmarks.run_benchmark                    # retrieval-only (fast)
+python -m benchmarks.run_benchmark -d petstore -v     # single dataset, verbose
+python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b  # with LLM
 python -m benchmarks.run_embedding_benchmark --embedding "ollama/nomic-embed-text"
-
-# E2E with LLM
-python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b
-
-# Single dataset, verbose
-python -m benchmarks.run_benchmark -d petstore -v --top-k 10
 ```
 
 ## Installation
