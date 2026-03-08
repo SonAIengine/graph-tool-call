@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -19,6 +20,31 @@ class SearchMode(str, Enum):
     BASIC = "basic"  # BM25 + graph + embedding + RRF
     ENHANCED = "enhanced"  # + query expansion (Tier 1)
     FULL = "full"  # + intent decomposition (Tier 2)
+
+
+@dataclass
+class RetrievalResult:
+    """A single retrieval result with score breakdown.
+
+    Provides transparency into why a tool was ranked at a certain position,
+    enabling LLMs to make more informed tool selection decisions.
+    """
+
+    tool: ToolSchema
+    score: float = 0.0
+    keyword_score: float = 0.0
+    graph_score: float = 0.0
+    embedding_score: float = 0.0
+    annotation_score: float = 0.0
+
+    @property
+    def confidence(self) -> str:
+        """Human-readable confidence level."""
+        if self.score >= 0.02:
+            return "high"
+        if self.score >= 0.01:
+            return "medium"
+        return "low"
 
 
 class RetrievalEngine:
@@ -92,7 +118,7 @@ class RetrievalEngine:
         """
         self._diversity_lambda = lambda_
 
-    def retrieve(
+    def _run_pipeline(
         self,
         query: str,
         top_k: int = 10,
@@ -100,34 +126,14 @@ class RetrievalEngine:
         mode: str | SearchMode = SearchMode.BASIC,
         llm: Any = None,
         history: list[str] | None = None,
-    ) -> list[ToolSchema]:
-        """Retrieve the most relevant tools for a query.
-
-        Parameters
-        ----------
-        query:
-            Natural language search query.
-        top_k:
-            Maximum number of results.
-        max_graph_depth:
-            BFS depth for graph expansion.
-        mode:
-            Search mode: BASIC, ENHANCED, or FULL.
-        llm:
-            Optional SearchLLM for ENHANCED/FULL modes.
-            If None, ENHANCED/FULL fall back to BASIC.
-        history:
-            Optional list of previously called tool names in the current session.
-            Enables history-aware retrieval: boosts tools related to prior calls
-            and uses them as additional graph seeds.
-        """
+    ) -> list[RetrievalResult]:
+        """Core retrieval pipeline. Returns results with full score breakdown."""
         if isinstance(mode, str):
             mode = SearchMode(mode)
 
         # --- History-aware query augmentation ---
         effective_query = query
         if history:
-            # Append prior tool names/descriptions as context
             history_context = []
             for tool_name in history:
                 if tool_name in self._tools:
@@ -243,28 +249,98 @@ class RetrievalEngine:
 
         # Determine how many candidates to pass to post-processing
         rerank_pool = top_k * 3 if (self._reranker or self._diversity_lambda) else top_k
-        candidates: list[ToolSchema] = []
-        for name, _ in ranked[:rerank_pool]:
+        candidates: list[RetrievalResult] = []
+        for name, fused_score in ranked[:rerank_pool]:
             if name in self._tools:
-                candidates.append(self._tools[name])
+                candidates.append(
+                    RetrievalResult(
+                        tool=self._tools[name],
+                        score=fused_score,
+                        keyword_score=keyword_scores.get(name, 0.0),
+                        graph_score=graph_scores.get(name, 0.0),
+                        embedding_score=embedding_scores.get(name, 0.0),
+                        annotation_score=annotation_scores.get(name, 0.0),
+                    )
+                )
 
         # --- Cross-encoder reranking ---
         if self._reranker is not None and candidates:
-            candidates = self._reranker.rerank(query, candidates, top_k=top_k * 2)
+            tools_only = [r.tool for r in candidates]
+            reranked = self._reranker.rerank(query, tools_only, top_k=top_k * 2)
+            reranked_names = {t.name for t in reranked}
+            candidates = [r for r in candidates if r.tool.name in reranked_names]
+            name_to_result = {r.tool.name: r for r in candidates}
+            candidates = [name_to_result[t.name] for t in reranked if t.name in name_to_result]
 
         # --- MMR diversity reranking ---
         if self._diversity_lambda is not None and candidates:
             from graph_tool_call.retrieval.diversity import mmr_rerank
 
-            candidates = mmr_rerank(
-                candidates,
+            tools_only = [r.tool for r in candidates]
+            diverse = mmr_rerank(
+                tools_only,
                 final_scores,
                 lambda_=self._diversity_lambda,
                 top_k=top_k,
                 embedding_index=self._embedding_index,
             )
+            diverse_names = [t.name for t in diverse]
+            name_to_result = {r.tool.name: r for r in candidates}
+            candidates = [name_to_result[n] for n in diverse_names if n in name_to_result]
 
         return candidates[:top_k]
+
+    def retrieve(
+        self,
+        query: str,
+        top_k: int = 10,
+        max_graph_depth: int = 2,
+        mode: str | SearchMode = SearchMode.BASIC,
+        llm: Any = None,
+        history: list[str] | None = None,
+    ) -> list[ToolSchema]:
+        """Retrieve the most relevant tools for a query.
+
+        Parameters
+        ----------
+        query:
+            Natural language search query.
+        top_k:
+            Maximum number of results.
+        max_graph_depth:
+            BFS depth for graph expansion.
+        mode:
+            Search mode: BASIC, ENHANCED, or FULL.
+        llm:
+            Optional SearchLLM for ENHANCED/FULL modes.
+            If None, ENHANCED/FULL fall back to BASIC.
+        history:
+            Optional list of previously called tool names in the current session.
+            Enables history-aware retrieval: boosts tools related to prior calls
+            and uses them as additional graph seeds.
+        """
+        results = self._run_pipeline(
+            query, top_k=top_k, max_graph_depth=max_graph_depth, mode=mode, llm=llm, history=history
+        )
+        return [r.tool for r in results]
+
+    def retrieve_with_scores(
+        self,
+        query: str,
+        top_k: int = 10,
+        max_graph_depth: int = 2,
+        mode: str | SearchMode = SearchMode.BASIC,
+        llm: Any = None,
+        history: list[str] | None = None,
+    ) -> list[RetrievalResult]:
+        """Retrieve tools with full score breakdown.
+
+        Same as ``retrieve()`` but returns ``RetrievalResult`` objects
+        containing per-source scores and confidence levels.
+        """
+        return self._run_pipeline(
+            query, top_k=top_k, max_graph_depth=max_graph_depth, mode=mode, llm=llm, history=history
+        )
 
     @staticmethod
     def _rrf_fuse(

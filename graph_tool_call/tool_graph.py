@@ -15,7 +15,7 @@ from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema, normalize_tool, parse_tool
 from graph_tool_call.ontology.builder import OntologyBuilder
 from graph_tool_call.ontology.schema import RelationType
-from graph_tool_call.retrieval.engine import RetrievalEngine, SearchMode
+from graph_tool_call.retrieval.engine import RetrievalEngine, RetrievalResult, SearchMode
 from graph_tool_call.serialization import load_graph, save_graph
 
 
@@ -569,6 +569,37 @@ class ToolGraph:
             history=history,
         )
 
+    def retrieve_with_scores(
+        self,
+        query: str,
+        top_k: int = 10,
+        max_graph_depth: int = 2,
+        mode: str | SearchMode = SearchMode.BASIC,
+        llm: Any = None,
+        history: list[str] | None = None,
+    ) -> list[RetrievalResult]:
+        """Retrieve tools with full score breakdown.
+
+        Returns ``RetrievalResult`` objects with per-source scores
+        (keyword, graph, embedding, annotation) and confidence level.
+
+        Example::
+
+            results = tg.retrieve_with_scores("delete user", top_k=3)
+            for r in results:
+                print(f"{r.tool.name}: {r.score:.4f} ({r.confidence})")
+                print(f"  keyword={r.keyword_score:.2f} graph={r.graph_score:.2f}")
+        """
+        engine = self._get_retrieval_engine()
+        return engine.retrieve_with_scores(
+            query,
+            top_k=top_k,
+            max_graph_depth=max_graph_depth,
+            mode=mode,
+            llm=llm,
+            history=history,
+        )
+
     def _get_retrieval_engine(self) -> RetrievalEngine:
         if self._retrieval is None:
             self._retrieval = RetrievalEngine(self._graph, self._tools)
@@ -743,6 +774,53 @@ class ToolGraph:
         if added:
             self._invalidate_retrieval()
         return added
+
+    # --- assist: validation & suggestion ---
+
+    def validate_tool_call(
+        self,
+        call: dict[str, Any],
+        *,
+        fuzzy_threshold: float = 0.7,
+    ) -> Any:
+        """Validate and auto-correct a tool call.
+
+        Checks tool name (exact → case-insensitive → fuzzy), required params,
+        param name typos, and enum values. Returns a ``ValidationResult``
+        with corrected values and warnings.
+
+        Example::
+
+            result = tg.validate_tool_call({"name": "deleteuser", "arguments": {"id": "123"}})
+            if not result.valid:
+                print(result.corrections)  # {"name": ("deleteuser", "deleteUser")}
+                # Use result.tool_name and result.arguments for the corrected call
+        """
+        from graph_tool_call.assist.validator import validate_tool_call as _validate
+
+        return _validate(call, self._tools, fuzzy_threshold=fuzzy_threshold)
+
+    def suggest_next(
+        self,
+        current_tool: str,
+        *,
+        history: list[str] | None = None,
+        top_k: int = 5,
+    ) -> list[Any]:
+        """Suggest next tools based on graph relationships.
+
+        Uses REQUIRES, PRECEDES, and same-domain edges to recommend
+        likely next steps after executing ``current_tool``.
+
+        Example::
+
+            suggestions = tg.suggest_next("getUser", history=["listUsers"])
+            for s in suggestions:
+                print(f"{s.tool.name}: {s.reason}")
+        """
+        from graph_tool_call.assist.next_step import suggest_next as _suggest
+
+        return _suggest(current_tool, self._graph, self._tools, history=history, top_k=top_k)
 
     # --- model-driven search API ---
 
