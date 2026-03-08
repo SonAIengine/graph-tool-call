@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -41,8 +42,15 @@ def _load_spec(source: dict[str, Any] | str) -> dict[str, Any]:
 
     # URL
     if source.startswith(_HTTP_PREFIXES):
-        with urllib.request.urlopen(source) as resp:  # noqa: S310
-            raw = resp.read().decode("utf-8")
+        try:
+            with urllib.request.urlopen(source, timeout=30) as resp:  # noqa: S310
+                raw = resp.read().decode("utf-8")
+        except urllib.error.HTTPError as e:
+            msg = f"HTTP {e.code} from {source}: {e.reason}"
+            raise ConnectionError(msg) from None
+        except urllib.error.URLError as e:
+            msg = f"Cannot reach {source}: {e.reason}"
+            raise ConnectionError(msg) from None
         # Try JSON first, then YAML
         try:
             return json.loads(raw)

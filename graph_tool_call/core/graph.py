@@ -120,10 +120,12 @@ class NetworkXGraph:
     def from_dict(cls, data: dict[str, Any]) -> NetworkXGraph:
         g = nx.DiGraph()
         for node in data.get("nodes", []):
-            nid = node.pop("id")
-            g.add_node(nid, **node)
+            nid = node["id"]
+            attrs = {k: v for k, v in node.items() if k != "id"}
+            g.add_node(nid, **attrs)
         for edge in data.get("edges", []):
-            src = edge.pop("source")
-            tgt = edge.pop("target")
-            g.add_edge(src, tgt, **edge)
+            src = edge["source"]
+            tgt = edge["target"]
+            attrs = {k: v for k, v in edge.items() if k not in ("source", "target")}
+            g.add_edge(src, tgt, **attrs)
         return cls(g)

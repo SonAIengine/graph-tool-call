@@ -33,7 +33,9 @@ class TestDiscoverSpecUrls:
         with patch("urllib.request.urlopen", return_value=mock_resp) as mock_open:
             urls = _discover_spec_urls("https://api.example.com/swagger-ui/index.html")
 
-        mock_open.assert_called_once_with("https://api.example.com/swagger-config")
+        mock_open.assert_called_once_with(
+            "https://api.example.com/swagger-config", timeout=10
+        )
         assert len(urls) == 2
         assert "https://api.example.com/v3/api-docs/group1" in urls
         assert "https://api.example.com/v3/api-docs/group2" in urls
@@ -103,7 +105,7 @@ class TestFromUrl:
 
         call_count = 0
 
-        def mock_urlopen(url):
+        def mock_urlopen(url, **kwargs):
             nonlocal call_count
             call_count += 1
             mock = MagicMock()

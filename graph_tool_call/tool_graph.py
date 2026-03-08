@@ -64,7 +64,7 @@ def _discover_spec_urls(url: str) -> list[str]:
     # Step 2: Parse swagger-initializer.js to find configUrl
     init_js_url = f"{ui_base}/swagger-initializer.js"
     try:
-        with urllib.request.urlopen(init_js_url) as resp:  # noqa: S310
+        with urllib.request.urlopen(init_js_url, timeout=10) as resp:  # noqa: S310
             js_text = resp.read().decode("utf-8")
         # Extract configUrl from JS: "configUrl" : "/api/bo/api-docs/swagger-config"
         match = re.search(r'"configUrl"\s*:\s*"([^"]+)"', js_text)
@@ -92,7 +92,7 @@ def _discover_spec_urls(url: str) -> list[str]:
 def _try_swagger_config(config_url: str, base: str) -> list[str] | None:
     """Try fetching a swagger-config URL and extract spec URLs."""
     try:
-        with urllib.request.urlopen(config_url) as resp:  # noqa: S310
+        with urllib.request.urlopen(config_url, timeout=10) as resp:  # noqa: S310
             config = json.loads(resp.read().decode("utf-8"))
         urls = config.get("urls", [])
         if urls:
@@ -516,6 +516,7 @@ class ToolGraph:
         lint: bool = False,
         lint_level: int = 2,
         llm: Any = None,
+        cache: str | Path | None = None,
     ) -> ToolGraph:
         """Create a ToolGraph by fetching OpenAPI spec(s) from a URL.
 
@@ -533,7 +534,22 @@ class ToolGraph:
         llm:
             Optional OntologyLLM instance for LLM-enhanced ontology construction.
             Runs auto_organize() with LLM after all specs are ingested.
+        cache:
+            Path to a JSON file for caching. If the file exists, the graph is
+            loaded from it (skipping network fetch). If it doesn't exist, the
+            graph is built normally and then saved to this path for reuse.
+
+            Example::
+
+                tg = ToolGraph.from_url(url, cache="x2bee.json")
+                # First call: fetches specs, builds graph, saves to x2bee.json
+                # Next call: loads instantly from x2bee.json
         """
+        if cache is not None:
+            cache_path = Path(cache)
+            if cache_path.exists():
+                return cls.load(cache_path)
+
         from graph_tool_call.ingest.openapi import _load_spec
 
         spec_urls = _discover_spec_urls(url)
@@ -556,6 +572,9 @@ class ToolGraph:
 
         if llm is not None:
             tg.auto_organize(llm=llm)
+
+        if cache is not None:
+            tg.save(Path(cache))
 
         return tg
 

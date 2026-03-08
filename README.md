@@ -78,78 +78,81 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
   - **Stage 3**: MMR diversity reranking (optional, reduces redundancy)
   - History-aware retrieval demotes already-used tools and augments graph seeds.
 
-## Quick Start
+## Installation
 
 ```bash
-pip install graph-tool-call
+pip install graph-tool-call                    # core (BM25 + graph)
+pip install graph-tool-call[embedding]         # + embedding, cross-encoder reranker
+pip install graph-tool-call[openapi]           # + YAML support for OpenAPI specs
+pip install graph-tool-call[all]               # everything
 ```
+
+<details>
+<summary>All extras</summary>
+
+```bash
+pip install graph-tool-call[lint]              # + ai-api-lint spec auto-fix
+pip install graph-tool-call[similarity]        # + rapidfuzz for deduplication
+pip install graph-tool-call[visualization]     # + pyvis for HTML graph export
+pip install graph-tool-call[langchain]         # + LangChain tool adapter
+```
+
+</details>
+
+## Quick Start
+
+### 30-Second Example
+
+Copy-paste this to see it work immediately:
 
 ```python
 from graph_tool_call import ToolGraph
 
-tg = ToolGraph()
-
-# Register tools (OpenAI / Anthropic / LangChain format auto-detected)
-tg.add_tools(your_tools_list)
-
-# Define relationships
-tg.add_relation("read_file", "write_file", "complementary")
-
-# Retrieve — graph expansion finds related tools automatically
-tools = tg.retrieve("read a file and save changes", top_k=5)
-# → [read_file, write_file, list_dir, ...]
-#    write_file found via COMPLEMENTARY relation, not just vector similarity
-```
-
-### From Swagger / OpenAPI
-
-```python
-from graph_tool_call import ToolGraph
-
-tg = ToolGraph()
-tg.ingest_openapi("tests/fixtures/petstore_swagger2.json")
-# Supports: Swagger 2.0, OpenAPI 3.0, OpenAPI 3.1
-# Accepts: file path (JSON/YAML), URL, or raw dict
-
-# Automatic: 5 endpoints → 5 tools → CRUD relations → categories
-# Dependencies, call ordering, category groupings — all auto-detected.
-
-tools = tg.retrieve("create a new pet", top_k=5)
-# → [createPet, getPet, updatePet, listPets, deletePet]
-#    Graph expansion brings the full CRUD workflow
-```
-
-### From Swagger UI URL
-
-```python
-from graph_tool_call import ToolGraph
-
-# Auto-discovers all API groups from Swagger UI
-tg = ToolGraph.from_url("https://api.example.com/swagger-ui/index.html")
-
-# Also works with direct spec URLs
-tg = ToolGraph.from_url("https://api.example.com/v3/api-docs")
-
-# With ai-api-lint auto-fix + LLM ontology construction
+# Build a tool graph from the official Petstore API
 tg = ToolGraph.from_url(
-    "https://api.example.com/swagger-ui/index.html",
-    lint=True,                    # auto-fix missing descriptions, error responses, etc.
-    llm="ollama/qwen2.5:7b",     # LLM-enhanced categories + keyword enrichment
+    "https://petstore3.swagger.io/api/v3/openapi.json",
+    cache="petstore.json",  # saves graph locally for instant reload
 )
 
-tools = tg.retrieve("search products", top_k=5)
+print(tg)
+# → ToolGraph(tools=19, nodes=22, edges=100)
+
+# Search for tools
+tools = tg.retrieve("create a new pet", top_k=5)
+for t in tools:
+    print(f"  {t.name}: {t.description}")
+# → addPet: Add a new pet to the store.
+#   updatePet: Update an existing pet.
+#   getPetById: Find pet by ID.
+#   ...graph expansion brings the full CRUD workflow
 ```
 
-`from_url()` automatically detects Swagger UI pages, discovers all spec groups via `swagger-config`, and ingests them into a single unified graph. Operations without descriptions get auto-generated fallbacks from their HTTP method, path, and tags.
+### From Your Own Swagger / OpenAPI
+
+```python
+from graph_tool_call import ToolGraph
+
+# From file (JSON or YAML)
+tg = ToolGraph()
+tg.ingest_openapi("path/to/openapi.json")
+
+# From URL — auto-discovers all spec groups from Swagger UI
+tg = ToolGraph.from_url("https://api.example.com/swagger-ui/index.html")
+
+# With caching — build once, reload instantly
+tg = ToolGraph.from_url(
+    "https://api.example.com/swagger-ui/index.html",
+    cache="my_api.json",  # first call: fetch + build + save
+)                          # next calls: load from file (no network)
+
+# Supports: Swagger 2.0, OpenAPI 3.0, OpenAPI 3.1
+```
 
 ### From MCP Server Tools
 
 ```python
 from graph_tool_call import ToolGraph
 
-tg = ToolGraph()
-
-# Ingest MCP tool list (annotations are preserved)
 mcp_tools = [
     {
         "name": "read_file",
@@ -164,17 +167,21 @@ mcp_tools = [
         "annotations": {"readOnlyHint": False, "destructiveHint": True},
     },
 ]
+
+tg = ToolGraph()
 tg.ingest_mcp_tools(mcp_tools, server_name="filesystem")
 
-# "delete files" → destructive tools ranked higher (annotation-aware)
+# Annotation-aware: "delete files" → destructive tools ranked higher
 tools = tg.retrieve("delete temporary files", top_k=5)
 ```
 
-MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are used as retrieval signals. Query intent is automatically classified and aligned with tool annotations — read queries prefer read-only tools, delete queries prefer destructive tools.
+MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are used as retrieval signals. Query intent is automatically classified and aligned with tool annotations.
 
 ### From Python Functions
 
 ```python
+from graph_tool_call import ToolGraph
+
 def read_file(path: str) -> str:
     """Read contents of a file."""
 
@@ -186,15 +193,80 @@ tg.ingest_functions([read_file, write_file])
 # Parameters extracted from type hints, description from docstring
 ```
 
+### Manual Tool Registration
+
+```python
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph()
+
+# OpenAI function-calling format — auto-detected
+tg.add_tools([
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get current weather for a city",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+            },
+        },
+    },
+])
+
+# Define relationships manually
+tg.add_relation("get_weather", "get_forecast", "complementary")
+```
+
+## Embedding (Hybrid Search)
+
+Add embedding-based semantic search on top of BM25 + graph. Supports multiple providers out of the box.
+
+```bash
+pip install graph-tool-call[embedding]
+```
+
+```python
+# Sentence-transformers (local, no API key needed)
+tg.enable_embedding("sentence-transformers/all-MiniLM-L6-v2")
+
+# OpenAI
+tg.enable_embedding("openai/text-embedding-3-large")
+
+# Ollama
+tg.enable_embedding("ollama/nomic-embed-text")
+
+# Custom callable
+tg.enable_embedding(lambda texts: my_embed_fn(texts))
+```
+
+Weights are automatically rebalanced when embedding is enabled. You can fine-tune them:
+
+```python
+tg.set_weights(keyword=0.1, graph=0.4, embedding=0.5)
+```
+
+## Save & Load
+
+Build once, reuse everywhere. The full graph structure (nodes, edges, relation types, weights) is preserved.
+
+```python
+# Save
+tg.save("my_graph.json")
+
+# Load
+tg = ToolGraph.load("my_graph.json")
+
+# Or use cache= in from_url() for automatic save/load
+tg = ToolGraph.from_url(url, cache="my_graph.json")
+```
+
 ## Advanced Features
 
 ### Cross-Encoder Reranking
 
-Second-stage reranking using a cross-encoder model for improved precision. The cross-encoder jointly encodes `(query, tool_description)` pairs — more accurate than independent embedding comparison.
-
-```python
-pip install graph-tool-call[embedding]
-```
+Second-stage reranking using a cross-encoder model. Jointly encodes `(query, tool_description)` pairs for more accurate scoring than independent embedding comparison.
 
 ```python
 tg.enable_reranker()  # default: cross-encoder/ms-marco-MiniLM-L-6-v2
@@ -204,16 +276,15 @@ tools = tg.retrieve("cancel order", top_k=5)
 
 ### MMR Diversity
 
-Maximal Marginal Relevance reranking reduces redundant results. Useful when the top-k results contain many similar tools.
+Maximal Marginal Relevance reranking reduces redundant results.
 
 ```python
 tg.enable_diversity(lambda_=0.7)  # 0.7 = mostly relevant, some diversity
-tools = tg.retrieve("manage orders", top_k=10)
 ```
 
 ### History-Aware Retrieval
 
-Pass previously called tool names to improve retrieval context. Already-used tools are demoted, and their graph neighbors become seeds for expansion.
+Pass previously called tool names to improve context. Already-used tools are demoted, and their graph neighbors become seeds for expansion.
 
 ```python
 # First call
@@ -226,6 +297,19 @@ tools = tg.retrieve("now cancel it", history=["listOrders", "getOrder"])
 #    listOrders/getOrder demoted, cancelOrder boosted via graph proximity
 ```
 
+### wRRF Weight Tuning
+
+Fine-tune the weighted Reciprocal Rank Fusion weights for each scoring source:
+
+```python
+tg.set_weights(
+    keyword=0.2,     # BM25 text matching
+    graph=0.5,       # graph traversal (relation-based)
+    embedding=0.3,   # semantic similarity
+    annotation=0.2,  # MCP annotation matching
+)
+```
+
 ### LLM-Enhanced Ontology
 
 Build richer tool ontologies using any LLM. The LLM infers categories, relations, and generates search keywords (especially useful for non-English tool descriptions).
@@ -236,12 +320,11 @@ tg.auto_organize(llm="ollama/qwen2.5:7b")           # string shorthand
 tg.auto_organize(llm=lambda p: my_llm(p))            # callable
 tg.auto_organize(llm=openai.OpenAI())                # OpenAI client
 tg.auto_organize(llm="litellm/claude-sonnet-4-20250514")    # via litellm
-
-# Or use build_ontology() after adding tools
-tg.build_ontology(llm="ollama/qwen2.5:7b")
 ```
 
-Supported LLM inputs:
+<details>
+<summary>Supported LLM inputs</summary>
+
 | Input | Wrapped as |
 |-------|-----------|
 | `OntologyLLM` instance | Pass-through |
@@ -251,21 +334,50 @@ Supported LLM inputs:
 | `"openai/model"` | `OpenAICompatibleOntologyLLM` |
 | `"litellm/model"` | litellm.completion wrapper |
 
+</details>
+
+### Duplicate Detection
+
+Find and merge duplicate tools across multiple API specs:
+
+```python
+duplicates = tg.find_duplicates(threshold=0.85)
+merged = tg.merge_duplicates(duplicates)
+# merged = {"getUser_1": "getUser", ...}
+```
+
+### Conflict Detection
+
+Detect tools that shouldn't run together (e.g., `updateOrder` and `deleteOrder`):
+
+```python
+tg.apply_conflicts()
+# Adds CONFLICTS_WITH edges between conflicting tool pairs
+```
+
+### Export & Visualization
+
+```python
+# Interactive HTML (vis.js)
+tg.export_html("graph.html", progressive=True)
+
+# GraphML (for Gephi, yEd)
+tg.export_graphml("graph.graphml")
+
+# Neo4j Cypher
+tg.export_cypher("graph.cypher")
+```
+
 ### API Spec Lint Integration
 
-Auto-fix poor OpenAPI specs before ingestion using [ai-api-lint](https://github.com/SonAIengine/ai-api-lint). Adds missing descriptions, error responses, schema enhancements, and more.
+Auto-fix poor OpenAPI specs before ingestion using [ai-api-lint](https://github.com/SonAIengine/ai-api-lint):
 
 ```bash
 pip install graph-tool-call[lint]
 ```
 
 ```python
-# Applied during from_url()
-tg = ToolGraph.from_url("https://api.example.com/swagger-ui/", lint=True)
-
-# Or manually
-from graph_tool_call.ingest.lint import lint_and_fix_spec
-fixed_spec, result = lint_and_fix_spec(raw_spec, max_level=2)
+tg = ToolGraph.from_url(url, lint=True)  # auto-fix during ingest
 ```
 
 ## Why Not Just Vector Search?
@@ -291,18 +403,37 @@ graph-tool-call is designed to work **without any LLM** and get **better with on
 
 Even a tiny model running on Ollama (`qwen2.5:1.5b`) can meaningfully improve search quality. No GPU required for Tier 0.
 
-## Installation Options
+## Full API Reference
 
-```bash
-pip install graph-tool-call                    # core (BM25 + graph, no dependencies)
-pip install graph-tool-call[embedding]         # + sentence-transformers, cross-encoder
-pip install graph-tool-call[openapi]           # + YAML support for OpenAPI specs
-pip install graph-tool-call[lint]              # + ai-api-lint spec auto-fix
-pip install graph-tool-call[similarity]        # + rapidfuzz for deduplication
-pip install graph-tool-call[visualization]     # + pyvis for HTML graph export
-pip install graph-tool-call[langchain]         # + LangChain tool adapter
-pip install graph-tool-call[all]               # everything
-```
+<details>
+<summary>ToolGraph methods</summary>
+
+| Method | Description |
+|--------|-------------|
+| `add_tool(tool)` | Add a single tool (auto-detects format) |
+| `add_tools(tools)` | Add multiple tools |
+| `ingest_openapi(source)` | Ingest from OpenAPI/Swagger spec |
+| `ingest_mcp_tools(tools)` | Ingest from MCP tool list |
+| `ingest_functions(fns)` | Ingest from Python callables |
+| `ingest_arazzo(source)` | Ingest Arazzo 1.0.0 workflow spec |
+| `from_url(url, cache=...)` | Build from Swagger UI or spec URL |
+| `add_relation(src, tgt, type)` | Add a manual relation |
+| `auto_organize(llm=...)` | Auto-categorize tools |
+| `build_ontology(llm=...)` | Build complete ontology |
+| `retrieve(query, top_k=10)` | Search for tools |
+| `enable_embedding(provider)` | Enable hybrid embedding search |
+| `enable_reranker(model)` | Enable cross-encoder reranking |
+| `enable_diversity(lambda_)` | Enable MMR diversity |
+| `set_weights(...)` | Tune wRRF fusion weights |
+| `find_duplicates(threshold)` | Find duplicate tools |
+| `merge_duplicates(pairs)` | Merge detected duplicates |
+| `apply_conflicts()` | Detect and add CONFLICTS_WITH edges |
+| `save(path)` / `load(path)` | Serialize / deserialize graph |
+| `export_html(path)` | Export interactive HTML visualization |
+| `export_graphml(path)` | Export to GraphML format |
+| `export_cypher(path)` | Export as Neo4j Cypher statements |
+
+</details>
 
 ## Feature Comparison
 
@@ -318,18 +449,6 @@ pip install graph-tool-call[all]               # everything
 | History awareness | None | Demotes used tools, boosts next-step |
 | Spec quality | Assumes good specs | ai-api-lint auto-fix integration |
 | LLM dependency | Required | Optional (better with, works without) |
-
-## Roadmap
-
-| Phase | What | Status |
-|-------|------|--------|
-| **0** | Core graph engine + hybrid retrieval | ✅ Done |
-| **1** | OpenAPI ingest, BM25+RRF retrieval, dependency detection | ✅ Done |
-| **2** | Deduplication, embeddings, ontology modes (Auto/LLM-Auto), search tiers, `from_url()` | ✅ Done |
-| **2.5** | MCP Annotation-Aware Retrieval: intent classifier, annotation scoring, wRRF integration | ✅ Done |
-| **3** | Pyvis visualization, Neo4j export, CLI, PyPI publish | ✅ Done |
-| **3.5** | Cross-encoder reranking, MMR diversity, history-aware retrieval, lint integration, LLM adapter | ✅ Done (318 tests) |
-| **4** | Interactive dashboard, benchmarking, community | Planned |
 
 ## Documentation
 
@@ -357,6 +476,7 @@ poetry run pytest -v
 
 # Lint
 poetry run ruff check .
+poetry run ruff format --check .
 ```
 
 ## License
