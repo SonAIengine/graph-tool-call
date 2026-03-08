@@ -288,6 +288,7 @@ def _operation_to_tool(
                 break
 
     metadata: dict[str, Any] = {
+        "source": "openapi",
         "method": method,
         "path": path,
     }

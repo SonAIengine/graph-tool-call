@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -229,3 +230,231 @@ def parse_tool(tool: Any) -> ToolSchema:
         return parse_langchain_tool(tool)
 
     raise TypeError(f"Unsupported tool format: {type(tool)}")
+
+
+# ---------------------------------------------------------------------------
+# Post-ingest normalization
+# ---------------------------------------------------------------------------
+
+_VERB_TOKENS = frozenset(
+    {
+        "get",
+        "set",
+        "create",
+        "update",
+        "delete",
+        "remove",
+        "list",
+        "fetch",
+        "find",
+        "search",
+        "add",
+        "put",
+        "patch",
+        "post",
+        "read",
+        "write",
+        "show",
+        "check",
+        "verify",
+        "validate",
+        "process",
+        "handle",
+        "run",
+        "execute",
+        "send",
+        "save",
+        "load",
+        "export",
+        "import",
+        "init",
+        "start",
+        "stop",
+        "cancel",
+        "close",
+        "open",
+        "enable",
+        "disable",
+    }
+)
+
+_ANNOTATION_BY_VERB: dict[str, MCPAnnotations] = {
+    # read-only verbs
+    "get": MCPAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "list": MCPAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "fetch": MCPAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "read": MCPAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "search": MCPAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "find": MCPAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "show": MCPAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "check": MCPAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "verify": MCPAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "validate": MCPAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    # create verbs
+    "create": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    "add": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    "post": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    "send": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    # update verbs
+    "update": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "set": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "put": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "save": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+    ),
+    "patch": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    # delete verbs
+    "delete": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+    ),
+    "remove": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+    ),
+    "cancel": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+    ),
+    "destroy": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=True,
+    ),
+}
+
+
+def _tokenize_name(name: str) -> list[str]:
+    """Split a tool name into lowercase tokens (camelCase, snake_case, kebab-case)."""
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name)
+    spaced = re.sub(r"[_\-]+", " ", spaced)
+    return [t.lower() for t in spaced.split() if t]
+
+
+def _singularize(word: str) -> str:
+    """Naive English singularization for common plural suffixes."""
+    if len(word) <= 3:
+        return word
+    if word.endswith("ies") and len(word) > 4:
+        return word[:-3] + "y"
+    if word.endswith("ses") or word.endswith("xes") or word.endswith("zes"):
+        return word[:-2]
+    if word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def _infer_tags(name: str) -> list[str]:
+    """Infer resource-oriented tags from a tool name."""
+    tokens = _tokenize_name(name)
+    resource = [_singularize(t) for t in tokens if t not in _VERB_TOKENS]
+    return resource if resource else [_singularize(t) for t in tokens[:1]]
+
+
+def _infer_domain(tool: ToolSchema) -> str:
+    """Infer domain from tags or fall back to 'general'."""
+    if tool.tags:
+        return tool.tags[0]
+    return "general"
+
+
+def _infer_annotations(name: str) -> MCPAnnotations | None:
+    """Infer MCP annotations from the leading verb of a tool name."""
+    tokens = _tokenize_name(name)
+    if tokens and tokens[0] in _ANNOTATION_BY_VERB:
+        return _ANNOTATION_BY_VERB[tokens[0]]
+    return None
+
+
+def normalize_tool(tool: ToolSchema) -> ToolSchema:
+    """Ensure all ToolSchema fields are populated regardless of ingest source.
+
+    Fills gaps only — existing values are never overwritten.
+    This guarantees consistent field coverage for graph construction
+    and retrieval scoring across all ingest sources (OpenAPI, MCP,
+    Python functions, manual registration).
+    """
+    if not tool.tags:
+        tool.tags = _infer_tags(tool.name)
+    if tool.domain is None:
+        tool.domain = _infer_domain(tool)
+    if tool.annotations is None:
+        tool.annotations = _infer_annotations(tool.name)
+    return tool

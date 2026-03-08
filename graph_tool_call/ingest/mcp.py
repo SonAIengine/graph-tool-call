@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from graph_tool_call.core.tool import ToolSchema, parse_mcp_tool
+from graph_tool_call.core.tool import ToolSchema, normalize_tool, parse_mcp_tool
 
 
 def ingest_mcp_tools(
@@ -30,9 +30,11 @@ def ingest_mcp_tools(
     result: list[ToolSchema] = []
     for tool_dict in tools:
         schema = parse_mcp_tool(tool_dict)
+        schema.metadata["source"] = "mcp"
         if server_name:
             schema.metadata["mcp_server"] = server_name
             if server_name not in schema.tags:
                 schema.tags.append(server_name)
+        normalize_tool(schema)
         result.append(schema)
     return result

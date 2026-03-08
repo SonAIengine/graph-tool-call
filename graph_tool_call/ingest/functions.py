@@ -6,7 +6,7 @@ import inspect
 from collections.abc import Callable, Iterable
 from typing import Any, get_type_hints
 
-from graph_tool_call.core.tool import ToolParameter, ToolSchema
+from graph_tool_call.core.tool import ToolParameter, ToolSchema, normalize_tool
 
 # ---------------------------------------------------------------------------
 # Python type -> JSON Schema type mapping
@@ -86,11 +86,13 @@ def ingest_function(fn: Callable[..., Any]) -> ToolSchema:
             )
         )
 
-    return ToolSchema(
+    schema = ToolSchema(
         name=fn.__name__,
         description=_first_line(fn.__doc__),
         parameters=params,
+        metadata={"source": "function"},
     )
+    return normalize_tool(schema)
 
 
 def ingest_functions(fns: Iterable[Callable[..., Any]]) -> list[ToolSchema]:
