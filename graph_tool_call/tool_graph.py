@@ -592,6 +592,8 @@ class ToolGraph:
         lint_level: int = 2,
         llm: Any = None,
         cache: str | Path | None = None,
+        force: bool = False,
+        progress: Callable[[str], None] | None = None,
     ) -> ToolGraph:
         """Create a ToolGraph by fetching OpenAPI spec(s) from a URL.
 
@@ -613,28 +615,40 @@ class ToolGraph:
             Path to a JSON file for caching. If the file exists, the graph is
             loaded from it (skipping network fetch). If it doesn't exist, the
             graph is built normally and then saved to this path for reuse.
+        force:
+            If True, ignore existing cache and rebuild from source.
+            The rebuilt graph is saved back to the cache path.
+        progress:
+            Optional callback for progress reporting. Called with a short
+            status message at each major step. Example::
 
-            Example::
-
-                tg = ToolGraph.from_url(url, cache="x2bee.json")
-                # First call: fetches specs, builds graph, saves to x2bee.json
-                # Next call: loads instantly from x2bee.json
+                tg = ToolGraph.from_url(url, progress=print)
         """
+        _log = progress or (lambda _msg: None)
+
         if cache is not None:
             cache_path = Path(cache)
-            if cache_path.exists():
+            if cache_path.exists() and not force:
+                _log(f"Loading cached graph from {cache_path}")
                 return cls.load(cache_path)
+            if force and cache_path.exists():
+                _log(f"Force rebuild — ignoring cache {cache_path}")
 
         from graph_tool_call.ingest.openapi import _load_spec
 
+        _log(f"Discovering specs from {url}")
         spec_urls = _discover_spec_urls(url)
+        _log(f"Found {len(spec_urls)} spec(s)")
+
         tg = cls()
-        for spec_url in spec_urls:
+        for i, spec_url in enumerate(spec_urls, 1):
+            _log(f"Ingesting spec {i}/{len(spec_urls)}: {spec_url}")
             raw_spec = _load_spec(spec_url)
 
             if lint:
                 from graph_tool_call.ingest.lint import lint_and_fix_spec
 
+                _log(f"Linting spec {i}/{len(spec_urls)}")
                 raw_spec, _ = lint_and_fix_spec(raw_spec, max_level=lint_level)
 
             tg.ingest_openapi(
@@ -646,26 +660,53 @@ class ToolGraph:
             )
 
         if llm is not None:
+            _log("Running LLM-enhanced ontology construction")
             tg.auto_organize(llm=llm)
 
         if cache is not None:
-            tg.save(Path(cache))
+            build_metadata = {
+                "source_url": url,
+                "spec_urls": spec_urls,
+                "build_options": {
+                    "required_only": required_only,
+                    "skip_deprecated": skip_deprecated,
+                    "detect_dependencies": detect_dependencies,
+                    "min_confidence": min_confidence,
+                    "lint": lint,
+                    "llm": llm is not None,
+                },
+            }
+            _log(f"Saving graph to {cache_path}")
+            tg.save(Path(cache), metadata=build_metadata)
 
+        _log(f"Done — {len(tg._tools)} tools, {tg._graph.edge_count()} relations")
         return tg
 
     # --- serialization ---
 
-    def save(self, path: str | Path) -> None:
-        """Save the tool graph to a JSON file."""
-        save_graph(self._graph, self._tools, path)
+    def save(self, path: str | Path, *, metadata: dict[str, Any] | None = None) -> None:
+        """Save the tool graph to a JSON file.
+
+        Parameters
+        ----------
+        metadata:
+            Optional build metadata (source_urls, build_options, etc.).
+        """
+        save_graph(self._graph, self._tools, path, metadata=metadata)
 
     @classmethod
     def load(cls, path: str | Path) -> ToolGraph:
         """Load a tool graph from a JSON file."""
-        graph, tools = load_graph(path)
+        graph, tools, metadata = load_graph(path)
         tg = cls(graph=graph)
         tg._tools = tools
+        tg._metadata = metadata
         return tg
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Build metadata from the last save/load (source_urls, built_at, etc.)."""
+        return getattr(self, "_metadata", {})
 
     # --- conflict detection ---
 

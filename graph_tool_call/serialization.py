@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -18,13 +19,30 @@ def save_graph(
     graph: GraphEngine,
     tools: dict[str, ToolSchema],
     path: str | Path,
+    *,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Save graph structure and tool schemas to a JSON file."""
+    """Save graph structure and tool schemas to a JSON file.
+
+    Parameters
+    ----------
+    metadata:
+        Optional build metadata (source_urls, build_options, etc.).
+        Automatically includes ``built_at`` timestamp.
+    """
     from graph_tool_call import __version__
+
+    build_meta: dict[str, Any] = {
+        "built_at": datetime.now(timezone.utc).isoformat(),
+        "tool_count": len(tools),
+    }
+    if metadata:
+        build_meta.update(metadata)
 
     data: dict[str, Any] = {
         "format_version": _FORMAT_VERSION,
         "library_version": __version__,
+        "metadata": build_meta,
         "graph": graph.to_dict(),
         "tools": {name: tool.model_dump() for name, tool in tools.items()},
     }
@@ -40,8 +58,17 @@ def save_graph(
         raise OSError(msg) from None
 
 
-def load_graph(path: str | Path) -> tuple[GraphEngine, dict[str, ToolSchema]]:
-    """Load graph structure and tool schemas from a JSON file."""
+def load_graph(
+    path: str | Path,
+) -> tuple[GraphEngine, dict[str, ToolSchema], dict[str, Any]]:
+    """Load graph structure, tool schemas, and build metadata from a JSON file.
+
+    Returns
+    -------
+    tuple[GraphEngine, dict[str, ToolSchema], dict[str, Any]]
+        (graph, tools, metadata). Metadata includes ``built_at``,
+        ``source_urls``, ``tool_count``, etc.
+    """
     path = Path(path)
     if not path.exists():
         msg = f"Graph file not found: {path}"
@@ -66,4 +93,5 @@ def load_graph(path: str | Path) -> tuple[GraphEngine, dict[str, ToolSchema]]:
 
     graph = NetworkXGraph.from_dict(data["graph"])
     tools = {name: ToolSchema(**schema) for name, schema in data.get("tools", {}).items()}
-    return graph, tools
+    metadata = data.get("metadata", {})
+    return graph, tools, metadata

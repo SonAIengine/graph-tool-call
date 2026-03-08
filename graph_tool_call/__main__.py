@@ -24,6 +24,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--required-only", action="store_true", help="Only required params")
     p_ingest.add_argument("--include-deprecated", action="store_true", help="Include deprecated")
     p_ingest.add_argument("--min-confidence", type=float, default=0.7)
+    p_ingest.add_argument(
+        "-f", "--force", action="store_true", help="Force rebuild (ignore existing cache)"
+    )
+    p_ingest.add_argument("--embedding", nargs="?", const="auto", help="Enable embedding index")
+    p_ingest.add_argument("--llm", help="LLM for ontology (e.g. ollama/qwen2.5:7b)")
+    p_ingest.add_argument("--organize", action="store_true", help="Run auto_organize()")
+    p_ingest.add_argument("--lint", action="store_true", help="Run ai-api-lint auto-fix")
+    p_ingest.add_argument("--lint-level", type=int, default=2, help="Lint level (1 or 2)")
+    p_ingest.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output")
 
     # --- analyze ---
     p_analyze = sub.add_parser("analyze", help="Analyze a saved graph")
@@ -60,15 +69,75 @@ def _build_parser() -> argparse.ArgumentParser:
 def cmd_ingest(args: argparse.Namespace) -> None:
     from graph_tool_call import ToolGraph
 
-    tg = ToolGraph()
-    tools = tg.ingest_openapi(
-        args.source,
-        required_only=args.required_only,
-        skip_deprecated=not args.include_deprecated,
-        min_confidence=args.min_confidence,
-    )
-    tg.save(args.output)
-    print(f"Ingested {len(tools)} tools, {tg.graph.edge_count()} relations")
+    progress = None if args.quiet else (lambda msg: print(f"  {msg}"))
+    source = args.source
+
+    # URL source: use from_url() with full feature set
+    if source.startswith(("http://", "https://")):
+        llm = None
+        if args.llm:
+            from graph_tool_call.ontology.llm_provider import wrap_llm
+
+            llm = wrap_llm(args.llm)
+        elif args.organize:
+            pass  # auto_organize(llm=None) runs auto-mode only
+
+        tg = ToolGraph.from_url(
+            source,
+            required_only=args.required_only,
+            skip_deprecated=not args.include_deprecated,
+            min_confidence=args.min_confidence,
+            lint=args.lint,
+            lint_level=args.lint_level,
+            llm=llm,
+            cache=args.output,
+            force=args.force,
+            progress=progress,
+        )
+
+        # Post-build: organize without LLM if --organize but no --llm
+        if args.organize and not args.llm:
+            if progress:
+                progress("Running auto_organize()")
+            tg.auto_organize()
+            tg.save(args.output)
+    else:
+        # Local file: direct ingest
+        tg = ToolGraph()
+        if progress:
+            progress(f"Ingesting {source}")
+        tg.ingest_openapi(
+            source,
+            required_only=args.required_only,
+            skip_deprecated=not args.include_deprecated,
+            min_confidence=args.min_confidence,
+        )
+
+        if args.organize or args.llm:
+            llm = None
+            if args.llm:
+                from graph_tool_call.ontology.llm_provider import wrap_llm
+
+                llm = wrap_llm(args.llm)
+            if progress:
+                progress("Running auto_organize()")
+            tg.auto_organize(llm=llm)
+
+        tg.save(args.output)
+
+    # Post-build: embedding
+    if args.embedding:
+        if progress:
+            progress("Building embedding index")
+        model = None if args.embedding == "auto" else args.embedding
+        if model:
+            tg.enable_embedding(model)
+        else:
+            tg.enable_embedding()
+        # Re-save with embedding-ready state
+        tg.save(args.output)
+
+    print(f"Ingested {len(tg.tools)} tools, {tg.graph.edge_count()} relations")
     print(f"Saved to {args.output}")
 
 

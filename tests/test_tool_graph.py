@@ -83,6 +83,26 @@ def test_save_and_load(tmp_path):
     assert tg2.graph.has_edge("tool_a", "tool_b")
 
 
+def test_save_and_load_metadata(tmp_path):
+    tg = ToolGraph()
+    tg.add_tools([{"name": "tool_x", "description": "X"}])
+
+    save_path = tmp_path / "graph.json"
+    tg.save(save_path, metadata={"source_url": "https://example.com", "custom": 42})
+
+    # Verify metadata in JSON
+    data = json.loads(save_path.read_text())
+    assert data["metadata"]["source_url"] == "https://example.com"
+    assert data["metadata"]["custom"] == 42
+    assert "built_at" in data["metadata"]
+    assert data["metadata"]["tool_count"] == 1
+
+    # Load and verify metadata accessible
+    tg2 = ToolGraph.load(save_path)
+    assert tg2.metadata["source_url"] == "https://example.com"
+    assert tg2.metadata["custom"] == 42
+
+
 def test_repr():
     tg = ToolGraph()
     tg.add_tools(
