@@ -57,28 +57,30 @@ OpenAPI/MCP/코드 → [수집] → [분석] → [조직화] → [검색] → Ag
 
 ## 벤치마크
 
-공개 API 스펙([Petstore OpenAPI](https://petstore3.swagger.io), GitHub REST API, MCP tools)을 사용한 재현 가능한 벤치마크. 검색 결과는 결정적(deterministic) — LLM 불필요.
+공개 API 스펙([Petstore](https://petstore3.swagger.io), [Kubernetes](https://github.com/kubernetes/kubernetes), GitHub REST API, MCP tools)을 사용한 재현 가능한 벤치마크. 검색 결과는 결정적(deterministic) — LLM 불필요.
 
 ### 사용 전 vs 사용 후
 
 LLM에 **전체 tool을 보내는 경우**(사용 전) vs **graph-tool-call로 검색한 top-5만 보내는 경우**(사용 후)의 tool 호출 정확도 비교. 모델: qwen3.5:4b (4-bit, Ollama).
 
-| 데이터셋 | Tool 수 | 사용 전 (전체 tool → LLM) | **사용 후** (top-5 → LLM) | 입력 토큰 | 개선 |
-|---------|:------:|:----------------------:|:------------------------:|:---------:|:----:|
-| Petstore 3.0 | 19 | 60.0% | **75.0%** | **-70%** | +15pp |
-| GitHub REST API | 50 | 20.0% | **20.0%** | **-60%** | 동일 정확도, 토큰 60% 절감 |
+| 데이터셋 | Tool 수 | 사용 전 (전체 tool → LLM) | **사용 후** (top-5 → LLM) | 개선 |
+|---------|:------:|:----------------------:|:------------------------:|:----:|
+| Petstore 3.0 | 19 | 60.0% | **75.0%** | +15pp, 토큰 -70% |
+| GitHub REST API | 50 | 20.0% | **20.0%** | 토큰 -60% |
+| **Kubernetes API** | **248** | **불가능** (100K 토큰) | **60.0%** | **검색 없이는 사용 불가** |
 
-19개 tool만으로도 검색 필터링이 정확도를 **+15 퍼센트 포인트** 향상시킵니다. tool이 50개 이상으로 늘어나면 토큰 절감이 핵심 — **60% 적은 토큰**으로 더 빠른 응답과 낮은 비용을 달성합니다.
+Kubernetes 결과가 핵심입니다: **248개 tool (100K+ 토큰)**은 어떤 소형 모델에도 넣을 수 없습니다. graph-tool-call이 5개로 필터링하면 LLM이 **60% 정확도**를 달성합니다 — 검색 없이는 0%.
 
 ### 검색 품질 (Recall@K)
 
-graph-tool-call이 올바른 tool을 얼마나 잘 찾는가? Recall@K는 기대하는 tool이 상위 K개 결과에 포함되는지를 측정합니다.
+graph-tool-call이 올바른 tool을 얼마나 잘 찾는가? Recall@K = 기대하는 tool이 상위 K개 결과에 포함되는 비율.
 
 | 데이터셋 | Tool 수 | 쿼리 수 | Recall@3 | Recall@5 | Recall@10 |
 |---------|:------:|:------:|:--------:|:--------:|:---------:|
 | **Petstore 3.0** | 19 | 20 | 93.3% | **98.3%** | 98.3% |
 | **GitHub REST API** | 50 | 40 | 77.5% | **85.0%** | 87.5% |
 | **Mixed MCP** | 38 | 30 | 90.0% | **96.7%** | 100.0% |
+| **Kubernetes API** | 248 | 50 | 60.0% | **64.0%** | 72.0% |
 
 <details>
 <summary>카테고리별 상세 분석</summary>
@@ -100,12 +102,13 @@ graph-tool-call이 올바른 tool을 얼마나 잘 찾는가? Recall@K는 기대
 | read | 80.0% | 20 |
 | delete | 66.7% | 3 |
 
-**Mixed MCP** — Recall@5
+**Kubernetes** — Recall@5
 
 | 카테고리 | Recall | 쿼리 수 |
 |----------|:------:|:------:|
-| read | 100.0% | 15 |
-| write | 93.3% | 15 |
+| write | 80.0% | 15 |
+| delete | 75.0% | 8 |
+| read | 51.9% | 27 |
 
 </details>
 
@@ -123,7 +126,7 @@ BM25+그래프 파이프라인에 임베딩(Qwen3-Embedding-4B)을 추가했을 
 
 ```bash
 python -m benchmarks.run_benchmark                    # 검색만 (빠름)
-python -m benchmarks.run_benchmark -d petstore -v     # 단일 데이터셋, 상세 출력
+python -m benchmarks.run_benchmark -d k8s -v          # Kubernetes 248 tools
 python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b  # LLM 포함
 python -m benchmarks.run_embedding_benchmark --embedding "ollama/nomic-embed-text"
 ```

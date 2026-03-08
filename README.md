@@ -57,28 +57,30 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
 
 ## Benchmark
 
-Reproducible benchmarks using public API specs ([Petstore OpenAPI](https://petstore3.swagger.io), GitHub REST API, MCP tools). All retrieval results are deterministic — no LLM needed.
+Reproducible benchmarks using public API specs ([Petstore](https://petstore3.swagger.io), [Kubernetes](https://github.com/kubernetes/kubernetes), GitHub REST API, MCP tools). All retrieval results are deterministic — no LLM needed.
 
 ### Without vs With graph-tool-call
 
-LLM tool-call accuracy when sending **all tools** vs **only top-5 retrieved** tools. Model: qwen3.5:4b (4-bit, Ollama).
+LLM tool-call accuracy: sending **all tools** to the LLM vs sending only **graph-tool-call's top-5**. Model: qwen3.5:4b (4-bit, Ollama).
 
-| Dataset | Tools | Without (all tools → LLM) | **With graph-tool-call** (top-5 → LLM) | Input Tokens | Improvement |
-|---------|:-----:|:-------------------------:|:---------------------------------------:|:------------:|:-----------:|
-| Petstore 3.0 | 19 | 60.0% | **75.0%** | **-70%** | +15pp |
-| GitHub REST API | 50 | 20.0% | **20.0%** | **-60%** | same accuracy, 60% fewer tokens |
+| Dataset | Tools | Without (all tools → LLM) | **With graph-tool-call** (top-5 → LLM) | Improvement |
+|---------|:-----:|:-------------------------:|:---------------------------------------:|:-----------:|
+| Petstore 3.0 | 19 | 60.0% | **75.0%** | +15pp, tokens -70% |
+| GitHub REST API | 50 | 20.0% | **20.0%** | tokens -60% |
+| **Kubernetes API** | **248** | **impossible** (100K tokens) | **60.0%** | **only works with retrieval** |
 
-With only 19 tools, retrieval already boosts accuracy by **+15 percentage points**. As tool count grows (50+), the token savings become critical — **60% fewer tokens** means faster responses and lower cost, even when accuracy is comparable.
+The Kubernetes result is the key insight: with **248 tools (100K+ tokens)**, no small model can even receive them all. graph-tool-call filters to 5 tools and the LLM achieves **60% accuracy** — compared to 0% without it.
 
 ### Retrieval Quality (Recall@K)
 
-How well does graph-tool-call find the right tools? Recall@K measures if the expected tools appear in the top-K results.
+How well does graph-tool-call find the right tools? Recall@K = expected tools found in top-K results.
 
 | Dataset | Tools | Queries | Recall@3 | Recall@5 | Recall@10 |
 |---------|:-----:|:-------:|:--------:|:--------:|:---------:|
 | **Petstore 3.0** | 19 | 20 | 93.3% | **98.3%** | 98.3% |
 | **GitHub REST API** | 50 | 40 | 77.5% | **85.0%** | 87.5% |
 | **Mixed MCP** | 38 | 30 | 90.0% | **96.7%** | 100.0% |
+| **Kubernetes API** | 248 | 50 | 60.0% | **64.0%** | 72.0% |
 
 <details>
 <summary>Breakdown by category & difficulty</summary>
@@ -100,12 +102,13 @@ How well does graph-tool-call find the right tools? Recall@K measures if the exp
 | read | 80.0% | 20 |
 | delete | 66.7% | 3 |
 
-**Mixed MCP** — Recall@5
+**Kubernetes** — Recall@5
 
 | Category | Recall | Queries |
 |----------|:------:|:-------:|
-| read | 100.0% | 15 |
-| write | 93.3% | 15 |
+| write | 80.0% | 15 |
+| delete | 75.0% | 8 |
+| read | 51.9% | 27 |
 
 </details>
 
@@ -123,7 +126,7 @@ Adding embedding (Qwen3-Embedding-4B) to the BM25+graph pipeline — **zero degr
 
 ```bash
 python -m benchmarks.run_benchmark                    # retrieval-only (fast)
-python -m benchmarks.run_benchmark -d petstore -v     # single dataset, verbose
+python -m benchmarks.run_benchmark -d k8s -v          # Kubernetes 248 tools
 python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b  # with LLM
 python -m benchmarks.run_embedding_benchmark --embedding "ollama/nomic-embed-text"
 ```

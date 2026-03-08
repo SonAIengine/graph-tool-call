@@ -1,0 +1,307 @@
+{
+  "name": "Kubernetes core/v1 API",
+  "description": "Kubernetes core/v1 API — 248 tools covering Pods, Services, ConfigMaps, Secrets, Namespaces, Nodes, PersistentVolumes, etc.",
+  "tool_count": 248,
+  "queries": [
+    {
+      "query": "List all pods in the default namespace",
+      "expected_tools": ["listCoreV1NamespacedPod"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a new deployment pod",
+      "expected_tools": ["createCoreV1NamespacedPod"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Delete a specific pod",
+      "expected_tools": ["deleteCoreV1NamespacedPod"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Get details of a running pod",
+      "expected_tools": ["readCoreV1NamespacedPod"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Check pod logs",
+      "expected_tools": ["readCoreV1NamespacedPodLog"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "List all services in a namespace",
+      "expected_tools": ["listCoreV1NamespacedService"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a new Kubernetes service",
+      "expected_tools": ["createCoreV1NamespacedService"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Delete a service",
+      "expected_tools": ["deleteCoreV1NamespacedService"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Get the status of a service",
+      "expected_tools": ["readCoreV1NamespacedServiceStatus"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Update a service configuration",
+      "expected_tools": ["replaceCoreV1NamespacedService"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Create a ConfigMap for application settings",
+      "expected_tools": ["createCoreV1NamespacedConfigMap"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Read the contents of a ConfigMap",
+      "expected_tools": ["readCoreV1NamespacedConfigMap"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Delete a ConfigMap",
+      "expected_tools": ["deleteCoreV1NamespacedConfigMap"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "List all ConfigMaps in the namespace",
+      "expected_tools": ["listCoreV1NamespacedConfigMap"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a secret for database credentials",
+      "expected_tools": ["createCoreV1NamespacedSecret"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Read a Kubernetes secret",
+      "expected_tools": ["readCoreV1NamespacedSecret"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "List all secrets in the namespace",
+      "expected_tools": ["listCoreV1NamespacedSecret"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Delete a secret",
+      "expected_tools": ["deleteCoreV1NamespacedSecret"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a new namespace",
+      "expected_tools": ["createCoreV1Namespace"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "List all namespaces in the cluster",
+      "expected_tools": ["listCoreV1Namespace"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Delete a namespace and all its resources",
+      "expected_tools": ["deleteCoreV1Namespace"],
+      "category": "delete",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Get information about a node",
+      "expected_tools": ["readCoreV1Node"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "List all nodes in the cluster",
+      "expected_tools": ["listCoreV1Node"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Check node health status",
+      "expected_tools": ["readCoreV1NodeStatus"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Create a PersistentVolume for storage",
+      "expected_tools": ["createCoreV1PersistentVolume"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "List all persistent volumes",
+      "expected_tools": ["listCoreV1PersistentVolume"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a PersistentVolumeClaim",
+      "expected_tools": ["createCoreV1NamespacedPersistentVolumeClaim"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Check the status of a PersistentVolumeClaim",
+      "expected_tools": ["readCoreV1NamespacedPersistentVolumeClaimStatus"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Exec into a running container",
+      "expected_tools": ["connectCoreV1PostNamespacedPodExec"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Port-forward to a pod",
+      "expected_tools": ["connectCoreV1PostNamespacedPodPortforward"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Attach to a running container",
+      "expected_tools": ["connectCoreV1PostNamespacedPodAttach"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Watch for pod changes in real-time",
+      "expected_tools": ["watchCoreV1NamespacedPodList"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Get the status of a pod",
+      "expected_tools": ["readCoreV1NamespacedPodStatus"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Update pod labels with a patch",
+      "expected_tools": ["patchCoreV1NamespacedPod"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Create a ServiceAccount for RBAC",
+      "expected_tools": ["createCoreV1NamespacedServiceAccount"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "List all service accounts",
+      "expected_tools": ["listCoreV1NamespacedServiceAccount"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Get events happening in the namespace",
+      "expected_tools": ["listCoreV1NamespacedEvent"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Check resource quota usage",
+      "expected_tools": ["readCoreV1NamespacedResourceQuota"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Delete all pods in a namespace at once",
+      "expected_tools": ["deleteCoreV1CollectionNamespacedPod"],
+      "category": "delete",
+      "difficulty": "hard"
+    },
+    {
+      "query": "List all endpoints for a service",
+      "expected_tools": ["listCoreV1NamespacedEndpoints"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Scale down by removing all replication controllers",
+      "expected_tools": ["deleteCoreV1CollectionNamespacedReplicationController"],
+      "category": "delete",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Proxy a request to a pod's internal HTTP server",
+      "expected_tools": ["connectCoreV1PostNamespacedPodProxy"],
+      "category": "write",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Read the finalize status of a namespace",
+      "expected_tools": ["replaceCoreV1NamespaceFinalize"],
+      "category": "write",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Watch for changes to nodes across the entire cluster",
+      "expected_tools": ["watchCoreV1NodeList"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Replace a pod's ephemeral containers",
+      "expected_tools": ["readCoreV1NamespacedPodEphemeralcontainers"],
+      "category": "read",
+      "difficulty": "hard"
+    },
+    {
+      "query": "List all pods across all namespaces",
+      "expected_tools": ["listCoreV1PodForAllNamespaces"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Get the LimitRange for a namespace",
+      "expected_tools": ["readCoreV1NamespacedLimitRange"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Check what API resources are available",
+      "expected_tools": ["getCoreV1APIResources"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Watch for secret changes",
+      "expected_tools": ["watchCoreV1NamespacedSecretList"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Delete a persistent volume",
+      "expected_tools": ["deleteCoreV1PersistentVolume"],
+      "category": "delete",
+      "difficulty": "medium"
+    }
+  ]
+}

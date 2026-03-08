@@ -48,6 +48,12 @@ DATASET_REGISTRY: dict[str, dict] = {
             {"path": "benchmarks/mcp_tools/github.json", "type": "mcp"},
         ],
     },
+    "k8s": {
+        "ground_truth": "benchmarks/ground_truth/k8s.json",
+        "sources": [
+            {"path": "benchmarks/specs/k8s_core_v1.json", "type": "openapi"},
+        ],
+    },
     # Existing datasets (backward compat)
     "petstore_legacy": {
         "ground_truth": None,
