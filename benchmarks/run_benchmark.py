@@ -1,99 +1,358 @@
 #!/usr/bin/env python3
-"""Run retrieval benchmarks across search tiers.
+"""Public benchmark for graph-tool-call retrieval engine.
+
+Modes:
+  retrieval  — Measure recall@K without LLM (fast, deterministic)
+  e2e        — Full pipeline: Baseline vs Retrieve comparison with Ollama
 
 Usage:
-    python -m benchmarks.run_benchmark
-    python -m benchmarks.run_benchmark --dataset petstore
-    python -m benchmarks.run_benchmark --dataset synthetic --n-tools 500
+    python -m benchmarks.run_benchmark                           # retrieval-only, all datasets
+    python -m benchmarks.run_benchmark --dataset petstore        # single dataset
+    python -m benchmarks.run_benchmark --mode e2e --model qwen3:4b  # with LLM
+    python -m benchmarks.run_benchmark --mode legacy --dataset petstore_legacy  # old-style
 """
 
 from __future__ import annotations
 
 import argparse
-import time
+import json
+import sys
+from datetime import datetime, timezone
 
-from benchmarks.datasets import QueryCase, petstore_dataset, synthetic_dataset
-from benchmarks.metrics import ndcg_at_k, precision_at_k, recall_at_k, workflow_coverage
+from benchmarks.config import DATASET_REGISTRY, BenchmarkConfig
+from benchmarks.metrics import recall_at_k
+from benchmarks.reporter import (
+    BenchmarkReport,
+    DatasetResult,
+    QueryResult,
+    compute_dataset_metrics,
+    print_llm_report,
+    print_retrieval_report,
+    save_report,
+)
 from graph_tool_call import ToolGraph
-from graph_tool_call.retrieval.engine import SearchMode
 
 
-def run_tier(
-    tg: ToolGraph,
-    queries: list[QueryCase],
-    mode: SearchMode,
-    top_k: int = 5,
-) -> dict[str, float]:
-    """Run a benchmark tier and return aggregated metrics."""
-    precisions: list[float] = []
-    recalls: list[float] = []
-    ndcgs: list[float] = []
-    coverages: list[float] = []
-    latencies: list[float] = []
-
-    for case in queries:
-        start = time.perf_counter()
-        results = tg.retrieve(case.query, top_k=top_k, mode=mode)
-        elapsed = time.perf_counter() - start
-
-        retrieved_names = [r.name for r in results]
-        latencies.append(elapsed * 1000)  # ms
-
-        precisions.append(precision_at_k(retrieved_names, case.relevant_tools, top_k))
-        recalls.append(recall_at_k(retrieved_names, case.relevant_tools, top_k))
-        ndcgs.append(ndcg_at_k(retrieved_names, case.relevant_tools, top_k))
-
-        if case.workflow:
-            coverages.append(workflow_coverage(retrieved_names, case.workflow))
-
-    n = len(queries)
-    return {
-        "precision@k": sum(precisions) / n if n else 0,
-        "recall@k": sum(recalls) / n if n else 0,
-        "ndcg@k": sum(ndcgs) / n if n else 0,
-        "workflow_coverage": sum(coverages) / len(coverages) if coverages else 0,
-        "avg_latency_ms": sum(latencies) / n if n else 0,
-    }
+def _load_ground_truth(path: str) -> dict:
+    with open(path) as f:
+        return json.load(f)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run retrieval benchmarks")
-    parser.add_argument("--dataset", choices=["petstore", "synthetic"], default="petstore")
-    parser.add_argument(
-        "--n-tools",
-        type=int,
-        default=500,
-        help="Tools count for synthetic dataset",
+def _build_tool_graph(sources: list[dict]) -> ToolGraph:
+    """Build a ToolGraph from source configs."""
+    tg = ToolGraph()
+    for src in sources:
+        src_type = src["type"]
+        src_path = src["path"]
+
+        if src_type == "openapi":
+            tg.ingest_openapi(src_path)
+        elif src_type == "mcp":
+            with open(src_path) as f:
+                mcp_data = json.load(f)
+            tg.ingest_mcp_tools(mcp_data["tools"])
+        else:
+            print(f"  Warning: unknown source type '{src_type}', skipping")
+
+    return tg
+
+
+def run_retrieval_benchmark(
+    config: BenchmarkConfig,
+) -> BenchmarkReport:
+    """Run retrieval-only benchmark — measure recall@K without LLM.
+
+    Parameters
+    ----------
+    config:
+        Benchmark configuration.
+
+    Returns
+    -------
+    BenchmarkReport
+        Results with recall@K per dataset.
+    """
+    report = BenchmarkReport(
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        mode="retrieval_only",
+        top_k=config.top_k,
     )
-    parser.add_argument("--top-k", type=int, default=5, help="Top-K for retrieval")
-    args = parser.parse_args()
 
-    # Load dataset
-    if args.dataset == "petstore":
+    for ds_name in config.datasets:
+        reg = DATASET_REGISTRY.get(ds_name)
+        if not reg or reg.get("legacy"):
+            print(f"  Skipping '{ds_name}' (legacy or unknown)")
+            continue
+
+        gt = _load_ground_truth(reg["ground_truth"])
+        tg = _build_tool_graph(reg["sources"])
+
+        ds_result = DatasetResult(name=gt["name"], tool_count=gt.get("tool_count", len(tg._tools)))
+
+        for q in gt["queries"]:
+            results = tg.retrieve(q["query"], top_k=config.top_k)
+            retrieved_names = [r.name for r in results]
+            expected = set(q["expected_tools"])
+
+            recall = recall_at_k(retrieved_names, expected, config.top_k)
+
+            qr = QueryResult(
+                query=q["query"],
+                category=q.get("category", ""),
+                difficulty=q.get("difficulty", ""),
+                expected_tools=q["expected_tools"],
+                recall_at_k=recall,
+                retrieved_tools=retrieved_names,
+            )
+            ds_result.queries.append(qr)
+
+            if config.verbose:
+                mark = "✓" if recall == 1.0 else "✗"
+                print(f"    {mark} [{recall:.0%}] {q['query']}")
+                if recall < 1.0:
+                    print(f"        expected: {q['expected_tools']}")
+                    print(f"        got:      {retrieved_names}")
+
+        compute_dataset_metrics(ds_result)
+        report.datasets.append(ds_result)
+
+    return report
+
+
+def run_e2e_benchmark(config: BenchmarkConfig) -> BenchmarkReport:
+    """Run end-to-end benchmark — Baseline vs Retrieve with LLM.
+
+    Parameters
+    ----------
+    config:
+        Benchmark configuration with model set.
+
+    Returns
+    -------
+    BenchmarkReport
+        Results comparing baseline and retrieve modes.
+    """
+    from benchmarks.llm_runner import (
+        LLMResult,
+        call_ollama,
+        call_openai_compatible,
+        extract_tool_name,
+        tools_to_openai_format,
+    )
+
+    # Detect API format: OpenAI-compatible if URL contains /v1, else Ollama
+    is_openai = "/v1" in config.ollama_url
+
+    def _call_llm(query: str, tools: list[dict]) -> LLMResult:
+        if is_openai:
+            return call_openai_compatible(
+                model=config.model,
+                query=query,
+                tools=tools,
+                base_url=config.ollama_url,
+                timeout=config.timeout,
+            )
+        return call_ollama(
+            model=config.model,
+            query=query,
+            tools=tools,
+            ollama_url=config.ollama_url,
+            num_ctx=config.num_ctx,
+            timeout=config.timeout,
+        )
+
+    report = BenchmarkReport(
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        model=config.model,
+        mode="e2e",
+        top_k=config.top_k,
+    )
+
+    for ds_name in config.datasets:
+        reg = DATASET_REGISTRY.get(ds_name)
+        if not reg or reg.get("legacy"):
+            continue
+
+        gt = _load_ground_truth(reg["ground_truth"])
+        tg = _build_tool_graph(reg["sources"])
+        all_tools = list(tg._tools.values())
+        all_tools_openai = tools_to_openai_format(all_tools)
+
+        ds_result = DatasetResult(name=gt["name"], tool_count=len(all_tools))
+
+        for i, q in enumerate(gt["queries"]):
+            expected = set(q["expected_tools"])
+            query = q["query"]
+
+            print(f"    [{i + 1}/{len(gt['queries'])}] {query}")
+
+            qr = QueryResult(
+                query=query,
+                category=q.get("category", ""),
+                difficulty=q.get("difficulty", ""),
+                expected_tools=q["expected_tools"],
+            )
+
+            # --- Retrieval ---
+            retrieved = tg.retrieve(query, top_k=config.top_k)
+            retrieved_names = [r.name for r in retrieved]
+            qr.recall_at_k = recall_at_k(retrieved_names, expected, config.top_k)
+            qr.retrieved_tools = retrieved_names
+
+            # --- Baseline: all tools → LLM ---
+            bl = _call_llm(query, all_tools_openai)
+            bl_tool = extract_tool_name(bl)
+            qr.baseline_tool = bl_tool
+            qr.baseline_correct = bl_tool in expected if bl_tool else False
+            qr.baseline_latency_ms = bl.latency * 1000
+            qr.baseline_input_tokens = bl.input_tokens
+
+            # --- Retrieve: filtered tools → LLM ---
+            filtered_tools_openai = tools_to_openai_format(retrieved)
+            rt = _call_llm(query, filtered_tools_openai)
+            rt_tool = extract_tool_name(rt)
+            qr.retrieve_tool = rt_tool
+            qr.retrieve_correct = rt_tool in expected if rt_tool else False
+            qr.retrieve_latency_ms = rt.latency * 1000
+            qr.retrieve_input_tokens = rt.input_tokens
+
+            bl_mark = "✓" if qr.baseline_correct else "✗"
+            rt_mark = "✓" if qr.retrieve_correct else "✗"
+            print(f"      baseline={bl_mark}({bl_tool})  retrieve={rt_mark}({rt_tool})")
+
+            ds_result.queries.append(qr)
+
+        compute_dataset_metrics(ds_result)
+        report.datasets.append(ds_result)
+
+    return report
+
+
+def run_legacy_benchmark(args: argparse.Namespace) -> None:
+    """Run the original tier-based benchmark (backward compat)."""
+    import time
+
+    from benchmarks.datasets import petstore_dataset, synthetic_dataset
+    from benchmarks.metrics import ndcg_at_k, precision_at_k, workflow_coverage
+    from graph_tool_call.retrieval.engine import SearchMode
+
+    if args.dataset == "petstore_legacy":
         tools, queries = petstore_dataset()
+        label = "petstore"
     else:
         tools, queries = synthetic_dataset(n=args.n_tools)
+        label = f"synthetic({args.n_tools})"
 
-    # Build ToolGraph
     tg = ToolGraph()
     for tool in tools:
         tg._tools[tool.name] = tool
         tg._builder.add_tool(tool)
 
-    print(f"Dataset: {args.dataset}")
+    print(f"Dataset: {label}")
     print(f"Tools: {len(tools)}, Queries: {len(queries)}, top_k: {args.top_k}")
     print("=" * 70)
 
-    # Run each tier
     for mode in [SearchMode.BASIC, SearchMode.ENHANCED, SearchMode.FULL]:
-        metrics = run_tier(tg, queries, mode=mode, top_k=args.top_k)
+        precisions, recalls, ndcgs, coverages, latencies = [], [], [], [], []
+        for case in queries:
+            start = time.perf_counter()
+            results = tg.retrieve(case.query, top_k=args.top_k, mode=mode)
+            elapsed = time.perf_counter() - start
+            names = [r.name for r in results]
+            latencies.append(elapsed * 1000)
+            precisions.append(precision_at_k(names, case.relevant_tools, args.top_k))
+            recalls.append(recall_at_k(names, case.relevant_tools, args.top_k))
+            ndcgs.append(ndcg_at_k(names, case.relevant_tools, args.top_k))
+            if case.workflow:
+                coverages.append(workflow_coverage(names, case.workflow))
+        n = len(queries)
         print(f"\n{mode.value.upper()}")
-        print(f"  Precision@{args.top_k}: {metrics['precision@k']:.3f}")
-        print(f"  Recall@{args.top_k}:    {metrics['recall@k']:.3f}")
-        print(f"  NDCG@{args.top_k}:      {metrics['ndcg@k']:.3f}")
-        if metrics["workflow_coverage"] > 0:
-            print(f"  Workflow Coverage: {metrics['workflow_coverage']:.3f}")
-        print(f"  Avg Latency:       {metrics['avg_latency_ms']:.1f}ms")
+        print(f"  Precision@{args.top_k}: {sum(precisions) / n:.3f}")
+        print(f"  Recall@{args.top_k}:    {sum(recalls) / n:.3f}")
+        print(f"  NDCG@{args.top_k}:      {sum(ndcgs) / n:.3f}")
+        if coverages:
+            print(f"  Workflow Coverage: {sum(coverages) / len(coverages):.3f}")
+        print(f"  Avg Latency:       {sum(latencies) / n:.1f}ms")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="graph-tool-call public benchmark",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python -m benchmarks.run_benchmark                           # retrieval, all datasets
+  python -m benchmarks.run_benchmark -d petstore               # single dataset
+  python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b    # with LLM
+  python -m benchmarks.run_benchmark --mode legacy             # old-style tier benchmark
+        """,
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["retrieval", "e2e", "legacy"],
+        default="retrieval",
+        help="Benchmark mode (default: retrieval)",
+    )
+    parser.add_argument(
+        "-d",
+        "--dataset",
+        nargs="+",
+        default=None,
+        help="Datasets to benchmark (default: all non-legacy)",
+    )
+    parser.add_argument("--top-k", type=int, default=5, help="Top-K for retrieval")
+    parser.add_argument("-m", "--model", type=str, default="qwen3:4b", help="Ollama model for e2e")
+    parser.add_argument(
+        "--ollama-url",
+        type=str,
+        default="http://localhost:11434/api/chat",
+        help="LLM API URL (Ollama or OpenAI-compatible /v1)",
+    )
+    parser.add_argument("--num-ctx", type=int, default=8192, help="Context window size")
+    parser.add_argument("--timeout", type=int, default=120, help="LLM timeout in seconds")
+    parser.add_argument("--n-tools", type=int, default=500, help="Tool count for synthetic")
+    parser.add_argument("--save", action="store_true", help="Save results as JSON")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Show per-query details")
+
+    args = parser.parse_args()
+
+    # Legacy mode
+    if args.mode == "legacy":
+        if not args.dataset:
+            args.dataset = ["petstore_legacy"]
+        args.top_k = args.top_k
+        run_legacy_benchmark(args)
+        return
+
+    # Determine datasets
+    if args.dataset:
+        datasets = args.dataset
+    else:
+        datasets = [k for k, v in DATASET_REGISTRY.items() if not v.get("legacy")]
+
+    config = BenchmarkConfig(
+        datasets=datasets,
+        top_k=args.top_k,
+        model=args.model if args.mode == "e2e" else None,
+        ollama_url=args.ollama_url,
+        num_ctx=args.num_ctx,
+        timeout=args.timeout,
+        save_json=args.save,
+        verbose=args.verbose,
+    )
+
+    if args.mode == "retrieval":
+        report = run_retrieval_benchmark(config)
+        print_retrieval_report(report)
+    elif args.mode == "e2e":
+        report = run_e2e_benchmark(config)
+        print_llm_report(report)
+    else:
+        print(f"Unknown mode: {args.mode}", file=sys.stderr)
+        sys.exit(1)
+
+    if config.save_json:
+        save_report(report, config.output_dir)
 
 
 if __name__ == "__main__":

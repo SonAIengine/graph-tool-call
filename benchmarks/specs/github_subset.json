@@ -1,0 +1,850 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "GitHub REST API Subset",
+    "description": "Curated subset of GitHub REST API for benchmarking tool retrieval. Covers repos, issues, PRs, users, orgs, and actions.",
+    "version": "1.0.0"
+  },
+  "servers": [{"url": "https://api.github.com"}],
+  "paths": {
+    "/repos/{owner}/{repo}": {
+      "get": {
+        "operationId": "getRepo",
+        "summary": "Get a repository",
+        "description": "Get details of a repository by owner and repo name.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "Repository details"}}
+      },
+      "patch": {
+        "operationId": "updateRepo",
+        "summary": "Update a repository",
+        "description": "Update repository settings such as name, description, visibility.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "private": {"type": "boolean"}
+          }}}}
+        },
+        "responses": {"200": {"description": "Updated repository"}}
+      },
+      "delete": {
+        "operationId": "deleteRepo",
+        "summary": "Delete a repository",
+        "description": "Delete a repository. Requires admin access.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"204": {"description": "Repository deleted"}}
+      }
+    },
+    "/user/repos": {
+      "get": {
+        "operationId": "listUserRepos",
+        "summary": "List repositories for the authenticated user",
+        "description": "Lists repositories that the authenticated user has explicit permission to access.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["created", "updated", "pushed", "full_name"]}},
+          {"name": "per_page", "in": "query", "schema": {"type": "integer", "default": 30}}
+        ],
+        "responses": {"200": {"description": "List of repositories"}}
+      },
+      "post": {
+        "operationId": "createRepo",
+        "summary": "Create a repository for the authenticated user",
+        "description": "Creates a new repository for the authenticated user.",
+        "tags": ["repos"],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "required": ["name"], "properties": {
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "private": {"type": "boolean"},
+            "auto_init": {"type": "boolean"}
+          }}}}
+        },
+        "responses": {"201": {"description": "Created repository"}}
+      }
+    },
+    "/repos/{owner}/{repo}/forks": {
+      "get": {
+        "operationId": "listForks",
+        "summary": "List forks",
+        "description": "List forks of a repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "List of forks"}}
+      },
+      "post": {
+        "operationId": "createFork",
+        "summary": "Create a fork",
+        "description": "Create a fork of a repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"202": {"description": "Fork created"}}
+      }
+    },
+    "/repos/{owner}/{repo}/topics": {
+      "get": {
+        "operationId": "listRepoTopics",
+        "summary": "Get all repository topics",
+        "description": "Get the list of topics for a repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "Topics list"}}
+      }
+    },
+    "/repos/{owner}/{repo}/contributors": {
+      "get": {
+        "operationId": "listContributors",
+        "summary": "List repository contributors",
+        "description": "Lists contributors to the specified repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "List of contributors"}}
+      }
+    },
+    "/repos/{owner}/{repo}/languages": {
+      "get": {
+        "operationId": "listLanguages",
+        "summary": "List repository languages",
+        "description": "Lists languages for the specified repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "Languages map"}}
+      }
+    },
+    "/repos/{owner}/{repo}/issues": {
+      "get": {
+        "operationId": "listIssues",
+        "summary": "List repository issues",
+        "description": "List issues in a repository. Only open issues are listed by default.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "state", "in": "query", "schema": {"type": "string", "enum": ["open", "closed", "all"]}},
+          {"name": "labels", "in": "query", "schema": {"type": "string"}},
+          {"name": "assignee", "in": "query", "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "List of issues"}}
+      },
+      "post": {
+        "operationId": "createIssue",
+        "summary": "Create an issue",
+        "description": "Create an issue in a repository. Any user with pull access can create an issue.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "required": ["title"], "properties": {
+            "title": {"type": "string"},
+            "body": {"type": "string"},
+            "labels": {"type": "array", "items": {"type": "string"}},
+            "assignees": {"type": "array", "items": {"type": "string"}}
+          }}}}
+        },
+        "responses": {"201": {"description": "Created issue"}}
+      }
+    },
+    "/repos/{owner}/{repo}/issues/{issue_number}": {
+      "get": {
+        "operationId": "getIssue",
+        "summary": "Get an issue",
+        "description": "Get a single issue from a repository.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "issue_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "responses": {"200": {"description": "Issue details"}}
+      },
+      "patch": {
+        "operationId": "updateIssue",
+        "summary": "Update an issue",
+        "description": "Update an issue. Only users with push access can update issues.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "issue_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "title": {"type": "string"},
+            "body": {"type": "string"},
+            "state": {"type": "string", "enum": ["open", "closed"]},
+            "labels": {"type": "array", "items": {"type": "string"}}
+          }}}}
+        },
+        "responses": {"200": {"description": "Updated issue"}}
+      }
+    },
+    "/repos/{owner}/{repo}/issues/{issue_number}/comments": {
+      "get": {
+        "operationId": "listIssueComments",
+        "summary": "List issue comments",
+        "description": "List comments on an issue.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "issue_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "responses": {"200": {"description": "List of comments"}}
+      },
+      "post": {
+        "operationId": "createIssueComment",
+        "summary": "Create an issue comment",
+        "description": "Create a comment on an issue.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "issue_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "required": ["body"], "properties": {
+            "body": {"type": "string"}
+          }}}}
+        },
+        "responses": {"201": {"description": "Created comment"}}
+      }
+    },
+    "/repos/{owner}/{repo}/issues/{issue_number}/labels": {
+      "get": {
+        "operationId": "listIssueLabels",
+        "summary": "List labels for an issue",
+        "description": "List labels on an issue.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "issue_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "responses": {"200": {"description": "List of labels"}}
+      },
+      "post": {
+        "operationId": "addIssueLabels",
+        "summary": "Add labels to an issue",
+        "description": "Add labels to an issue.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "issue_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "labels": {"type": "array", "items": {"type": "string"}}
+          }}}}
+        },
+        "responses": {"200": {"description": "Labels added"}}
+      }
+    },
+    "/repos/{owner}/{repo}/pulls": {
+      "get": {
+        "operationId": "listPullRequests",
+        "summary": "List pull requests",
+        "description": "List pull requests in a repository.",
+        "tags": ["pulls"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "state", "in": "query", "schema": {"type": "string", "enum": ["open", "closed", "all"]}},
+          {"name": "head", "in": "query", "schema": {"type": "string"}},
+          {"name": "base", "in": "query", "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "List of pull requests"}}
+      },
+      "post": {
+        "operationId": "createPullRequest",
+        "summary": "Create a pull request",
+        "description": "Create a pull request in a repository.",
+        "tags": ["pulls"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "required": ["title", "head", "base"], "properties": {
+            "title": {"type": "string"},
+            "body": {"type": "string"},
+            "head": {"type": "string"},
+            "base": {"type": "string"},
+            "draft": {"type": "boolean"}
+          }}}}
+        },
+        "responses": {"201": {"description": "Created pull request"}}
+      }
+    },
+    "/repos/{owner}/{repo}/pulls/{pull_number}": {
+      "get": {
+        "operationId": "getPullRequest",
+        "summary": "Get a pull request",
+        "description": "Get details of a pull request by its number.",
+        "tags": ["pulls"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "pull_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "responses": {"200": {"description": "Pull request details"}}
+      },
+      "patch": {
+        "operationId": "updatePullRequest",
+        "summary": "Update a pull request",
+        "description": "Update a pull request title, body, or state.",
+        "tags": ["pulls"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "pull_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "title": {"type": "string"},
+            "body": {"type": "string"},
+            "state": {"type": "string", "enum": ["open", "closed"]}
+          }}}}
+        },
+        "responses": {"200": {"description": "Updated pull request"}}
+      }
+    },
+    "/repos/{owner}/{repo}/pulls/{pull_number}/merge": {
+      "put": {
+        "operationId": "mergePullRequest",
+        "summary": "Merge a pull request",
+        "description": "Merge a pull request. The merge_method can be merge, squash, or rebase.",
+        "tags": ["pulls"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "pull_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "commit_title": {"type": "string"},
+            "merge_method": {"type": "string", "enum": ["merge", "squash", "rebase"]}
+          }}}}
+        },
+        "responses": {"200": {"description": "Pull request merged"}}
+      }
+    },
+    "/repos/{owner}/{repo}/pulls/{pull_number}/reviews": {
+      "get": {
+        "operationId": "listPullRequestReviews",
+        "summary": "List reviews for a pull request",
+        "description": "List reviews on a pull request.",
+        "tags": ["pulls"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "pull_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "responses": {"200": {"description": "List of reviews"}}
+      },
+      "post": {
+        "operationId": "createPullRequestReview",
+        "summary": "Create a review for a pull request",
+        "description": "Create a review on a pull request with approve, request changes, or comment.",
+        "tags": ["pulls"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "pull_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "body": {"type": "string"},
+            "event": {"type": "string", "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"]}
+          }}}}
+        },
+        "responses": {"200": {"description": "Review created"}}
+      }
+    },
+    "/repos/{owner}/{repo}/pulls/{pull_number}/files": {
+      "get": {
+        "operationId": "listPullRequestFiles",
+        "summary": "List pull request files",
+        "description": "List the files changed in a pull request.",
+        "tags": ["pulls"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "pull_number", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "responses": {"200": {"description": "List of changed files"}}
+      }
+    },
+    "/repos/{owner}/{repo}/branches": {
+      "get": {
+        "operationId": "listBranches",
+        "summary": "List branches",
+        "description": "List all branches of a repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "List of branches"}}
+      }
+    },
+    "/repos/{owner}/{repo}/branches/{branch}": {
+      "get": {
+        "operationId": "getBranch",
+        "summary": "Get a branch",
+        "description": "Get details of a specific branch.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "branch", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "Branch details"}}
+      }
+    },
+    "/repos/{owner}/{repo}/commits": {
+      "get": {
+        "operationId": "listCommits",
+        "summary": "List commits",
+        "description": "List commits on a repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "sha", "in": "query", "schema": {"type": "string"}},
+          {"name": "author", "in": "query", "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "List of commits"}}
+      }
+    },
+    "/repos/{owner}/{repo}/releases": {
+      "get": {
+        "operationId": "listReleases",
+        "summary": "List releases",
+        "description": "List releases for a repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "List of releases"}}
+      },
+      "post": {
+        "operationId": "createRelease",
+        "summary": "Create a release",
+        "description": "Create a release for a repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "required": ["tag_name"], "properties": {
+            "tag_name": {"type": "string"},
+            "name": {"type": "string"},
+            "body": {"type": "string"},
+            "draft": {"type": "boolean"},
+            "prerelease": {"type": "boolean"}
+          }}}}
+        },
+        "responses": {"201": {"description": "Release created"}}
+      }
+    },
+    "/repos/{owner}/{repo}/labels": {
+      "get": {
+        "operationId": "listLabels",
+        "summary": "List labels for a repository",
+        "description": "List all labels for a repository.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "List of labels"}}
+      },
+      "post": {
+        "operationId": "createLabel",
+        "summary": "Create a label",
+        "description": "Create a label for a repository.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "required": ["name", "color"], "properties": {
+            "name": {"type": "string"},
+            "color": {"type": "string"},
+            "description": {"type": "string"}
+          }}}}
+        },
+        "responses": {"201": {"description": "Label created"}}
+      }
+    },
+    "/repos/{owner}/{repo}/milestones": {
+      "get": {
+        "operationId": "listMilestones",
+        "summary": "List milestones",
+        "description": "List milestones for a repository.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "state", "in": "query", "schema": {"type": "string", "enum": ["open", "closed", "all"]}}
+        ],
+        "responses": {"200": {"description": "List of milestones"}}
+      },
+      "post": {
+        "operationId": "createMilestone",
+        "summary": "Create a milestone",
+        "description": "Create a milestone for a repository.",
+        "tags": ["issues"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "required": ["title"], "properties": {
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "due_on": {"type": "string", "format": "date-time"}
+          }}}}
+        },
+        "responses": {"201": {"description": "Milestone created"}}
+      }
+    },
+    "/repos/{owner}/{repo}/actions/runs": {
+      "get": {
+        "operationId": "listWorkflowRuns",
+        "summary": "List workflow runs for a repository",
+        "description": "Lists all workflow runs for a repository.",
+        "tags": ["actions"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["completed", "action_required", "cancelled", "failure", "neutral", "skipped", "stale", "success", "timed_out", "in_progress", "queued", "requested", "waiting"]}}
+        ],
+        "responses": {"200": {"description": "List of workflow runs"}}
+      }
+    },
+    "/repos/{owner}/{repo}/actions/runs/{run_id}": {
+      "get": {
+        "operationId": "getWorkflowRun",
+        "summary": "Get a workflow run",
+        "description": "Gets a specific workflow run.",
+        "tags": ["actions"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "run_id", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "responses": {"200": {"description": "Workflow run details"}}
+      }
+    },
+    "/repos/{owner}/{repo}/actions/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "cancelWorkflowRun",
+        "summary": "Cancel a workflow run",
+        "description": "Cancels a workflow run.",
+        "tags": ["actions"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "run_id", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "responses": {"202": {"description": "Workflow run cancelled"}}
+      }
+    },
+    "/repos/{owner}/{repo}/actions/runs/{run_id}/rerun": {
+      "post": {
+        "operationId": "rerunWorkflowRun",
+        "summary": "Re-run a workflow",
+        "description": "Re-runs a specific workflow run.",
+        "tags": ["actions"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "run_id", "in": "path", "required": true, "schema": {"type": "integer"}}
+        ],
+        "responses": {"201": {"description": "Workflow re-run started"}}
+      }
+    },
+    "/repos/{owner}/{repo}/stargazers": {
+      "get": {
+        "operationId": "listStargazers",
+        "summary": "List stargazers",
+        "description": "Lists people who have starred the repository.",
+        "tags": ["activity"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "List of stargazers"}}
+      }
+    },
+    "/user/starred/{owner}/{repo}": {
+      "put": {
+        "operationId": "starRepo",
+        "summary": "Star a repository for the authenticated user",
+        "description": "Star a repository.",
+        "tags": ["activity"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"204": {"description": "Repository starred"}}
+      },
+      "delete": {
+        "operationId": "unstarRepo",
+        "summary": "Unstar a repository for the authenticated user",
+        "description": "Unstar a repository.",
+        "tags": ["activity"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"204": {"description": "Repository unstarred"}}
+      }
+    },
+    "/users/{username}": {
+      "get": {
+        "operationId": "getUser",
+        "summary": "Get a user",
+        "description": "Provides publicly available information about someone with a GitHub account.",
+        "tags": ["users"],
+        "parameters": [
+          {"name": "username", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "User details"}}
+      }
+    },
+    "/user": {
+      "get": {
+        "operationId": "getAuthenticatedUser",
+        "summary": "Get the authenticated user",
+        "description": "Get the authenticated user's profile.",
+        "tags": ["users"],
+        "responses": {"200": {"description": "Authenticated user details"}}
+      }
+    },
+    "/users/{username}/repos": {
+      "get": {
+        "operationId": "listUserPublicRepos",
+        "summary": "List public repositories for a user",
+        "description": "Lists public repositories for the specified user.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "username", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["created", "updated", "pushed", "full_name"]}}
+        ],
+        "responses": {"200": {"description": "List of repositories"}}
+      }
+    },
+    "/orgs/{org}": {
+      "get": {
+        "operationId": "getOrganization",
+        "summary": "Get an organization",
+        "description": "Get organization details.",
+        "tags": ["orgs"],
+        "parameters": [
+          {"name": "org", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "Organization details"}}
+      }
+    },
+    "/orgs/{org}/repos": {
+      "get": {
+        "operationId": "listOrgRepos",
+        "summary": "List organization repositories",
+        "description": "Lists repositories for the specified organization.",
+        "tags": ["orgs"],
+        "parameters": [
+          {"name": "org", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "type", "in": "query", "schema": {"type": "string", "enum": ["all", "public", "private", "forks", "sources", "member"]}}
+        ],
+        "responses": {"200": {"description": "List of organization repositories"}}
+      }
+    },
+    "/orgs/{org}/members": {
+      "get": {
+        "operationId": "listOrgMembers",
+        "summary": "List organization members",
+        "description": "List all users who are members of an organization.",
+        "tags": ["orgs"],
+        "parameters": [
+          {"name": "org", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "List of organization members"}}
+      }
+    },
+    "/search/repositories": {
+      "get": {
+        "operationId": "searchRepositories",
+        "summary": "Search repositories",
+        "description": "Find repositories via various criteria.",
+        "tags": ["search"],
+        "parameters": [
+          {"name": "q", "in": "query", "required": true, "schema": {"type": "string"}},
+          {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["stars", "forks", "help-wanted-issues", "updated"]}},
+          {"name": "order", "in": "query", "schema": {"type": "string", "enum": ["desc", "asc"]}}
+        ],
+        "responses": {"200": {"description": "Search results"}}
+      }
+    },
+    "/search/issues": {
+      "get": {
+        "operationId": "searchIssues",
+        "summary": "Search issues and pull requests",
+        "description": "Find issues and pull requests by state, keyword, and other criteria.",
+        "tags": ["search"],
+        "parameters": [
+          {"name": "q", "in": "query", "required": true, "schema": {"type": "string"}},
+          {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["comments", "reactions", "created", "updated"]}},
+          {"name": "order", "in": "query", "schema": {"type": "string", "enum": ["desc", "asc"]}}
+        ],
+        "responses": {"200": {"description": "Search results"}}
+      }
+    },
+    "/search/code": {
+      "get": {
+        "operationId": "searchCode",
+        "summary": "Search code",
+        "description": "Search for code across all repositories.",
+        "tags": ["search"],
+        "parameters": [
+          {"name": "q", "in": "query", "required": true, "schema": {"type": "string"}},
+          {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["indexed"]}},
+          {"name": "order", "in": "query", "schema": {"type": "string", "enum": ["desc", "asc"]}}
+        ],
+        "responses": {"200": {"description": "Search results"}}
+      }
+    },
+    "/search/users": {
+      "get": {
+        "operationId": "searchUsers",
+        "summary": "Search users",
+        "description": "Find users by keyword.",
+        "tags": ["search"],
+        "parameters": [
+          {"name": "q", "in": "query", "required": true, "schema": {"type": "string"}},
+          {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["followers", "repositories", "joined"]}},
+          {"name": "order", "in": "query", "schema": {"type": "string", "enum": ["desc", "asc"]}}
+        ],
+        "responses": {"200": {"description": "Search results"}}
+      }
+    },
+    "/repos/{owner}/{repo}/collaborators": {
+      "get": {
+        "operationId": "listCollaborators",
+        "summary": "List repository collaborators",
+        "description": "List collaborators for a repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "List of collaborators"}}
+      }
+    },
+    "/repos/{owner}/{repo}/collaborators/{username}": {
+      "put": {
+        "operationId": "addCollaborator",
+        "summary": "Add a repository collaborator",
+        "description": "Add a user as a collaborator to a repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "username", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "properties": {
+            "permission": {"type": "string", "enum": ["pull", "triage", "push", "maintain", "admin"]}
+          }}}}
+        },
+        "responses": {"201": {"description": "Collaborator added"}}
+      },
+      "delete": {
+        "operationId": "removeCollaborator",
+        "summary": "Remove a repository collaborator",
+        "description": "Remove a collaborator from a repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "username", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"204": {"description": "Collaborator removed"}}
+      }
+    },
+    "/gists": {
+      "get": {
+        "operationId": "listGists",
+        "summary": "List gists for the authenticated user",
+        "description": "Lists the authenticated user's gists.",
+        "tags": ["gists"],
+        "responses": {"200": {"description": "List of gists"}}
+      },
+      "post": {
+        "operationId": "createGist",
+        "summary": "Create a gist",
+        "description": "Create a gist with one or more files.",
+        "tags": ["gists"],
+        "requestBody": {
+          "content": {"application/json": {"schema": {"type": "object", "required": ["files"], "properties": {
+            "description": {"type": "string"},
+            "public": {"type": "boolean"},
+            "files": {"type": "object"}
+          }}}}
+        },
+        "responses": {"201": {"description": "Gist created"}}
+      }
+    },
+    "/repos/{owner}/{repo}/contents/{path}": {
+      "get": {
+        "operationId": "getRepoContent",
+        "summary": "Get repository content",
+        "description": "Gets the contents of a file or directory in a repository.",
+        "tags": ["repos"],
+        "parameters": [
+          {"name": "owner", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "repo", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "path", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "ref", "in": "query", "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "File or directory content"}}
+      }
+    }
+  }
+}

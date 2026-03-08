@@ -1,0 +1,289 @@
+{
+  "name": "GitHub REST API Subset",
+  "description": "50 operations covering repos, issues, PRs, users, orgs, actions, search",
+  "source": "benchmarks/specs/github_subset.json",
+  "source_type": "openapi",
+  "tool_count": 50,
+  "queries": [
+    {
+      "query": "Get information about a repository",
+      "expected_tools": ["getRepo"],
+      "expected_params": ["owner", "repo"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a new private repository",
+      "expected_tools": ["createRepo"],
+      "expected_params": ["name"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Delete the old test repository",
+      "expected_tools": ["deleteRepo"],
+      "expected_params": ["owner", "repo"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "List all my repositories sorted by last update",
+      "expected_tools": ["listUserRepos"],
+      "expected_params": [],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Fork the react repository",
+      "expected_tools": ["createFork"],
+      "expected_params": ["owner", "repo"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Show open issues in the project",
+      "expected_tools": ["listIssues"],
+      "expected_params": ["owner", "repo"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a bug report issue",
+      "expected_tools": ["createIssue"],
+      "expected_params": ["owner", "repo", "title"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Get details of issue number 42",
+      "expected_tools": ["getIssue"],
+      "expected_params": ["owner", "repo", "issue_number"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Close issue #15 as completed",
+      "expected_tools": ["updateIssue"],
+      "expected_params": ["owner", "repo", "issue_number"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Comment on issue #7 with feedback",
+      "expected_tools": ["createIssueComment"],
+      "expected_params": ["owner", "repo", "issue_number", "body"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Add bug and urgent labels to issue #3",
+      "expected_tools": ["addIssueLabels"],
+      "expected_params": ["owner", "repo", "issue_number"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "List all pull requests",
+      "expected_tools": ["listPullRequests"],
+      "expected_params": ["owner", "repo"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Open a pull request from feature branch to main",
+      "expected_tools": ["createPullRequest"],
+      "expected_params": ["owner", "repo", "title", "head", "base"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Check the details of PR #99",
+      "expected_tools": ["getPullRequest"],
+      "expected_params": ["owner", "repo", "pull_number"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Merge the pull request using squash",
+      "expected_tools": ["mergePullRequest"],
+      "expected_params": ["owner", "repo", "pull_number"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Review and approve pull request #12",
+      "expected_tools": ["createPullRequestReview"],
+      "expected_params": ["owner", "repo", "pull_number"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "See what files changed in PR #5",
+      "expected_tools": ["listPullRequestFiles"],
+      "expected_params": ["owner", "repo", "pull_number"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "List all branches in the repository",
+      "expected_tools": ["listBranches"],
+      "expected_params": ["owner", "repo"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "View recent commits on main branch",
+      "expected_tools": ["listCommits"],
+      "expected_params": ["owner", "repo"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a new release with tag v2.0",
+      "expected_tools": ["createRelease"],
+      "expected_params": ["owner", "repo", "tag_name"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Search for machine learning repos on GitHub",
+      "expected_tools": ["searchRepositories"],
+      "expected_params": ["q"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Find open issues about memory leak",
+      "expected_tools": ["searchIssues"],
+      "expected_params": ["q"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Search code for usage of async/await pattern",
+      "expected_tools": ["searchCode"],
+      "expected_params": ["q"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Look up GitHub user octocat",
+      "expected_tools": ["getUser"],
+      "expected_params": ["username"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Get my own GitHub profile",
+      "expected_tools": ["getAuthenticatedUser"],
+      "expected_params": [],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Star a repository I like",
+      "expected_tools": ["starRepo"],
+      "expected_params": ["owner", "repo"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Remove star from a repository",
+      "expected_tools": ["unstarRepo"],
+      "expected_params": ["owner", "repo"],
+      "category": "delete",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Check the CI workflow runs status",
+      "expected_tools": ["listWorkflowRuns"],
+      "expected_params": ["owner", "repo"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Cancel the running CI build",
+      "expected_tools": ["cancelWorkflowRun"],
+      "expected_params": ["owner", "repo", "run_id"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Re-run the failed workflow",
+      "expected_tools": ["rerunWorkflowRun"],
+      "expected_params": ["owner", "repo", "run_id"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "List organization members",
+      "expected_tools": ["listOrgMembers"],
+      "expected_params": ["org"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Add a collaborator to the repo with push access",
+      "expected_tools": ["addCollaborator"],
+      "expected_params": ["owner", "repo", "username"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Remove a collaborator from the project",
+      "expected_tools": ["removeCollaborator"],
+      "expected_params": ["owner", "repo", "username"],
+      "category": "delete",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Read the README file from the repository",
+      "expected_tools": ["getRepoContent"],
+      "expected_params": ["owner", "repo", "path"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Create a code snippet gist",
+      "expected_tools": ["createGist"],
+      "expected_params": ["files"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "What languages are used in this project?",
+      "expected_tools": ["listLanguages"],
+      "expected_params": ["owner", "repo"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Create a new milestone for Q1 release",
+      "expected_tools": ["createMilestone"],
+      "expected_params": ["owner", "repo", "title"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Who are the top contributors?",
+      "expected_tools": ["listContributors"],
+      "expected_params": ["owner", "repo"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Update repo description and make it private",
+      "expected_tools": ["updateRepo"],
+      "expected_params": ["owner", "repo"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Show me who starred this repository",
+      "expected_tools": ["listStargazers"],
+      "expected_params": ["owner", "repo"],
+      "category": "read",
+      "difficulty": "medium"
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "name": "Petstore 3.0",
+  "description": "Swagger Petstore official spec — 19 operations across pet, store, user domains",
+  "source": "benchmarks/specs/petstore3.json",
+  "source_type": "openapi",
+  "tool_count": 19,
+  "queries": [
+    {
+      "query": "Find all available pets",
+      "expected_tools": ["findPetsByStatus"],
+      "expected_params": ["status"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Add a new dog to the pet store",
+      "expected_tools": ["addPet"],
+      "expected_params": [],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Get pet with ID 42",
+      "expected_tools": ["getPetById"],
+      "expected_params": ["petId"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Update the name of my pet",
+      "expected_tools": ["updatePet", "updatePetWithForm"],
+      "expected_params": [],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Delete pet number 7",
+      "expected_tools": ["deletePet"],
+      "expected_params": ["petId"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Search pets by their tags",
+      "expected_tools": ["findPetsByTags"],
+      "expected_params": ["tags"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Upload a photo of my pet",
+      "expected_tools": ["uploadFile"],
+      "expected_params": ["petId"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Check the store inventory",
+      "expected_tools": ["getInventory"],
+      "expected_params": [],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Place an order to buy a pet",
+      "expected_tools": ["placeOrder"],
+      "expected_params": [],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Look up order number 5",
+      "expected_tools": ["getOrderById"],
+      "expected_params": ["orderId"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Cancel my order",
+      "expected_tools": ["deleteOrder"],
+      "expected_params": ["orderId"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a new user account",
+      "expected_tools": ["createUser"],
+      "expected_params": [],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Sign in with username and password",
+      "expected_tools": ["loginUser"],
+      "expected_params": ["username", "password"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Log out of my account",
+      "expected_tools": ["logoutUser"],
+      "expected_params": [],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "View user profile for john123",
+      "expected_tools": ["getUserByName"],
+      "expected_params": ["username"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Change user email address",
+      "expected_tools": ["updateUser"],
+      "expected_params": ["username"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Remove user john123",
+      "expected_tools": ["deleteUser"],
+      "expected_params": ["username"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create multiple user accounts at once",
+      "expected_tools": ["createUsersWithListInput"],
+      "expected_params": [],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Show me sold pets",
+      "expected_tools": ["findPetsByStatus"],
+      "expected_params": ["status"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "I want to adopt a pet — find one, check details, then buy it",
+      "expected_tools": ["findPetsByStatus", "getPetById", "placeOrder"],
+      "expected_params": [],
+      "category": "workflow",
+      "difficulty": "hard"
+    }
+  ]
+}

@@ -1,0 +1,142 @@
+{
+  "name": "filesystem",
+  "description": "MCP Filesystem Server — file and directory operations",
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Read the complete contents of a file from the file system.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Path to the file to read"}
+        },
+        "required": ["path"]
+      },
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+    },
+    {
+      "name": "read_multiple_files",
+      "description": "Read the contents of multiple files simultaneously.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "paths": {"type": "array", "items": {"type": "string"}, "description": "List of file paths to read"}
+        },
+        "required": ["paths"]
+      },
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+    },
+    {
+      "name": "write_file",
+      "description": "Create a new file or completely overwrite an existing file with new content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Path where to write the file"},
+          "content": {"type": "string", "description": "Content to write to the file"}
+        },
+        "required": ["path", "content"]
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": true}
+    },
+    {
+      "name": "edit_file",
+      "description": "Make line-based edits to a text file. Specify old_text and new_text for replacements.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Path to the file to edit"},
+          "edits": {"type": "array", "items": {"type": "object", "properties": {"oldText": {"type": "string"}, "newText": {"type": "string"}}, "required": ["oldText", "newText"]}, "description": "List of edit operations"},
+          "dryRun": {"type": "boolean", "description": "Preview changes without applying"}
+        },
+        "required": ["path", "edits"]
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false}
+    },
+    {
+      "name": "create_directory",
+      "description": "Create a new directory or ensure a directory exists. Creates parent directories if needed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Path of the directory to create"}
+        },
+        "required": ["path"]
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true}
+    },
+    {
+      "name": "list_directory",
+      "description": "Get a detailed listing of all files and directories in a specified path.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Path of the directory to list"}
+        },
+        "required": ["path"]
+      },
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+    },
+    {
+      "name": "directory_tree",
+      "description": "Get a recursive tree view of files and directories as a JSON structure.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Root path for the tree"},
+          "depth": {"type": "integer", "description": "Maximum depth to traverse"}
+        },
+        "required": ["path"]
+      },
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+    },
+    {
+      "name": "move_file",
+      "description": "Move or rename files and directories.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {"type": "string", "description": "Source path"},
+          "destination": {"type": "string", "description": "Destination path"}
+        },
+        "required": ["source", "destination"]
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false}
+    },
+    {
+      "name": "search_files",
+      "description": "Recursively search for files and directories matching a pattern.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Starting path for search"},
+          "pattern": {"type": "string", "description": "Search pattern (glob)"},
+          "excludePatterns": {"type": "array", "items": {"type": "string"}, "description": "Patterns to exclude"}
+        },
+        "required": ["path", "pattern"]
+      },
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+    },
+    {
+      "name": "get_file_info",
+      "description": "Retrieve detailed metadata about a file or directory (size, permissions, timestamps).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Path to get info for"}
+        },
+        "required": ["path"]
+      },
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+    },
+    {
+      "name": "list_allowed_directories",
+      "description": "Returns the list of directories that this server is allowed to access.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true}
+    }
+  ]
+}

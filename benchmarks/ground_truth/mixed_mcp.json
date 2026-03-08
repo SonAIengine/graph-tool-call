@@ -1,0 +1,221 @@
+{
+  "name": "Mixed MCP Servers",
+  "description": "Combined filesystem + github MCP tools — cross-domain retrieval challenge",
+  "sources": [
+    {"path": "benchmarks/mcp_tools/filesystem.json", "type": "mcp"},
+    {"path": "benchmarks/mcp_tools/github.json", "type": "mcp"}
+  ],
+  "tool_count": 38,
+  "queries": [
+    {
+      "query": "Read the contents of config.yaml",
+      "expected_tools": ["read_file"],
+      "expected_params": ["path"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Write a new configuration file",
+      "expected_tools": ["write_file"],
+      "expected_params": ["path", "content"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "List all files in the src directory",
+      "expected_tools": ["list_directory"],
+      "expected_params": ["path"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create the output directory",
+      "expected_tools": ["create_directory"],
+      "expected_params": ["path"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Find all Python files in the project",
+      "expected_tools": ["search_files"],
+      "expected_params": ["path", "pattern"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Move the old log file to archive",
+      "expected_tools": ["move_file"],
+      "expected_params": ["source", "destination"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Check the file size and permissions",
+      "expected_tools": ["get_file_info"],
+      "expected_params": ["path"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Show the directory tree structure",
+      "expected_tools": ["directory_tree"],
+      "expected_params": ["path"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Edit the import statement in main.py",
+      "expected_tools": ["edit_file"],
+      "expected_params": ["path", "edits"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Read multiple config files at once",
+      "expected_tools": ["read_multiple_files"],
+      "expected_params": ["paths"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Create a new issue for the bug I found",
+      "expected_tools": ["create_issue"],
+      "expected_params": ["owner", "repo", "title"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Open a pull request for my changes",
+      "expected_tools": ["create_pull_request"],
+      "expected_params": ["owner", "repo", "title", "head", "base"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Search for repositories about machine learning",
+      "expected_tools": ["search_repositories"],
+      "expected_params": ["query"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Fork the upstream repository",
+      "expected_tools": ["fork_repository"],
+      "expected_params": ["owner", "repo"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "List all open issues with bug label",
+      "expected_tools": ["list_issues"],
+      "expected_params": ["owner", "repo"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Get the README from the GitHub repo",
+      "expected_tools": ["get_file_contents"],
+      "expected_params": ["owner", "repo", "path"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Merge the feature branch PR",
+      "expected_tools": ["merge_pull_request"],
+      "expected_params": ["owner", "repo", "pull_number"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Comment on the pull request with review feedback",
+      "expected_tools": ["add_issue_comment"],
+      "expected_params": ["owner", "repo", "issue_number", "body"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Create a new branch for the feature",
+      "expected_tools": ["create_branch"],
+      "expected_params": ["owner", "repo", "branch"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Push the updated files to GitHub",
+      "expected_tools": ["push_files"],
+      "expected_params": ["owner", "repo", "branch", "files", "message"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Search code for the function definition",
+      "expected_tools": ["search_code"],
+      "expected_params": ["q"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Which directories can the file server access?",
+      "expected_tools": ["list_allowed_directories"],
+      "expected_params": [],
+      "category": "read",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Check details of PR number 55",
+      "expected_tools": ["get_pull_request"],
+      "expected_params": ["owner", "repo", "pull_number"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Approve the pull request after review",
+      "expected_tools": ["create_pull_request_review"],
+      "expected_params": ["owner", "repo", "pull_number", "body", "event"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "View the commit history",
+      "expected_tools": ["list_commits"],
+      "expected_params": ["owner", "repo"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a new GitHub repo and initialize it",
+      "expected_tools": ["create_repository"],
+      "expected_params": ["name"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Update the issue title and close it",
+      "expected_tools": ["update_issue"],
+      "expected_params": ["owner", "repo", "issue_number"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "See what files were changed in pull request 10",
+      "expected_tools": ["get_pull_request_files"],
+      "expected_params": ["owner", "repo", "pull_number"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Find all TypeScript files matching *.test.ts",
+      "expected_tools": ["search_files"],
+      "expected_params": ["path", "pattern"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a file on GitHub with the deployment config",
+      "expected_tools": ["create_or_update_file"],
+      "expected_params": ["owner", "repo", "path", "content", "message", "branch"],
+      "category": "write",
+      "difficulty": "medium"
+    }
+  ]
+}

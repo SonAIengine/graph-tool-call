@@ -5,6 +5,10 @@ Supports multiple embedding providers via ``wrap_embedding()`` auto-detection:
 - ``"openai/text-embedding-3-large"`` — OpenAI Embeddings API
 - ``"ollama/nomic-embed-text"`` — Ollama local embeddings
 - ``"sentence-transformers/all-MiniLM-L6-v2"`` — local sentence-transformers
+- ``"vllm/Qwen/Qwen3-0.6B"`` — vLLM (OpenAI-compatible, localhost:8000)
+- ``"llamacpp/qwen3-0.6b"`` — llama.cpp server (localhost:8080)
+- ``"vllm/model@http://host:port/v1"`` — custom URL
+- ``"http://host:port/v1@model"`` — URL@model format (any server)
 - ``callable(list[str]) -> list[list[float]]`` — custom function
 - ``EmbeddingIndex`` instance — pass-through
 """
@@ -78,7 +82,24 @@ class SentenceTransformerProvider(EmbeddingProvider):
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
-    """OpenAI Embeddings API provider."""
+    """OpenAI-compatible Embeddings API provider.
+
+    Works with any server that implements ``POST /v1/embeddings``:
+
+    - OpenAI API (requires ``OPENAI_API_KEY``)
+    - vLLM (``base_url="http://localhost:8000/v1"``)
+    - llama.cpp server (``base_url="http://localhost:8080/v1"``)
+    - LocalAI, LiteLLM proxy, etc.
+
+    Examples::
+
+        # OpenAI
+        OpenAIEmbeddingProvider(model="text-embedding-3-large")
+        # vLLM with any model
+        OpenAIEmbeddingProvider(model="Qwen/Qwen3-0.6B", base_url="http://localhost:8000/v1")
+        # llama.cpp
+        OpenAIEmbeddingProvider(model="qwen3-0.6b", base_url="http://localhost:8080/v1")
+    """
 
     def __init__(
         self,
@@ -90,6 +111,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.batch_size = batch_size
+        self._is_local = not self.base_url.startswith("https://api.openai.com")
 
         if not api_key:
             import os
@@ -98,7 +120,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         self.api_key = api_key
 
     def encode_batch(self, texts: list[str]) -> list[list[float]]:
-        if not self.api_key:
+        if not self._is_local and not self.api_key:
             msg = "OPENAI_API_KEY required for OpenAI embeddings."
             raise ValueError(msg)
 
@@ -111,10 +133,9 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
     def _call_api(self, texts: list[str]) -> list[list[float]]:
         url = f"{self.base_url}/embeddings"
         payload = json.dumps({"model": self.model, "input": texts}).encode()
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=120) as resp:  # noqa: S310
             result = json.loads(resp.read().decode())
@@ -171,11 +192,18 @@ def wrap_embedding(embedding: Any) -> EmbeddingProvider:
         - ``"openai/text-embedding-3-large"``
         - ``"ollama/nomic-embed-text"``
         - ``"sentence-transformers/all-MiniLM-L6-v2"``
+        - ``"vllm/Qwen/Qwen3-0.6B"`` — vLLM on localhost:8000
+        - ``"llamacpp/qwen3-0.6b"`` — llama.cpp on localhost:8080
+        - ``"vllm/model@http://host:port/v1"`` — custom URL
+        - ``"http://host:port/v1@model"`` — URL@model format
 
     Examples::
 
         wrap_embedding("openai/text-embedding-3-large")
         wrap_embedding("ollama/nomic-embed-text")
+        wrap_embedding("vllm/Qwen/Qwen3-0.6B")
+        wrap_embedding("llamacpp/qwen3@http://192.168.1.10:8080/v1")
+        wrap_embedding("http://localhost:8000/v1@my-model")
         wrap_embedding(lambda texts: my_embed(texts))
     """
     if isinstance(embedding, EmbeddingProvider):
@@ -197,22 +225,70 @@ def wrap_embedding(embedding: Any) -> EmbeddingProvider:
 
 
 def _wrap_embedding_string(spec: str) -> EmbeddingProvider:
-    """Parse a 'provider/model' string into an EmbeddingProvider."""
+    """Parse a 'provider/model' or 'url@model' string into an EmbeddingProvider.
+
+    Supported formats::
+
+        # Named providers
+        "openai/text-embedding-3-large"
+        "ollama/nomic-embed-text"
+        "sentence-transformers/all-MiniLM-L6-v2"
+        "litellm/text-embedding-3-large"
+
+        # Local OpenAI-compatible servers (vLLM, llama.cpp, LocalAI, etc.)
+        "vllm/Qwen/Qwen3-0.6B"                          # localhost:8000
+        "vllm/Qwen/Qwen3-0.6B@http://gpu-box:8000/v1"   # custom URL
+        "llamacpp/qwen3-0.6b"                            # localhost:8080
+        "llamacpp/qwen3@http://192.168.1.10:8080/v1"     # custom URL
+        "http://localhost:8000/v1@my-model"               # URL@model (any server)
+    """
+    # URL@model format: "http://host:port/v1@model-name"
+    if spec.startswith(("http://", "https://")) and "@" in spec:
+        url, model = spec.rsplit("@", 1)
+        return OpenAIEmbeddingProvider(model=model, base_url=url)
+
     if "/" not in spec:
         msg = f"Embedding string must be 'provider/model', got: {spec!r}"
         raise ValueError(msg)
 
-    provider, model = spec.split("/", 1)
+    provider, rest = spec.split("/", 1)
     provider = provider.lower()
 
     if provider == "openai":
-        return OpenAIEmbeddingProvider(model=model)
+        return OpenAIEmbeddingProvider(model=rest)
 
     if provider == "ollama":
-        return OllamaEmbeddingProvider(model=model)
+        return OllamaEmbeddingProvider(model=rest)
 
     if provider in ("sentence-transformers", "st", "sbert"):
-        return SentenceTransformerProvider(model_name=model)
+        return SentenceTransformerProvider(model_name=rest)
+
+    # vLLM: "vllm/model" or "vllm/model@url"
+    if provider == "vllm":
+        default_url = "http://localhost:8000/v1"
+        if "@" in rest:
+            model, url = rest.rsplit("@", 1)
+        else:
+            model, url = rest, default_url
+        return OpenAIEmbeddingProvider(model=model, base_url=url)
+
+    # llama.cpp: "llamacpp/model" or "llamacpp/model@url"
+    if provider in ("llamacpp", "llama-cpp", "llama_cpp"):
+        default_url = "http://localhost:8080/v1"
+        if "@" in rest:
+            model, url = rest.rsplit("@", 1)
+        else:
+            model, url = rest, default_url
+        return OpenAIEmbeddingProvider(model=model, base_url=url)
+
+    # LocalAI: "localai/model" or "localai/model@url"
+    if provider == "localai":
+        default_url = "http://localhost:8080/v1"
+        if "@" in rest:
+            model, url = rest.rsplit("@", 1)
+        else:
+            model, url = rest, default_url
+        return OpenAIEmbeddingProvider(model=model, base_url=url)
 
     if provider == "litellm":
 
@@ -224,13 +300,13 @@ def _wrap_embedding_string(spec: str) -> EmbeddingProvider:
                     "litellm is required for 'litellm/...' shorthand. "
                     "Install with: pip install litellm"
                 )
-            response = litellm.embedding(model=model, input=texts)
+            response = litellm.embedding(model=rest, input=texts)
             return [item["embedding"] for item in response.data]
 
         return CallableEmbeddingProvider(_litellm_embed)
 
     # Fallback: treat as OpenAI-compatible with provider as hint
-    return OpenAIEmbeddingProvider(model=model)
+    return OpenAIEmbeddingProvider(model=rest)
 
 
 # ---------------------------------------------------------------------------

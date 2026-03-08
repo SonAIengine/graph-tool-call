@@ -25,5 +25,8 @@ htmlcov/
 .env
 .env.local
 
+# Benchmark results (environment-dependent)
+benchmarks/results/
+
 # Personal memo
 memo/
