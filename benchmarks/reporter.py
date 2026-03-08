@@ -6,6 +6,10 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from benchmarks.pipeline import PipelineBenchmarkReport
 
 
 @dataclass
@@ -206,3 +210,111 @@ def save_report(report: BenchmarkReport, output_dir: str) -> Path:
 
     print(f"\n  Report saved: {path}")
     return path
+
+
+def print_pipeline_matrix(report: PipelineBenchmarkReport) -> None:
+    """Print pipeline comparison matrix for each dataset."""
+
+    print(f"\n{'═' * 62}")
+    print(f"  Pipeline Benchmark  |  model={report.model}")
+    print(f"{'═' * 62}")
+
+    for ds in report.datasets:
+        print(f"\n  {ds.name} ({ds.tool_count} tools, {ds.query_count} queries)")
+        print(f"  {'─' * 58}")
+        print(
+            f"  {'Pipeline':<18} {'Accuracy':>8}  {'Recall@K':>8}"
+            f"  {'Avg Tokens':>10}  {'Avg Latency':>11}  {'Candidates':>10}"
+        )
+        print(f"  {'─' * 58}")
+
+        for pname in report.pipeline_names:
+            m = ds.metrics.get(pname)
+            if m is None:
+                continue
+            acc = f"{m.accuracy:.1%}"
+            rec = f"{m.avg_recall:.1%}"
+            tok = f"{m.avg_input_tokens:.0f}"
+            lat = f"{m.avg_latency_ms:.0f}ms"
+            cand = f"{m.avg_candidate_count:.0f}"
+            print(f"  {pname:<18} {acc:>8}  {rec:>8}  {tok:>10}  {lat:>11}  {cand:>10}")
+
+        # Token savings summary
+        baseline_metrics = ds.metrics.get("baseline")
+        if baseline_metrics and baseline_metrics.avg_input_tokens > 0:
+            base_tok = f"{baseline_metrics.avg_input_tokens:.0f}"
+            print(f"\n  Token Savings vs baseline ({base_tok} tokens):")
+            for pname in report.pipeline_names:
+                if pname == "baseline":
+                    continue
+                m = ds.metrics.get(pname)
+                if m is None:
+                    continue
+                saved = baseline_metrics.avg_input_tokens - m.avg_input_tokens
+                base = baseline_metrics.avg_input_tokens
+                pct = saved / base if base > 0 else 0
+                print(f"    {pname:<18} {saved:>+8.0f} tokens  ({pct:>+6.1%})")
+
+    print(f"\n{'═' * 62}")
+
+
+def print_pipeline_failures(report: PipelineBenchmarkReport) -> None:
+    """Print divergent and universally-failed results across pipelines."""
+
+    for ds in report.datasets:
+        divergent = []
+        all_failed = []
+
+        for q in ds.queries:
+            results = q.results
+            if not results:
+                continue
+
+            corrects = {name: r for name, r in results.items() if r.tool_correct}
+            wrongs = {name: r for name, r in results.items() if not r.tool_correct}
+
+            if len(corrects) == len(results):
+                # All succeeded — skip
+                continue
+            elif len(wrongs) == len(results):
+                # All failed
+                all_failed.append(q)
+            else:
+                # Divergent — some right, some wrong
+                divergent.append(q)
+
+        if not divergent and not all_failed:
+            continue
+
+        print(f"\n  {ds.name}")
+
+        if divergent:
+            print(f"\n  Divergent Results ({len(divergent)}):")
+            print(f"  {'─' * 50}")
+            for q in divergent:
+                print(f'  "{q.query}"')
+                print(f"    expected: {q.expected_tools}")
+                parts = []
+                for pname in report.pipeline_names:
+                    r = q.results.get(pname)
+                    if r is None:
+                        continue
+                    mark = "O" if r.tool_correct else "X"
+                    tool = r.tool_called or "—"
+                    parts.append(f"{pname}: {mark} ({tool})")
+                print(f"    {'  '.join(parts)}")
+
+        if all_failed:
+            print(f"\n  All Pipelines Failed ({len(all_failed)}):")
+            print(f"  {'─' * 50}")
+            for q in all_failed:
+                print(f'  "{q.query}"')
+                print(f"    expected: {q.expected_tools}")
+                parts = []
+                for pname in report.pipeline_names:
+                    r = q.results.get(pname)
+                    if r is None:
+                        continue
+                    tool = r.tool_called or "—"
+                    parts.append(f"{pname}: {tool}")
+                print(f"    got: {'  |  '.join(parts)}")

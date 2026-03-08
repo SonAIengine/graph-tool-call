@@ -57,95 +57,94 @@ OpenAPI/MCP/코드 → [수집] → [분석] → [조직화] → [검색] → Ag
 
 ## 벤치마크
 
-> **LLM이 올바른 tool을 고를 수 있을까?**
-> LLM에게 사용자 요청과 tool 정의를 주고, 올바른 tool을 호출하는지 확인했습니다.
-> - **사용 전**: **전체** tool 정의를 LLM에 전달.
-> - **사용 후**: graph-tool-call이 검색한 **상위 5개**만 전달.
+> **진짜 테스트**: LLM과 tool 사이에 graph-tool-call을 두고 비교.
+> 동일한 사용자 요청을 4가지 구성으로 실행:
+> - **baseline**: **전체** tool 정의를 LLM에 전달 (검색 없음)
+> - **retrieve-k3/k5/k10**: 검색된 **상위 K개**만 전달
+>
+> 모델: qwen3:4b (4-bit 양자화, Ollama). 모든 스펙은 공개되어 있으며 재현 가능합니다.
 
-모든 벤치마크는 누구나 다운로드하고 재현할 수 있는 공개 스펙을 사용합니다: [Petstore OpenAPI](https://petstore3.swagger.io), [Kubernetes core/v1 API](https://github.com/kubernetes/kubernetes), GitHub REST API, MCP tool 서버.
+### graph-tool-call이 LLM을 도와주는가?
 
-### 결과: graph-tool-call이 LLM을 도와주는가?
+| API | Tool 수 | baseline | retrieve-k5 | retrieve-k10 | 토큰 절감 |
+|-----|:------:|:--------:|:-----------:|:------------:|:---------:|
+| Petstore | 19 | 100% | 95.0% | **100%** | **64%** |
+| GitHub | 50 | 100% | 87.5% | 90.0% | **88%** |
+| MCP Servers | 38 | 96.7% | 90.0% | **96.7%** | **83%** |
+| **Kubernetes** | **248** | **14.3%** | **72.0%** | **74.0%** | **80%** |
 
-모델: qwen3.5:4b (4-bit 양자화, Ollama). 각 쿼리마다 LLM이 올바른 tool을 호출하는지 평가.
-
-| API | 전체 tool 수 | 사용 전 (전체 tool → LLM) | 사용 후 (top-5 → LLM) | 변화 |
-|-----|:----------:|:----------------------:|:-------------------:|:-----|
-| Petstore | 19 | 60% | **75%** | **정확도 +15pp**, 토큰 70% 절감 |
-| GitHub | 50 | 20% | 20% | 동일 정확도, **토큰 60% 절감** |
-| **Kubernetes** | **248** | **실행 불가** | **60%** | 248개 tool = 10만 토큰. 소형 모델 context에 안 들어감. **검색 없이는 아예 불가능.** |
-
-핵심: tool 수가 늘어날수록 전체를 LLM에 넣는 방식은 한계에 부딪힙니다. **248개 tool**이면 모델이 받을 수조차 없습니다 — graph-tool-call이 5개로 필터링해서 비로소 **60% 정확도**를 달성합니다.
-
-### 검색은 얼마나 정확한가?
-
-LLM이 보기 전에, graph-tool-call이 먼저 올바른 tool을 **찾아야** 합니다. **Recall@K**로 측정합니다: *"정답 tool이 상위 K개 결과에 포함되는가?"*
-
-| API | 전체 tool 수 | Recall@3 | Recall@5 | Recall@10 |
-|-----|:----------:|:--------:|:--------:|:---------:|
-| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
-| GitHub REST | 58 | 82.5% | **87.5%** | 90.0% |
-| MCP (filesystem + GitHub) | 38 | 93.3% | **96.7%** | 100.0% |
-| Kubernetes | 248 | 62.0% | **68.0%** | 78.0% |
-
-19개 tool일 때 정답이 top-5에 포함될 확률 **98%**. 248개에서도 **Recall@10 = 78%** — 임베딩 모델 없이 BM25 + 그래프 탐색만으로 달성한 수치입니다.
+**핵심 두 줄 요약:**
+- **50개 미만**: LLM이 잘 처리함. graph-tool-call의 가치 = **64–88% 토큰 절감** (더 빠르고, 더 저렴).
+- **248개**: LLM이 **14%로 붕괴**. graph-tool-call이 **72% 정확도** 달성 — 최적화가 아니라 **필수**.
 
 <details>
-<summary>작업 유형별 상세 분석</summary>
+<summary>전체 파이프라인 비교 (4개 구성)</summary>
 
-**Petstore** (19 tools) — Recall@5
+**Petstore** (19 tools, 20 쿼리)
 
-| 작업 유형 | Recall | 쿼리 수 |
-|----------|:------:|:------:|
-| read | 100.0% | 8 |
-| write | 100.0% | 8 |
-| delete | 100.0% | 3 |
-| workflow (다중 tool) | 66.7% | 1 |
+| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
+|----------|:------:|:--------:|:--------:|:--------:|
+| baseline | 100.0% | 100.0% | 1,239 | — |
+| retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
+| retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
+| retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
 
-**GitHub** (58 tools) — Recall@5
+**GitHub** (50 tools, 40 쿼리)
 
-| 작업 유형 | Recall | 쿼리 수 |
-|----------|:------:|:------:|
-| write | 94.1% | 17 |
-| read | 85.0% | 20 |
-| delete | 66.7% | 3 |
+| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
+|----------|:------:|:--------:|:--------:|:--------:|
+| baseline | 100.0% | 100.0% | 3,302 | — |
+| retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
+| retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
+| retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
 
-**Kubernetes** (248 tools) — Recall@5
+**Mixed MCP** (38 tools, 30 쿼리)
 
-| 작업 유형 | Recall | 쿼리 수 |
-|----------|:------:|:------:|
-| write | 80.0% | 15 |
-| delete | 75.0% | 8 |
-| read | 59.3% | 27 |
+| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
+|----------|:------:|:--------:|:--------:|:--------:|
+| baseline | 96.7% | 100.0% | 2,741 | — |
+| retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
+| retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
+| retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
+
+**Kubernetes core/v1** (248 tools, 50 쿼리)
+
+| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
+|----------|:------:|:--------:|:--------:|:--------:|
+| baseline | 14.3% | 100.0% | 8,192 | — |
+| retrieve-k3 | 62.0% | 82.0% | 1,077 | 86.8% |
+| retrieve-k5 | 72.0% | 86.0% | 1,614 | 80.3% |
+| retrieve-k10 | 74.0% | 88.0% | 3,261 | 60.2% |
 
 </details>
 
-### 임베딩은 언제 도움이 되는가?
+### 검색은 얼마나 정확한가?
 
-BM25 + 그래프 위에 임베딩 모델을 추가한 결과 — **tool 수**와 **모델 품질**에 따라 효과가 달랐습니다.
+LLM이 보기 전에, graph-tool-call이 먼저 올바른 tool을 **찾아야** 합니다. **Recall@K**로 측정: *"정답 tool이 상위 K개에 포함되는가?"*
 
-**Qwen3-Embedding-0.6B** (Ollama):
+| API | Tool 수 | Recall@3 | Recall@5 | Recall@10 |
+|-----|:------:|:--------:|:--------:|:---------:|
+| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
+| GitHub | 50 | 87.5% | **87.5%** | 92.5% |
+| MCP | 38 | 93.3% | **96.7%** | 100.0% |
+| Kubernetes | 248 | 82.0% | **86.0%** | 88.0% |
 
-| API | Tool 수 | BM25 + Graph | + 임베딩 | 변화 | 개선 | 저하 |
-|-----|:------:|:------------:|:-------:|:----:|:----:|:----:|
-| Petstore | 19 | 98.3% | 98.3% | — | 0 | 0 |
-| MCP | 38 | 96.7% | 96.7% | — | 0 | 0 |
-| GitHub | 58 | 87.5% | 87.5% | — | 0 | 0 |
-| **Kubernetes** | **248** | **68.0%** | **82.0%** | **+14pp** | **7** | **0** |
-
-소/중 규모에서는 임베딩이 성능에 영향을 주지 않습니다 — BM25가 이미 충분합니다. 하지만 **대규모(248개 이상)**에서는 임베딩이 **+14pp 향상**을 달성하며, **저하는 0건**입니다. tool이 많을수록 임베딩의 가치가 커집니다.
+BM25 + 그래프 탐색만의 결과입니다 — 임베딩 모델 없이. 임베딩(Qwen3-Embedding-0.6B) 추가 시 Kubernetes Recall@5는 **+14pp 추가 향상**.
 
 ### 직접 재현하기
 
 ```bash
 # 검색 품질 측정 (빠름, LLM 불필요)
 python -m benchmarks.run_benchmark
-python -m benchmarks.run_benchmark -d k8s -v          # Kubernetes 248 tools
+python -m benchmarks.run_benchmark -d k8s -v
 
-# LLM 포함 E2E 테스트
-python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b
+# 파이프라인 벤치마크 (LLM 비교)
+python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
+python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
 
-# 임베딩 비교
-python -m benchmarks.run_embedding_benchmark --embedding "ollama/nomic-embed-text"
+# 베이스라인 저장 및 비교
+python -m benchmarks.run_benchmark --mode pipeline --save-baseline
+python -m benchmarks.run_benchmark --mode pipeline --diff
 ```
 
 ## 설치

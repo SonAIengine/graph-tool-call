@@ -155,6 +155,8 @@ class BM25Scorer:
         # Remove stopwords from query; keep all if everything is a stopword
         filtered = [t for t in raw_tokens if t not in self._stopwords]
         query_tokens = filtered if filtered else raw_tokens
+        # Expand with scope/action signals from the original query
+        query_tokens = self._expand_query_tokens(query_tokens, query)
 
         scores: dict[str, float] = {}
         for name, doc_tokens in self._tool_tokens.items():
@@ -187,7 +189,7 @@ class BM25Scorer:
 
     @staticmethod
     def _tokenize_tool(tool: ToolSchema) -> list[str]:
-        """Extract tokens from all tool fields: name, description, tags, param names."""
+        """Extract tokens from all tool fields: name, description, tags, param names, metadata."""
         tokens: list[str] = []
         tokens.extend(BM25Scorer._tokenize(tool.name))
         tokens.extend(BM25Scorer._tokenize(tool.description))
@@ -195,6 +197,117 @@ class BM25Scorer:
             tokens.extend(BM25Scorer._tokenize(tag))
         for param in tool.parameters:
             tokens.extend(BM25Scorer._tokenize(param.name))
+        tokens.extend(BM25Scorer._extract_metadata_tokens(tool))
+        return tokens
+
+    @staticmethod
+    def _extract_metadata_tokens(tool: ToolSchema) -> list[str]:
+        """Extract discriminative tokens from tool metadata (path, method).
+
+        For OpenAPI tools, the path carries critical scope/sub-resource information
+        that descriptions often omit (e.g. namespaced vs cluster-wide).
+        """
+        metadata = tool.metadata
+        if not metadata:
+            return []
+        tokens: list[str] = []
+
+        method = metadata.get("method", "")
+        path = metadata.get("path", "")
+
+        if method:
+            tokens.append(method.lower())
+
+        if not path:
+            return tokens
+
+        # Split path into segments, skip empty and {param} placeholders
+        segments = [s for s in path.split("/") if s and not s.startswith("{")]
+        for seg in segments:
+            tokens.extend(BM25Scorer._tokenize(seg))
+
+        # Scope detection: does the path contain a {namespace} parameter?
+        has_namespace_param = "{namespace}" in path or "{ns}" in path
+        # Is it a "list" or "get" style path? (ends with plural or has {name})
+        has_name_param = "{name}" in path
+
+        if has_namespace_param:
+            tokens.extend(["namespac", "scoped"])
+        elif any(s in path for s in ["/namespaces", "/namespace"]):
+            # Path references namespaces without a param = cluster-level namespace listing
+            pass
+        else:
+            # No namespace scoping at all
+            if method.lower() in ("get", "list") or not has_name_param:
+                tokens.extend(["cluster", "all"])
+
+        # Sub-resource tokens from path suffix
+        if segments:
+            last = segments[-1].lower()
+            sub_resources = {
+                "exec": ["exec", "execut"],
+                "attach": ["attach"],
+                "portforward": ["portforward", "port", "forward"],
+                "proxy": ["proxy"],
+                "log": ["log"],
+                "status": ["status"],
+                "scale": ["scale"],
+                "finalize": ["finaliz"],
+                "binding": ["bind"],
+                "eviction": ["evict"],
+                "ephemeralcontainers": ["ephemer", "container"],
+            }
+            if last in sub_resources:
+                tokens.extend(sub_resources[last])
+
+        # Collection pattern: DELETE on a plural path without {name}
+        if method.lower() == "delete" and not has_name_param:
+            tokens.extend(["collect", "bulk"])
+
+        return tokens
+
+    @staticmethod
+    def _expand_query_tokens(tokens: list[str], query: str) -> list[str]:
+        """Expand query tokens with scope/action signals detected from the full query.
+
+        Detects multi-word patterns that individual tokens can't capture,
+        then adds synthetic tokens that match metadata-derived document tokens.
+        """
+        q = query.lower()
+        extra: list[str] = []
+
+        # Scope detection
+        if re.search(r"\bin\s+(a|the|this|default|my)\s+namespace\b", q):
+            extra.extend(["namespac", "scoped"])
+        elif re.search(r"\ball\s+namespace", q) or "cluster-wide" in q or "across all" in q:
+            extra.extend(["cluster", "all"])
+
+        # Sub-resource patterns
+        if "port-forward" in q or "port forward" in q or "portforward" in q:
+            extra.extend(["portforward", "port", "forward"])
+        if re.search(r"\b(exec|execute)\b", q):
+            extra.append("exec")
+        if re.search(r"\battach\b", q):
+            extra.append("attach")
+
+        # Collection/bulk delete
+        if re.search(r"\bdelete\s+all\b", q) or re.search(r"\bremove\s+all\b", q) or "at once" in q:
+            extra.extend(["collect", "bulk"])
+
+        # Status/logs
+        if re.search(r"\bstatus\b", q):
+            extra.append("status")
+        if re.search(r"\blogs?\b", q):
+            extra.append("log")
+        if re.search(r"\bscale\b", q):
+            extra.append("scale")
+        if re.search(r"\bephemeral\b", q):
+            extra.append("ephemer")
+        if re.search(r"\bproxy\b", q):
+            extra.append("proxy")
+
+        if extra:
+            return tokens + extra
         return tokens
 
     @staticmethod

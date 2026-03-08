@@ -339,6 +339,14 @@ class EmbeddingIndex:
         parts = [tool.name, tool.description]
         parts.extend(tool.tags)
         parts.extend(p.name for p in tool.parameters)
+        # Include path and method from OpenAPI metadata for semantic disambiguation
+        if hasattr(tool, "metadata") and tool.metadata:
+            method = tool.metadata.get("method", "")
+            path = tool.metadata.get("path", "")
+            if method:
+                parts.append(method)
+            if path:
+                parts.append(path)
         return " ".join(p for p in parts if p)
 
     def encode(self, text: str) -> list[float]:

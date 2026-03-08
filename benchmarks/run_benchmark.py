@@ -4,6 +4,7 @@
 Modes:
   retrieval  — Measure recall@K without LLM (fast, deterministic)
   e2e        — Full pipeline: Baseline vs Retrieve comparison with Ollama
+  pipeline   — Multi-pipeline comparison matrix with baseline diff support
 
 Usage:
     python -m benchmarks.run_benchmark                           # retrieval-only, all datasets
@@ -284,12 +285,16 @@ Examples:
   python -m benchmarks.run_benchmark                           # retrieval, all datasets
   python -m benchmarks.run_benchmark -d petstore               # single dataset
   python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b    # with LLM
+  python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b  # pipeline comparison
+  python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5
+  python -m benchmarks.run_benchmark --mode pipeline --save-baseline  # save as baseline
+  python -m benchmarks.run_benchmark --mode pipeline --diff          # compare vs baseline
   python -m benchmarks.run_benchmark --mode legacy             # old-style tier benchmark
         """,
     )
     parser.add_argument(
         "--mode",
-        choices=["retrieval", "e2e", "legacy"],
+        choices=["retrieval", "e2e", "pipeline", "legacy"],
         default="retrieval",
         help="Benchmark mode (default: retrieval)",
     )
@@ -314,6 +319,29 @@ Examples:
     parser.add_argument("--save", action="store_true", help="Save results as JSON")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show per-query details")
 
+    # Pipeline mode arguments
+    parser.add_argument(
+        "--pipelines",
+        nargs="+",
+        default=None,
+        help="Pipeline presets for pipeline mode (default: baseline retrieve-k5)",
+    )
+    parser.add_argument(
+        "--embedding",
+        type=str,
+        default=None,
+        help="Embedding model for pipeline mode (e.g. 'ollama/nomic-embed-text')",
+    )
+    parser.add_argument(
+        "--save-baseline", action="store_true", help="Save pipeline results as baseline"
+    )
+    parser.add_argument(
+        "--diff", action="store_true", help="Compare pipeline results against saved baseline"
+    )
+    parser.add_argument(
+        "--failures", action="store_true", help="Show divergent/failed queries in pipeline mode"
+    )
+
     args = parser.parse_args()
 
     # Legacy mode
@@ -322,6 +350,74 @@ Examples:
             args.dataset = ["petstore_legacy"]
         args.top_k = args.top_k
         run_legacy_benchmark(args)
+        return
+
+    # Pipeline mode
+    if args.mode == "pipeline":
+        from benchmarks.baseline import diff_reports, load_baseline, print_diff, save_baseline
+        from benchmarks.config import DEFAULT_PIPELINES, PIPELINE_PRESETS, PipelineConfig
+        from benchmarks.pipeline import PipelineExecutor
+        from benchmarks.reporter import print_pipeline_failures, print_pipeline_matrix
+
+        # Determine pipelines
+        pipeline_names = args.pipelines or DEFAULT_PIPELINES
+        pipelines = []
+        for name in pipeline_names:
+            if name in PIPELINE_PRESETS:
+                p = PIPELINE_PRESETS[name]
+                # Apply embedding override if specified
+                if args.embedding and p.use_retrieval:
+                    p = PipelineConfig(
+                        name=p.name,
+                        use_retrieval=p.use_retrieval,
+                        top_k=p.top_k,
+                        embedding=args.embedding,
+                        reranker=p.reranker,
+                        weights=p.weights,
+                    )
+                pipelines.append(p)
+            else:
+                print(f"Unknown pipeline preset: {name}", file=sys.stderr)
+                sys.exit(1)
+
+        # Determine datasets
+        datasets = args.dataset or None  # None = all non-legacy
+
+        executor = PipelineExecutor(
+            pipelines=pipelines,
+            model=args.model,
+            ollama_url=args.ollama_url,
+            num_ctx=args.num_ctx,
+            timeout=args.timeout,
+        )
+        report = executor.run_all(datasets=datasets, verbose=args.verbose)
+        print_pipeline_matrix(report)
+
+        if args.failures:
+            print_pipeline_failures(report)
+
+        if args.save_baseline:
+            path = save_baseline(report)
+            print(f"\n  Baseline saved: {path}")
+
+        if args.diff:
+            baseline = load_baseline()
+            if baseline is None:
+                print("\n  No baseline found. Run with --save-baseline first.")
+            else:
+                diffs = diff_reports(report, baseline)
+                print_diff(diffs)
+
+        if args.save:
+            from pathlib import Path
+
+            out = Path("benchmarks/results")
+            out.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            path = out / f"pipeline_{ts}.json"
+            path.write_text(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+            print(f"\n  Report saved: {path}")
+
         return
 
     # Determine datasets

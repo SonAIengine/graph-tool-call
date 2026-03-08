@@ -245,6 +245,64 @@ def _infer_annotations(method: str) -> MCPAnnotations | None:
     return _ANNOTATION_BY_METHOD.get(method.lower())
 
 
+def _enrich_description(description: str, method: str, path: str) -> str:
+    """Append path-derived context to short/generic descriptions.
+
+    Many large APIs (e.g. Kubernetes) share identical descriptions across operations
+    that differ only in scope or sub-resource. This enrichment adds discriminative
+    signals that BM25 and embedding can use.
+
+    Only activates when the path has enough depth (3+ segments) to indicate
+    a complex API with scope disambiguation needs.
+    """
+    if not path:
+        return description
+
+    segments = [s for s in path.split("/") if s and not s.startswith("{")]
+    # Only enrich for complex paths — simple APIs (e.g. /items, /users/{id})
+    # don't need scope/sub-resource disambiguation.
+    if len(segments) < 3:
+        return description
+
+    suffixes: list[str] = []
+
+    has_ns = "{namespace}" in path or "{ns}" in path
+    has_name = "{name}" in path
+
+    if has_ns:
+        suffixes.append("namespaced")
+    elif not has_name and method.lower() in ("get", "delete"):
+        suffixes.append("cluster-wide")
+
+    # Sub-resource detection from path suffix
+    if segments:
+        resource = segments[-1]
+        sub_resources = {
+            "exec",
+            "attach",
+            "portforward",
+            "proxy",
+            "log",
+            "status",
+            "scale",
+            "finalize",
+            "binding",
+            "eviction",
+            "ephemeralcontainers",
+        }
+        if resource.lower() in sub_resources and len(segments) >= 2:
+            parent = segments[-2]
+            suffixes.append(f"{resource} of {parent}")
+
+    # Collection delete
+    if method.lower() == "delete" and not has_name:
+        suffixes.append("collection")
+
+    if suffixes:
+        return f"{description} ({', '.join(suffixes)})"
+    return description
+
+
 def _operation_to_tool(
     operation_id: str,
     operation: dict[str, Any],
@@ -265,6 +323,9 @@ def _operation_to_tool(
         if tags:
             parts.append(f"[{', '.join(tags)}]")
         description = " ".join(parts)
+
+    # Enrich generic descriptions with path-derived context
+    description = _enrich_description(description, method, path)
 
     if is_swagger2:
         parameters = _extract_params_swagger2(operation, resolved_spec, required_only=required_only)

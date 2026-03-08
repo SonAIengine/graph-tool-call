@@ -66,3 +66,25 @@ DATASET_REGISTRY: dict[str, dict] = {
         "legacy": True,
     },
 }
+
+
+@dataclass
+class PipelineConfig:
+    """Configuration for a single benchmark pipeline."""
+
+    name: str
+    use_retrieval: bool = False
+    top_k: int = 5
+    embedding: str | None = None
+    reranker: str | None = None
+    weights: dict[str, float] | None = None
+
+
+PIPELINE_PRESETS: dict[str, PipelineConfig] = {
+    "baseline": PipelineConfig(name="baseline", use_retrieval=False),
+    "retrieve-k3": PipelineConfig(name="retrieve-k3", use_retrieval=True, top_k=3),
+    "retrieve-k5": PipelineConfig(name="retrieve-k5", use_retrieval=True, top_k=5),
+    "retrieve-k10": PipelineConfig(name="retrieve-k10", use_retrieval=True, top_k=10),
+}
+
+DEFAULT_PIPELINES = ["baseline", "retrieve-k5"]

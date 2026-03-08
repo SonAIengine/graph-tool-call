@@ -59,63 +59,68 @@ OpenAPI/MCP/代码 → [采集] → [分析] → [组织] → [检索] → Agent
 
 > **LLM 能选对正确的工具吗？**
 > 给 LLM 提供用户请求和工具定义，验证它是否能调用正确的工具。
-> - **使用前**: 将**全部**工具定义传给 LLM。
-> - **使用后**: 仅传递 graph-tool-call 检索的**前 5 个**。
+> - **baseline**: 将**全部**工具定义传给 LLM。
+> - **retrieve-k5 / k10**: 仅传递 graph-tool-call 检索的**前 5 / 10 个**。
 
-所有基准测试使用任何人都可以下载并复现的公开规范: [Petstore OpenAPI](https://petstore3.swagger.io), [Kubernetes core/v1 API](https://github.com/kubernetes/kubernetes), GitHub REST API, MCP tool 服务器。
+所有基准测试使用任何人都可以下载并复现的公开规范: [Petstore OpenAPI](https://petstore3.swagger.io), [Kubernetes core/v1 API](https://github.com/kubernetes/kubernetes), GitHub REST API, MCP tool 服务器。模型: qwen3:4b (4-bit 量化, Ollama)。
 
 ### 结果: graph-tool-call 对 LLM 有帮助吗？
 
-模型: qwen3.5:4b (4-bit 量化, Ollama)。逐个查询评估 LLM 是否调用了正确的工具。
+| API | 工具数 | baseline | retrieve-k5 | retrieve-k10 | Token 节省 |
+|-----|:-----:|:--------:|:-----------:|:------------:|:----------:|
+| Petstore | 19 | 100% | 95.0% | 100% | 64% |
+| GitHub | 50 | 100% | 87.5% | 90.0% | 88% |
+| MCP Servers | 38 | 96.7% | 90.0% | 96.7% | 83% |
+| Kubernetes | 248 | 14.3% | 72.0% | 74.0% | 80% |
 
-| API | 工具总数 | 使用前 (全部工具 → LLM) | 使用后 (top-5 → LLM) | 变化 |
-|-----|:----------:|:----------------------:|:-------------------:|:-----|
-| Petstore | 19 | 60% | **75%** | **准确率 +15pp**，token 节省 70% |
-| GitHub | 50 | 20% | 20% | 准确率持平，**token 节省 60%** |
-| **Kubernetes** | **248** | **无法运行** | **60%** | 248 个工具 = 10 万 token。小模型上下文放不下。**没有检索根本不可能。** |
+- **50 个以下**: LLM 本身就能处理好。graph-tool-call 的价值 = **64-88% 的 token 节省**。
+- **248 个工具**: LLM 崩溃到 14%。graph-tool-call 以 72% 准确率救场 — 这不是优化，而是**必需品**。
 
-核心结论: 工具数量越多，把全部工具塞给 LLM 的方式就越行不通。**248 个工具**时模型甚至无法接收——graph-tool-call 过滤到 5 个后才实现了 **60% 准确率**。
-
-### 检索有多准确？
+### 检索 Recall@K
 
 在 LLM 看到工具之前，graph-tool-call 需要先**找到**正确的工具。用 **Recall@K** 来衡量: *"正确工具是否包含在前 K 个结果中？"*
 
-| API | 工具总数 | Recall@3 | Recall@5 | Recall@10 |
-|-----|:----------:|:--------:|:--------:|:---------:|
-| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
-| GitHub REST | 58 | 82.5% | **87.5%** | 90.0% |
-| MCP (filesystem + GitHub) | 38 | 93.3% | **96.7%** | 100.0% |
-| Kubernetes | 248 | 62.0% | **68.0%** | 78.0% |
-
-19 个工具时正确答案出现在 top-5 的概率为 **98%**。248 个工具时 **Recall@10 = 78%** — 仅靠 BM25 + 图遍历、无需嵌入模型即可达到的数值。
+| API | 工具数 | Recall@3 | Recall@5 | Recall@10 |
+|-----|:-----:|:--------:|:--------:|:---------:|
+| Petstore | 19 | 93.3% | 98.3% | 98.3% |
+| GitHub | 50 | 87.5% | 87.5% | 92.5% |
+| MCP | 38 | 93.3% | 96.7% | 100.0% |
+| Kubernetes | 248 | 82.0% | 86.0% | 88.0% |
 
 <details>
-<summary>按任务类型的详细分析</summary>
+<summary>各数据集的详细 Pipeline 对比</summary>
 
-**Petstore** (19 tools) — Recall@5
+**Petstore** (19 tools)
 
-| 任务类型 | Recall | 查询数 |
-|----------|:------:|:------:|
-| read | 100.0% | 8 |
-| write | 100.0% | 8 |
-| delete | 100.0% | 3 |
-| workflow (多工具) | 66.7% | 1 |
+| Pipeline | Accuracy | Recall@K | 平均 Token | Token 节省 |
+|----------|:--------:|:--------:|:---------:|:---------:|
+| baseline (全部 19 tools) | 100% | — | 5,182 | — |
+| retrieve-k5 | 95.0% | 98.3% | 1,879 | 64% |
+| retrieve-k10 | 100% | 98.3% | 2,842 | 45% |
 
-**GitHub** (58 tools) — Recall@5
+**GitHub** (50 tools)
 
-| 任务类型 | Recall | 查询数 |
-|----------|:------:|:------:|
-| write | 94.1% | 17 |
-| read | 85.0% | 20 |
-| delete | 66.7% | 3 |
+| Pipeline | Accuracy | Recall@K | 平均 Token | Token 节省 |
+|----------|:--------:|:--------:|:---------:|:---------:|
+| baseline (全部 50 tools) | 100% | — | 11,052 | — |
+| retrieve-k5 | 87.5% | 87.5% | 1,294 | 88% |
+| retrieve-k10 | 90.0% | 92.5% | 2,325 | 79% |
 
-**Kubernetes** (248 tools) — Recall@5
+**MCP Servers** (38 tools)
 
-| 任务类型 | Recall | 查询数 |
-|----------|:------:|:------:|
-| write | 80.0% | 15 |
-| delete | 75.0% | 8 |
-| read | 59.3% | 27 |
+| Pipeline | Accuracy | Recall@K | 平均 Token | Token 节省 |
+|----------|:--------:|:--------:|:---------:|:---------:|
+| baseline (全部 38 tools) | 96.7% | — | 7,493 | — |
+| retrieve-k5 | 90.0% | 96.7% | 1,249 | 83% |
+| retrieve-k10 | 96.7% | 100.0% | 2,280 | 70% |
+
+**Kubernetes** (248 tools)
+
+| Pipeline | Accuracy | Recall@K | 平均 Token | Token 节省 |
+|----------|:--------:|:--------:|:---------:|:---------:|
+| baseline (全部 248 tools) | 14.3% | — | 63,768 | — |
+| retrieve-k5 | 72.0% | 86.0% | 1,277 | 80% |
+| retrieve-k10 | 74.0% | 88.0% | 2,350 | 96% |
 
 </details>
 
@@ -129,7 +134,7 @@ OpenAPI/MCP/代码 → [采集] → [分析] → [组织] → [检索] → Agent
 |-----|:------:|:------------:|:------:|:----:|:----:|:----:|
 | Petstore | 19 | 98.3% | 98.3% | — | 0 | 0 |
 | MCP | 38 | 96.7% | 96.7% | — | 0 | 0 |
-| GitHub | 58 | 87.5% | 87.5% | — | 0 | 0 |
+| GitHub | 50 | 87.5% | 87.5% | — | 0 | 0 |
 | **Kubernetes** | **248** | **68.0%** | **82.0%** | **+14pp** | **7** | **0** |
 
 中小规模中，嵌入既不帮助也不伤害 — BM25 已经足够精确。但在**大规模（248+）**中，嵌入带来 **+14pp 的大幅提升**，且**零退化**。工具越多，嵌入的价值越大。
