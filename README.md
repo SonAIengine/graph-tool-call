@@ -121,18 +121,35 @@ With 19 tools, the correct tool is in the top-5 **98% of the time**. Even at 248
 
 ### When does embedding help?
 
-We tested adding an embedding model ([nomic-embed-text](https://ollama.com/library/nomic-embed-text), Ollama) on top of BM25 + graph. The result depends on the number of tools:
+We added an embedding model on top of BM25 + graph and measured the impact. The result depends on **tool count** and **model quality**.
 
-| API | Tools | BM25 + Graph | + Embedding | Improved | Degraded |
-|-----|:-----:|:------------:|:-----------:|:--------:|:--------:|
-| Petstore | 19 | 98.3% | 98.3% | 0 | 0 |
-| GitHub | 58 | 85.0% | 77.5% | 0 | 3 |
-| MCP | 38 | 96.7% | 90.0% | 0 | 2 |
-| **Kubernetes** | **248** | **64.0%** | **66.0%** | **1** | **0** |
+**Qwen3-Embedding-0.6B** (Ollama):
 
-**The pattern**: For small/medium tool sets (< 100), BM25 keyword matching is already precise enough — adding embedding introduces noise and can push correct tools out of top-5. But for **large tool sets (248+)**, where many tools share similar names (`readCoreV1NamespacedPodStatus` vs `connectCoreV1GetNamespacedPodAttach`), embedding provides the semantic understanding that BM25 alone can't.
+| API | Tools | BM25 + Graph | + Embedding | Delta | Improved | Degraded |
+|-----|:-----:|:------------:|:-----------:|:-----:|:--------:|:--------:|
+| Petstore | 19 | 98.3% | 98.3% | — | 0 | 0 |
+| MCP | 38 | 96.7% | 96.7% | — | 0 | 0 |
+| GitHub | 58 | 85.0% | 80.0% | -5pp | 0 | 2 |
+| **Kubernetes** | **248** | **64.0%** | **68.0%** | **+4pp** | **2** | **0** |
 
-**Recommendation**: Enable embedding when your tool count exceeds ~100. For smaller sets, BM25 + graph is sufficient.
+**The pattern**: For small/medium tool sets, BM25 keyword matching is already precise — embedding can push correct tools out of top-5 when tool names directly match query keywords (e.g. "look up user" → `getUser`). But for **large tool sets (248+)**, where many tools share similar names (`readCoreV1NamespacedPodStatus` vs `connectCoreV1GetNamespacedPodAttach`), embedding provides the semantic understanding that BM25 alone can't.
+
+<details>
+<summary>Model quality matters</summary>
+
+The same test with nomic-embed-text shows worse results — more degraded queries and less improvement:
+
+| API | Tools | nomic-embed-text | Qwen3-Embedding-0.6B |
+|-----|:-----:|:----------------:|:--------------------:|
+| MCP | 38 | 90.0% (↓2) | **96.7%** (↓0) |
+| GitHub | 58 | 77.5% (↓3) | **80.0%** (↓2) |
+| K8s | 248 | 66.0% (↑1) | **68.0%** (↑2) |
+
+A better embedding model = less noise on small sets + more gain on large sets.
+
+</details>
+
+**Recommendation**: Enable embedding when your tool count exceeds ~100. For smaller sets, BM25 + graph is sufficient. If you do enable embedding, use a high-quality model — it makes a measurable difference.
 
 ### Reproduce it
 
