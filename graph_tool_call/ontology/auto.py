@@ -257,6 +257,7 @@ def _llm_auto_organize(
     ]
 
     tool_names = {t.name for t in tools}
+    tool_map = {t.name: t for t in tools}
 
     # Infer relations
     relations = llm.infer_relations(summaries, batch_size=50)
@@ -269,7 +270,7 @@ def _llm_auto_organize(
             continue
         builder.add_relation(rel.source, rel.target, rel.relation_type)
 
-    # Suggest categories
+    # Suggest categories and sync to ToolSchema tags
     categories = llm.suggest_categories(summaries)
     for cat_name, cat_tools in categories.items():
         cat_name_clean = cat_name.lower().strip()
@@ -283,6 +284,9 @@ def _llm_auto_organize(
                     builder.assign_category(tname, cat_name_clean)
                 except (KeyError, ValueError):
                     pass
+                # Sync category name to ToolSchema tags for BM25
+                if tname in tool_map and cat_name_clean not in tool_map[tname].tags:
+                    tool_map[tname].tags = tool_map[tname].tags + [cat_name_clean]
 
     # Enrich keywords for BM25 search quality
     keywords = llm.enrich_keywords(summaries)
@@ -295,3 +299,11 @@ def _llm_auto_organize(
         existing_tags = attrs.get("tags", [])
         new_tags = list(set(existing_tags + [k.lower() for k in kws]))
         builder._graph.set_node_attrs(tool_name, tags=new_tags)
+
+        # Sync enriched keywords back to ToolSchema for BM25/embedding
+        if tool_name in tool_map:
+            tool = tool_map[tool_name]
+            existing = set(tool.tags)
+            added = [k.lower() for k in kws if k.lower() not in existing]
+            if added:
+                tool.tags = tool.tags + added

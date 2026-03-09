@@ -163,9 +163,11 @@ class MockOntologyLLM(OntologyLLM):
         self,
         relation_response: str = "[]",
         category_response: str = '{"categories": {}}',
+        keyword_response: str = "{}",
     ):
         self._relation_response = relation_response
         self._category_response = category_response
+        self._keyword_response = keyword_response
         self._calls: list[str] = []
 
     def generate(self, prompt: str) -> str:
@@ -174,6 +176,8 @@ class MockOntologyLLM(OntologyLLM):
             return self._relation_response
         if "categories" in prompt.lower() or "group" in prompt.lower():
             return self._category_response
+        if "keyword" in prompt.lower() or "search" in prompt.lower():
+            return self._keyword_response
         return "[]"
 
 
@@ -303,3 +307,125 @@ class TestToolGraphAutoOrganize:
 
         # Should not raise NotImplementedError anymore
         tg.auto_organize()
+
+
+class TestLLMKeywordSyncToToolSchema:
+    """Verify that LLM-enriched keywords sync back to ToolSchema for BM25."""
+
+    def test_keywords_sync_to_tool_tags(self):
+        builder = _make_builder()
+        tools = [
+            _tool("listPods", "list pods in namespace", tags=["pod"]),
+            _tool("createPod", "create a new pod", tags=["pod"]),
+        ]
+        for t in tools:
+            builder.add_tool(t)
+
+        llm = MockOntologyLLM(
+            keyword_response=json.dumps(
+                {
+                    "listPods": ["kubernetes", "container", "workload"],
+                    "createPod": ["deploy", "schedule", "container"],
+                }
+            ),
+        )
+
+        auto_organize(builder, tools, llm=llm)
+
+        # Enriched keywords should be in ToolSchema.tags (not just graph attrs)
+        assert "kubernetes" in tools[0].tags
+        assert "container" in tools[0].tags
+        assert "deploy" in tools[1].tags
+
+    def test_categories_sync_to_tool_tags(self):
+        builder = _make_builder()
+        tools = [
+            _tool("listPods", "list pods"),
+            _tool("createPod", "create pod"),
+        ]
+        for t in tools:
+            builder.add_tool(t)
+
+        llm = MockOntologyLLM(
+            category_response=json.dumps(
+                {"categories": {"pod_management": ["listPods", "createPod"]}}
+            ),
+        )
+
+        auto_organize(builder, tools, llm=llm)
+
+        # Category name should be in ToolSchema.tags
+        assert "pod_management" in tools[0].tags
+        assert "pod_management" in tools[1].tags
+
+    def test_auto_organize_invalidates_retrieval_cache(self):
+        from graph_tool_call import ToolGraph
+
+        tg = ToolGraph()
+        tg.add_tool(
+            {
+                "type": "function",
+                "function": {
+                    "name": "listPods",
+                    "description": "List pods",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        )
+
+        # Force retrieval engine creation
+        tg.retrieve("list pods", top_k=1)
+        assert tg._retrieval is not None
+
+        # auto_organize should invalidate
+        tg.auto_organize()
+        assert tg._retrieval is None
+
+    def test_enriched_keywords_visible_to_bm25(self):
+        """End-to-end: LLM keywords should improve BM25 retrieval."""
+        from graph_tool_call import ToolGraph
+        from graph_tool_call.ontology.llm_provider import wrap_llm
+
+        tg = ToolGraph()
+        tg.add_tool(
+            {
+                "type": "function",
+                "function": {
+                    "name": "connectProxy",
+                    "description": "Connect to proxy endpoint",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        )
+        tg.add_tool(
+            {
+                "type": "function",
+                "function": {
+                    "name": "listNodes",
+                    "description": "List all nodes",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        )
+
+        # Before enrichment: "reverse proxy" may not find connectProxy well
+        tg.retrieve("reverse proxy load balancer", top_k=2)
+
+        # Mock LLM that adds relevant keywords
+        llm = MockOntologyLLM(
+            keyword_response=json.dumps(
+                {
+                    "connectProxy": ["reverse proxy", "load balancer", "ingress"],
+                }
+            ),
+        )
+        wrapped = wrap_llm(llm)
+        from graph_tool_call.ontology.auto import auto_organize as _auto_org
+
+        _auto_org(tg._builder, list(tg._tools.values()), wrapped)
+        tg._invalidate_retrieval()
+
+        # After enrichment: "reverse proxy load balancer" should find connectProxy
+        results_after = tg.retrieve("reverse proxy load balancer", top_k=2)
+        names_after = [r.name for r in results_after]
+        assert "connectProxy" in names_after

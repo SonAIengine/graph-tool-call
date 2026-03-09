@@ -405,6 +405,7 @@ class ToolGraph:
 
             wrapped = wrap_llm(llm)
         auto_organize(self._builder, list(self._tools.values()), wrapped)
+        self._invalidate_retrieval()  # BM25/embedding must rebuild from enriched ToolSchema
 
     def build_ontology(self, llm: Any = None, *, lint: bool = False, lint_level: int = 2) -> None:
         """Build a complete ontology from registered tools.
