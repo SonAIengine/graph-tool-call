@@ -124,20 +124,20 @@ OpenAPI/MCP/代码 → [采集] → [分析] → [组织] → [检索] → Agent
 
 </details>
 
-### 嵌入什么时候有帮助？
+### 嵌入 + 本体什么时候有帮助？
 
-在 BM25 + 图遍历基础上添加嵌入模型的结果 — 效果取决于**工具数量**和**模型质量**。
+在 BM25 + 图遍历基础上添加 OpenAI 嵌入（`text-embedding-3-small`）和 LLM 本体（`gpt-4o-mini`）— 在最难的数据集（K8s, 248 tools）上测试:
 
-**Qwen3-Embedding-0.6B** (Ollama):
+| Pipeline | Accuracy | Recall@K | 功能 |
+|----------|:--------:|:--------:|------|
+| retrieve-k5 | 70.0% | 86.0% | 仅 BM25 + 图 |
+| + 嵌入 | 70.0% | **94.0%** | + OpenAI 嵌入 |
+| + 本体 | 68.0% | 86.0% | + GPT-4o-mini 知识图谱 |
+| **+ 两者** | **72.0%** | **94.0%** | **嵌入 + 本体** |
 
-| API | 工具数 | BM25 + Graph | + 嵌入 | 变化 | 改善 | 退化 |
-|-----|:------:|:------------:|:------:|:----:|:----:|:----:|
-| Petstore | 19 | 98.3% | 98.3% | — | 0 | 0 |
-| MCP | 38 | 96.7% | 96.7% | — | 0 | 0 |
-| GitHub | 50 | 87.5% | 87.5% | — | 0 | 0 |
-| **Kubernetes** | **248** | **68.0%** | **82.0%** | **+14pp** | **7** | **0** |
-
-中小规模中，嵌入既不帮助也不伤害 — BM25 已经足够精确。但在**大规模（248+）**中，嵌入带来 **+14pp 的大幅提升**，且**零退化**。工具越多，嵌入的价值越大。
+- **嵌入**: Recall@5 **86% → 94%** (+8pp) — 捕获 BM25 遗漏的语义匹配。
+- **本体单独**: 对结构化 API 效果微小（K8s 工具名已经具有描述性）。
+- **两者结合**: 最高准确率（72%）— 本体补充嵌入遗漏的边缘情况（例: "List all endpoints for a service" → 仅 `full` Pipeline 答对）。
 
 ### 自行复现
 
@@ -146,11 +146,9 @@ OpenAPI/MCP/代码 → [采集] → [分析] → [组织] → [检索] → Agent
 python -m benchmarks.run_benchmark
 python -m benchmarks.run_benchmark -d k8s -v          # Kubernetes 248 tools
 
-# 包含 LLM 的 E2E 测试
-python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b
-
-# 嵌入对比
-python -m benchmarks.run_embedding_benchmark --embedding "ollama/nomic-embed-text"
+# Pipeline 基准 (LLM 对比)
+python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
+python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k5 retrieve-k5-emb retrieve-k5-full
 ```
 
 ## 安装

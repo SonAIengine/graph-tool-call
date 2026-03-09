@@ -78,6 +78,7 @@ class PipelineConfig:
     embedding: str | None = None
     reranker: str | None = None
     weights: dict[str, float] | None = None
+    organize: str | None = None  # "auto", "ollama/model", or None (skip)
 
 
 PIPELINE_PRESETS: dict[str, PipelineConfig] = {
@@ -85,6 +86,32 @@ PIPELINE_PRESETS: dict[str, PipelineConfig] = {
     "retrieve-k3": PipelineConfig(name="retrieve-k3", use_retrieval=True, top_k=3),
     "retrieve-k5": PipelineConfig(name="retrieve-k5", use_retrieval=True, top_k=5),
     "retrieve-k10": PipelineConfig(name="retrieve-k10", use_retrieval=True, top_k=10),
+    "retrieve-k5-auto": PipelineConfig(
+        name="retrieve-k5-auto", use_retrieval=True, top_k=5, organize="auto"
+    ),
+    "retrieve-k5-llm": PipelineConfig(
+        name="retrieve-k5-llm", use_retrieval=True, top_k=5, organize="llm"
+    ),
+    # OpenAI-powered presets
+    "retrieve-k5-emb": PipelineConfig(
+        name="retrieve-k5-emb",
+        use_retrieval=True,
+        top_k=5,
+        embedding="openai/text-embedding-3-small",
+    ),
+    "retrieve-k5-ont": PipelineConfig(
+        name="retrieve-k5-ont",
+        use_retrieval=True,
+        top_k=5,
+        organize="openai/gpt-4o-mini",
+    ),
+    "retrieve-k5-full": PipelineConfig(
+        name="retrieve-k5-full",
+        use_retrieval=True,
+        top_k=5,
+        embedding="openai/text-embedding-3-small",
+        organize="openai/gpt-4o-mini",
+    ),
 }
 
 DEFAULT_PIPELINES = ["baseline", "retrieve-k5"]

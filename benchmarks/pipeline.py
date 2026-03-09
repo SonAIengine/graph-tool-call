@@ -266,27 +266,32 @@ class PipelineExecutor:
         Pipelines with same embedding share a ToolGraph.
         Returns {pipeline_name: (tool_graph, all_tools_openai_format)}
         """
-        # Group pipelines by embedding config — same embedding shares a ToolGraph
-        embedding_groups: dict[str | None, list[PipelineConfig]] = {}
+        # Group pipelines by (embedding, organize) — same combo shares a ToolGraph
+        graph_groups: dict[tuple[str | None, str | None], list[PipelineConfig]] = {}
         for p in self._pipelines:
-            key = p.embedding
-            if key not in embedding_groups:
-                embedding_groups[key] = []
-            embedding_groups[key].append(p)
+            key = (p.embedding, p.organize)
+            if key not in graph_groups:
+                graph_groups[key] = []
+            graph_groups[key].append(p)
 
-        # Build one ToolGraph per embedding group
-        built: dict[str | None, tuple[ToolGraph, list[dict]]] = {}
-        for emb_key, _group in embedding_groups.items():
+        # Build one ToolGraph per group
+        built: dict[tuple[str | None, str | None], tuple[ToolGraph, list[dict]]] = {}
+        for (emb_key, org_key), _group in graph_groups.items():
             tg = self._build_single_tool_graph(sources)
+
+            # Apply organize before embedding (ontology enriches graph first)
+            if org_key is not None:
+                self._apply_organize(tg, org_key)
+
             if emb_key is not None:
                 tg.enable_embedding(emb_key)
             all_tools_openai = tools_to_openai_format(list(tg._tools.values()))
-            built[emb_key] = (tg, all_tools_openai)
+            built[(emb_key, org_key)] = (tg, all_tools_openai)
 
         # Map each pipeline name to its shared ToolGraph
         result: dict[str, tuple[ToolGraph, list[dict]]] = {}
         for p in self._pipelines:
-            tg, all_tools_openai = built[p.embedding]
+            tg, all_tools_openai = built[(p.embedding, p.organize)]
             # Apply custom weights if specified
             if p.weights is not None:
                 tg.set_weights(**p.weights)
@@ -296,6 +301,24 @@ class PipelineExecutor:
             result[p.name] = (tg, all_tools_openai)
 
         return result
+
+    def _apply_organize(self, tg: ToolGraph, org_key: str) -> None:
+        """Apply auto_organize to a ToolGraph based on organize key."""
+        if org_key == "auto":
+            # Auto mode only (tags, domain, embedding clustering) — no LLM
+            print("    [organize] auto mode (no LLM)")
+            tg.auto_organize()
+        elif org_key == "llm":
+            # LLM-Auto mode using the benchmark's LLM model
+            llm_model = f"ollama/{self._model}"
+            print(f"    [organize] LLM-auto mode ({llm_model})")
+            tg.auto_organize(llm=llm_model)
+        elif org_key.startswith("ollama/") or org_key.startswith("openai/"):
+            # Explicit LLM model string
+            print(f"    [organize] LLM-auto mode ({org_key})")
+            tg.auto_organize(llm=org_key)
+        else:
+            print(f"    [organize] unknown mode '{org_key}', skipping")
 
     @staticmethod
     def _build_single_tool_graph(sources: list[dict]) -> ToolGraph:

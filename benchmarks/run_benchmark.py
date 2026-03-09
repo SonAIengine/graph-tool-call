@@ -341,6 +341,12 @@ Examples:
     parser.add_argument(
         "--failures", action="store_true", help="Show divergent/failed queries in pipeline mode"
     )
+    parser.add_argument(
+        "--organize",
+        type=str,
+        default=None,
+        help="Organize mode for retrieval pipelines: 'auto', 'llm', or 'ollama/model'",
+    )
 
     args = parser.parse_args()
 
@@ -365,15 +371,16 @@ Examples:
         for name in pipeline_names:
             if name in PIPELINE_PRESETS:
                 p = PIPELINE_PRESETS[name]
-                # Apply embedding override if specified
-                if args.embedding and p.use_retrieval:
+                # Apply overrides if specified
+                if (args.embedding or args.organize) and p.use_retrieval:
                     p = PipelineConfig(
                         name=p.name,
                         use_retrieval=p.use_retrieval,
                         top_k=p.top_k,
-                        embedding=args.embedding,
+                        embedding=args.embedding or p.embedding,
                         reranker=p.reranker,
                         weights=p.weights,
+                        organize=args.organize or p.organize,
                     )
                 pipelines.append(p)
             else:

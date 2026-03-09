@@ -124,20 +124,20 @@ LLMが見る前に、graph-tool-callがまず正しいツールを**見つける
 
 </details>
 
-### エンベディングはいつ役立つか？
+### エンベディング + オントロジーはいつ役立つか？
 
-BM25 + グラフの上にエンベディングモデルを追加した結果 — **ツール数**と**モデル品質**によって効果が異なります。
+BM25 + グラフの上にOpenAIエンベディング（`text-embedding-3-small`）とLLMオントロジー（`gpt-4o-mini`）を追加 — 最難データセット（K8s, 248 tools）でテスト:
 
-**Qwen3-Embedding-0.6B** (Ollama):
+| Pipeline | Accuracy | Recall@K | 機能 |
+|----------|:--------:|:--------:|------|
+| retrieve-k5 | 70.0% | 86.0% | BM25 + グラフのみ |
+| + エンベディング | 70.0% | **94.0%** | + OpenAIエンベディング |
+| + オントロジー | 68.0% | 86.0% | + GPT-4o-miniナレッジグラフ |
+| **+ 両方** | **72.0%** | **94.0%** | **エンベディング + オントロジー** |
 
-| API | ツール数 | BM25 + Graph | + エンベディング | 変化 | 改善 | 低下 |
-|-----|:------:|:------------:|:--------------:|:----:|:----:|:----:|
-| Petstore | 19 | 98.3% | 98.3% | — | 0 | 0 |
-| MCP | 38 | 96.7% | 96.7% | — | 0 | 0 |
-| GitHub | 50 | 87.5% | 87.5% | — | 0 | 0 |
-| **Kubernetes** | **248** | **68.0%** | **82.0%** | **+14pp** | **7** | **0** |
-
-小・中規模では、エンベディングは性能に影響しません — BM25がすでに十分です。一方**大規模（248個以上）**では、エンベディングが**+14ppの大幅な向上**をもたらし、**低下はゼロ**。ツールが多いほど、エンベディングの価値が大きくなります。
+- **エンベディング**: Recall@5 **86% → 94%** (+8pp) — BM25が見逃す意味的マッチを捕捉。
+- **オントロジー単独**: 構造化API（K8sツール名はすでに記述的）では効果が微小。
+- **両方組み合わせ**: 最高精度（72%）— エンベディングだけでは見逃すエッジケースをオントロジーが補完（例: "List all endpoints for a service" → `full`パイプラインのみ正解）。
 
 ### 自分で再現する
 
@@ -146,11 +146,9 @@ BM25 + グラフの上にエンベディングモデルを追加した結果 —
 python -m benchmarks.run_benchmark
 python -m benchmarks.run_benchmark -d k8s -v          # Kubernetes 248 tools
 
-# LLM込みE2Eテスト
-python -m benchmarks.run_benchmark --mode e2e -m qwen3:4b
-
-# エンベディング比較
-python -m benchmarks.run_embedding_benchmark --embedding "ollama/nomic-embed-text"
+# Pipelineベンチマーク（LLM比較）
+python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
+python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k5 retrieve-k5-emb retrieve-k5-full
 ```
 
 ## インストール

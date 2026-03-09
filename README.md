@@ -129,7 +129,22 @@ Before the LLM sees anything, graph-tool-call must first **find** the right tool
 | MCP | 38 | 93.3% | **96.7%** | 100.0% |
 | Kubernetes | 248 | 82.0% | **86.0%** | 88.0% |
 
-These are BM25 + graph traversal only — no embedding model. With embedding (Qwen3-Embedding-0.6B), Kubernetes Recall@5 reaches **+14pp higher**.
+These are BM25 + graph traversal only — no embedding model.
+
+### When does embedding + ontology help?
+
+Adding OpenAI embedding (`text-embedding-3-small`) and LLM ontology (`gpt-4o-mini`) on top of BM25 + graph — tested on the hardest dataset (K8s, 248 tools):
+
+| Pipeline | Accuracy | Recall@K | Features |
+|----------|:--------:|:--------:|----------|
+| retrieve-k5 | 70.0% | 86.0% | BM25 + graph only |
+| + embedding | 70.0% | **94.0%** | + OpenAI embedding |
+| + ontology | 68.0% | 86.0% | + GPT-4o-mini knowledge graph |
+| **+ both** | **72.0%** | **94.0%** | **embedding + ontology** |
+
+- **Embedding**: Recall@5 **86% → 94%** (+8pp) — catches semantic matches that BM25 misses.
+- **Ontology alone**: minimal effect on structured APIs (K8s tool names are already descriptive).
+- **Both combined**: highest accuracy (72%) — ontology adds the edge cases embedding alone misses (e.g., "List all endpoints for a service" → only `full` pipeline got it right).
 
 ### Reproduce it
 
