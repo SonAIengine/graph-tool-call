@@ -137,14 +137,14 @@ Adding OpenAI embedding (`text-embedding-3-small`) and LLM ontology (`gpt-4o-min
 
 | Pipeline | Accuracy | Recall@K | Features |
 |----------|:--------:|:--------:|----------|
-| retrieve-k5 | 70.0% | 86.0% | BM25 + graph only |
-| + embedding | 70.0% | **94.0%** | + OpenAI embedding |
-| + ontology | 68.0% | 86.0% | + GPT-4o-mini knowledge graph |
-| **+ both** | **72.0%** | **94.0%** | **embedding + ontology** |
+| retrieve-k5 | 72.0% | 86.0% | BM25 + graph only |
+| + embedding | **76.0%** | **94.0%** | + OpenAI embedding |
+| + ontology | 74.0% | 90.0% | + GPT-4o-mini knowledge graph |
+| **+ both** | 74.0% | **96.0%** | **embedding + ontology** |
 
-- **Embedding**: Recall@5 **86% → 94%** (+8pp) — catches semantic matches that BM25 misses.
-- **Ontology alone**: minimal effect on structured APIs (K8s tool names are already descriptive).
-- **Both combined**: highest accuracy (72%) — ontology adds the edge cases embedding alone misses (e.g., "List all endpoints for a service" → only `full` pipeline got it right).
+- **Embedding**: Recall@5 **86% → 94%** (+8pp), Accuracy **72% → 76%** — catches semantic matches that BM25 misses.
+- **Ontology**: Recall@5 **86% → 90%** (+4pp), Accuracy **72% → 74%** — LLM-enriched keywords improve BM25 scoring.
+- **Both combined**: Recall@5 **96%** (highest) — ontology keywords + embedding semantics complement each other.
 
 ### Reproduce it
 
