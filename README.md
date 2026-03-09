@@ -66,16 +66,16 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
 
 ### Does graph-tool-call help the LLM?
 
-| API | Tools | baseline | retrieve-k5 | retrieve-k10 | Token savings |
-|-----|:-----:|:--------:|:-----------:|:------------:|:-------------:|
-| Petstore | 19 | 100% | 95.0% | **100%** | **64%** |
-| GitHub | 50 | 100% | 87.5% | 90.0% | **88%** |
-| MCP Servers | 38 | 96.7% | 90.0% | **96.7%** | **83%** |
-| **Kubernetes** | **248** | **14.3%** | **72.0%** | **74.0%** | **80%** |
+| API | Tools | baseline | retrieve-k5 | + embedding | + ontology | Token savings |
+|-----|:-----:|:--------:|:-----------:|:-----------:|:----------:|:-------------:|
+| Petstore | 19 | 100% | 95.0% | — | — | **64%** |
+| GitHub | 50 | 100% | 87.5% | — | — | **88%** |
+| MCP Servers | 38 | 96.7% | 90.0% | — | — | **83%** |
+| **Kubernetes** | **248** | **20%** | **72%** | **76%** | **74%** | **80%** |
 
 **The story in two lines:**
 - **< 50 tools**: The LLM handles them fine. graph-tool-call's value = **64–88% token savings** (faster, cheaper).
-- **248 tools**: The LLM **collapses to 14%**. graph-tool-call delivers **72% accuracy** — it's not an optimization, it's **a requirement**.
+- **248 tools**: The LLM **collapses to 20%**. graph-tool-call delivers **72–76% accuracy** — it's not an optimization, it's **a requirement**.
 
 <details>
 <summary>Full pipeline comparison (4 configurations)</summary>
@@ -111,10 +111,11 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
 
 | Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
 |----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline | 14.3% | 100.0% | 8,192 | — |
-| retrieve-k3 | 62.0% | 82.0% | 1,077 | 86.8% |
+| baseline | 20.0% | 100.0% | 8,192 | — |
 | retrieve-k5 | 72.0% | 86.0% | 1,614 | 80.3% |
-| retrieve-k10 | 74.0% | 88.0% | 3,261 | 60.2% |
+| + embedding | **76.0%** | **94.0%** | 1,720 | 79.0% |
+| + ontology | 74.0% | 90.0% | 1,707 | 79.2% |
+| + both | 74.0% | **96.0%** | 1,901 | 76.8% |
 
 </details>
 
