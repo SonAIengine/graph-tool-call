@@ -55,113 +55,16 @@ OpenAPI/MCP/코드 → [수집] → [분석] → [조직화] → [검색] → Ag
                                  └──────────────┘
 ```
 
-## 벤치마크
+## 왜 벡터 검색만으로는 부족한가?
 
-> **진짜 테스트**: LLM과 tool 사이에 graph-tool-call을 두고 비교.
-> 동일한 사용자 요청을 4가지 구성으로 실행:
-> - **baseline**: **전체** tool 정의를 LLM에 전달 (검색 없음)
-> - **retrieve-k3/k5/k10**: 검색된 **상위 K개**만 전달
->
-> 모델: qwen3:4b (4-bit 양자화, Ollama). 모든 스펙은 공개되어 있으며 재현 가능합니다.
-
-### graph-tool-call이 LLM을 도와주는가?
-
-| API | Tool 수 | baseline | retrieve-k5 | + 임베딩 | + 온톨로지 | 토큰 절감 |
-|-----|:------:|:--------:|:-----------:|:--------:|:----------:|:---------:|
-| Petstore | 19 | 100% | 95.0% | — | — | **64%** |
-| GitHub | 50 | 100% | 87.5% | — | — | **88%** |
-| MCP Servers | 38 | 96.7% | 90.0% | — | — | **83%** |
-| **Kubernetes** | **248** | **12%** | **78%** | **80%** | **82%** | **80%** |
-
-**핵심 두 줄 요약:**
-- **50개 미만**: LLM이 잘 처리함. graph-tool-call의 가치 = **64–88% 토큰 절감** (더 빠르고, 더 저렴).
-- **248개**: LLM이 **12%로 붕괴**. graph-tool-call이 **78–82% 정확도** 달성 — 최적화가 아니라 **필수**.
-
-<details>
-<summary>전체 파이프라인 비교 (4개 구성)</summary>
-
-**Petstore** (19 tools, 20 쿼리)
-
-| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
-|----------|:------:|:--------:|:--------:|:--------:|
-| baseline | 100.0% | 100.0% | 1,239 | — |
-| retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
-| retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
-| retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
-
-**GitHub** (50 tools, 40 쿼리)
-
-| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
-|----------|:------:|:--------:|:--------:|:--------:|
-| baseline | 100.0% | 100.0% | 3,302 | — |
-| retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
-| retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
-| retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
-
-**Mixed MCP** (38 tools, 30 쿼리)
-
-| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
-|----------|:------:|:--------:|:--------:|:--------:|
-| baseline | 96.7% | 100.0% | 2,741 | — |
-| retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
-| retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
-| retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
-
-**Kubernetes core/v1** (248 tools, 50 쿼리)
-
-| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
-|----------|:------:|:--------:|:--------:|:--------:|
-| baseline | 12.0% | 100.0% | 8,192 | — |
-| retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
-| + 임베딩 | 80.0% | 94.0% | 1,728 | 78.9% |
-| + 온톨로지 | **82.0%** | 96.0% | 1,699 | 79.3% |
-| + 둘 다 | **82.0%** | **98.0%** | 1,924 | 76.5% |
-
-</details>
-
-### 검색은 얼마나 정확한가?
-
-LLM이 보기 전에, graph-tool-call이 먼저 올바른 tool을 **찾아야** 합니다. **Recall@K**로 측정: *"정답 tool이 상위 K개에 포함되는가?"*
-
-| API | Tool 수 | Recall@3 | Recall@5 | Recall@10 |
-|-----|:------:|:--------:|:--------:|:---------:|
-| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
-| GitHub | 50 | 87.5% | **87.5%** | 92.5% |
-| MCP | 38 | 93.3% | **96.7%** | 100.0% |
-| Kubernetes | 248 | 82.0% | **91.0%** | 92.0% |
-
-BM25 + 그래프 탐색만의 결과입니다 — 임베딩 모델 없이.
-
-### 임베딩 + 온톨로지는 언제 도움이 되는가?
-
-BM25 + 그래프 위에 OpenAI 임베딩(`text-embedding-3-small`)과 LLM 온톨로지(`gpt-4o-mini`)를 추가한 결과 — 가장 어려운 데이터셋(K8s, 248 tools)에서 테스트:
-
-| Pipeline | 정확도 | Recall@K | 기능 |
-|----------|:------:|:--------:|------|
-| retrieve-k5 | 78.0% | 91.0% | BM25 + 그래프만 |
-| + 임베딩 | 80.0% | 94.0% | + OpenAI 임베딩 |
-| + 온톨로지 | **82.0%** | 96.0% | + GPT-4o-mini 지식그래프 |
-| **+ 둘 다** | **82.0%** | **98.0%** | **임베딩 + 온톨로지** |
-
-- **임베딩**: Recall@5 **91% → 94%** (+3pp), 정확도 **78% → 80%** — BM25가 놓치는 의미적 유사성을 포착.
-- **온톨로지**: Recall@5 **91% → 96%** (+5pp), 정확도 **78% → 82%** — LLM 키워드 + example queries로 BM25/임베딩 모두 향상.
-- **둘 다 결합**: Recall@5 **98%**, 정확도 **82%** — 온톨로지 키워드 + 임베딩 의미론이 상호 보완.
-
-### 직접 재현하기
-
-```bash
-# 검색 품질 측정 (빠름, LLM 불필요)
-python -m benchmarks.run_benchmark
-python -m benchmarks.run_benchmark -d k8s -v
-
-# 파이프라인 벤치마크 (LLM 비교)
-python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
-python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
-
-# 베이스라인 저장 및 비교
-python -m benchmarks.run_benchmark --mode pipeline --save-baseline
-python -m benchmarks.run_benchmark --mode pipeline --diff
-```
+| 시나리오 | 벡터만 사용 | graph-tool-call |
+|----------|-----------|-----------------|
+| *"주문 취소해줘"* | `cancelOrder` 반환 | `listOrders → getOrder → cancelOrder → processRefund` (전체 워크플로우) |
+| *"파일 읽고 저장"* | `read_file` 반환 | `read_file` + `write_file` (COMPLEMENTARY 관계) |
+| *"오래된 레코드 삭제"* | "삭제"와 매칭되는 아무 도구 | destructive 도구 우선 랭크 (annotation-aware) |
+| *"이제 취소해줘"* (history) | 컨텍스트 없음, 동일 결과 | 사용한 tool 하향, 다음 단계 tool 상향 |
+| 여러 Swagger spec에 중복 tool | 결과에 중복 포함 | cross-source 자동 중복 제거 |
+| 1,200개 API endpoint | 느리고 노이즈 많음 | 카테고리로 조직화, 정확한 그래프 탐색 |
 
 ## 설치
 
@@ -460,16 +363,129 @@ pip install graph-tool-call[lint]
 tg = ToolGraph.from_url(url, lint=True)  # 수집 중 자동 수정
 ```
 
-## 왜 벡터 검색만으로는 부족한가?
+## 벤치마크
 
-| 시나리오 | 벡터만 사용 | graph-tool-call |
-|----------|-----------|-----------------|
-| *"주문 취소해줘"* | `cancelOrder` 반환 | `listOrders → getOrder → cancelOrder → processRefund` (전체 워크플로우) |
-| *"파일 읽고 저장"* | `read_file` 반환 | `read_file` + `write_file` (COMPLEMENTARY 관계) |
-| *"오래된 레코드 삭제"* | "삭제"와 매칭되는 아무 도구 | destructive 도구 우선 랭크 (annotation-aware) |
-| *"이제 취소해줘"* (history) | 컨텍스트 없음, 동일 결과 | 사용한 tool 하향, 다음 단계 tool 상향 |
-| 여러 Swagger spec에 중복 tool | 결과에 중복 포함 | cross-source 자동 중복 제거 |
-| 1,200개 API endpoint | 느리고 노이즈 많음 | 카테고리로 조직화, 정확한 그래프 탐색 |
+graph-tool-call이 실제로 LLM의 tool 선택을 도와주는지 테스트했습니다.
+
+1. LLM에게 사용자 요청을 줌 (예: *"default 네임스페이스의 모든 pod를 조회해줘"*)
+2. tool 정의 목록을 함께 제공
+3. LLM이 정답 tool을 고르는지 확인
+
+### 핵심 발견: tool이 너무 많으면 LLM이 혼란에 빠진다
+
+> **Accuracy** = LLM이 테스트 쿼리에서 정답 tool을 고른 비율. 전체 tool을 그대로 전달(✗)한 것과, graph-tool-call로 Top-K개만 추려서 전달(✓)한 것을 비교.
+
+| API | Tool 수 | ✗ 전체 전달 | ✓ Top-5 | ✓ Top-10 | 토큰 절감 |
+|-----|:------:|:----------:|:-------:|:--------:|:---------:|
+| Petstore | 19 | 100% | 95% | 100% | 42–64% |
+| GitHub | 50 | 100% | 87.5% | 90% | 80–88% |
+| MCP Servers | 38 | 96.7% | 90% | 96.7% | 70–83% |
+| **Kubernetes** | **248** | **12%** | **78%** | — | **80%** |
+
+- **50개 미만**: LLM이 전체를 줘도 잘 고름. graph-tool-call 가치 = **토큰 절감** (더 빠르고, 더 저렴).
+- **248개**: 전체를 주면 **Accuracy 12%로 붕괴**. Top-5 필터링만으로 **78%** — 최적화가 아니라 **필수**.
+
+<details>
+<summary>Kubernetes 상세: 임베딩/온톨로지 추가 효과</summary>
+
+> **Recall@5** = 정답 tool이 검색 결과 상위 5개에 포함된 비율. Recall이 낮으면 LLM이 아무리 똑똑해도 정답을 고를 수 없음.
+
+| Pipeline | Accuracy | Recall@5 |
+|----------|:--------:|:--------:|
+| Top-5 (BM25 + 그래프) | 78% | 91% |
+| Top-5 + 임베딩 | 80% | 94% |
+| Top-5 + 온톨로지 | 82% | 96% |
+| Top-5 + 둘 다 | **82%** | **98%** |
+
+</details>
+
+> 모델: qwen3:4b (4-bit 양자화, Ollama). 데이터셋당 50개 테스트 쿼리. 모든 스펙은 공개 — [직접 재현 가능](#직접-재현하기).
+
+<details>
+<summary>데이터셋별 전체 결과</summary>
+
+**Petstore** (19 tools, 20 쿼리)
+
+| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
+|----------|:------:|:--------:|:--------:|:--------:|
+| baseline (전체 tool) | 100.0% | 100.0% | 1,239 | — |
+| retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
+| retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
+| retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
+
+**GitHub** (50 tools, 40 쿼리)
+
+| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
+|----------|:------:|:--------:|:--------:|:--------:|
+| baseline (전체 tool) | 100.0% | 100.0% | 3,302 | — |
+| retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
+| retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
+| retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
+
+**Mixed MCP** (38 tools, 30 쿼리)
+
+| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
+|----------|:------:|:--------:|:--------:|:--------:|
+| baseline (전체 tool) | 96.7% | 100.0% | 2,741 | — |
+| retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
+| retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
+| retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
+
+**Kubernetes core/v1** (248 tools, 50 쿼리)
+
+| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
+|----------|:------:|:--------:|:--------:|:--------:|
+| baseline (전체 tool) | 12.0% | 100.0% | 8,192 | — |
+| retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
+| + 임베딩 | 80.0% | 94.0% | 1,728 | 78.9% |
+| + 온톨로지 | **82.0%** | 96.0% | 1,699 | 79.3% |
+| + 둘 다 | **82.0%** | **98.0%** | 1,924 | 76.5% |
+
+</details>
+
+### 임베딩 + 온톨로지는 언제 도움이 되는가?
+
+소규모 API(50개 미만)에서는 BM25 + 그래프 탐색만으로 충분합니다. 대규모 API에서는 임베딩과 온톨로지가 실질적인 차이를 만듭니다. Kubernetes (248 tools)에서 테스트:
+
+| Pipeline | 정확도 | Recall@5 | 추가되는 기능 |
+|----------|:------:|:--------:|-------------|
+| BM25 + 그래프만 | 78% | 91% | 키워드 매칭 + 그래프 이웃 탐색 |
+| + 임베딩 | 80% | 94% | 의미적 유사도 (BM25가 놓치는 동의어 포착) |
+| + 온톨로지 | **82%** | 96% | LLM이 생성한 키워드 + example queries |
+| **+ 둘 다** | **82%** | **98%** | 임베딩 + 온톨로지가 상호 보완 |
+
+임베딩: OpenAI `text-embedding-3-small`. 온톨로지: `gpt-4o-mini`.
+
+### 직접 재현하기
+
+```bash
+# 검색 품질 측정 (빠름, LLM 불필요)
+python -m benchmarks.run_benchmark
+python -m benchmarks.run_benchmark -d k8s -v
+
+# 전체 파이프라인 벤치마크 (Ollama 필요)
+python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
+python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
+
+# 베이스라인 저장 후 변경사항 비교
+python -m benchmarks.run_benchmark --mode pipeline --save-baseline
+python -m benchmarks.run_benchmark --mode pipeline --diff
+```
+
+## 기능 비교
+
+| 기능 | 벡터만 사용하는 솔루션 | graph-tool-call |
+|------|---------------------|-----------------|
+| Tool 소스 | 수동 등록 | Swagger/OpenAPI/MCP 자동 수집 |
+| 검색 방식 | 단순 벡터 유사도 | 다단계 하이브리드 (wRRF + rerank + MMR) |
+| 행동적 의미 | 없음 | MCP annotation-aware retrieval |
+| Tool 관계 | 없음 | 6가지 관계 타입, 자동 감지 |
+| 호출 순서 | 없음 | 상태 머신 + CRUD + response→request 데이터 플로우 |
+| 중복 제거 | 없음 | Cross-source 중복 탐지 |
+| 온톨로지 | 없음 | Auto / LLM-Auto 모드 (아무 LLM) |
+| History | 없음 | 사용한 tool 하향, 다음 단계 상향 |
+| Spec 품질 | 좋은 spec 가정 | ai-api-lint 자동 수정 통합 |
+| LLM 의존성 | 필수 | 선택 (없어도 동작, 있으면 더 좋음) |
 
 ## 전체 API 레퍼런스
 
@@ -502,21 +518,6 @@ tg = ToolGraph.from_url(url, lint=True)  # 수집 중 자동 수정
 | `export_cypher(path)` | Neo4j Cypher 문장 내보내기 |
 
 </details>
-
-## 기능 비교
-
-| 기능 | 벡터만 사용하는 솔루션 | graph-tool-call |
-|------|---------------------|-----------------|
-| Tool 소스 | 수동 등록 | Swagger/OpenAPI/MCP 자동 수집 |
-| 검색 방식 | 단순 벡터 유사도 | 다단계 하이브리드 (wRRF + rerank + MMR) |
-| 행동적 의미 | 없음 | MCP annotation-aware retrieval |
-| Tool 관계 | 없음 | 6가지 관계 타입, 자동 감지 |
-| 호출 순서 | 없음 | 상태 머신 + CRUD + response→request 데이터 플로우 |
-| 중복 제거 | 없음 | Cross-source 중복 탐지 |
-| 온톨로지 | 없음 | Auto / LLM-Auto 모드 (아무 LLM) |
-| History | 없음 | 사용한 tool 하향, 다음 단계 상향 |
-| Spec 품질 | 좋은 spec 가정 | ai-api-lint 자동 수정 통합 |
-| LLM 의존성 | 필수 | 선택 (없어도 동작, 있으면 더 좋음) |
 
 ## 문서
 

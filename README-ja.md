@@ -55,103 +55,16 @@ OpenAPI/MCP/コード → [収集] → [分析] → [組織化] → [検索] →
                                  └──────────────┘
 ```
 
-## ベンチマーク
+## なぜベクトル検索だけでは足りないのか？
 
-> **LLMは正しいツールを選べるか？**
-> LLMにユーザーリクエストとツール定義を渡し、正しいツールを呼び出すか確認しました。
-> - **baseline**: **全ての**ツール定義をLLMに渡す。
-> - **retrieve-k5 / k10**: graph-tool-callが検索した**上位5 / 10件**のみ渡す。
-
-すべてのベンチマークは誰でもダウンロードして再現できる公開仕様を使用: [Petstore OpenAPI](https://petstore3.swagger.io), [Kubernetes core/v1 API](https://github.com/kubernetes/kubernetes), GitHub REST API, MCPツールサーバー。モデル: qwen3:4b (4-bit量子化, Ollama)。
-
-### 結果: graph-tool-callはLLMを助けるか？
-
-| API | ツール数 | baseline | retrieve-k5 | + エンベディング | + オントロジー | トークン削減 |
-|-----|:-----:|:--------:|:-----------:|:--------------:|:------------:|:----------:|
-| Petstore | 19 | 100% | 95.0% | — | — | 64% |
-| GitHub | 50 | 100% | 87.5% | — | — | 88% |
-| MCP Servers | 38 | 96.7% | 90.0% | — | — | 83% |
-| **Kubernetes** | **248** | **12%** | **78%** | **80%** | **82%** | **80%** |
-
-- **50個以下**: LLMは問題なく処理できる。graph-tool-callの価値 = **64-88%のトークン削減**。
-- **248ツール**: LLMは12%に崩壊。graph-tool-callが78-82%の精度を実現 — これは最適化ではなく**必須要件**。
-
-### 検索 Recall@K
-
-LLMが見る前に、graph-tool-callがまず正しいツールを**見つける**必要があります。**Recall@K**で測定: *「正解ツールが上位K件に含まれるか？」*
-
-| API | ツール数 | Recall@3 | Recall@5 | Recall@10 |
-|-----|:-----:|:--------:|:--------:|:---------:|
-| Petstore | 19 | 93.3% | 98.3% | 98.3% |
-| GitHub | 50 | 87.5% | 87.5% | 92.5% |
-| MCP | 38 | 93.3% | 96.7% | 100.0% |
-| Kubernetes | 248 | 82.0% | 91.0% | 92.0% |
-
-<details>
-<summary>各データセットの詳細Pipeline比較</summary>
-
-**Petstore** (19 tools)
-
-| Pipeline | Accuracy | Recall@K | 平均トークン | トークン削減 |
-|----------|:--------:|:--------:|:----------:|:----------:|
-| baseline (全19 tools) | 100% | — | 5,182 | — |
-| retrieve-k5 | 95.0% | 98.3% | 1,879 | 64% |
-| retrieve-k10 | 100% | 98.3% | 2,842 | 45% |
-
-**GitHub** (50 tools)
-
-| Pipeline | Accuracy | Recall@K | 平均トークン | トークン削減 |
-|----------|:--------:|:--------:|:----------:|:----------:|
-| baseline (全50 tools) | 100% | — | 11,052 | — |
-| retrieve-k5 | 87.5% | 87.5% | 1,294 | 88% |
-| retrieve-k10 | 90.0% | 92.5% | 2,325 | 79% |
-
-**MCP Servers** (38 tools)
-
-| Pipeline | Accuracy | Recall@K | 平均トークン | トークン削減 |
-|----------|:--------:|:--------:|:----------:|:----------:|
-| baseline (全38 tools) | 96.7% | — | 7,493 | — |
-| retrieve-k5 | 90.0% | 96.7% | 1,249 | 83% |
-| retrieve-k10 | 96.7% | 100.0% | 2,280 | 70% |
-
-**Kubernetes** (248 tools)
-
-| Pipeline | Accuracy | Recall@K | 平均トークン | トークン削減 |
-|----------|:--------:|:--------:|:----------:|:----------:|
-| baseline (全248 tools) | 12.0% | 100.0% | 8,192 | — |
-| retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
-| + エンベディング | 80.0% | 94.0% | 1,728 | 78.9% |
-| + オントロジー | **82.0%** | 96.0% | 1,699 | 79.3% |
-| + 両方 | **82.0%** | **98.0%** | 1,924 | 76.5% |
-
-</details>
-
-### エンベディング + オントロジーはいつ役立つか？
-
-BM25 + グラフの上にOpenAIエンベディング（`text-embedding-3-small`）とLLMオントロジー（`gpt-4o-mini`）を追加 — 最難データセット（K8s, 248 tools）でテスト:
-
-| Pipeline | Accuracy | Recall@K | 機能 |
-|----------|:--------:|:--------:|------|
-| retrieve-k5 | 78.0% | 91.0% | BM25 + グラフのみ |
-| + エンベディング | 80.0% | 94.0% | + OpenAIエンベディング |
-| + オントロジー | **82.0%** | 96.0% | + GPT-4o-miniナレッジグラフ |
-| **+ 両方** | **82.0%** | **98.0%** | **エンベディング + オントロジー** |
-
-- **エンベディング**: Recall@5 **91% → 94%** (+3pp)、精度 **78% → 80%** — BM25が見逃す意味的マッチを捕捉。
-- **オントロジー**: Recall@5 **91% → 96%** (+5pp)、精度 **78% → 82%** — LLMキーワード強化でBM25スコアリング改善。
-- **両方組み合わせ**: Recall@5 **98%**、精度 **82%** — オントロジーキーワード + エンベディング意味論が相互補完。
-
-### 自分で再現する
-
-```bash
-# 検索品質の測定（高速、LLM不要）
-python -m benchmarks.run_benchmark
-python -m benchmarks.run_benchmark -d k8s -v          # Kubernetes 248 tools
-
-# Pipelineベンチマーク（LLM比較）
-python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
-python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k5 retrieve-k5-emb retrieve-k5-full
-```
+| シナリオ | ベクトルのみ | graph-tool-call |
+|----------|-----------|-----------------|
+| *「注文をキャンセルして」* | `cancelOrder` を返す | `listOrders → getOrder → cancelOrder → processRefund`（完全なワークフロー）|
+| *「ファイルを読んで保存」* | `read_file` を返す | `read_file` + `write_file`（COMPLEMENTARY関係）|
+| *「古いレコードを削除」* | "削除"にマッチする任意のツール | destructiveツールが上位ランク（annotation-aware）|
+| *「次はキャンセルして」*（history） | コンテキストなし、同じ結果 | 使用済みツールをダウンランク、次のステップのツールをアップランク |
+| 複数Swagger仕様に重複ツール | 結果に重複を含む | クロスソース自動重複排除 |
+| 1,200のAPIエンドポイント | 遅くノイズが多い | カテゴリに整理、正確なグラフ探索 |
 
 ## インストール
 
@@ -450,16 +363,129 @@ pip install graph-tool-call[lint]
 tg = ToolGraph.from_url(url, lint=True)  # 収集中に自動修正
 ```
 
-## なぜベクトル検索だけでは足りないのか？
+## ベンチマーク
 
-| シナリオ | ベクトルのみ | graph-tool-call |
-|----------|-----------|-----------------|
-| *「注文をキャンセルして」* | `cancelOrder` を返す | `listOrders → getOrder → cancelOrder → processRefund`（完全なワークフロー）|
-| *「ファイルを読んで保存」* | `read_file` を返す | `read_file` + `write_file`（COMPLEMENTARY関係）|
-| *「古いレコードを削除」* | "削除"にマッチする任意のツール | destructiveツールが上位ランク（annotation-aware）|
-| *「次はキャンセルして」*（history） | コンテキストなし、同じ結果 | 使用済みツールをダウンランク、次のステップのツールをアップランク |
-| 複数Swagger仕様に重複ツール | 結果に重複を含む | クロスソース自動重複排除 |
-| 1,200のAPIエンドポイント | 遅くノイズが多い | カテゴリに整理、正確なグラフ探索 |
+graph-tool-callが実際にLLMのツール選択を助けるかテストしました。テスト方法：
+
+1. LLMにユーザーリクエストを渡す（例：*「defaultネームスペースの全podを一覧表示」*）
+2. 選択肢となるツール定義を提供
+3. 正しいツールを選んだか確認
+
+### 核心的発見：ツールが多すぎるとLLMが混乱する
+
+> **Accuracy** = テストクエリでLLMが正しいツールを選んだ割合。全ツールをそのまま渡す（✗）のと、graph-tool-callでTop-Kに絞って渡す（✓）のを比較。
+
+| API | ツール数 | ✗ 全件渡し | ✓ Top-5 | ✓ Top-10 | トークン削減 |
+|-----|:-----:|:--------:|:-------:|:--------:|:----------:|
+| Petstore | 19 | 100% | 95% | 100% | 42–64% |
+| GitHub | 50 | 100% | 87.5% | 90% | 80–88% |
+| MCP Servers | 38 | 96.7% | 90% | 96.7% | 70–83% |
+| **Kubernetes** | **248** | **12%** | **78%** | — | **80%** |
+
+- **50件以下**: 全ツールを渡してもLLMは正しく選べる。graph-tool-callの価値 = **トークン削減**（より速く、より安く）。
+- **248ツール**: フィルタなしだとAccuracy **12%に崩壊**。Top-5フィルタだけで**78%** — 最適化ではなく**必須要件**。
+
+<details>
+<summary>Kubernetes詳細：エンベディング/オントロジーの追加効果</summary>
+
+> **Recall@5** = 正解ツールが検索結果の上位5件に含まれた割合。Recallが低ければ、LLMがどんなに賢くても正解を選べない。
+
+| Pipeline | Accuracy | Recall@5 |
+|----------|:--------:|:--------:|
+| Top-5（BM25 + グラフ） | 78% | 91% |
+| Top-5 + エンベディング | 80% | 94% |
+| Top-5 + オントロジー | 82% | 96% |
+| Top-5 + 両方 | **82%** | **98%** |
+
+</details>
+
+> モデル: qwen3:4b (4-bit量子化, Ollama)。データセットあたり50テストクエリ。全仕様は公開 — [自分で再現可能](#自分で再現する)。
+
+<details>
+<summary>データセット別の詳細結果</summary>
+
+**Petstore** (19 tools, 20 queries)
+
+| Pipeline | 精度 | Recall@K | 平均トークン | トークン削減 |
+|----------|:----:|:--------:|:----------:|:----------:|
+| baseline (全ツール) | 100.0% | 100.0% | 1,239 | — |
+| retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
+| retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
+| retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
+
+**GitHub** (50 tools, 40 queries)
+
+| Pipeline | 精度 | Recall@K | 平均トークン | トークン削減 |
+|----------|:----:|:--------:|:----------:|:----------:|
+| baseline (全ツール) | 100.0% | 100.0% | 3,302 | — |
+| retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
+| retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
+| retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
+
+**Mixed MCP** (38 tools, 30 queries)
+
+| Pipeline | 精度 | Recall@K | 平均トークン | トークン削減 |
+|----------|:----:|:--------:|:----------:|:----------:|
+| baseline (全ツール) | 96.7% | 100.0% | 2,741 | — |
+| retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
+| retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
+| retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
+
+**Kubernetes core/v1** (248 tools, 50 queries)
+
+| Pipeline | 精度 | Recall@K | 平均トークン | トークン削減 |
+|----------|:----:|:--------:|:----------:|:----------:|
+| baseline (全ツール) | 12.0% | 100.0% | 8,192 | — |
+| retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
+| + エンベディング | 80.0% | 94.0% | 1,728 | 78.9% |
+| + オントロジー | **82.0%** | 96.0% | 1,699 | 79.3% |
+| + 両方 | **82.0%** | **98.0%** | 1,924 | 76.5% |
+
+</details>
+
+### エンベディング + オントロジーはいつ役立つか？
+
+小規模API（50件以下）では、BM25 + グラフ探索だけで十分です。大規模APIでは、エンベディングとオントロジーが実質的な差を生みます。Kubernetes（248 tools）でテスト：
+
+| Pipeline | 精度 | Recall@5 | 追加される機能 |
+|----------|:----:|:--------:|-------------|
+| BM25 + グラフのみ | 78% | 91% | キーワードマッチング + グラフ隣接探索 |
+| + エンベディング | 80% | 94% | 意味的類似度（BM25が見逃す同義語を捕捉） |
+| + オントロジー | **82%** | 96% | LLM生成キーワード + example queries |
+| **+ 両方** | **82%** | **98%** | エンベディング + オントロジーが相互補完 |
+
+エンベディング: OpenAI `text-embedding-3-small`。オントロジー: `gpt-4o-mini`。
+
+### 自分で再現する
+
+```bash
+# 検索品質の測定（高速、LLM不要）
+python -m benchmarks.run_benchmark
+python -m benchmarks.run_benchmark -d k8s -v
+
+# フルPipelineベンチマーク（Ollama必要）
+python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
+python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
+
+# ベースライン保存後に変更を比較
+python -m benchmarks.run_benchmark --mode pipeline --save-baseline
+python -m benchmarks.run_benchmark --mode pipeline --diff
+```
+
+## 機能比較
+
+| 機能 | ベクトルのみのソリューション | graph-tool-call |
+|------|------------------------|-----------------|
+| ツールソース | 手動登録 | Swagger/OpenAPI/MCPから自動収集 |
+| 検索方式 | 単純なベクトル類似度 | 多段階ハイブリッド (wRRF + rerank + MMR) |
+| 行動的意味論 | なし | MCP annotation-aware retrieval |
+| ツール関係 | なし | 6種類の関係タイプ、自動検出 |
+| 呼び出し順序 | なし | ステートマシン + CRUD + response→requestデータフロー |
+| 重複排除 | なし | クロスソース重複検出 |
+| オントロジー | なし | Auto / LLM-Auto モード（任意のLLM） |
+| History | なし | 使用済みツールダウンランク、次のステップアップランク |
+| 仕様品質 | 良い仕様を前提 | ai-api-lint自動修正統合 |
+| LLM依存 | 必須 | オプション（なくても動く、あればさらに良い） |
 
 ## 全APIリファレンス
 
@@ -492,21 +518,6 @@ tg = ToolGraph.from_url(url, lint=True)  # 収集中に自動修正
 | `export_cypher(path)` | Neo4j Cypher文エクスポート |
 
 </details>
-
-## 機能比較
-
-| 機能 | ベクトルのみのソリューション | graph-tool-call |
-|------|------------------------|-----------------|
-| ツールソース | 手動登録 | Swagger/OpenAPI/MCPから自動収集 |
-| 検索方式 | 単純なベクトル類似度 | 多段階ハイブリッド (wRRF + rerank + MMR) |
-| 行動的意味論 | なし | MCP annotation-aware retrieval |
-| ツール関係 | なし | 6種類の関係タイプ、自動検出 |
-| 呼び出し順序 | なし | ステートマシン + CRUD + response→requestデータフロー |
-| 重複排除 | なし | クロスソース重複検出 |
-| オントロジー | なし | Auto / LLM-Auto モード（任意のLLM） |
-| History | なし | 使用済みツールダウンランク、次のステップアップランク |
-| 仕様品質 | 良い仕様を前提 | ai-api-lint自動修正統合 |
-| LLM依存 | 必須 | オプション（なくても動く、あればさらに良い） |
 
 ## ドキュメント
 
