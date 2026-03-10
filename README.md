@@ -382,16 +382,16 @@ We measured two things:
 
 ### The key finding: too many tools overwhelm the LLM
 
-| API | Tools | How tools are given | Accuracy | Recall@5 |
-|-----|:-----:|---------------------|:--------:|:--------:|
-| Petstore | 19 | all 19 tools (no filtering) | 100% | — |
-| GitHub | 50 | all 50 tools (no filtering) | 100% | — |
-| MCP Servers | 38 | all 38 tools (no filtering) | 96.7% | — |
-| **Kubernetes** | **248** | **all 248 tools (no filtering)** | **12%** | — |
-| | | **graph-tool-call picks top 5** | **78%** | **91%** |
-| | | **+ embedding** | **80%** | **94%** |
-| | | **+ ontology** | **82%** | **96%** |
-| | | **+ both** | **82%** | **98%** |
+| API | Tools | Method | Accuracy | Recall@5 |
+|-----|:-----:|--------|:--------:|:--------:|
+| Petstore | 19 | without graph-tool-call (all 19) | 100% | — |
+| GitHub | 50 | without graph-tool-call (all 50) | 100% | — |
+| MCP Servers | 38 | without graph-tool-call (all 38) | 96.7% | — |
+| **Kubernetes** | **248** | **without graph-tool-call (all 248)** | **12%** | — |
+| | | **with graph-tool-call (top 5)** | **78%** | **91%** |
+| | | + embedding | **80%** | **94%** |
+| | | + ontology | **82%** | **96%** |
+| | | + both | **82%** | **98%** |
 
 **What happened with Kubernetes?**
 - **Baseline (all 248 tools)**: The LLM sees all 248 tools at once. It gets confused and picks wrong 88% of the time → **12% accuracy**. (Recall is technically 100% because the answer is always *in* the list — but the LLM can't find it.)
