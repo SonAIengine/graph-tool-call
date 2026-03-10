@@ -150,7 +150,7 @@ class RetrievalEngine:
 
         # Graph expansion from keyword seeds + history seeds
         sorted_by_score = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
-        seed_tools = [name for name, _ in sorted_by_score[:5]]
+        seed_tools = [name for name, _ in sorted_by_score[:10]]
         if history:
             for tool_name in history:
                 if tool_name in self._tools and tool_name not in seed_tools:

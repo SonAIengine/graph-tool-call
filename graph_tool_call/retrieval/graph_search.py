@@ -65,8 +65,8 @@ class GraphSearcher:
                 relation = attrs.get("relation", "")
                 rel_weight = self._weights.get(relation, 0.3)
 
-                # Distance decay
-                decay = 1.0 / (depth + 1)
+                # Distance decay — gentler curve to let depth-1/2 neighbors contribute
+                decay = 1.0 / (0.5 * depth + 1)
 
                 if neighbor_type == NodeType.TOOL:
                     score = rel_weight * decay
