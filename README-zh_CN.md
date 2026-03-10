@@ -371,16 +371,9 @@ tg = ToolGraph.from_url(url, lint=True)  # 采集时自动修复
 2. 提供一组工具定义让它选择
 3. 检查它是否选择了正确的工具
 
-我们测量两个指标：
-
-| 指标 | 测量什么 | 例子 |
-|------|---------|------|
-| **准确率 (Accuracy)** | LLM 选对了正确的工具吗？ | "列出 pod" → LLM 选了 `listCoreV1NamespacedPod` → 正确 |
-| **Recall@K** | 正确的工具出现在候选列表中了吗？ | `listCoreV1NamespacedPod` 在前 5 个结果中 → 是的 |
-
-> **为什么两个都重要**: 如果正确工具不在候选中（低 Recall），LLM 再聪明也选不出来。如果在候选中但 LLM 选错了（低 Accuracy），那是 LLM 选择的问题，不是检索的问题。
-
 ### 核心发现：工具太多时 LLM 会崩溃
+
+> 准确率 = LLM 在 50 个测试查询中选对正确工具的比率。
 
 | API | 工具数 | graph-tool-call ✗ | graph-tool-call ✓ | Token 节省 |
 |-----|:-----:|:-----------------:|:-----------------:|:----------:|
@@ -389,11 +382,15 @@ tg = ToolGraph.from_url(url, lint=True)  # 采集时自动修复
 | MCP Servers | 38 | 96.7% | 90% | 83% |
 | **Kubernetes** | **248** | **12%** | **82%** | **80%** |
 
-- **50 个以下**: LLM 给全部工具也能选对。graph-tool-call 的价值 = **64–88% token 节省**。
-- **248 个工具**: 不过滤时 LLM **崩溃到 12%**。使用 graph-tool-call 达到 **82%** —— 不是优化，是**必需品**。
+- **graph-tool-call ✗** = 全部工具直接传给 LLM
+- **graph-tool-call ✓** = 先检索相关工具再传给 LLM
+- **50 个以下**: LLM 给全部也能选对。graph-tool-call 的价值 = **64–88% token 节省**。
+- **248 个工具**: 不过滤时 **崩溃到 12%**。过滤后 **82%** —— 不是优化，是**必需品**。
 
 <details>
-<summary>Kubernetes 详情：各 pipeline 准确率 & Recall@5</summary>
+<summary>Kubernetes 详情：嵌入/本体的附加效果</summary>
+
+> **Recall@5** = 正确工具出现在搜索结果前 5 名的比率。Recall 低的话，LLM 再聪明也选不对。
 
 | Pipeline | 准确率 | Recall@5 |
 |----------|:------:|:--------:|

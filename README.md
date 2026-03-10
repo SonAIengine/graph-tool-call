@@ -371,16 +371,9 @@ We tested whether graph-tool-call actually helps LLMs pick the right tool. The s
 2. Give it a set of tool definitions to choose from
 3. Check if it picks the correct tool
 
-We measured two things:
-
-| Metric | What it measures | Example |
-|--------|-----------------|---------|
-| **Accuracy** | Did the LLM pick the correct tool? | LLM chose `listCoreV1NamespacedPod` for "list pods" → correct |
-| **Recall@K** | Was the correct tool even in the candidate list? | `listCoreV1NamespacedPod` was in the top-5 results → yes |
-
-> **Why both matter**: If the correct tool isn't in the candidates (low Recall), the LLM *can't* pick it no matter how smart it is. If it's there but the LLM picks the wrong one (low Accuracy), that's the LLM's fault, not retrieval's.
-
 ### The key finding: too many tools overwhelm the LLM
+
+> Accuracy = how often the LLM picked the correct tool across 50 test queries.
 
 | API | Tools | graph-tool-call ✗ | graph-tool-call ✓ | Token savings |
 |-----|:-----:|:-----------------:|:-----------------:|:-------------:|
@@ -389,11 +382,15 @@ We measured two things:
 | MCP Servers | 38 | 96.7% | 90% | 83% |
 | **Kubernetes** | **248** | **12%** | **82%** | **80%** |
 
+- **graph-tool-call ✗** = pass all tools to the LLM as-is
+- **graph-tool-call ✓** = retrieve only the relevant tools first
 - **Under 50 tools**: The LLM picks fine with all tools. graph-tool-call's value = **64–88% token savings**.
-- **248 tools**: Without filtering, the LLM **collapses to 12%**. With graph-tool-call, it reaches **82%** — not an optimization, it's **a requirement**.
+- **248 tools**: Without filtering, the LLM **collapses to 12%**. With filtering, **82%** — not an optimization, it's **a requirement**.
 
 <details>
-<summary>Kubernetes detail: per-pipeline Accuracy & Recall@5</summary>
+<summary>Kubernetes detail: embedding & ontology effects</summary>
+
+> **Recall@5** = how often the correct tool appeared in the top-5 search results. If Recall is low, the LLM can't pick the right tool no matter how smart it is.
 
 | Pipeline | Accuracy | Recall@5 |
 |----------|:--------:|:--------:|
