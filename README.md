@@ -55,16 +55,113 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
                                  └──────────────┘
 ```
 
-## Why Not Just Vector Search?
+## Benchmark
 
-| Scenario | Vector-only | graph-tool-call |
-|----------|------------|-----------------|
-| *"cancel my order"* | Returns `cancelOrder` | Returns `listOrders → getOrder → cancelOrder → processRefund` (full workflow) |
-| *"read and save file"* | Returns `read_file` | Returns `read_file` + `write_file` (via COMPLEMENTARY) |
-| *"delete old records"* | Returns any tool matching "delete" | Destructive tools ranked first (annotation-aware) |
-| *"now cancel it"* (with history) | No context, same results | Demotes used tools, boosts next-step tools |
-| Multiple Swagger specs with overlapping tools | Duplicate tools in results | Auto-deduplication across sources |
-| 1,200 API endpoints | Slow, noisy results | Organized into categories, precise graph traversal |
+> **The real test**: put graph-tool-call between the LLM and tools, then compare.
+> We gave an LLM the same user requests with 4 different configurations:
+> - **baseline**: pass **all** tool definitions to the LLM (no retrieval)
+> - **retrieve-k3/k5/k10**: pass only the **top-K retrieved** tools
+>
+> Model: qwen3:4b (4-bit quantized, Ollama). All specs are public and reproducible.
+
+### Does graph-tool-call help the LLM?
+
+| API | Tools | baseline | retrieve-k5 | + embedding | + ontology | Token savings |
+|-----|:-----:|:--------:|:-----------:|:-----------:|:----------:|:-------------:|
+| Petstore | 19 | 100% | 95.0% | — | — | **64%** |
+| GitHub | 50 | 100% | 87.5% | — | — | **88%** |
+| MCP Servers | 38 | 96.7% | 90.0% | — | — | **83%** |
+| **Kubernetes** | **248** | **12%** | **78%** | **80%** | **82%** | **80%** |
+
+**The story in two lines:**
+- **< 50 tools**: The LLM handles them fine. graph-tool-call's value = **64–88% token savings** (faster, cheaper).
+- **248 tools**: The LLM **collapses to 12%**. graph-tool-call delivers **78–82% accuracy** — it's not an optimization, it's **a requirement**.
+
+<details>
+<summary>Full pipeline comparison (4 configurations)</summary>
+
+**Petstore** (19 tools, 20 queries)
+
+| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
+|----------|:--------:|:--------:|:----------:|:-------------:|
+| baseline | 100.0% | 100.0% | 1,239 | — |
+| retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
+| retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
+| retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
+
+**GitHub** (50 tools, 40 queries)
+
+| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
+|----------|:--------:|:--------:|:----------:|:-------------:|
+| baseline | 100.0% | 100.0% | 3,302 | — |
+| retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
+| retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
+| retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
+
+**Mixed MCP** (38 tools, 30 queries)
+
+| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
+|----------|:--------:|:--------:|:----------:|:-------------:|
+| baseline | 96.7% | 100.0% | 2,741 | — |
+| retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
+| retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
+| retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
+
+**Kubernetes core/v1** (248 tools, 50 queries)
+
+| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
+|----------|:--------:|:--------:|:----------:|:-------------:|
+| baseline | 12.0% | 100.0% | 8,192 | — |
+| retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
+| + embedding | 80.0% | 94.0% | 1,728 | 78.9% |
+| + ontology | **82.0%** | 96.0% | 1,699 | 79.3% |
+| + both | **82.0%** | **98.0%** | 1,924 | 76.5% |
+
+</details>
+
+### How good is the retrieval?
+
+Before the LLM sees anything, graph-tool-call must first **find** the right tools. We measure this with **Recall@K**: *"Is the correct tool in the top-K results?"*
+
+| API | Tools | Recall@3 | Recall@5 | Recall@10 |
+|-----|:-----:|:--------:|:--------:|:---------:|
+| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
+| GitHub | 50 | 87.5% | **87.5%** | 92.5% |
+| MCP | 38 | 93.3% | **96.7%** | 100.0% |
+| Kubernetes | 248 | 82.0% | **91.0%** | 92.0% |
+
+These are BM25 + graph traversal only — no embedding model.
+
+### When does embedding + ontology help?
+
+Adding OpenAI embedding (`text-embedding-3-small`) and LLM ontology (`gpt-4o-mini`) on top of BM25 + graph — tested on the hardest dataset (K8s, 248 tools):
+
+| Pipeline | Accuracy | Recall@K | Features |
+|----------|:--------:|:--------:|----------|
+| retrieve-k5 | 78.0% | 91.0% | BM25 + graph only |
+| + embedding | 80.0% | 94.0% | + OpenAI embedding |
+| + ontology | **82.0%** | 96.0% | + GPT-4o-mini knowledge graph |
+| **+ both** | **82.0%** | **98.0%** | **embedding + ontology** |
+
+- **Embedding**: Recall@5 **91% → 94%** (+3pp), Accuracy **78% → 80%** — catches semantic matches that BM25 misses.
+- **Ontology**: Recall@5 **91% → 96%** (+5pp), Accuracy **78% → 82%** — LLM-enriched keywords + example queries boost both BM25 and embedding.
+- **Both combined**: Recall@5 **98%**, Accuracy **82%** — ontology keywords + embedding semantics complement each other.
+
+### Reproduce it
+
+```bash
+# Retrieval quality (fast, no LLM needed)
+python -m benchmarks.run_benchmark
+python -m benchmarks.run_benchmark -d k8s -v
+
+# Pipeline benchmark (LLM comparison)
+python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
+python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
+
+# Save baseline and compare
+python -m benchmarks.run_benchmark --mode pipeline --save-baseline
+python -m benchmarks.run_benchmark --mode pipeline --diff
+```
 
 ## Installation
 
@@ -363,129 +460,16 @@ pip install graph-tool-call[lint]
 tg = ToolGraph.from_url(url, lint=True)  # auto-fix during ingest
 ```
 
-## Benchmark
+## Why Not Just Vector Search?
 
-We tested whether graph-tool-call actually helps LLMs pick the right tool. The setup:
-
-1. Give the LLM a user request (e.g., *"list all pods in the default namespace"*)
-2. Give it a set of tool definitions to choose from
-3. Check if it picks the correct tool
-
-### The key finding: too many tools overwhelm the LLM
-
-> **Accuracy** = how often the LLM picked the correct tool across test queries. We compare passing all tools as-is (✗) vs. filtering to Top-K with graph-tool-call (✓).
-
-| API | Tools | ✗ All tools | ✓ Top-5 | ✓ Top-10 | Token savings |
-|-----|:-----:|:-----------:|:-------:|:--------:|:-------------:|
-| Petstore | 19 | 100% | 95% | 100% | 42–64% |
-| GitHub | 50 | 100% | 87.5% | 90% | 80–88% |
-| MCP Servers | 38 | 96.7% | 90% | 96.7% | 70–83% |
-| **Kubernetes** | **248** | **12%** | **78%** | — | **80%** |
-
-- **Under 50 tools**: The LLM picks fine with all tools. graph-tool-call's value = **token savings** (faster, cheaper).
-- **248 tools**: Without filtering, Accuracy **collapses to 12%**. Top-5 filtering alone reaches **78%** — not an optimization, it's **a requirement**.
-
-<details>
-<summary>Kubernetes detail: embedding & ontology effects</summary>
-
-> **Recall@5** = how often the correct tool appeared in the top-5 search results. If Recall is low, the LLM can't pick the right tool no matter how smart it is.
-
-| Pipeline | Accuracy | Recall@5 |
-|----------|:--------:|:--------:|
-| Top-5 (BM25 + graph) | 78% | 91% |
-| Top-5 + embedding | 80% | 94% |
-| Top-5 + ontology | 82% | 96% |
-| Top-5 + both | **82%** | **98%** |
-
-</details>
-
-> Model: qwen3:4b (4-bit quantized, Ollama). 50 test queries per dataset. All specs are public — [reproduce it yourself](#reproduce-it).
-
-<details>
-<summary>Full pipeline results per dataset</summary>
-
-**Petstore** (19 tools, 20 queries)
-
-| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
-|----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline (all tools) | 100.0% | 100.0% | 1,239 | — |
-| retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
-| retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
-| retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
-
-**GitHub** (50 tools, 40 queries)
-
-| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
-|----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline (all tools) | 100.0% | 100.0% | 3,302 | — |
-| retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
-| retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
-| retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
-
-**Mixed MCP** (38 tools, 30 queries)
-
-| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
-|----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline (all tools) | 96.7% | 100.0% | 2,741 | — |
-| retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
-| retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
-| retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
-
-**Kubernetes core/v1** (248 tools, 50 queries)
-
-| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
-|----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline (all tools) | 12.0% | 100.0% | 8,192 | — |
-| retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
-| + embedding | 80.0% | 94.0% | 1,728 | 78.9% |
-| + ontology | **82.0%** | 96.0% | 1,699 | 79.3% |
-| + both | **82.0%** | **98.0%** | 1,924 | 76.5% |
-
-</details>
-
-### When does embedding + ontology help?
-
-For small APIs (< 50 tools), BM25 + graph traversal alone is enough. For large APIs, adding embedding and ontology makes a real difference. Tested on Kubernetes (248 tools):
-
-| Pipeline | Accuracy | Recall@5 | What it adds |
-|----------|:--------:|:--------:|--------------|
-| BM25 + graph only | 78% | 91% | keyword matching + graph neighbors |
-| + embedding | 80% | 94% | semantic similarity (catches synonyms BM25 misses) |
-| + ontology | **82%** | 96% | LLM-generated keywords + example queries |
-| **+ both** | **82%** | **98%** | embedding + ontology complement each other |
-
-Embedding: OpenAI `text-embedding-3-small`. Ontology: `gpt-4o-mini`.
-
-### Reproduce it
-
-```bash
-# Retrieval quality (fast, no LLM needed)
-python -m benchmarks.run_benchmark
-python -m benchmarks.run_benchmark -d k8s -v
-
-# Full pipeline benchmark (requires Ollama)
-python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
-python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
-
-# Save baseline and compare after changes
-python -m benchmarks.run_benchmark --mode pipeline --save-baseline
-python -m benchmarks.run_benchmark --mode pipeline --diff
-```
-
-## Feature Comparison
-
-| Feature | Vector-only solutions | graph-tool-call |
-|---------|----------------------|-----------------|
-| Tool source | Manual registration | Auto-ingest from Swagger/OpenAPI/MCP |
-| Search method | Flat vector similarity | Multi-stage hybrid (wRRF + rerank + MMR) |
-| Behavioral semantics | None | MCP annotation-aware retrieval |
-| Tool relations | None | 6 relation types, auto-detected |
-| Call ordering | None | State machine + CRUD + response→request data flow |
-| Deduplication | None | Cross-source duplicate detection |
-| Ontology | None | Auto / LLM-Auto modes (any LLM) |
-| History awareness | None | Demotes used tools, boosts next-step |
-| Spec quality | Assumes good specs | ai-api-lint auto-fix integration |
-| LLM dependency | Required | Optional (better with, works without) |
+| Scenario | Vector-only | graph-tool-call |
+|----------|------------|-----------------|
+| *"cancel my order"* | Returns `cancelOrder` | Returns `listOrders → getOrder → cancelOrder → processRefund` (full workflow) |
+| *"read and save file"* | Returns `read_file` | Returns `read_file` + `write_file` (via COMPLEMENTARY) |
+| *"delete old records"* | Returns any tool matching "delete" | Destructive tools ranked first (annotation-aware) |
+| *"now cancel it"* (with history) | No context, same results | Demotes used tools, boosts next-step tools |
+| Multiple Swagger specs with overlapping tools | Duplicate tools in results | Auto-deduplication across sources |
+| 1,200 API endpoints | Slow, noisy results | Organized into categories, precise graph traversal |
 
 ## Full API Reference
 
@@ -518,6 +502,21 @@ python -m benchmarks.run_benchmark --mode pipeline --diff
 | `export_cypher(path)` | Export as Neo4j Cypher statements |
 
 </details>
+
+## Feature Comparison
+
+| Feature | Vector-only solutions | graph-tool-call |
+|---------|----------------------|-----------------|
+| Tool source | Manual registration | Auto-ingest from Swagger/OpenAPI/MCP |
+| Search method | Flat vector similarity | Multi-stage hybrid (wRRF + rerank + MMR) |
+| Behavioral semantics | None | MCP annotation-aware retrieval |
+| Tool relations | None | 6 relation types, auto-detected |
+| Call ordering | None | State machine + CRUD + response→request data flow |
+| Deduplication | None | Cross-source duplicate detection |
+| Ontology | None | Auto / LLM-Auto modes (any LLM) |
+| History awareness | None | Demotes used tools, boosts next-step |
+| Spec quality | Assumes good specs | ai-api-lint auto-fix integration |
+| LLM dependency | Required | Optional (better with, works without) |
 
 ## Documentation
 

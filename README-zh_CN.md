@@ -55,16 +55,103 @@ OpenAPI/MCP/代码 → [采集] → [分析] → [组织] → [检索] → Agent
                                  └──────────────┘
 ```
 
-## 为什么仅靠向量搜索不够？
+## 基准测试
 
-| 场景 | 仅向量 | graph-tool-call |
-|------|--------|-----------------|
-| *"取消我的订单"* | 返回 `cancelOrder` | `listOrders → getOrder → cancelOrder → processRefund` (完整工作流) |
-| *"读取并保存文件"* | 返回 `read_file` | `read_file` + `write_file` (COMPLEMENTARY 关系) |
-| *"删除旧记录"* | 返回与"删除"匹配的任意工具 | 破坏性工具优先排名 (annotation-aware) |
-| *"现在取消"* (history) | 无上下文，返回相同结果 | 已用工具降权，下一步工具上升 |
-| 多个 Swagger spec 中有重复工具 | 结果包含重复 | 跨源自动去重 |
-| 1,200 个 API endpoint | 缓慢且噪声多 | 按类别组织，精确图遍历 |
+> **LLM 能选对正确的工具吗？**
+> 给 LLM 提供用户请求和工具定义，验证它是否能调用正确的工具。
+> - **baseline**: 将**全部**工具定义传给 LLM。
+> - **retrieve-k5 / k10**: 仅传递 graph-tool-call 检索的**前 5 / 10 个**。
+
+所有基准测试使用任何人都可以下载并复现的公开规范: [Petstore OpenAPI](https://petstore3.swagger.io), [Kubernetes core/v1 API](https://github.com/kubernetes/kubernetes), GitHub REST API, MCP tool 服务器。模型: qwen3:4b (4-bit 量化, Ollama)。
+
+### 结果: graph-tool-call 对 LLM 有帮助吗？
+
+| API | 工具数 | baseline | retrieve-k5 | + 嵌入 | + 本体 | Token 节省 |
+|-----|:-----:|:--------:|:-----------:|:------:|:------:|:----------:|
+| Petstore | 19 | 100% | 95.0% | — | — | 64% |
+| GitHub | 50 | 100% | 87.5% | — | — | 88% |
+| MCP Servers | 38 | 96.7% | 90.0% | — | — | 83% |
+| **Kubernetes** | **248** | **12%** | **78%** | **80%** | **82%** | **80%** |
+
+- **50 个以下**: LLM 本身就能处理好。graph-tool-call 的价值 = **64-88% 的 token 节省**。
+- **248 个工具**: LLM 崩溃到 12%。graph-tool-call 以 78-82% 准确率救场 — 这不是优化，而是**必需品**。
+
+### 检索 Recall@K
+
+在 LLM 看到工具之前，graph-tool-call 需要先**找到**正确的工具。用 **Recall@K** 来衡量: *"正确工具是否包含在前 K 个结果中？"*
+
+| API | 工具数 | Recall@3 | Recall@5 | Recall@10 |
+|-----|:-----:|:--------:|:--------:|:---------:|
+| Petstore | 19 | 93.3% | 98.3% | 98.3% |
+| GitHub | 50 | 87.5% | 87.5% | 92.5% |
+| MCP | 38 | 93.3% | 96.7% | 100.0% |
+| Kubernetes | 248 | 82.0% | 91.0% | 92.0% |
+
+<details>
+<summary>各数据集的详细 Pipeline 对比</summary>
+
+**Petstore** (19 tools)
+
+| Pipeline | Accuracy | Recall@K | 平均 Token | Token 节省 |
+|----------|:--------:|:--------:|:---------:|:---------:|
+| baseline (全部 19 tools) | 100% | — | 5,182 | — |
+| retrieve-k5 | 95.0% | 98.3% | 1,879 | 64% |
+| retrieve-k10 | 100% | 98.3% | 2,842 | 45% |
+
+**GitHub** (50 tools)
+
+| Pipeline | Accuracy | Recall@K | 平均 Token | Token 节省 |
+|----------|:--------:|:--------:|:---------:|:---------:|
+| baseline (全部 50 tools) | 100% | — | 11,052 | — |
+| retrieve-k5 | 87.5% | 87.5% | 1,294 | 88% |
+| retrieve-k10 | 90.0% | 92.5% | 2,325 | 79% |
+
+**MCP Servers** (38 tools)
+
+| Pipeline | Accuracy | Recall@K | 平均 Token | Token 节省 |
+|----------|:--------:|:--------:|:---------:|:---------:|
+| baseline (全部 38 tools) | 96.7% | — | 7,493 | — |
+| retrieve-k5 | 90.0% | 96.7% | 1,249 | 83% |
+| retrieve-k10 | 96.7% | 100.0% | 2,280 | 70% |
+
+**Kubernetes** (248 tools)
+
+| Pipeline | Accuracy | Recall@K | 平均 Token | Token 节省 |
+|----------|:--------:|:--------:|:---------:|:---------:|
+| baseline (全部 248 tools) | 12.0% | 100.0% | 8,192 | — |
+| retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
+| + 嵌入 | 80.0% | 94.0% | 1,728 | 78.9% |
+| + 本体 | **82.0%** | 96.0% | 1,699 | 79.3% |
+| + 两者 | **82.0%** | **98.0%** | 1,924 | 76.5% |
+
+</details>
+
+### 嵌入 + 本体什么时候有帮助？
+
+在 BM25 + 图遍历基础上添加 OpenAI 嵌入（`text-embedding-3-small`）和 LLM 本体（`gpt-4o-mini`）— 在最难的数据集（K8s, 248 tools）上测试:
+
+| Pipeline | Accuracy | Recall@K | 功能 |
+|----------|:--------:|:--------:|------|
+| retrieve-k5 | 78.0% | 91.0% | 仅 BM25 + 图 |
+| + 嵌入 | 80.0% | 94.0% | + OpenAI 嵌入 |
+| + 本体 | **82.0%** | 96.0% | + GPT-4o-mini 知识图谱 |
+| **+ 两者** | **82.0%** | **98.0%** | **嵌入 + 本体** |
+
+- **嵌入**: Recall@5 **91% → 94%** (+3pp), 准确率 **78% → 80%** — 捕获 BM25 遗漏的语义匹配。
+- **本体**: Recall@5 **91% → 96%** (+5pp), 准确率 **78% → 82%** — LLM 丰富的关键词改善 BM25 评分。
+- **两者结合**: Recall@5 **98%**, 准确率 **82%** — 本体关键词 + 嵌入语义互补。
+
+### 自行复现
+
+```bash
+# 检索质量测量 (快速, 无需 LLM)
+python -m benchmarks.run_benchmark
+python -m benchmarks.run_benchmark -d k8s -v          # Kubernetes 248 tools
+
+# Pipeline 基准 (LLM 对比)
+python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
+python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k5 retrieve-k5-emb retrieve-k5-full
+```
 
 ## 安装
 
@@ -363,129 +450,16 @@ pip install graph-tool-call[lint]
 tg = ToolGraph.from_url(url, lint=True)  # 采集时自动修复
 ```
 
-## 基准测试
+## 为什么仅靠向量搜索不够？
 
-我们测试了 graph-tool-call 是否真的能帮助 LLM 选对工具。测试方式：
-
-1. 给 LLM 一个用户请求（例如 *"列出 default 命名空间中的所有 pod"*）
-2. 提供一组工具定义让它选择
-3. 检查它是否选择了正确的工具
-
-### 核心发现：工具太多时 LLM 会崩溃
-
-> **Accuracy** = LLM 在测试查询中选对正确工具的比率。全部工具直接传给 LLM（✗）和用 graph-tool-call 过滤到 Top-K 再传（✓）的对比。
-
-| API | 工具数 | ✗ 全部传入 | ✓ Top-5 | ✓ Top-10 | Token 节省 |
-|-----|:-----:|:--------:|:-------:|:--------:|:----------:|
-| Petstore | 19 | 100% | 95% | 100% | 42–64% |
-| GitHub | 50 | 100% | 87.5% | 90% | 80–88% |
-| MCP Servers | 38 | 96.7% | 90% | 96.7% | 70–83% |
-| **Kubernetes** | **248** | **12%** | **78%** | — | **80%** |
-
-- **50 个以下**: LLM 给全部也能选对。graph-tool-call 的价值 = **token 节省**（更快、更便宜）。
-- **248 个工具**: 不过滤时 Accuracy **崩溃到 12%**。Top-5 过滤后 **78%** —— 不是优化，是**必需品**。
-
-<details>
-<summary>Kubernetes 详情：嵌入/本体的附加效果</summary>
-
-> **Recall@5** = 正确工具出现在搜索结果前 5 名的比率。Recall 低的话，LLM 再聪明也选不对。
-
-| Pipeline | Accuracy | Recall@5 |
-|----------|:--------:|:--------:|
-| Top-5（BM25 + 图遍历） | 78% | 91% |
-| Top-5 + 嵌入 | 80% | 94% |
-| Top-5 + 本体 | 82% | 96% |
-| Top-5 + 两者 | **82%** | **98%** |
-
-</details>
-
-> 模型: qwen3:4b (4-bit 量化, Ollama)。每个数据集 50 个测试查询。所有规范公开——[自行复现](#自行复现)。
-
-<details>
-<summary>各数据集详细结果</summary>
-
-**Petstore** (19 tools, 20 queries)
-
-| Pipeline | 准确率 | Recall@K | 平均 Token | Token 节省 |
-|----------|:------:|:--------:|:---------:|:---------:|
-| baseline (全部工具) | 100.0% | 100.0% | 1,239 | — |
-| retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
-| retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
-| retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
-
-**GitHub** (50 tools, 40 queries)
-
-| Pipeline | 准确率 | Recall@K | 平均 Token | Token 节省 |
-|----------|:------:|:--------:|:---------:|:---------:|
-| baseline (全部工具) | 100.0% | 100.0% | 3,302 | — |
-| retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
-| retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
-| retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
-
-**Mixed MCP** (38 tools, 30 queries)
-
-| Pipeline | 准确率 | Recall@K | 平均 Token | Token 节省 |
-|----------|:------:|:--------:|:---------:|:---------:|
-| baseline (全部工具) | 96.7% | 100.0% | 2,741 | — |
-| retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
-| retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
-| retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
-
-**Kubernetes core/v1** (248 tools, 50 queries)
-
-| Pipeline | 准确率 | Recall@K | 평均 Token | Token 节省 |
-|----------|:------:|:--------:|:---------:|:---------:|
-| baseline (全部工具) | 12.0% | 100.0% | 8,192 | — |
-| retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
-| + 嵌入 | 80.0% | 94.0% | 1,728 | 78.9% |
-| + 本体 | **82.0%** | 96.0% | 1,699 | 79.3% |
-| + 两者 | **82.0%** | **98.0%** | 1,924 | 76.5% |
-
-</details>
-
-### 嵌入 + 本体什么时候有帮助？
-
-小规模 API（< 50 工具），BM25 + 图遍历就够了。大规模 API 中，嵌入和本体才能产生实质差异。在 Kubernetes（248 工具）上测试：
-
-| Pipeline | 准确率 | Recall@5 | 增加的功能 |
-|----------|:------:|:--------:|----------|
-| BM25 + 图遍历 | 78% | 91% | 关键词匹配 + 图邻居遍历 |
-| + 嵌入 | 80% | 94% | 语义相似度（捕获 BM25 遗漏的同义词） |
-| + 本体 | **82%** | 96% | LLM 生成的关键词 + 示例查询 |
-| **+ 两者** | **82%** | **98%** | 嵌入 + 本体互补 |
-
-嵌入: OpenAI `text-embedding-3-small`。本体: `gpt-4o-mini`。
-
-### 自行复现
-
-```bash
-# 检索质量测量（快速，无需 LLM）
-python -m benchmarks.run_benchmark
-python -m benchmarks.run_benchmark -d k8s -v
-
-# 完整 Pipeline 基准（需要 Ollama）
-python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
-python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
-
-# 保存基线后对比变更
-python -m benchmarks.run_benchmark --mode pipeline --save-baseline
-python -m benchmarks.run_benchmark --mode pipeline --diff
-```
-
-## 功能对比
-
-| 功能 | 纯向量方案 | graph-tool-call |
-|------|----------|-----------------|
-| 工具来源 | 手动注册 | Swagger/OpenAPI/MCP 自动采集 |
-| 检索方式 | 简单向量相似度 | 多阶段混合 (wRRF + rerank + MMR) |
-| 行为语义 | 无 | MCP annotation-aware retrieval |
-| 工具关系 | 无 | 6 种关系类型，自动检测 |
-| 调用顺序 | 无 | 状态机 + CRUD + response→request 数据流 |
-| 去重 | 无 | 跨源重复检测 |
-| 本体 | 无 | Auto / LLM-Auto 模式 (任意 LLM) |
-| History | 无 | 已用工具降权，下一步上升 |
-| Spec 质量 | 假设 spec 质量好 | ai-api-lint 自动修复集成 |
-| LLM 依赖 | 必需 | 可选 (无也可用，有则更好) |
+| 场景 | 仅向量 | graph-tool-call |
+|------|--------|-----------------|
+| *"取消我的订单"* | 返回 `cancelOrder` | `listOrders → getOrder → cancelOrder → processRefund` (完整工作流) |
+| *"读取并保存文件"* | 返回 `read_file` | `read_file` + `write_file` (COMPLEMENTARY 关系) |
+| *"删除旧记录"* | 返回与"删除"匹配的任意工具 | 破坏性工具优先排名 (annotation-aware) |
+| *"现在取消"* (history) | 无上下文，返回相同结果 | 已用工具降权，下一步工具上升 |
+| 多个 Swagger spec 中有重复工具 | 结果包含重复 | 跨源自动去重 |
+| 1,200 个 API endpoint | 缓慢且噪声多 | 按类别组织，精确图遍历 |
 
 ## 完整 API 参考
 
@@ -518,6 +492,21 @@ python -m benchmarks.run_benchmark --mode pipeline --diff
 | `export_cypher(path)` | 导出 Neo4j Cypher 语句 |
 
 </details>
+
+## 功能对比
+
+| 功能 | 纯向量方案 | graph-tool-call |
+|------|----------|-----------------|
+| 工具来源 | 手动注册 | Swagger/OpenAPI/MCP 自动采集 |
+| 检索方式 | 简单向量相似度 | 多阶段混合 (wRRF + rerank + MMR) |
+| 行为语义 | 无 | MCP annotation-aware retrieval |
+| 工具关系 | 无 | 6 种关系类型，自动检测 |
+| 调用顺序 | 无 | 状态机 + CRUD + response→request 数据流 |
+| 去重 | 无 | 跨源重复检测 |
+| 本体 | 无 | Auto / LLM-Auto 模式 (任意 LLM) |
+| History | 无 | 已用工具降权，下一步上升 |
+| Spec 质量 | 假设 spec 质量好 | ai-api-lint 自动修复集成 |
+| LLM 依赖 | 必需 | 可选 (无也可用，有则更好) |
 
 ## 文档
 
