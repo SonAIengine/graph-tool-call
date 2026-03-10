@@ -4,7 +4,7 @@
 
 **Graph-based Tool Retrieval for LLM Agents**
 
-Ingest, Analyze, Organize, Retrieve.
+Collects tools from OpenAPI, MCP, Python functions, organizes relationships as a graph, and **retrieves only the tools needed for LLM agents**.
 
 [![PyPI](https://img.shields.io/pypi/v/graph-tool-call.svg)](https://pypi.org/project/graph-tool-call/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -17,30 +17,50 @@ English · [한국어](README-ko.md) · [中文](README-zh_CN.md) · [日本語]
 
 ---
 
-## The Problem
+## What is graph-tool-call?
 
-LLM agents are getting access to more and more tools. A commerce platform might expose **1,200+ API endpoints**. A company's internal toolset might have **500+ functions** across multiple services.
+The number of tools available to LLM agents is growing rapidly.
+A commerce platform may have **1,200+ API endpoints**, and a company's internal systems can have **500+ functions** across multiple services.
 
-But there's a hard limit: **you can't put them all in the context window.**
+The problem is simple.
 
-The common solution? Vector search — embed tool descriptions, find the closest matches. It works, but it misses something important:
+> **You can't put all tool definitions in the context window every time.**
 
-> **Tools don't exist in isolation. They have relationships.**
+The common solution is vector search.
+Embed tool descriptions and find the tools closest to the user request.
 
-When a user says *"cancel my order and process a refund"*, vector search might find `cancelOrder`. But it won't know that you need to call `listOrders` first (to get the order ID), and that `processRefund` should follow. These aren't just similar tools — they form a **workflow**.
+But real-world tool usage is different from document retrieval.
 
-## The Solution
+- Some tools **lead to the next-step tool**.
+- Some tools **must be called together**.
+- Some tools are **read-only**, others are **destructive**.
+- Some tools **depend on the result of a previously called tool**.
 
-**graph-tool-call** models tool relationships as a graph and retrieves tools using a multi-signal hybrid search pipeline:
+In other words, **tools are not independent text fragments — they are execution units that form workflows**.
 
-```
-OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Agent
-                    (convert)  (relations)  (graph)     (wRRF hybrid)
-```
+**graph-tool-call** focuses on this point.
+It treats tools not as a flat list but as a **graph with relationships**, and delivers only the tools the LLM needs via multi-signal hybrid retrieval.
 
-**4-source wRRF fusion**: BM25 keyword matching + graph traversal + embedding similarity + MCP annotation scoring — combined via weighted Reciprocal Rank Fusion.
+---
 
-```
+## Why is it needed?
+
+For example, suppose a user says:
+
+> Cancel my order and process a refund
+
+Vector search can find `cancelOrder`.
+But actual execution usually requires the following flow:
+
+```text
+listOrders → getOrder → cancelOrder → processRefund
+````
+
+What matters is not "one similar tool" but **the execution flow that includes the needed tool and the tools that follow**.
+
+graph-tool-call models these relationships as a graph.
+
+```text
                     ┌──────────┐
           PRECEDES  │listOrders│  PRECEDES
          ┌─────────┤          ├──────────┐
@@ -55,113 +75,53 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
                                  └──────────────┘
 ```
 
-## Benchmark
+---
 
-> **The real test**: put graph-tool-call between the LLM and tools, then compare.
-> We gave an LLM the same user requests with 4 different configurations:
-> - **baseline**: pass **all** tool definitions to the LLM (no retrieval)
-> - **retrieve-k3/k5/k10**: pass only the **top-K retrieved** tools
->
-> Model: qwen3:4b (4-bit quantized, Ollama). All specs are public and reproducible.
+## Core Idea
 
-### Does graph-tool-call help the LLM?
+graph-tool-call operates with the following pipeline.
 
-| API | Tools | baseline | retrieve-k5 | + embedding | + ontology | Token savings |
-|-----|:-----:|:--------:|:-----------:|:-----------:|:----------:|:-------------:|
-| Petstore | 19 | 100% | 95.0% | — | — | **64%** |
-| GitHub | 50 | 100% | 87.5% | — | — | **88%** |
-| MCP Servers | 38 | 96.7% | 90.0% | — | — | **83%** |
-| **Kubernetes** | **248** | **12%** | **78%** | **80%** | **82%** | **80%** |
-
-**The story in two lines:**
-- **< 50 tools**: The LLM handles them fine. graph-tool-call's value = **64–88% token savings** (faster, cheaper).
-- **248 tools**: The LLM **collapses to 12%**. graph-tool-call delivers **78–82% accuracy** — it's not an optimization, it's **a requirement**.
-
-<details>
-<summary>Full pipeline comparison (4 configurations)</summary>
-
-**Petstore** (19 tools, 20 queries)
-
-| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
-|----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline | 100.0% | 100.0% | 1,239 | — |
-| retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
-| retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
-| retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
-
-**GitHub** (50 tools, 40 queries)
-
-| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
-|----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline | 100.0% | 100.0% | 3,302 | — |
-| retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
-| retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
-| retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
-
-**Mixed MCP** (38 tools, 30 queries)
-
-| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
-|----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline | 96.7% | 100.0% | 2,741 | — |
-| retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
-| retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
-| retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
-
-**Kubernetes core/v1** (248 tools, 50 queries)
-
-| Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
-|----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline | 12.0% | 100.0% | 8,192 | — |
-| retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
-| + embedding | 80.0% | 94.0% | 1,728 | 78.9% |
-| + ontology | **82.0%** | 96.0% | 1,699 | 79.3% |
-| + both | **82.0%** | **98.0%** | 1,924 | 76.5% |
-
-</details>
-
-### How good is the retrieval?
-
-Before the LLM sees anything, graph-tool-call must first **find** the right tools. We measure this with **Recall@K**: *"Is the correct tool in the top-K results?"*
-
-| API | Tools | Recall@3 | Recall@5 | Recall@10 |
-|-----|:-----:|:--------:|:--------:|:---------:|
-| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
-| GitHub | 50 | 87.5% | **87.5%** | 92.5% |
-| MCP | 38 | 93.3% | **96.7%** | 100.0% |
-| Kubernetes | 248 | 82.0% | **91.0%** | 92.0% |
-
-These are BM25 + graph traversal only — no embedding model.
-
-### When does embedding + ontology help?
-
-Adding OpenAI embedding (`text-embedding-3-small`) and LLM ontology (`gpt-4o-mini`) on top of BM25 + graph — tested on the hardest dataset (K8s, 248 tools):
-
-| Pipeline | Accuracy | Recall@K | Features |
-|----------|:--------:|:--------:|----------|
-| retrieve-k5 | 78.0% | 91.0% | BM25 + graph only |
-| + embedding | 80.0% | 94.0% | + OpenAI embedding |
-| + ontology | **82.0%** | 96.0% | + GPT-4o-mini knowledge graph |
-| **+ both** | **82.0%** | **98.0%** | **embedding + ontology** |
-
-- **Embedding**: Recall@5 **91% → 94%** (+3pp), Accuracy **78% → 80%** — catches semantic matches that BM25 misses.
-- **Ontology**: Recall@5 **91% → 96%** (+5pp), Accuracy **78% → 82%** — LLM-enriched keywords + example queries boost both BM25 and embedding.
-- **Both combined**: Recall@5 **98%**, Accuracy **82%** — ontology keywords + embedding semantics complement each other.
-
-### Reproduce it
-
-```bash
-# Retrieval quality (fast, no LLM needed)
-python -m benchmarks.run_benchmark
-python -m benchmarks.run_benchmark -d k8s -v
-
-# Pipeline benchmark (LLM comparison)
-python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
-python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
-
-# Save baseline and compare
-python -m benchmarks.run_benchmark --mode pipeline --save-baseline
-python -m benchmarks.run_benchmark --mode pipeline --diff
+```text
+OpenAPI / MCP / Code → Ingest → Analyze → Organize → Retrieve → Agent
 ```
+
+The retrieval stage uses multiple signals together.
+
+* **BM25**: keyword matching
+* **Graph traversal**: relation-based expansion
+* **Embedding similarity**: semantic similarity
+* **MCP annotations**: read-only / destructive / idempotent / open-world hints
+
+These signals are combined via **weighted Reciprocal Rank Fusion (wRRF)**.
+
+---
+
+## Key Features
+
+* **Auto-ingest from OpenAPI / Swagger / MCP / Python functions**
+* **Tool relationship graph** construction and utilization
+* **Hybrid retrieval** based on BM25 + graph + embedding + annotation
+* **History-aware retrieval**
+* **Cross-encoder reranking**
+* **MMR diversity**
+* **LLM-enhanced ontology**
+* **Duplicate tool detection and merging**
+* **HTML / GraphML / Cypher** export
+* **ai-api-lint integration** for automatic spec cleanup
+
+---
+
+## When to use?
+
+graph-tool-call is especially effective in the following situations.
+
+* When the number of tools is too large to **fit entirely in the context window**
+* When **call ordering / relationship information** matters more than simple similarity
+* When retrieval needs to reflect **MCP annotations**
+* When you need to **unify tools from multiple API specs or services into a single retrieval layer**
+* When you want the agent to **find the next tool better based on previous call history**
+
+---
 
 ## Installation
 
@@ -184,6 +144,8 @@ pip install graph-tool-call[langchain]         # + LangChain tool adapter
 
 </details>
 
+---
+
 ## Quick Start
 
 ### 30-Second Example
@@ -194,28 +156,190 @@ from graph_tool_call import ToolGraph
 # Build a tool graph from the official Petstore API
 tg = ToolGraph.from_url(
     "https://petstore3.swagger.io/api/v3/openapi.json",
-    cache="petstore.json",  # saves graph locally for instant reload
+    cache="petstore.json",
 )
 
 print(tg)
 # → ToolGraph(tools=19, nodes=22, edges=100)
 
-# Search for tools — 98.3% Recall@5 on this spec
+# Search for tools
 tools = tg.retrieve("create a new pet", top_k=5)
 for t in tools:
-    print(f"  {t.name}: {t.description}")
-# → addPet: Add a new pet to the store.
-#   updatePet: Update an existing pet.
-#   getPetById: Find pet by ID.
-#   ...graph expansion brings the full CRUD workflow
+    print(f"{t.name}: {t.description}")
 ```
 
-### From Your Own Swagger / OpenAPI
+Expected output:
+
+```text
+addPet: Add a new pet to the store.
+updatePet: Update an existing pet.
+getPetById: Find pet by ID.
+...
+```
+
+On this spec, **Recall@5 is 98.3%** with `top_k=5`.
+
+---
+
+## Benchmark
+
+graph-tool-call verifies two things.
+
+1. Can performance be maintained or improved by giving the LLM only a subset of retrieved tools?
+2. Does the retriever itself rank the correct tools within the top K?
+
+The evaluation compared the following configurations on the same set of user requests.
+
+* **baseline**: pass all tool definitions to the LLM as-is
+* **retrieve-k3 / k5 / k10**: pass only the top K retrieved tools
+* **+ embedding / + ontology**: add semantic search and LLM-based ontology enrichment on top of retrieve-k5
+
+The model used was **qwen3:4b (4-bit, Ollama)**.
+
+### Evaluation Metrics
+
+* **Accuracy**: Did the LLM ultimately select the correct tool?
+* **Recall@K**: Was the correct tool included in the top K results at the retrieval stage?
+* **Avg tokens**: Average tokens passed to the LLM
+* **Token reduction**: Token savings compared to baseline
+
+### Results at a glance
+
+* **Small-scale APIs (19~50 tools)**: baseline is already strong.
+  In this range, graph-tool-call's main value is **64~91% token savings while maintaining near-baseline accuracy**.
+* **Large-scale APIs (248 tools)**: baseline **collapses to 12%**.
+  In contrast, graph-tool-call maintains **78~82% accuracy**. At this scale, it's not an optimization — it's closer to a **required retrieval layer**.
+
+<details>
+<summary>Full pipeline comparison</summary>
+
+> **How to read the metrics**
+>
+> - **End-to-end Accuracy**: Did the LLM ultimately succeed in selecting the correct tool or performing the correct workflow?
+> - **Gold Tool Recall@K**: Was the **canonical gold tool designated as the correct answer** included in the top K at the retrieval stage?
+> - These two metrics measure different things, so they don't always match.
+> - In particular, evaluations that accept **alternative tools** or **equivalent workflows** as correct answers may show `End-to-end Accuracy` that doesn't exactly match `Gold Tool Recall@K`.
+> - **baseline** has no retrieval stage, so `Gold Tool Recall@K` does not apply.
+
+| Dataset | Tools | Pipeline | End-to-end Accuracy | Gold Tool Recall@K | Avg tokens | Token reduction |
+|---|---:|---|---:|---:|---:|---:|
+| Petstore | 19 | baseline | 100.0% | — | 1,239 | — |
+| Petstore | 19 | retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
+| Petstore | 19 | retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
+| Petstore | 19 | retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
+| GitHub | 50 | baseline | 100.0% | — | 3,302 | — |
+| GitHub | 50 | retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
+| GitHub | 50 | retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
+| GitHub | 50 | retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
+| Mixed MCP | 38 | baseline | 96.7% | — | 2,741 | — |
+| Mixed MCP | 38 | retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
+| Mixed MCP | 38 | retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
+| Mixed MCP | 38 | retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
+| Kubernetes core/v1 | 248 | baseline | 12.0% | — | 8,192 | — |
+| Kubernetes core/v1 | 248 | retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
+| Kubernetes core/v1 | 248 | retrieve-k5 + embedding | 80.0% | 94.0% | 1,728 | 78.9% |
+| Kubernetes core/v1 | 248 | retrieve-k5 + ontology | **82.0%** | 96.0% | 1,699 | 79.3% |
+| Kubernetes core/v1 | 248 | retrieve-k5 + embedding + ontology | **82.0%** | **98.0%** | 1,924 | 76.5% |
+
+**How to read this table**
+
+- **baseline** is the result of passing all tool definitions to the LLM without any retrieval.
+- **retrieve-k** variants pass only a subset of retrieved tools to the LLM, so both retrieval quality and LLM selection ability affect performance.
+- Therefore, a baseline accuracy of 100% does not mean retrieve-k accuracy must also be 100%.
+- `Gold Tool Recall@K` measures whether retrieval placed the canonical gold tool in the top-k,
+  while `End-to-end Accuracy` measures whether the final task execution succeeded.
+- Because of this, evaluations that accept alternative tools or equivalent workflows may show the two values not exactly matching.
+
+**Key insights**
+
+- **Petstore / GitHub / Mixed MCP**: When tool count is small or medium, baseline is already strong.
+  In this range, graph-tool-call's main value is **significantly reducing tokens without much accuracy loss**.
+- **Kubernetes core/v1 (248 tools)**: When tool count is large, baseline collapses due to context overload.
+  graph-tool-call recovers performance from **12.0% to 78.0~82.0%** by narrowing candidates through retrieval.
+- In practice, **retrieve-k5** is the best default.
+  It offers a good balance of token efficiency and performance. On large datasets, adding embedding / ontology yields further improvement.
+
+</details>
+
+### Retrieval performance: Does the retriever find the correct tools in the top K?
+
+The table below measures the quality of retrieval itself, **before the LLM stage**.
+Only **BM25 + graph traversal** were used here — no embedding or ontology.
+
+> **How to read the metrics**
+>
+> - **Gold Tool Recall@K**: Was the **canonical gold tool designated as the correct answer** included in the top K at the retrieval stage?
+> - This table shows **how well the retriever constructs the candidate set**, not the final LLM selection accuracy.
+> - Therefore, this table should be read together with the **End-to-end Accuracy** table above.
+> - Even if retrieval places the gold tool in the top-k, the final LLM doesn't always select the correct answer.
+> - Conversely, in end-to-end evaluations that accept **alternative tools** or **equivalent workflows** as correct, the final accuracy and gold recall may not exactly match.
+
+| Dataset | Tools | Gold Tool Recall@3 | Gold Tool Recall@5 | Gold Tool Recall@10 |
+|---|---:|---:|---:|---:|
+| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
+| GitHub | 50 | 87.5% | **87.5%** | 92.5% |
+| Mixed MCP | 38 | 93.3% | **96.7%** | 100.0% |
+| Kubernetes core/v1 | 248 | 82.0% | **91.0%** | 92.0% |
+
+### How to read this table
+
+- **Gold Tool Recall@K** shows the retriever's ability to include the correct tool in the candidate set.
+- On small datasets, `k=5` alone achieves high recall.
+- On large datasets, increasing `k` raises recall, but also increases the tokens passed to the LLM.
+- In practice, you should consider not just recall but also **token cost** and **final end-to-end accuracy** together.
+
+### Key insights
+
+- **Petstore / Mixed MCP**: `k=5` alone includes nearly all correct tools in the candidate set.
+- **GitHub**: There is a recall gap between `k=5` and `k=10`, so `k=10` may be better if higher recall is needed.
+- **Kubernetes core/v1**: Even with a large number of tools, `k=5` already achieves **91.0%** gold recall.
+  The retrieval stage alone can significantly compress the candidate set while retaining most correct tools.
+- Overall, **`retrieve-k5` is the most practical default**.
+  `k=3` is lighter but may miss some correct tools, while `k=10` may increase token costs relative to recall gains.
+
+### When do embedding and ontology help?
+
+On the largest dataset, **Kubernetes core/v1 (248 tools)**, we compared adding extra signals on top of `retrieve-k5`.
+
+| Pipeline | End-to-end Accuracy | Gold Tool Recall@5 | Interpretation |
+|---|---:|---:|---|
+| retrieve-k5 | 78.0% | 91.0% | BM25 + graph alone is a strong baseline |
+| + embedding | 80.0% | 94.0% | Recovers queries that are semantically similar but differently worded |
+| + ontology | **82.0%** | 96.0% | LLM-generated keywords/example queries significantly improve retrieval quality |
+| + embedding + ontology | **82.0%** | **98.0%** | Accuracy maintained, gold recall at its highest |
+
+### Summary
+
+- **Embedding** compensates for **semantic similarity** that BM25 misses.
+- **Ontology** **expands the searchable representation itself** when tool descriptions are short or non-standard.
+- Using both together may show limited additional gains in end-to-end accuracy, but **the ability to include correct tools in the candidate set becomes strongest**.
+
+### Reproduce it
+
+```bash
+# Retrieval quality (fast, no LLM needed)
+python -m benchmarks.run_benchmark
+python -m benchmarks.run_benchmark -d k8s -v
+
+# Pipeline benchmark (LLM comparison)
+python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
+python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
+
+# Save baseline and compare
+python -m benchmarks.run_benchmark --mode pipeline --save-baseline
+python -m benchmarks.run_benchmark --mode pipeline --diff
+```
+
+---
+
+## Basic Usage
+
+### From OpenAPI / Swagger
 
 ```python
 from graph_tool_call import ToolGraph
 
-# From file (JSON or YAML)
+# From file (JSON / YAML)
 tg = ToolGraph()
 tg.ingest_openapi("path/to/openapi.json")
 
@@ -225,8 +349,8 @@ tg = ToolGraph.from_url("https://api.example.com/swagger-ui/index.html")
 # With caching — build once, reload instantly
 tg = ToolGraph.from_url(
     "https://api.example.com/swagger-ui/index.html",
-    cache="my_api.json",  # first call: fetch + build + save
-)                          # next calls: load from file (no network)
+    cache="my_api.json",
+)
 
 # Supports: Swagger 2.0, OpenAPI 3.0, OpenAPI 3.1
 ```
@@ -254,11 +378,11 @@ mcp_tools = [
 tg = ToolGraph()
 tg.ingest_mcp_tools(mcp_tools, server_name="filesystem")
 
-# Annotation-aware: "delete files" → destructive tools ranked higher
 tools = tg.retrieve("delete temporary files", top_k=5)
 ```
 
-MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are used as retrieval signals. Query intent is automatically classified and aligned with tool annotations.
+MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are used as retrieval signals.
+Query intent is automatically classified — read queries prioritize read-only tools, delete queries prioritize destructive tools.
 
 ### From Python Functions
 
@@ -273,8 +397,9 @@ def write_file(path: str, content: str) -> None:
 
 tg = ToolGraph()
 tg.ingest_functions([read_file, write_file])
-# Parameters extracted from type hints, description from docstring
 ```
+
+Parameters are extracted from type hints, descriptions from docstrings.
 
 ### Manual Tool Registration
 
@@ -283,7 +408,6 @@ from graph_tool_call import ToolGraph
 
 tg = ToolGraph()
 
-# OpenAI function-calling format — auto-detected
 tg.add_tools([
     {
         "type": "function",
@@ -298,20 +422,22 @@ tg.add_tools([
     },
 ])
 
-# Define relationships manually
 tg.add_relation("get_weather", "get_forecast", "complementary")
 ```
 
-## Embedding (Hybrid Search)
+---
 
-Add embedding-based semantic search on top of BM25 + graph. Any OpenAI-compatible endpoint works.
+## Embedding-based Hybrid Search
+
+Add embedding-based semantic search on top of BM25 + graph.
+Any OpenAI-compatible endpoint works.
 
 ```bash
 pip install graph-tool-call[embedding]
 ```
 
 ```python
-# Sentence-transformers (local, no API key needed)
+# Sentence-transformers (local)
 tg.enable_embedding("sentence-transformers/all-MiniLM-L6-v2")
 
 # OpenAI
@@ -324,7 +450,7 @@ tg.enable_embedding("ollama/nomic-embed-text")
 tg.enable_embedding("vllm/Qwen/Qwen3-Embedding-0.6B")
 tg.enable_embedding("vllm/model@http://gpu-box:8000/v1")
 tg.enable_embedding("llamacpp/model@http://192.168.1.10:8080/v1")
-tg.enable_embedding("http://localhost:8000/v1@my-model")  # URL@model format
+tg.enable_embedding("http://localhost:8000/v1@my-model")
 
 # Custom callable
 tg.enable_embedding(lambda texts: my_embed_fn(texts))
@@ -336,7 +462,9 @@ Weights are automatically rebalanced when embedding is enabled. You can fine-tun
 tg.set_weights(keyword=0.1, graph=0.4, embedding=0.5)
 ```
 
-## Save & Load
+---
+
+## Save and Load
 
 Build once, reuse everywhere. The full graph structure (nodes, edges, relation types, weights) is preserved.
 
@@ -351,49 +479,53 @@ tg = ToolGraph.load("my_graph.json")
 tg = ToolGraph.from_url(url, cache="my_graph.json")
 ```
 
+---
+
 ## Advanced Features
 
 ### Cross-Encoder Reranking
 
-Second-stage reranking using a cross-encoder model. Jointly encodes `(query, tool_description)` pairs for more accurate scoring than independent embedding comparison.
+Second-stage reranking using a cross-encoder model.
 
 ```python
 tg.enable_reranker()  # default: cross-encoder/ms-marco-MiniLM-L-6-v2
 tools = tg.retrieve("cancel order", top_k=5)
-# Results are first ranked by wRRF, then re-scored by cross-encoder
 ```
+
+After narrowing candidates with wRRF, `(query, tool_description)` pairs are jointly encoded for more precise ranking.
 
 ### MMR Diversity
 
-Maximal Marginal Relevance reranking reduces redundant results.
+Reduces redundant results to secure more diverse candidates.
 
 ```python
-tg.enable_diversity(lambda_=0.7)  # 0.7 = mostly relevant, some diversity
+tg.enable_diversity(lambda_=0.7)
 ```
 
 ### History-Aware Retrieval
 
-Pass previously called tool names to improve context. Already-used tools are demoted, and their graph neighbors become seeds for expansion.
+Pass previously called tool names to improve next-step retrieval.
 
 ```python
 # First call
 tools = tg.retrieve("find my order")
 # → [listOrders, getOrder, ...]
 
-# Second call — history-aware
+# Second call
 tools = tg.retrieve("now cancel it", history=["listOrders", "getOrder"])
 # → [cancelOrder, processRefund, ...]
-#    listOrders/getOrder demoted, cancelOrder boosted via graph proximity
 ```
+
+Already-used tools are demoted, and tools closer to the next step in the graph are boosted.
 
 ### wRRF Weight Tuning
 
-Fine-tune the weighted Reciprocal Rank Fusion weights for each scoring source:
+Adjust the contribution of each signal.
 
 ```python
 tg.set_weights(
     keyword=0.2,     # BM25 text matching
-    graph=0.5,       # graph traversal (relation-based)
+    graph=0.5,       # graph traversal
     embedding=0.3,   # semantic similarity
     annotation=0.2,  # MCP annotation matching
 )
@@ -401,14 +533,14 @@ tg.set_weights(
 
 ### LLM-Enhanced Ontology
 
-Build richer tool ontologies using any LLM. The LLM infers categories, relations, and generates search keywords (especially useful for non-English tool descriptions).
+Build richer tool ontologies using any LLM.
+Useful for category generation, relation inference, and search keyword expansion.
 
 ```python
-# Any of these work — auto-detected by wrap_llm()
-tg.auto_organize(llm="ollama/qwen2.5:7b")           # string shorthand
-tg.auto_organize(llm=lambda p: my_llm(p))            # callable
-tg.auto_organize(llm=openai.OpenAI())                # OpenAI client
-tg.auto_organize(llm="litellm/claude-sonnet-4-20250514")    # via litellm
+tg.auto_organize(llm="ollama/qwen2.5:7b")
+tg.auto_organize(llm=lambda p: my_llm(p))
+tg.auto_organize(llm=openai.OpenAI())
+tg.auto_organize(llm="litellm/claude-sonnet-4-20250514")
 ```
 
 <details>
@@ -427,7 +559,7 @@ tg.auto_organize(llm="litellm/claude-sonnet-4-20250514")    # via litellm
 
 ### Duplicate Detection
 
-Find and merge duplicate tools across multiple API specs:
+Find and merge duplicate tools across multiple API specs.
 
 ```python
 duplicates = tg.find_duplicates(threshold=0.85)
@@ -435,13 +567,13 @@ merged = tg.merge_duplicates(duplicates)
 # merged = {"getUser_1": "getUser", ...}
 ```
 
-### Export & Visualization
+### Export and Visualization
 
 ```python
 # Interactive HTML (vis.js)
 tg.export_html("graph.html", progressive=True)
 
-# GraphML (for Gephi, yEd)
+# GraphML (Gephi, yEd)
 tg.export_graphml("graph.graphml")
 
 # Neo4j Cypher
@@ -450,37 +582,41 @@ tg.export_cypher("graph.cypher")
 
 ### API Spec Lint Integration
 
-Auto-fix poor OpenAPI specs before ingestion using [ai-api-lint](https://github.com/SonAIengine/ai-api-lint):
+Auto-fix poor OpenAPI specs before ingestion using [ai-api-lint](https://github.com/SonAIengine/ai-api-lint).
 
 ```bash
 pip install graph-tool-call[lint]
 ```
 
 ```python
-tg = ToolGraph.from_url(url, lint=True)  # auto-fix during ingest
+tg = ToolGraph.from_url(url, lint=True)
 ```
+
+---
 
 ## Why Not Just Vector Search?
 
 | Scenario | Vector-only | graph-tool-call |
 |----------|------------|-----------------|
-| *"cancel my order"* | Returns `cancelOrder` | Returns `listOrders → getOrder → cancelOrder → processRefund` (full workflow) |
-| *"read and save file"* | Returns `read_file` | Returns `read_file` + `write_file` (via COMPLEMENTARY) |
-| *"delete old records"* | Returns any tool matching "delete" | Destructive tools ranked first (annotation-aware) |
-| *"now cancel it"* (with history) | No context, same results | Demotes used tools, boosts next-step tools |
-| Multiple Swagger specs with overlapping tools | Duplicate tools in results | Auto-deduplication across sources |
-| 1,200 API endpoints | Slow, noisy results | Organized into categories, precise graph traversal |
+| *"cancel my order"* | Returns `cancelOrder` | `listOrders → getOrder → cancelOrder → processRefund` |
+| *"read and save file"* | Returns `read_file` | `read_file` + `write_file` (COMPLEMENTARY relation) |
+| *"delete old records"* | Returns any tool matching "delete" | Destructive tools ranked first |
+| *"now cancel it"* (history) | No context | Demotes used tools, boosts next-step tools |
+| Multiple Swagger specs with overlapping tools | Duplicate tools in results | Cross-source auto-deduplication |
+| 1,200 API endpoints | Slow, noisy results | Categorized + graph traversal for precise retrieval |
+
+---
 
 ## Full API Reference
 
 <details>
-<summary>ToolGraph methods</summary>
+<summary><code>ToolGraph</code> methods</summary>
 
 | Method | Description |
 |--------|-------------|
 | `add_tool(tool)` | Add a single tool (auto-detects format) |
 | `add_tools(tools)` | Add multiple tools |
-| `ingest_openapi(source)` | Ingest from OpenAPI/Swagger spec |
+| `ingest_openapi(source)` | Ingest from OpenAPI / Swagger spec |
 | `ingest_mcp_tools(tools)` | Ingest from MCP tool list |
 | `ingest_functions(fns)` | Ingest from Python callables |
 | `ingest_arazzo(source)` | Ingest Arazzo 1.0.0 workflow spec |
@@ -496,27 +632,31 @@ tg = ToolGraph.from_url(url, lint=True)  # auto-fix during ingest
 | `find_duplicates(threshold)` | Find duplicate tools |
 | `merge_duplicates(pairs)` | Merge detected duplicates |
 | `apply_conflicts()` | Detect and add CONFLICTS_WITH edges |
-| `save(path)` / `load(path)` | Serialize / deserialize graph |
+| `save(path)` / `load(path)` | Serialize / deserialize |
 | `export_html(path)` | Export interactive HTML visualization |
 | `export_graphml(path)` | Export to GraphML format |
 | `export_cypher(path)` | Export as Neo4j Cypher statements |
 
 </details>
 
+---
+
 ## Feature Comparison
 
 | Feature | Vector-only solutions | graph-tool-call |
 |---------|----------------------|-----------------|
-| Tool source | Manual registration | Auto-ingest from Swagger/OpenAPI/MCP |
+| Tool source | Manual registration | Auto-ingest from Swagger / OpenAPI / MCP |
 | Search method | Flat vector similarity | Multi-stage hybrid (wRRF + rerank + MMR) |
 | Behavioral semantics | None | MCP annotation-aware retrieval |
 | Tool relations | None | 6 relation types, auto-detected |
 | Call ordering | None | State machine + CRUD + response→request data flow |
 | Deduplication | None | Cross-source duplicate detection |
-| Ontology | None | Auto / LLM-Auto modes (any LLM) |
+| Ontology | None | Auto / LLM-Auto modes |
 | History awareness | None | Demotes used tools, boosts next-step |
 | Spec quality | Assumes good specs | ai-api-lint auto-fix integration |
 | LLM dependency | Required | Optional (better with, works without) |
+
+---
 
 ## Documentation
 
@@ -528,9 +668,11 @@ tg = ToolGraph.from_url(url, lint=True)  # auto-fix during ingest
 | [Research](docs/research/) | Competitive analysis, API scale data, commerce patterns |
 | [OpenAPI Guide](docs/design/openapi-guide.md) | How to write API specs that produce better tool graphs |
 
+---
+
 ## Contributing
 
-Contributions are welcome!
+Contributions are welcome.
 
 ```bash
 # Development setup
@@ -549,6 +691,8 @@ poetry run ruff format --check .
 # Run benchmarks
 python -m benchmarks.run_benchmark -v
 ```
+
+---
 
 ## License
 
