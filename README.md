@@ -373,19 +373,17 @@ We tested whether graph-tool-call actually helps LLMs pick the right tool. The s
 
 ### The key finding: too many tools overwhelm the LLM
 
-> Accuracy = how often the LLM picked the correct tool across 50 test queries.
+> **Accuracy** = how often the LLM picked the correct tool across test queries. We compare passing all tools as-is (✗) vs. filtering to Top-K with graph-tool-call (✓).
 
-| API | Tools | graph-tool-call ✗ | graph-tool-call ✓ | Token savings |
-|-----|:-----:|:-----------------:|:-----------------:|:-------------:|
-| Petstore | 19 | 100% | 95% | 64% |
-| GitHub | 50 | 100% | 87.5% | 88% |
-| MCP Servers | 38 | 96.7% | 90% | 83% |
-| **Kubernetes** | **248** | **12%** | **82%** | **80%** |
+| API | Tools | ✗ All tools | ✓ Top-5 | ✓ Top-10 | Token savings |
+|-----|:-----:|:-----------:|:-------:|:--------:|:-------------:|
+| Petstore | 19 | 100% | 95% | 100% | 42–64% |
+| GitHub | 50 | 100% | 87.5% | 90% | 80–88% |
+| MCP Servers | 38 | 96.7% | 90% | 96.7% | 70–83% |
+| **Kubernetes** | **248** | **12%** | **78%** | — | **80%** |
 
-- **graph-tool-call ✗** = pass all tools to the LLM as-is
-- **graph-tool-call ✓** = retrieve only the relevant tools first
-- **Under 50 tools**: The LLM picks fine with all tools. graph-tool-call's value = **64–88% token savings**.
-- **248 tools**: Without filtering, the LLM **collapses to 12%**. With filtering, **82%** — not an optimization, it's **a requirement**.
+- **Under 50 tools**: The LLM picks fine with all tools. graph-tool-call's value = **token savings** (faster, cheaper).
+- **248 tools**: Without filtering, Accuracy **collapses to 12%**. Top-5 filtering alone reaches **78%** — not an optimization, it's **a requirement**.
 
 <details>
 <summary>Kubernetes detail: embedding & ontology effects</summary>
@@ -394,11 +392,10 @@ We tested whether graph-tool-call actually helps LLMs pick the right tool. The s
 
 | Pipeline | Accuracy | Recall@5 |
 |----------|:--------:|:--------:|
-| without graph-tool-call (all 248) | 12% | — |
-| with graph-tool-call (top 5) | 78% | 91% |
-| + embedding | 80% | 94% |
-| + ontology | 82% | 96% |
-| + both | **82%** | **98%** |
+| Top-5 (BM25 + graph) | 78% | 91% |
+| Top-5 + embedding | 80% | 94% |
+| Top-5 + ontology | 82% | 96% |
+| Top-5 + both | **82%** | **98%** |
 
 </details>
 
