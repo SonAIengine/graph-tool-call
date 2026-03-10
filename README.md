@@ -382,22 +382,28 @@ We measured two things:
 
 ### The key finding: too many tools overwhelm the LLM
 
-| API | Tools | Method | Accuracy | Recall@5 |
-|-----|:-----:|--------|:--------:|:--------:|
-| Petstore | 19 | without graph-tool-call (all 19) | 100% | — |
-| GitHub | 50 | without graph-tool-call (all 50) | 100% | — |
-| MCP Servers | 38 | without graph-tool-call (all 38) | 96.7% | — |
-| **Kubernetes** | **248** | **without graph-tool-call (all 248)** | **12%** | — |
-| | | **with graph-tool-call (top 5)** | **78%** | **91%** |
-| | | + embedding | **80%** | **94%** |
-| | | + ontology | **82%** | **96%** |
-| | | + both | **82%** | **98%** |
+| API | Tools | graph-tool-call ✗ | graph-tool-call ✓ | Token savings |
+|-----|:-----:|:-----------------:|:-----------------:|:-------------:|
+| Petstore | 19 | 100% | 95% | 64% |
+| GitHub | 50 | 100% | 87.5% | 88% |
+| MCP Servers | 38 | 96.7% | 90% | 83% |
+| **Kubernetes** | **248** | **12%** | **82%** | **80%** |
 
-**What happened with Kubernetes?**
-- **Baseline (all 248 tools)**: The LLM sees all 248 tools at once. It gets confused and picks wrong 88% of the time → **12% accuracy**. (Recall is technically 100% because the answer is always *in* the list — but the LLM can't find it.)
-- **With graph-tool-call**: We filter down to 5 relevant tools. Now the LLM picks correctly **78–82%** of the time. Not just an optimization — it's **the difference between usable and unusable**.
+- **Under 50 tools**: The LLM picks fine with all tools. graph-tool-call's value = **64–88% token savings**.
+- **248 tools**: Without filtering, the LLM **collapses to 12%**. With graph-tool-call, it reaches **82%** — not an optimization, it's **a requirement**.
 
-**Under 50 tools**: The LLM handles them fine. graph-tool-call still saves **64–88% of tokens** (faster, cheaper).
+<details>
+<summary>Kubernetes detail: per-pipeline Accuracy & Recall@5</summary>
+
+| Pipeline | Accuracy | Recall@5 |
+|----------|:--------:|:--------:|
+| without graph-tool-call (all 248) | 12% | — |
+| with graph-tool-call (top 5) | 78% | 91% |
+| + embedding | 80% | 94% |
+| + ontology | 82% | 96% |
+| + both | **82%** | **98%** |
+
+</details>
 
 > Model: qwen3:4b (4-bit quantized, Ollama). 50 test queries per dataset. All specs are public — [reproduce it yourself](#reproduce-it).
 
