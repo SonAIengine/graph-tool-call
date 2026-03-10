@@ -4,7 +4,8 @@
 
 **LLM Agent를 위한 그래프 기반 Tool 검색 엔진**
 
-수집, 분석, 조직화, 검색.
+OpenAPI, MCP, Python 함수에서 tool을 수집하고,  
+tool 간 관계를 그래프로 조직화한 뒤, **필요한 tool만 정확하게 검색해 LLM에 전달**합니다.
 
 [![PyPI](https://img.shields.io/pypi/v/graph-tool-call.svg)](https://pypi.org/project/graph-tool-call/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -17,30 +18,50 @@
 
 ---
 
-## 문제
+## graph-tool-call이란?
 
-LLM Agent가 사용할 수 있는 tool이 점점 많아지고 있습니다. 커머스 플랫폼은 **1,200개 이상의 API endpoint**를, 회사 내부 시스템은 여러 서비스에 걸쳐 **500개 이상의 함수**를 가질 수 있습니다.
+LLM Agent가 사용할 수 있는 tool은 빠르게 늘어나고 있습니다.  
+커머스 플랫폼은 **1,200개 이상의 API endpoint**를, 회사 내부 시스템은 여러 서비스에 걸쳐 **500개 이상의 함수**를 가질 수 있습니다.
 
-하지만 한계가 있습니다: **모든 tool을 context window에 넣을 수 없습니다.**
+문제는 단순합니다.
 
-일반적인 해결책은 벡터 검색 — tool 설명을 임베딩하고, 가장 가까운 것을 찾습니다. 동작은 하지만, 중요한 것을 놓칩니다:
+> **모든 tool 정의를 매번 context window에 넣을 수 없습니다.**
 
-> **Tool은 독립적으로 존재하지 않습니다. 서로 관계가 있습니다.**
+일반적인 해결책은 벡터 검색입니다.  
+tool 설명을 임베딩하고, 사용자 요청과 가장 가까운 tool을 찾는 방식입니다.
 
-사용자가 *"주문을 취소하고 환불 처리해줘"*라고 말하면, 벡터 검색은 `cancelOrder`를 찾을 수 있습니다. 하지만 주문 ID를 얻기 위해 먼저 `listOrders`를 호출해야 하고, 이후에 `processRefund`가 와야 한다는 것은 모릅니다. 이것들은 단순히 비슷한 tool이 아닙니다 — **워크플로우**입니다.
+하지만 실제 tool 사용은 문서 검색과 다릅니다.
 
-## 해결책
+- 어떤 tool은 **다음 단계 tool**과 이어집니다.
+- 어떤 tool은 **함께 호출되어야** 합니다.
+- 어떤 tool은 **read-only**이고, 어떤 tool은 **destructive**입니다.
+- 어떤 tool은 **이전에 호출한 tool의 결과를 전제로** 합니다.
 
-**graph-tool-call**은 tool 간 관계를 그래프로 모델링하고, 다중 신호 하이브리드 파이프라인으로 검색합니다:
+즉, **tool은 독립적인 텍스트 조각이 아니라 워크플로우를 이루는 실행 단위**입니다.
 
-```
-OpenAPI/MCP/코드 → [수집] → [분석] → [조직화] → [검색] → Agent
-                    (변환)  (관계발견) (그래프)   (wRRF 하이브리드)
-```
+**graph-tool-call**은 이 점에 집중합니다.  
+tool을 단순한 목록이 아니라 **관계가 있는 그래프**로 다루고, 다중 신호 하이브리드 검색으로 LLM에 필요한 tool만 전달합니다.
 
-**4-source wRRF 융합**: BM25 키워드 매칭 + 그래프 탐색 + 임베딩 유사도 + MCP annotation 스코어링 — weighted Reciprocal Rank Fusion으로 결합.
+---
 
-```
+## 왜 필요한가?
+
+예를 들어 사용자가 이렇게 말한다고 가정해보겠습니다.
+
+> 주문을 취소하고 환불 처리해줘
+
+벡터 검색은 `cancelOrder`를 찾을 수 있습니다.  
+하지만 실제 실행에는 보통 다음 흐름이 필요합니다.
+
+```text
+listOrders → getOrder → cancelOrder → processRefund
+````
+
+즉, 중요한 것은 “비슷한 tool 하나”가 아니라 **지금 필요한 tool과 다음에 이어질 tool까지 포함한 실행 흐름**입니다.
+
+graph-tool-call은 이런 관계를 그래프로 모델링합니다.
+
+```text
                     ┌──────────┐
           PRECEDES  │listOrders│  PRECEDES
          ┌─────────┤          ├──────────┐
@@ -55,113 +76,53 @@ OpenAPI/MCP/코드 → [수집] → [분석] → [조직화] → [검색] → Ag
                                  └──────────────┘
 ```
 
-## 벤치마크
+---
 
-> **진짜 테스트**: LLM과 tool 사이에 graph-tool-call을 두고 비교.
-> 동일한 사용자 요청을 4가지 구성으로 실행:
-> - **baseline**: **전체** tool 정의를 LLM에 전달 (검색 없음)
-> - **retrieve-k3/k5/k10**: 검색된 **상위 K개**만 전달
->
-> 모델: qwen3:4b (4-bit 양자화, Ollama). 모든 스펙은 공개되어 있으며 재현 가능합니다.
+## 핵심 아이디어
 
-### graph-tool-call이 LLM을 도와주는가?
+graph-tool-call은 다음 파이프라인으로 동작합니다.
 
-| API | Tool 수 | baseline | retrieve-k5 | + 임베딩 | + 온톨로지 | 토큰 절감 |
-|-----|:------:|:--------:|:-----------:|:--------:|:----------:|:---------:|
-| Petstore | 19 | 100% | 95.0% | — | — | **64%** |
-| GitHub | 50 | 100% | 87.5% | — | — | **88%** |
-| MCP Servers | 38 | 96.7% | 90.0% | — | — | **83%** |
-| **Kubernetes** | **248** | **12%** | **78%** | **80%** | **82%** | **80%** |
-
-**핵심 두 줄 요약:**
-- **50개 미만**: LLM이 잘 처리함. graph-tool-call의 가치 = **64–88% 토큰 절감** (더 빠르고, 더 저렴).
-- **248개**: LLM이 **12%로 붕괴**. graph-tool-call이 **78–82% 정확도** 달성 — 최적화가 아니라 **필수**.
-
-<details>
-<summary>전체 파이프라인 비교 (4개 구성)</summary>
-
-**Petstore** (19 tools, 20 쿼리)
-
-| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
-|----------|:------:|:--------:|:--------:|:--------:|
-| baseline | 100.0% | 100.0% | 1,239 | — |
-| retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
-| retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
-| retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
-
-**GitHub** (50 tools, 40 쿼리)
-
-| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
-|----------|:------:|:--------:|:--------:|:--------:|
-| baseline | 100.0% | 100.0% | 3,302 | — |
-| retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
-| retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
-| retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
-
-**Mixed MCP** (38 tools, 30 쿼리)
-
-| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
-|----------|:------:|:--------:|:--------:|:--------:|
-| baseline | 96.7% | 100.0% | 2,741 | — |
-| retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
-| retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
-| retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
-
-**Kubernetes core/v1** (248 tools, 50 쿼리)
-
-| Pipeline | 정확도 | Recall@K | 평균 토큰 | 토큰 절감 |
-|----------|:------:|:--------:|:--------:|:--------:|
-| baseline | 12.0% | 100.0% | 8,192 | — |
-| retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
-| + 임베딩 | 80.0% | 94.0% | 1,728 | 78.9% |
-| + 온톨로지 | **82.0%** | 96.0% | 1,699 | 79.3% |
-| + 둘 다 | **82.0%** | **98.0%** | 1,924 | 76.5% |
-
-</details>
-
-### 검색은 얼마나 정확한가?
-
-LLM이 보기 전에, graph-tool-call이 먼저 올바른 tool을 **찾아야** 합니다. **Recall@K**로 측정: *"정답 tool이 상위 K개에 포함되는가?"*
-
-| API | Tool 수 | Recall@3 | Recall@5 | Recall@10 |
-|-----|:------:|:--------:|:--------:|:---------:|
-| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
-| GitHub | 50 | 87.5% | **87.5%** | 92.5% |
-| MCP | 38 | 93.3% | **96.7%** | 100.0% |
-| Kubernetes | 248 | 82.0% | **91.0%** | 92.0% |
-
-BM25 + 그래프 탐색만의 결과입니다 — 임베딩 모델 없이.
-
-### 임베딩 + 온톨로지는 언제 도움이 되는가?
-
-BM25 + 그래프 위에 OpenAI 임베딩(`text-embedding-3-small`)과 LLM 온톨로지(`gpt-4o-mini`)를 추가한 결과 — 가장 어려운 데이터셋(K8s, 248 tools)에서 테스트:
-
-| Pipeline | 정확도 | Recall@K | 기능 |
-|----------|:------:|:--------:|------|
-| retrieve-k5 | 78.0% | 91.0% | BM25 + 그래프만 |
-| + 임베딩 | 80.0% | 94.0% | + OpenAI 임베딩 |
-| + 온톨로지 | **82.0%** | 96.0% | + GPT-4o-mini 지식그래프 |
-| **+ 둘 다** | **82.0%** | **98.0%** | **임베딩 + 온톨로지** |
-
-- **임베딩**: Recall@5 **91% → 94%** (+3pp), 정확도 **78% → 80%** — BM25가 놓치는 의미적 유사성을 포착.
-- **온톨로지**: Recall@5 **91% → 96%** (+5pp), 정확도 **78% → 82%** — LLM 키워드 + example queries로 BM25/임베딩 모두 향상.
-- **둘 다 결합**: Recall@5 **98%**, 정확도 **82%** — 온톨로지 키워드 + 임베딩 의미론이 상호 보완.
-
-### 직접 재현하기
-
-```bash
-# 검색 품질 측정 (빠름, LLM 불필요)
-python -m benchmarks.run_benchmark
-python -m benchmarks.run_benchmark -d k8s -v
-
-# 파이프라인 벤치마크 (LLM 비교)
-python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
-python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
-
-# 베이스라인 저장 및 비교
-python -m benchmarks.run_benchmark --mode pipeline --save-baseline
-python -m benchmarks.run_benchmark --mode pipeline --diff
+```text
+OpenAPI / MCP / 코드 → 수집 → 분석 → 조직화 → 검색 → Agent
 ```
+
+검색 단계에서는 여러 신호를 함께 사용합니다.
+
+* **BM25**: 키워드 매칭
+* **Graph traversal**: 관계 기반 확장
+* **Embedding similarity**: 시맨틱 유사도
+* **MCP annotations**: read-only / destructive / idempotent / open-world 힌트
+
+이 신호들은 **weighted Reciprocal Rank Fusion (wRRF)** 으로 결합됩니다.
+
+---
+
+## 주요 기능
+
+* **OpenAPI / Swagger / MCP / Python 함수**에서 tool 자동 수집
+* **tool 관계 그래프** 생성 및 활용
+* **BM25 + 그래프 + 임베딩 + annotation** 기반 하이브리드 검색
+* **History-aware retrieval**
+* **Cross-encoder reranking**
+* **MMR diversity**
+* **LLM 기반 ontology 강화**
+* **중복 tool 탐지 및 병합**
+* **HTML / GraphML / Cypher** 내보내기
+* **ai-api-lint 연동**으로 spec 자동 정리
+
+---
+
+## 언제 쓰면 좋은가?
+
+graph-tool-call은 특히 다음 상황에서 효과적입니다.
+
+* tool 수가 많아 **전체를 context에 넣기 어려울 때**
+* 단순 유사도보다 **호출 순서 / 관계 정보**가 중요할 때
+* **MCP annotation**을 반영한 retrieval이 필요할 때
+* 여러 API spec 또는 여러 서비스의 tool을 **하나의 검색 계층으로 통합**할 때
+* Agent가 이전 호출 이력을 바탕으로 **다음 tool을 더 잘 찾게 하고 싶을 때**
+
+---
 
 ## 설치
 
@@ -184,6 +145,8 @@ pip install graph-tool-call[langchain]         # + LangChain tool 어댑터
 
 </details>
 
+---
+
 ## 빠른 시작
 
 ### 30초 예제
@@ -194,28 +157,138 @@ from graph_tool_call import ToolGraph
 # 공식 Petstore API에서 tool graph 생성
 tg = ToolGraph.from_url(
     "https://petstore3.swagger.io/api/v3/openapi.json",
-    cache="petstore.json",  # 로컬 저장 → 다음 로드 시 즉시 사용
+    cache="petstore.json",
 )
 
 print(tg)
 # → ToolGraph(tools=19, nodes=22, edges=100)
 
-# tool 검색 — 이 스펙 기준 Recall@5 98.3%
+# tool 검색
 tools = tg.retrieve("새 펫을 등록", top_k=5)
 for t in tools:
-    print(f"  {t.name}: {t.description}")
-# → addPet: Add a new pet to the store.
-#   updatePet: Update an existing pet.
-#   getPetById: Find pet by ID.
-#   ...그래프 확장이 전체 CRUD 워크플로우를 가져옴
+    print(f"{t.name}: {t.description}")
 ```
 
-### Swagger / OpenAPI에서 생성
+예상 결과:
+
+```text
+addPet: Add a new pet to the store.
+updatePet: Update an existing pet.
+getPetById: Find pet by ID.
+...
+```
+
+이 스펙에서는 `top_k=5` 기준으로 **Recall@5 98.3%** 를 기록했습니다.
+
+---
+
+## 벤치마크
+
+graph-tool-call은 두 가지를 검증합니다.
+
+1. 검색된 일부 tool만 LLM에 줘도 성능을 유지하거나 개선하는가?
+2. 검색기 자체가 정답 tool을 상위 K개 안에 잘 올리는가?
+
+평가는 동일한 사용자 요청 세트에 대해 다음 구성을 비교했습니다.
+
+* **baseline**: 전체 tool 정의를 LLM에 그대로 전달
+* **retrieve-k3 / k5 / k10**: 검색된 상위 K개 tool만 전달
+* **+ embedding / + ontology**: retrieve-k5 위에 시맨틱 검색과 LLM 기반 온톨로지 강화 추가
+
+모델은 **qwen3:4b (4-bit, Ollama)** 를 사용했습니다.
+
+### 평가 지표
+
+* **Accuracy**: LLM이 최종적으로 올바른 tool을 선택했는가
+* **Recall@K**: 검색 단계에서 정답 tool이 상위 K개 안에 포함되었는가
+* **Avg tokens**: LLM에 전달된 평균 토큰 수
+* **Token reduction**: baseline 대비 토큰 절감률
+
+### 한눈에 보는 결과
+
+* **작은 규모 API (19~50 tools)** 에서는 baseline도 이미 강합니다.
+  이 구간에서 graph-tool-call의 주된 가치는 **정확도 유지에 가까운 상태에서 64~91% 토큰 절감**입니다.
+* **큰 규모 API (248 tools)** 에서는 baseline이 **12%까지 붕괴**합니다.
+  반면 graph-tool-call은 **78~82% 정확도**를 유지합니다. 이때는 최적화가 아니라 **필수 검색 계층**에 가깝습니다.
+
+### 검색기 자체 성능: 정답 tool을 상위 K개 안에 찾는가?
+
+아래 표는 **LLM 이전 단계**, 즉 retrieval 자체의 품질만 따로 측정한 결과입니다.  
+여기서는 **BM25 + 그래프 탐색만 사용**했으며, 임베딩과 ontology는 포함하지 않았습니다.
+
+> **지표 해석**
+>
+> - **Gold Tool Recall@K**: retrieval 단계에서 **정답으로 지정한 canonical gold tool**이 상위 K개 안에 포함되었는가
+> - 이 표는 **최종 LLM 선택 정확도**가 아니라, **검색기가 후보군을 얼마나 잘 구성하는지**를 보여줍니다.
+> - 따라서 이 표는 위의 **End-to-end Accuracy** 표와 함께 읽어야 합니다.
+> - retrieval이 gold tool을 top-k에 넣더라도, 최종 LLM이 항상 정답을 고르는 것은 아닙니다.
+> - 반대로 end-to-end 평가에서 **대체 가능한 tool**이나 **동등한 workflow**를 정답으로 인정하는 경우, 최종 정확도와 gold recall은 정확히 일치하지 않을 수 있습니다.
+
+| Dataset | Tool 수 | Gold Tool Recall@3 | Gold Tool Recall@5 | Gold Tool Recall@10 |
+|---|---:|---:|---:|---:|
+| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
+| GitHub | 50 | 87.5% | **87.5%** | 92.5% |
+| Mixed MCP | 38 | 93.3% | **96.7%** | 100.0% |
+| Kubernetes core/v1 | 248 | 82.0% | **91.0%** | 92.0% |
+
+### 이 표를 어떻게 읽으면 되는가
+
+- **Gold Tool Recall@K**는 retrieval이 정답 tool을 후보군 안에 포함시키는 능력을 보여줍니다.
+- 작은 데이터셋에서는 `k=5`만으로도 높은 recall을 확보할 수 있습니다.
+- 큰 데이터셋에서는 `k`를 늘릴수록 recall이 올라가지만, 그만큼 LLM에 전달되는 토큰도 증가합니다.
+- 따라서 실제 운영에서는 recall만이 아니라 **토큰 비용**과 **최종 end-to-end accuracy**를 함께 봐야 합니다.
+
+### 핵심 해석
+
+- **Petstore / Mixed MCP**에서는 `k=5`만으로도 거의 모든 정답 tool을 후보군에 포함시킵니다.
+- **GitHub**에서는 `k=5`와 `k=10` 사이에 recall 차이가 있어, 더 높은 recall이 필요하면 `k=10`이 유리할 수 있습니다.
+- **Kubernetes core/v1**처럼 tool 수가 큰 경우에는 `k=5`에서도 이미 **91.0%**의 gold recall을 확보합니다.  
+  즉, 검색 단계만으로도 후보군을 크게 압축하면서 상당수 정답 tool을 유지할 수 있습니다.
+- 전반적으로 **`retrieve-k5`가 가장 실용적인 기본값**입니다.  
+  `k=3`은 더 가볍지만 일부 정답을 놓치고, `k=10`은 recall 이득 대비 토큰 비용이 커질 수 있습니다.
+
+### 가장 어려운 경우: embedding과 ontology는 언제 도움이 되는가?
+
+가장 큰 데이터셋인 **Kubernetes core/v1 (248 tools)** 에서, `retrieve-k5` 위에 추가 신호를 붙여 비교했습니다.
+
+| Pipeline | End-to-end Accuracy | Gold Tool Recall@5 | 해석 |
+|---|---:|---:|---|
+| retrieve-k5 | 78.0% | 91.0% | BM25 + 그래프만으로도 strong baseline |
+| + embedding | 80.0% | 94.0% | 의미적으로 비슷하지만 표현이 다른 query를 더 잘 회수 |
+| + ontology | **82.0%** | 96.0% | LLM이 생성한 키워드/예시 질의가 검색 품질을 크게 개선 |
+| + embedding + ontology | **82.0%** | **98.0%** | 정확도는 유지, gold recall은 최고치 |
+
+### 정리
+
+- **embedding**은 BM25가 놓치는 **시맨틱 유사성**을 보완합니다.
+- **ontology**는 tool 설명이 짧거나 비표준적일 때 **검색 가능한 표현 자체를 확장**합니다.
+- 둘을 함께 쓰면 end-to-end accuracy 상승 폭은 제한적일 수 있지만, **정답 tool을 후보군에 포함시키는 능력은 가장 강해집니다**.
+### 직접 재현하기
+
+```bash
+# 검색 품질 측정 (빠름, LLM 불필요)
+python -m benchmarks.run_benchmark
+python -m benchmarks.run_benchmark -d k8s -v
+
+# 파이프라인 벤치마크 (LLM 비교)
+python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
+python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
+
+# 베이스라인 저장 및 비교
+python -m benchmarks.run_benchmark --mode pipeline --save-baseline
+python -m benchmarks.run_benchmark --mode pipeline --diff
+```
+
+---
+
+## 기본 사용법
+
+### OpenAPI / Swagger에서 생성
 
 ```python
 from graph_tool_call import ToolGraph
 
-# 파일에서 (JSON/YAML)
+# 파일에서 (JSON / YAML)
 tg = ToolGraph()
 tg.ingest_openapi("path/to/openapi.json")
 
@@ -225,13 +298,13 @@ tg = ToolGraph.from_url("https://api.example.com/swagger-ui/index.html")
 # 캐싱 — 한 번 빌드, 즉시 재사용
 tg = ToolGraph.from_url(
     "https://api.example.com/swagger-ui/index.html",
-    cache="my_api.json",  # 첫 호출: fetch + build + save
-)                          # 이후: 파일에서 로드 (네트워크 불필요)
+    cache="my_api.json",
+)
 
 # 지원: Swagger 2.0, OpenAPI 3.0, OpenAPI 3.1
 ```
 
-### MCP 서버 Tool에서 생성
+### MCP 서버 tool에서 생성
 
 ```python
 from graph_tool_call import ToolGraph
@@ -254,11 +327,11 @@ mcp_tools = [
 tg = ToolGraph()
 tg.ingest_mcp_tools(mcp_tools, server_name="filesystem")
 
-# Annotation-aware: "파일 삭제" → destructive 도구 상위 랭크
 tools = tg.retrieve("임시 파일 삭제", top_k=5)
 ```
 
-MCP annotation (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`)이 검색 신호로 활용됩니다. query intent가 자동 분류되어 tool annotation과 매칭 — 조회 쿼리는 read-only를, 삭제 쿼리는 destructive를 우선합니다.
+MCP annotation (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`)은 검색 신호로 활용됩니다.
+조회 쿼리는 read-only tool을, 삭제 쿼리는 destructive tool을 더 우선적으로 랭크할 수 있습니다.
 
 ### Python 함수에서 생성
 
@@ -273,17 +346,17 @@ def write_file(path: str, content: str) -> None:
 
 tg = ToolGraph()
 tg.ingest_functions([read_file, write_file])
-# type hint에서 파라미터, docstring에서 설명 자동 추출
 ```
 
-### 수동 Tool 등록
+type hint에서 파라미터를, docstring에서 설명을 자동 추출합니다.
+
+### 수동 tool 등록
 
 ```python
 from graph_tool_call import ToolGraph
 
 tg = ToolGraph()
 
-# OpenAI function-calling 포맷 — 자동 감지
 tg.add_tools([
     {
         "type": "function",
@@ -298,20 +371,22 @@ tg.add_tools([
     },
 ])
 
-# 관계 수동 정의
 tg.add_relation("get_weather", "get_forecast", "complementary")
 ```
 
-## 임베딩 (하이브리드 검색)
+---
 
-BM25 + 그래프 위에 임베딩 기반 시맨틱 검색 추가. OpenAI-호환 endpoint라면 어디든 사용 가능.
+## 임베딩 기반 하이브리드 검색
+
+BM25 + 그래프 위에 임베딩 기반 시맨틱 검색을 추가할 수 있습니다.
+OpenAI 호환 endpoint라면 대부분 연결 가능합니다.
 
 ```bash
 pip install graph-tool-call[embedding]
 ```
 
 ```python
-# Sentence-transformers (로컬, API 키 불필요)
+# Sentence-transformers (로컬)
 tg.enable_embedding("sentence-transformers/all-MiniLM-L6-v2")
 
 # OpenAI
@@ -324,21 +399,23 @@ tg.enable_embedding("ollama/nomic-embed-text")
 tg.enable_embedding("vllm/Qwen/Qwen3-Embedding-0.6B")
 tg.enable_embedding("vllm/model@http://gpu-box:8000/v1")
 tg.enable_embedding("llamacpp/model@http://192.168.1.10:8080/v1")
-tg.enable_embedding("http://localhost:8000/v1@my-model")  # URL@model 포맷
+tg.enable_embedding("http://localhost:8000/v1@my-model")
 
 # 커스텀 callable
 tg.enable_embedding(lambda texts: my_embed_fn(texts))
 ```
 
-임베딩 활성화 시 가중치가 자동 재조정됩니다. 직접 튜닝도 가능:
+임베딩 활성화 시 가중치가 자동 재조정됩니다. 직접 튜닝도 가능합니다.
 
 ```python
 tg.set_weights(keyword=0.1, graph=0.4, embedding=0.5)
 ```
 
-## 저장 & 로드
+---
 
-한 번 빌드하면 어디서든 재사용. 전체 그래프 구조(노드, 엣지, 관계 타입, 가중치)가 보존됩니다.
+## 저장과 로드
+
+한 번 빌드한 그래프는 그대로 저장하고 재사용할 수 있습니다.
 
 ```python
 # 저장
@@ -351,49 +428,55 @@ tg = ToolGraph.load("my_graph.json")
 tg = ToolGraph.from_url(url, cache="my_graph.json")
 ```
 
+전체 그래프 구조(노드, 엣지, 관계 타입, 가중치)가 보존됩니다.
+
+---
+
 ## 고급 기능
 
 ### Cross-Encoder 리랭킹
 
-Cross-encoder 모델로 2차 리랭킹. `(query, tool_description)` 쌍을 함께 인코딩하여 독립 임베딩 비교보다 정확한 스코어링.
+Cross-encoder 모델로 2차 리랭킹을 수행합니다.
 
 ```python
 tg.enable_reranker()  # 기본: cross-encoder/ms-marco-MiniLM-L-6-v2
 tools = tg.retrieve("주문 취소", top_k=5)
-# wRRF로 먼저 랭킹 → cross-encoder로 재스코어링
 ```
+
+wRRF로 먼저 후보를 좁힌 뒤, `(query, tool_description)` 쌍을 함께 인코딩해 더 정밀하게 순위를 조정합니다.
 
 ### MMR 다양성
 
-Maximal Marginal Relevance 리랭킹으로 중복 결과 감소.
+중복되는 결과를 줄이고 더 다양한 후보를 확보합니다.
 
 ```python
-tg.enable_diversity(lambda_=0.7)  # 0.7 = 관련성 위주 + 약간의 다양성
+tg.enable_diversity(lambda_=0.7)
 ```
 
-### History-Aware 검색
+### History-aware 검색
 
-이전에 호출한 tool 이름을 전달하면 컨텍스트가 개선됩니다. 이미 사용한 tool은 하향, 그래프 이웃이 시드로 확장.
+이전에 호출한 tool 이름을 넘기면 다음 단계 검색이 개선됩니다.
 
 ```python
 # 첫 호출
 tools = tg.retrieve("주문 찾기")
 # → [listOrders, getOrder, ...]
 
-# 두 번째 호출 — history-aware
+# 두 번째 호출
 tools = tg.retrieve("이제 취소해줘", history=["listOrders", "getOrder"])
 # → [cancelOrder, processRefund, ...]
-#    listOrders/getOrder 하향, cancelOrder 그래프 근접성으로 상향
 ```
+
+이미 사용한 tool은 하향되고, 그래프상 다음 단계에 가까운 tool은 상향됩니다.
 
 ### wRRF 가중치 튜닝
 
-각 스코어링 소스의 weighted Reciprocal Rank Fusion 가중치 조정:
+각 신호의 기여도를 조정할 수 있습니다.
 
 ```python
 tg.set_weights(
     keyword=0.2,     # BM25 텍스트 매칭
-    graph=0.5,       # 그래프 탐색 (관계 기반)
+    graph=0.5,       # 그래프 탐색
     embedding=0.3,   # 시맨틱 유사도
     annotation=0.2,  # MCP annotation 매칭
 )
@@ -401,33 +484,33 @@ tg.set_weights(
 
 ### LLM 강화 온톨로지
 
-LLM으로 더 풍부한 tool 온톨로지 구축. 카테고리, 관계 추론, 검색 키워드 생성 (비영어 tool 설명에 특히 유용).
+LLM으로 더 풍부한 tool 온톨로지를 구성할 수 있습니다.
+카테고리 생성, 관계 추론, 검색 키워드 확장에 유용합니다.
 
 ```python
-# 아래 모두 사용 가능 — wrap_llm()이 자동 감지
-tg.auto_organize(llm="ollama/qwen2.5:7b")           # 문자열 shorthand
-tg.auto_organize(llm=lambda p: my_llm(p))            # callable
-tg.auto_organize(llm=openai.OpenAI())                # OpenAI 클라이언트
-tg.auto_organize(llm="litellm/claude-sonnet-4-20250514")    # litellm 경유
+tg.auto_organize(llm="ollama/qwen2.5:7b")
+tg.auto_organize(llm=lambda p: my_llm(p))
+tg.auto_organize(llm=openai.OpenAI())
+tg.auto_organize(llm="litellm/claude-sonnet-4-20250514")
 ```
 
 <details>
 <summary>지원하는 LLM 입력</summary>
 
-| 입력 | 래핑 타입 |
-|------|----------|
-| `OntologyLLM` 인스턴스 | 그대로 사용 |
-| `callable(str) -> str` | `CallableOntologyLLM` |
-| OpenAI 클라이언트 (`chat.completions` 보유) | `OpenAIClientOntologyLLM` |
-| `"ollama/model"` | `OllamaOntologyLLM` |
-| `"openai/model"` | `OpenAICompatibleOntologyLLM` |
-| `"litellm/model"` | litellm.completion 래퍼 |
+| 입력                                   | 래핑 타입                         |
+| ------------------------------------ | ----------------------------- |
+| `OntologyLLM` 인스턴스                   | 그대로 사용                        |
+| `callable(str) -> str`               | `CallableOntologyLLM`         |
+| OpenAI 클라이언트 (`chat.completions` 보유) | `OpenAIClientOntologyLLM`     |
+| `"ollama/model"`                     | `OllamaOntologyLLM`           |
+| `"openai/model"`                     | `OpenAICompatibleOntologyLLM` |
+| `"litellm/model"`                    | litellm.completion 래퍼         |
 
 </details>
 
 ### 중복 탐지
 
-여러 API spec에서 중복 tool 탐지 및 병합:
+여러 API spec 간 중복된 tool을 찾아 병합할 수 있습니다.
 
 ```python
 duplicates = tg.find_duplicates(threshold=0.85)
@@ -435,13 +518,13 @@ merged = tg.merge_duplicates(duplicates)
 # merged = {"getUser_1": "getUser", ...}
 ```
 
-### 내보내기 & 시각화
+### 내보내기와 시각화
 
 ```python
 # 인터랙티브 HTML (vis.js)
 tg.export_html("graph.html", progressive=True)
 
-# GraphML (Gephi, yEd용)
+# GraphML (Gephi, yEd)
 tg.export_graphml("graph.graphml")
 
 # Neo4j Cypher
@@ -450,87 +533,97 @@ tg.export_cypher("graph.cypher")
 
 ### API Spec Lint 통합
 
-[ai-api-lint](https://github.com/SonAIengine/ai-api-lint)로 수집 전 OpenAPI spec 자동 수정:
+[ai-api-lint](https://github.com/SonAIengine/ai-api-lint)로 OpenAPI spec을 수집 전에 자동 정리할 수 있습니다.
 
 ```bash
 pip install graph-tool-call[lint]
 ```
 
 ```python
-tg = ToolGraph.from_url(url, lint=True)  # 수집 중 자동 수정
+tg = ToolGraph.from_url(url, lint=True)
 ```
+
+---
 
 ## 왜 벡터 검색만으로는 부족한가?
 
-| 시나리오 | 벡터만 사용 | graph-tool-call |
-|----------|-----------|-----------------|
-| *"주문 취소해줘"* | `cancelOrder` 반환 | `listOrders → getOrder → cancelOrder → processRefund` (전체 워크플로우) |
-| *"파일 읽고 저장"* | `read_file` 반환 | `read_file` + `write_file` (COMPLEMENTARY 관계) |
-| *"오래된 레코드 삭제"* | "삭제"와 매칭되는 아무 도구 | destructive 도구 우선 랭크 (annotation-aware) |
-| *"이제 취소해줘"* (history) | 컨텍스트 없음, 동일 결과 | 사용한 tool 하향, 다음 단계 tool 상향 |
-| 여러 Swagger spec에 중복 tool | 결과에 중복 포함 | cross-source 자동 중복 제거 |
-| 1,200개 API endpoint | 느리고 노이즈 많음 | 카테고리로 조직화, 정확한 그래프 탐색 |
+| 시나리오                     | 벡터만 사용             | graph-tool-call                                       |
+| ------------------------ | ------------------ | ----------------------------------------------------- |
+| *"주문 취소해줘"*              | `cancelOrder` 반환   | `listOrders → getOrder → cancelOrder → processRefund` |
+| *"파일 읽고 저장"*             | `read_file` 반환     | `read_file` + `write_file` (COMPLEMENTARY 관계)         |
+| *"오래된 레코드 삭제"*           | "삭제"와 매칭되는 아무 tool | destructive tool 우선 랭크                                |
+| *"이제 취소해줘"* (history)    | 컨텍스트 없음            | 이미 사용한 tool 하향, 다음 단계 tool 상향                         |
+| 여러 Swagger spec에 중복 tool | 결과에 중복 포함          | cross-source 자동 중복 제거                                 |
+| 1,200개 API endpoint      | 느리고 노이즈 많음         | 카테고리화 + 그래프 탐색으로 정밀 검색                                |
+
+---
 
 ## 전체 API 레퍼런스
 
 <details>
-<summary>ToolGraph 메서드</summary>
+<summary><code>ToolGraph</code> 메서드</summary>
 
-| 메서드 | 설명 |
-|--------|------|
-| `add_tool(tool)` | 단일 tool 추가 (포맷 자동 감지) |
-| `add_tools(tools)` | 여러 tool 추가 |
-| `ingest_openapi(source)` | OpenAPI/Swagger spec에서 수집 |
-| `ingest_mcp_tools(tools)` | MCP tool list에서 수집 |
-| `ingest_functions(fns)` | Python callable에서 수집 |
-| `ingest_arazzo(source)` | Arazzo 1.0.0 워크플로우 spec 수집 |
-| `from_url(url, cache=...)` | Swagger UI 또는 spec URL에서 빌드 |
-| `add_relation(src, tgt, type)` | 수동 관계 추가 |
-| `auto_organize(llm=...)` | tool 자동 분류 |
-| `build_ontology(llm=...)` | 전체 온톨로지 빌드 |
-| `retrieve(query, top_k=10)` | tool 검색 |
-| `enable_embedding(provider)` | 하이브리드 임베딩 검색 활성화 |
-| `enable_reranker(model)` | cross-encoder 리랭킹 활성화 |
-| `enable_diversity(lambda_)` | MMR 다양성 활성화 |
-| `set_weights(...)` | wRRF 융합 가중치 튜닝 |
-| `find_duplicates(threshold)` | 중복 tool 탐지 |
-| `merge_duplicates(pairs)` | 탐지된 중복 병합 |
-| `apply_conflicts()` | CONFLICTS_WITH 엣지 감지/추가 |
-| `save(path)` / `load(path)` | 직렬화 / 역직렬화 |
-| `export_html(path)` | 인터랙티브 HTML 시각화 내보내기 |
-| `export_graphml(path)` | GraphML 포맷 내보내기 |
-| `export_cypher(path)` | Neo4j Cypher 문장 내보내기 |
+| 메서드                            | 설명                          |
+| ------------------------------ | --------------------------- |
+| `add_tool(tool)`               | 단일 tool 추가 (포맷 자동 감지)       |
+| `add_tools(tools)`             | 여러 tool 추가                  |
+| `ingest_openapi(source)`       | OpenAPI / Swagger spec에서 수집 |
+| `ingest_mcp_tools(tools)`      | MCP tool list에서 수집          |
+| `ingest_functions(fns)`        | Python callable에서 수집        |
+| `ingest_arazzo(source)`        | Arazzo 1.0.0 워크플로우 spec 수집  |
+| `from_url(url, cache=...)`     | Swagger UI 또는 spec URL에서 빌드 |
+| `add_relation(src, tgt, type)` | 수동 관계 추가                    |
+| `auto_organize(llm=...)`       | tool 자동 분류                  |
+| `build_ontology(llm=...)`      | 전체 온톨로지 빌드                  |
+| `retrieve(query, top_k=10)`    | tool 검색                     |
+| `enable_embedding(provider)`   | 하이브리드 임베딩 검색 활성화            |
+| `enable_reranker(model)`       | cross-encoder 리랭킹 활성화       |
+| `enable_diversity(lambda_)`    | MMR 다양성 활성화                 |
+| `set_weights(...)`             | wRRF 융합 가중치 튜닝              |
+| `find_duplicates(threshold)`   | 중복 tool 탐지                  |
+| `merge_duplicates(pairs)`      | 탐지된 중복 병합                   |
+| `apply_conflicts()`            | CONFLICTS_WITH 엣지 감지/추가     |
+| `save(path)` / `load(path)`    | 직렬화 / 역직렬화                  |
+| `export_html(path)`            | 인터랙티브 HTML 시각화 내보내기         |
+| `export_graphml(path)`         | GraphML 포맷 내보내기             |
+| `export_cypher(path)`          | Neo4j Cypher 문장 내보내기        |
 
 </details>
 
+---
+
 ## 기능 비교
 
-| 기능 | 벡터만 사용하는 솔루션 | graph-tool-call |
-|------|---------------------|-----------------|
-| Tool 소스 | 수동 등록 | Swagger/OpenAPI/MCP 자동 수집 |
-| 검색 방식 | 단순 벡터 유사도 | 다단계 하이브리드 (wRRF + rerank + MMR) |
-| 행동적 의미 | 없음 | MCP annotation-aware retrieval |
-| Tool 관계 | 없음 | 6가지 관계 타입, 자동 감지 |
-| 호출 순서 | 없음 | 상태 머신 + CRUD + response→request 데이터 플로우 |
-| 중복 제거 | 없음 | Cross-source 중복 탐지 |
-| 온톨로지 | 없음 | Auto / LLM-Auto 모드 (아무 LLM) |
-| History | 없음 | 사용한 tool 하향, 다음 단계 상향 |
-| Spec 품질 | 좋은 spec 가정 | ai-api-lint 자동 수정 통합 |
-| LLM 의존성 | 필수 | 선택 (없어도 동작, 있으면 더 좋음) |
+| 기능      | 벡터만 사용하는 솔루션 | graph-tool-call                         |
+| ------- | ------------ | --------------------------------------- |
+| Tool 소스 | 수동 등록        | Swagger / OpenAPI / MCP 자동 수집           |
+| 검색 방식   | 단순 벡터 유사도    | 다단계 하이브리드 (wRRF + rerank + MMR)         |
+| 행동적 의미  | 없음           | MCP annotation-aware retrieval          |
+| Tool 관계 | 없음           | 6가지 관계 타입, 자동 감지                        |
+| 호출 순서   | 없음           | 상태 머신 + CRUD + response→request 데이터 플로우 |
+| 중복 제거   | 없음           | Cross-source 중복 탐지                      |
+| 온톨로지    | 없음           | Auto / LLM-Auto 모드                      |
+| History | 없음           | 사용한 tool 하향, 다음 단계 상향                   |
+| Spec 품질 | 좋은 spec 가정   | ai-api-lint 자동 수정 통합                    |
+| LLM 의존성 | 필수           | 선택 (없어도 동작, 있으면 더 좋음)                   |
+
+---
 
 ## 문서
 
-| 문서 | 설명 |
-|------|------|
-| [아키텍처](docs/architecture/overview.md) | 시스템 개요, 파이프라인 레이어, 데이터 모델 |
-| [WBS](docs/wbs/) | Work Breakdown Structure — Phase 0~4 진행 상황 |
-| [설계](docs/design/) | 알고리즘 설계 — spec 정규화, 의존성 감지, 검색 모드, 호출 순서, 온톨로지 모드 |
-| [리서치](docs/research/) | 경쟁 분석, API 규모 데이터, 커머스 패턴 |
-| [OpenAPI 가이드](docs/design/openapi-guide.md) | 더 좋은 tool graph를 만드는 API spec 작성법 |
+| 문서                                          | 설명                                                |
+| ------------------------------------------- | ------------------------------------------------- |
+| [아키텍처](docs/architecture/overview.md)       | 시스템 개요, 파이프라인 레이어, 데이터 모델                         |
+| [WBS](docs/wbs/)                            | Work Breakdown Structure — Phase 0~4 진행 상황        |
+| [설계](docs/design/)                          | 알고리즘 설계 — spec 정규화, 의존성 감지, 검색 모드, 호출 순서, 온톨로지 모드 |
+| [리서치](docs/research/)                       | 경쟁 분석, API 규모 데이터, 커머스 패턴                         |
+| [OpenAPI 가이드](docs/design/openapi-guide.md) | 더 좋은 tool graph를 만드는 API spec 작성법                 |
+
+---
 
 ## 기여하기
 
-기여를 환영합니다!
+기여를 환영합니다.
 
 ```bash
 # 개발 환경 설정
@@ -550,6 +643,9 @@ poetry run ruff format --check .
 python -m benchmarks.run_benchmark -v
 ```
 
-## 라이선스
+---
 
+## 라이선스
+```
 [MIT](LICENSE)
+```
