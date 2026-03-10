@@ -307,3 +307,12 @@ def _llm_auto_organize(
             added = [k.lower() for k in kws if k.lower() not in existing]
             if added:
                 tool.tags = tool.tags + added
+
+    # Generate example queries for embedding enrichment
+    example_queries = llm.generate_example_queries(summaries)
+    for tool_name, queries in example_queries.items():
+        if tool_name not in tool_names:
+            continue
+        if tool_name in tool_map:
+            tool = tool_map[tool_name]
+            tool.metadata["example_queries"] = queries

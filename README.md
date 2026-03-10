@@ -71,11 +71,11 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
 | Petstore | 19 | 100% | 95.0% | — | — | **64%** |
 | GitHub | 50 | 100% | 87.5% | — | — | **88%** |
 | MCP Servers | 38 | 96.7% | 90.0% | — | — | **83%** |
-| **Kubernetes** | **248** | **18%** | **74%** | **72%** | **74%** | **80%** |
+| **Kubernetes** | **248** | **12%** | **78%** | **80%** | **82%** | **80%** |
 
 **The story in two lines:**
 - **< 50 tools**: The LLM handles them fine. graph-tool-call's value = **64–88% token savings** (faster, cheaper).
-- **248 tools**: The LLM **collapses to 18%**. graph-tool-call delivers **72–74% accuracy** — it's not an optimization, it's **a requirement**.
+- **248 tools**: The LLM **collapses to 12%**. graph-tool-call delivers **78–82% accuracy** — it's not an optimization, it's **a requirement**.
 
 <details>
 <summary>Full pipeline comparison (4 configurations)</summary>
@@ -111,11 +111,11 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
 
 | Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
 |----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline | 18.4% | 100.0% | 8,192 | — |
-| retrieve-k5 | 74.0% | 88.0% | 1,613 | 80.3% |
-| + embedding | 72.0% | 92.0% | 1,728 | 78.9% |
-| + ontology | **74.0%** | 92.0% | 1,793 | 78.1% |
-| + both | 70.0% | **94.0%** | 1,726 | 78.9% |
+| baseline | 12.0% | 100.0% | 8,192 | — |
+| retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
+| + embedding | 80.0% | 94.0% | 1,728 | 78.9% |
+| + ontology | **82.0%** | 96.0% | 1,699 | 79.3% |
+| + both | **82.0%** | **98.0%** | 1,924 | 76.5% |
 
 </details>
 
@@ -128,7 +128,7 @@ Before the LLM sees anything, graph-tool-call must first **find** the right tool
 | Petstore | 19 | 93.3% | **98.3%** | 98.3% |
 | GitHub | 50 | 87.5% | **87.5%** | 92.5% |
 | MCP | 38 | 93.3% | **96.7%** | 100.0% |
-| Kubernetes | 248 | 82.0% | **88.0%** | 90.0% |
+| Kubernetes | 248 | 82.0% | **91.0%** | 92.0% |
 
 These are BM25 + graph traversal only — no embedding model.
 
@@ -138,14 +138,14 @@ Adding OpenAI embedding (`text-embedding-3-small`) and LLM ontology (`gpt-4o-min
 
 | Pipeline | Accuracy | Recall@K | Features |
 |----------|:--------:|:--------:|----------|
-| retrieve-k5 | 74.0% | 88.0% | BM25 + graph only |
-| + embedding | 72.0% | 92.0% | + OpenAI embedding |
-| + ontology | **74.0%** | 92.0% | + GPT-4o-mini knowledge graph |
-| + both | 70.0% | **94.0%** | embedding + ontology |
+| retrieve-k5 | 78.0% | 91.0% | BM25 + graph only |
+| + embedding | 80.0% | 94.0% | + OpenAI embedding |
+| + ontology | **82.0%** | 96.0% | + GPT-4o-mini knowledge graph |
+| **+ both** | **82.0%** | **98.0%** | **embedding + ontology** |
 
-- **Embedding**: Recall@5 **88% → 92%** (+4pp) — catches semantic matches that BM25 misses.
-- **Ontology**: Recall@5 **88% → 92%** (+4pp), Accuracy **74%** — LLM-enriched keywords improve BM25 scoring.
-- **Both combined**: Recall@5 **94%** (highest) — ontology keywords + embedding semantics complement each other.
+- **Embedding**: Recall@5 **91% → 94%** (+3pp), Accuracy **78% → 80%** — catches semantic matches that BM25 misses.
+- **Ontology**: Recall@5 **91% → 96%** (+5pp), Accuracy **78% → 82%** — LLM-enriched keywords + example queries boost both BM25 and embedding.
+- **Both combined**: Recall@5 **98%**, Accuracy **82%** — ontology keywords + embedding semantics complement each other.
 
 ### Reproduce it
 

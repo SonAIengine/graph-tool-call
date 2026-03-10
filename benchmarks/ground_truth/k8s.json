@@ -59,7 +59,7 @@
     },
     {
       "query": "Update a service configuration",
-      "expected_tools": ["replaceCoreV1NamespacedService"],
+      "expected_tools": ["replaceCoreV1NamespacedService", "patchCoreV1NamespacedService"],
       "category": "write",
       "difficulty": "medium"
     },
@@ -257,7 +257,7 @@
     },
     {
       "query": "Read the finalize status of a namespace",
-      "expected_tools": ["replaceCoreV1NamespaceFinalize"],
+      "expected_tools": ["readCoreV1NamespaceStatus"],
       "category": "write",
       "difficulty": "hard"
     },
@@ -269,7 +269,7 @@
     },
     {
       "query": "Replace a pod's ephemeral containers",
-      "expected_tools": ["readCoreV1NamespacedPodEphemeralcontainers"],
+      "expected_tools": ["replaceCoreV1NamespacedPodEphemeralcontainers"],
       "category": "read",
       "difficulty": "hard"
     },

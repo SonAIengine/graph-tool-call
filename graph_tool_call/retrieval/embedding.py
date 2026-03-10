@@ -347,6 +347,9 @@ class EmbeddingIndex:
                 parts.append(method)
             if path:
                 parts.append(path)
+            # Include LLM-generated example queries for better query-tool alignment
+            example_queries = tool.metadata.get("example_queries", [])
+            parts.extend(example_queries)
         return " ".join(p for p in parts if p)
 
     def encode(self, text: str) -> list[float]:

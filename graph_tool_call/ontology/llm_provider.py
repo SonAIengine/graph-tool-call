@@ -82,6 +82,21 @@ Output a JSON object:
 }}
 Only output the JSON object, nothing else."""
 
+_EXAMPLE_QUERIES_PROMPT = """\
+For each API tool below, write 2-3 short natural language queries that a user \
+would type when they need this tool. Focus on how a user would phrase the request, \
+not the API name. Use varied phrasing.
+
+Tools:
+{tools_list}
+
+Output a JSON object:
+{{
+  "tool_name": ["query1", "query2"],
+  ...
+}}
+Only output the JSON object, nothing else."""
+
 
 def _format_tools_list(tools: list[ToolSummary]) -> str:
     lines = []
@@ -204,6 +219,36 @@ class OntologyLLM(ABC):
                 continue
 
         return all_keywords
+
+    def generate_example_queries(
+        self,
+        tools: list[ToolSummary],
+        batch_size: int = 50,
+    ) -> dict[str, list[str]]:
+        """Generate natural language example queries for each tool.
+
+        These are used to enrich embedding text so that user queries
+        match tool embeddings more closely.
+
+        Returns a dict of tool_name -> list of example queries.
+        """
+        all_queries: dict[str, list[str]] = {}
+
+        for i in range(0, len(tools), batch_size):
+            batch = tools[i : i + batch_size]
+            prompt = _EXAMPLE_QUERIES_PROMPT.format(tools_list=_format_tools_list(batch))
+            response = self.generate(prompt)
+
+            try:
+                parsed = _extract_json(response)
+                if isinstance(parsed, dict):
+                    for name, queries in parsed.items():
+                        if isinstance(queries, list):
+                            all_queries[name] = [str(q) for q in queries]
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+
+        return all_queries
 
 
 # ---------------------------------------------------------------------------
