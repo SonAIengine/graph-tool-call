@@ -57,50 +57,34 @@ OpenAPI/MCP/Code → [Ingest] → [Analyze] → [Organize] → [Retrieve] → Ag
 
 ## Benchmark
 
-We tested whether graph-tool-call actually helps LLMs pick the right tool. The setup:
+> **The real test**: put graph-tool-call between the LLM and tools, then compare.
+> We gave an LLM the same user requests with 4 different configurations:
+> - **baseline**: pass **all** tool definitions to the LLM (no retrieval)
+> - **retrieve-k3/k5/k10**: pass only the **top-K retrieved** tools
+>
+> Model: qwen3:4b (4-bit quantized, Ollama). All specs are public and reproducible.
 
-1. Give the LLM a user request (e.g., *"list all pods in the default namespace"*)
-2. Give it a set of tool definitions to choose from
-3. Check if it picks the correct tool
+### Does graph-tool-call help the LLM?
 
-We measured two things:
+| API | Tools | baseline | retrieve-k5 | + embedding | + ontology | Token savings |
+|-----|:-----:|:--------:|:-----------:|:-----------:|:----------:|:-------------:|
+| Petstore | 19 | 100% | 95.0% | — | — | **64%** |
+| GitHub | 50 | 100% | 87.5% | — | — | **88%** |
+| MCP Servers | 38 | 96.7% | 90.0% | — | — | **83%** |
+| **Kubernetes** | **248** | **12%** | **78%** | **80%** | **82%** | **80%** |
 
-| Metric | What it measures | Example |
-|--------|-----------------|---------|
-| **Accuracy** | Did the LLM pick the correct tool? | LLM chose `listCoreV1NamespacedPod` for "list pods" → correct |
-| **Recall@K** | Was the correct tool even in the candidate list? | `listCoreV1NamespacedPod` was in the top-5 results → yes |
-
-> **Why both matter**: If the correct tool isn't in the candidates (low Recall), the LLM *can't* pick it no matter how smart it is. If it's there but the LLM picks the wrong one (low Accuracy), that's the LLM's fault, not retrieval's.
-
-### The key finding: too many tools overwhelm the LLM
-
-| API | Tools | How tools are given | Accuracy | Recall@5 |
-|-----|:-----:|---------------------|:--------:|:--------:|
-| Petstore | 19 | all 19 tools (no filtering) | 100% | — |
-| GitHub | 50 | all 50 tools (no filtering) | 100% | — |
-| MCP Servers | 38 | all 38 tools (no filtering) | 96.7% | — |
-| **Kubernetes** | **248** | **all 248 tools (no filtering)** | **12%** | — |
-| | | **graph-tool-call picks top 5** | **78%** | **91%** |
-| | | **+ embedding** | **80%** | **94%** |
-| | | **+ ontology** | **82%** | **96%** |
-| | | **+ both** | **82%** | **98%** |
-
-**What happened with Kubernetes?**
-- **Baseline (all 248 tools)**: The LLM sees all 248 tools at once. It gets confused and picks wrong 88% of the time → **12% accuracy**. (Recall is technically 100% because the answer is always *in* the list — but the LLM can't find it.)
-- **With graph-tool-call**: We filter down to 5 relevant tools. Now the LLM picks correctly **78–82%** of the time. Not just an optimization — it's **the difference between usable and unusable**.
-
-**Under 50 tools**: The LLM handles them fine. graph-tool-call still saves **64–88% of tokens** (faster, cheaper).
-
-> Model: qwen3:4b (4-bit quantized, Ollama). 50 test queries per dataset. All specs are public — [reproduce it yourself](#reproduce-it).
+**The story in two lines:**
+- **< 50 tools**: The LLM handles them fine. graph-tool-call's value = **64–88% token savings** (faster, cheaper).
+- **248 tools**: The LLM **collapses to 12%**. graph-tool-call delivers **78–82% accuracy** — it's not an optimization, it's **a requirement**.
 
 <details>
-<summary>Full pipeline results per dataset</summary>
+<summary>Full pipeline comparison (4 configurations)</summary>
 
 **Petstore** (19 tools, 20 queries)
 
 | Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
 |----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline (all tools) | 100.0% | 100.0% | 1,239 | — |
+| baseline | 100.0% | 100.0% | 1,239 | — |
 | retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
 | retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
 | retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
@@ -109,7 +93,7 @@ We measured two things:
 
 | Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
 |----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline (all tools) | 100.0% | 100.0% | 3,302 | — |
+| baseline | 100.0% | 100.0% | 3,302 | — |
 | retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
 | retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
 | retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
@@ -118,7 +102,7 @@ We measured two things:
 
 | Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
 |----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline (all tools) | 96.7% | 100.0% | 2,741 | — |
+| baseline | 96.7% | 100.0% | 2,741 | — |
 | retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
 | retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
 | retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
@@ -127,7 +111,7 @@ We measured two things:
 
 | Pipeline | Accuracy | Recall@K | Avg Tokens | Token Savings |
 |----------|:--------:|:--------:|:----------:|:-------------:|
-| baseline (all tools) | 12.0% | 100.0% | 8,192 | — |
+| baseline | 12.0% | 100.0% | 8,192 | — |
 | retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
 | + embedding | 80.0% | 94.0% | 1,728 | 78.9% |
 | + ontology | **82.0%** | 96.0% | 1,699 | 79.3% |
@@ -135,18 +119,33 @@ We measured two things:
 
 </details>
 
+### How good is the retrieval?
+
+Before the LLM sees anything, graph-tool-call must first **find** the right tools. We measure this with **Recall@K**: *"Is the correct tool in the top-K results?"*
+
+| API | Tools | Recall@3 | Recall@5 | Recall@10 |
+|-----|:-----:|:--------:|:--------:|:---------:|
+| Petstore | 19 | 93.3% | **98.3%** | 98.3% |
+| GitHub | 50 | 87.5% | **87.5%** | 92.5% |
+| MCP | 38 | 93.3% | **96.7%** | 100.0% |
+| Kubernetes | 248 | 82.0% | **91.0%** | 92.0% |
+
+These are BM25 + graph traversal only — no embedding model.
+
 ### When does embedding + ontology help?
 
-For small APIs (< 50 tools), BM25 + graph traversal alone is enough. For large APIs, adding embedding and ontology makes a real difference. Tested on Kubernetes (248 tools):
+Adding OpenAI embedding (`text-embedding-3-small`) and LLM ontology (`gpt-4o-mini`) on top of BM25 + graph — tested on the hardest dataset (K8s, 248 tools):
 
-| Pipeline | Accuracy | Recall@5 | What it adds |
-|----------|:--------:|:--------:|--------------|
-| BM25 + graph only | 78% | 91% | keyword matching + graph neighbors |
-| + embedding | 80% | 94% | semantic similarity (catches synonyms BM25 misses) |
-| + ontology | **82%** | 96% | LLM-generated keywords + example queries |
-| **+ both** | **82%** | **98%** | embedding + ontology complement each other |
+| Pipeline | Accuracy | Recall@K | Features |
+|----------|:--------:|:--------:|----------|
+| retrieve-k5 | 78.0% | 91.0% | BM25 + graph only |
+| + embedding | 80.0% | 94.0% | + OpenAI embedding |
+| + ontology | **82.0%** | 96.0% | + GPT-4o-mini knowledge graph |
+| **+ both** | **82.0%** | **98.0%** | **embedding + ontology** |
 
-Embedding: OpenAI `text-embedding-3-small`. Ontology: `gpt-4o-mini`.
+- **Embedding**: Recall@5 **91% → 94%** (+3pp), Accuracy **78% → 80%** — catches semantic matches that BM25 misses.
+- **Ontology**: Recall@5 **91% → 96%** (+5pp), Accuracy **78% → 82%** — LLM-enriched keywords + example queries boost both BM25 and embedding.
+- **Both combined**: Recall@5 **98%**, Accuracy **82%** — ontology keywords + embedding semantics complement each other.
 
 ### Reproduce it
 
@@ -155,11 +154,11 @@ Embedding: OpenAI `text-embedding-3-small`. Ontology: `gpt-4o-mini`.
 python -m benchmarks.run_benchmark
 python -m benchmarks.run_benchmark -d k8s -v
 
-# Full pipeline benchmark (requires Ollama)
+# Pipeline benchmark (LLM comparison)
 python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b
 python -m benchmarks.run_benchmark --mode pipeline --pipelines baseline retrieve-k3 retrieve-k5 retrieve-k10
 
-# Save baseline and compare after changes
+# Save baseline and compare
 python -m benchmarks.run_benchmark --mode pipeline --save-baseline
 python -m benchmarks.run_benchmark --mode pipeline --diff
 ```
