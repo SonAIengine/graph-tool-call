@@ -211,6 +211,57 @@ graph-tool-call은 두 가지를 검증합니다.
 * **큰 규모 API (248 tools)** 에서는 baseline이 **12%까지 붕괴**합니다.
   반면 graph-tool-call은 **78~82% 정확도**를 유지합니다. 이때는 최적화가 아니라 **필수 검색 계층**에 가깝습니다.
 
+<details>
+<summary>전체 파이프라인 비교</summary>
+
+> **지표 해석**
+>
+> - **End-to-end Accuracy**: LLM이 최종적으로 올바른 tool 선택 또는 정답 workflow 수행에 성공했는가
+> - **Gold Tool Recall@K**: retrieval 단계에서 **정답으로 지정한 canonical gold tool**이 상위 K개 안에 포함되었는가
+> - 두 지표는 측정 대상이 다르므로 항상 같지 않습니다.
+> - 특히 **대체 가능한 tool**이나 **동등한 workflow**도 정답으로 인정하는 평가에서는 `End-to-end Accuracy`가 `Gold Tool Recall@K`와 정확히 일치하지 않을 수 있습니다.
+> - **baseline**은 retrieval 단계가 없으므로 `Gold Tool Recall@K`는 해당하지 않습니다.
+
+| Dataset | Tool 수 | Pipeline | End-to-end Accuracy | Gold Tool Recall@K | Avg tokens | Token reduction |
+|---|---:|---|---:|---:|---:|---:|
+| Petstore | 19 | baseline | 100.0% | — | 1,239 | — |
+| Petstore | 19 | retrieve-k3 | 90.0% | 93.3% | 305 | 75.4% |
+| Petstore | 19 | retrieve-k5 | 95.0% | 98.3% | 440 | 64.4% |
+| Petstore | 19 | retrieve-k10 | 100.0% | 98.3% | 720 | 41.9% |
+| GitHub | 50 | baseline | 100.0% | — | 3,302 | — |
+| GitHub | 50 | retrieve-k3 | 85.0% | 87.5% | 289 | 91.3% |
+| GitHub | 50 | retrieve-k5 | 87.5% | 87.5% | 398 | 87.9% |
+| GitHub | 50 | retrieve-k10 | 90.0% | 92.5% | 662 | 79.9% |
+| Mixed MCP | 38 | baseline | 96.7% | — | 2,741 | — |
+| Mixed MCP | 38 | retrieve-k3 | 86.7% | 93.3% | 328 | 88.0% |
+| Mixed MCP | 38 | retrieve-k5 | 90.0% | 96.7% | 461 | 83.2% |
+| Mixed MCP | 38 | retrieve-k10 | 96.7% | 100.0% | 826 | 69.9% |
+| Kubernetes core/v1 | 248 | baseline | 12.0% | — | 8,192 | — |
+| Kubernetes core/v1 | 248 | retrieve-k5 | 78.0% | 91.0% | 1,613 | 80.3% |
+| Kubernetes core/v1 | 248 | retrieve-k5 + embedding | 80.0% | 94.0% | 1,728 | 78.9% |
+| Kubernetes core/v1 | 248 | retrieve-k5 + ontology | **82.0%** | 96.0% | 1,699 | 79.3% |
+| Kubernetes core/v1 | 248 | retrieve-k5 + embedding + ontology | **82.0%** | **98.0%** | 1,924 | 76.5% |
+
+**이 표를 어떻게 읽으면 되는가**
+
+- **baseline**은 retrieval 없이 전체 tool 정의를 그대로 LLM에 넣은 결과입니다.
+- **retrieve-k** 계열은 검색된 일부 tool만 LLM에 주므로, retrieval 품질과 LLM 선택 능력이 함께 성능에 영향을 줍니다.
+- 따라서 baseline 정확도가 100%라고 해서 retrieve-k 정확도도 100%여야 하는 것은 아닙니다.
+- `Gold Tool Recall@K`는 retrieval이 canonical gold tool을 top-k 안에 넣었는지를 측정하고,
+  `End-to-end Accuracy`는 최종 task 수행이 성공했는지를 측정합니다.
+- 이 때문에 대체 가능한 tool이나 동등한 workflow를 허용하는 평가에서는 두 값이 정확히 일치하지 않을 수 있습니다.
+
+**핵심 해석**
+
+- **Petstore / GitHub / Mixed MCP**처럼 tool 수가 적거나 중간 규모인 경우, baseline도 이미 강합니다.
+  이 구간에서 graph-tool-call의 주요 가치는 **정확도를 크게 해치지 않으면서 토큰을 대폭 줄이는 것**입니다.
+- **Kubernetes core/v1 (248 tools)**처럼 tool 수가 많아지면 baseline은 컨텍스트 과부하로 급격히 무너집니다.
+  반면 graph-tool-call은 검색으로 후보를 좁혀 **12.0% → 78.0~82.0%**까지 성능을 회복합니다.
+- 실무적으로는 **retrieve-k5**가 가장 좋은 기본값입니다.
+  토큰 효율과 성능 균형이 좋고, 큰 데이터셋에서는 embedding / ontology 추가 시 추가 개선도 얻을 수 있습니다.
+
+</details>
+
 ### 검색기 자체 성능: 정답 tool을 상위 K개 안에 찾는가?
 
 아래 표는 **LLM 이전 단계**, 즉 retrieval 자체의 품질만 따로 측정한 결과입니다.  
@@ -263,6 +314,7 @@ graph-tool-call은 두 가지를 검증합니다.
 - **embedding**은 BM25가 놓치는 **시맨틱 유사성**을 보완합니다.
 - **ontology**는 tool 설명이 짧거나 비표준적일 때 **검색 가능한 표현 자체를 확장**합니다.
 - 둘을 함께 쓰면 end-to-end accuracy 상승 폭은 제한적일 수 있지만, **정답 tool을 후보군에 포함시키는 능력은 가장 강해집니다**.
+
 ### 직접 재현하기
 
 ```bash
@@ -646,6 +698,5 @@ python -m benchmarks.run_benchmark -v
 ---
 
 ## 라이선스
-```
+
 [MIT](LICENSE)
-```
