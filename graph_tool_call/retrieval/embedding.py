@@ -405,3 +405,65 @@ class EmbeddingIndex:
     @property
     def size(self) -> int:
         return len(self._embeddings)
+
+    def _provider_config(self) -> dict[str, Any] | None:
+        provider = self._provider
+        if provider is None:
+            return None
+
+        if isinstance(provider, SentenceTransformerProvider):
+            return {"kind": "sentence_transformers", "model_name": provider.model_name}
+        if isinstance(provider, OpenAIEmbeddingProvider):
+            return {
+                "kind": "openai_compatible",
+                "model": provider.model,
+                "base_url": provider.base_url,
+                "batch_size": provider.batch_size,
+            }
+        if isinstance(provider, OllamaEmbeddingProvider):
+            return {
+                "kind": "ollama",
+                "model": provider.model,
+                "base_url": provider.base_url,
+            }
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize embeddings and a restorable provider config when possible."""
+        return {
+            "embeddings": self._embeddings,
+            "provider": self._provider_config(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> EmbeddingIndex:
+        """Restore an EmbeddingIndex from serialized data."""
+        provider = _provider_from_config(data.get("provider"))
+        idx = cls(provider=provider)
+        embeddings = data.get("embeddings", {})
+        if isinstance(embeddings, dict):
+            idx._embeddings = {str(name): list(emb) for name, emb in embeddings.items()}
+        return idx
+
+
+def _provider_from_config(config: dict[str, Any] | None) -> EmbeddingProvider | None:
+    if not config or not isinstance(config, dict):
+        return None
+
+    kind = config.get("kind")
+    if kind == "sentence_transformers":
+        return SentenceTransformerProvider(
+            model_name=str(config.get("model_name", "all-MiniLM-L6-v2"))
+        )
+    if kind == "openai_compatible":
+        return OpenAIEmbeddingProvider(
+            model=str(config.get("model", "text-embedding-3-large")),
+            base_url=str(config.get("base_url", "https://api.openai.com/v1")),
+            batch_size=int(config.get("batch_size", 100)),
+        )
+    if kind == "ollama":
+        return OllamaEmbeddingProvider(
+            model=str(config.get("model", "nomic-embed-text")),
+            base_url=str(config.get("base_url", "http://localhost:11434")),
+        )
+    return None

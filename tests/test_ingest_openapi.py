@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.ingest.openapi import ingest_openapi
@@ -138,6 +141,57 @@ class TestIngestFromDict:
         tools, normalized = ingest_openapi(spec)
         assert len(tools) == 3
         assert all(isinstance(t, ToolSchema) for t in tools)
+
+
+class TestRemoteSafety:
+    def test_private_host_blocked_by_default(self) -> None:
+        with pytest.raises(ConnectionError, match="private or local host"):
+            ingest_openapi("http://127.0.0.1/openapi.json")
+
+    def test_private_host_allowed_with_opt_in(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "listItems",
+                        "summary": "List items",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(spec).encode()
+        mock_resp.headers = {"Content-Type": "application/json"}
+        mock_resp.geturl.return_value = "http://127.0.0.1/openapi.json"
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("graph_tool_call.net._open_url", return_value=mock_resp):
+            tools, _ = ingest_openapi(
+                "http://127.0.0.1/openapi.json",
+                allow_private_hosts=True,
+            )
+        assert len(tools) == 1
+
+    def test_response_size_limit(self) -> None:
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = (
+            b'{"openapi":"3.0.0","info":{"title":"x","version":"1"},"paths":{}}'
+        )
+        mock_resp.headers = {"Content-Type": "application/json", "Content-Length": "9999999"}
+        mock_resp.geturl.return_value = "https://api.example.com/openapi.json"
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("graph_tool_call.net._open_url", return_value=mock_resp):
+            with pytest.raises(ValueError, match="too large"):
+                ingest_openapi(
+                    "https://api.example.com/openapi.json",
+                    max_response_bytes=64,
+                )
 
 
 class TestDescriptionFallback:

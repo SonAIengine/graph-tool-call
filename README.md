@@ -139,6 +139,7 @@ pip install graph-tool-call[all]               # everything
 pip install graph-tool-call[lint]              # + ai-api-lint spec auto-fix
 pip install graph-tool-call[similarity]        # + rapidfuzz for deduplication
 pip install graph-tool-call[visualization]     # + pyvis for HTML graph export
+pip install graph-tool-call[dashboard]         # + Dash Cytoscape dashboard
 pip install graph-tool-call[langchain]         # + LangChain tool adapter
 ```
 
@@ -384,6 +385,32 @@ tools = tg.retrieve("delete temporary files", top_k=5)
 MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are used as retrieval signals.
 Query intent is automatically classified — read queries prioritize read-only tools, delete queries prioritize destructive tools.
 
+### Directly From an MCP Server
+
+```python
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph()
+
+# Public MCP endpoint
+tg.ingest_mcp_server("https://mcp.example.com/mcp")
+
+# Local/private MCP endpoint (explicit opt-in)
+tg.ingest_mcp_server(
+    "http://127.0.0.1:3000/mcp",
+    allow_private_hosts=True,
+)
+```
+
+`ingest_mcp_server()` calls HTTP JSON-RPC `tools/list`, fetches the tool list,
+then ingests it with MCP annotations preserved.
+
+Remote ingest safety defaults:
+- private / localhost hosts are blocked by default
+- remote response size is capped
+- redirects are limited
+- unexpected content types are rejected
+
 ### From Python Functions
 
 ```python
@@ -478,6 +505,28 @@ tg = ToolGraph.load("my_graph.json")
 # Or use cache= in from_url() for automatic save/load
 tg = ToolGraph.from_url(url, cache="my_graph.json")
 ```
+
+When embedding search is enabled, saved graphs also preserve:
+- embedding vectors
+- restorable embedding provider config when available
+- retrieval weights
+- diversity settings
+
+This lets `ToolGraph.load()` restore hybrid retrieval state without rebuilding embeddings from scratch.
+
+### Analysis and Dashboard
+
+```python
+report = tg.analyze()
+print(report.orphan_tools)
+
+app = tg.dashboard_app()
+# or: tg.dashboard(port=8050)
+```
+
+`analyze()` builds an operational summary with duplicates, conflicts, orphan tools,
+category coverage, and relation counts. `dashboard()` launches the interactive
+Dash Cytoscape UI for graph inspection and retrieval testing.
 
 ---
 
@@ -618,6 +667,7 @@ tg = ToolGraph.from_url(url, lint=True)
 | `add_tools(tools)` | Add multiple tools |
 | `ingest_openapi(source)` | Ingest from OpenAPI / Swagger spec |
 | `ingest_mcp_tools(tools)` | Ingest from MCP tool list |
+| `ingest_mcp_server(url)` | Fetch and ingest from MCP HTTP server |
 | `ingest_functions(fns)` | Ingest from Python callables |
 | `ingest_arazzo(source)` | Ingest Arazzo 1.0.0 workflow spec |
 | `from_url(url, cache=...)` | Build from Swagger UI or spec URL |
@@ -625,6 +675,8 @@ tg = ToolGraph.from_url(url, lint=True)
 | `auto_organize(llm=...)` | Auto-categorize tools |
 | `build_ontology(llm=...)` | Build complete ontology |
 | `retrieve(query, top_k=10)` | Search for tools |
+| `validate_tool_call(call)` | Validate and auto-correct a tool call |
+| `assess_tool_call(call)` | Return `allow` / `confirm` / `deny` decision |
 | `enable_embedding(provider)` | Enable hybrid embedding search |
 | `enable_reranker(model)` | Enable cross-encoder reranking |
 | `enable_diversity(lambda_)` | Enable MMR diversity |
@@ -632,10 +684,12 @@ tg = ToolGraph.from_url(url, lint=True)
 | `find_duplicates(threshold)` | Find duplicate tools |
 | `merge_duplicates(pairs)` | Merge detected duplicates |
 | `apply_conflicts()` | Detect and add CONFLICTS_WITH edges |
+| `analyze()` | Build operational analysis summary |
 | `save(path)` / `load(path)` | Serialize / deserialize |
 | `export_html(path)` | Export interactive HTML visualization |
 | `export_graphml(path)` | Export to GraphML format |
 | `export_cypher(path)` | Export as Neo4j Cypher statements |
+| `dashboard_app()` / `dashboard()` | Build or launch interactive dashboard |
 
 </details>
 
@@ -666,6 +720,7 @@ tg = ToolGraph.from_url(url, lint=True)
 | [WBS](docs/wbs/) | Work Breakdown Structure — Phase 0~4 progress |
 | [Design](docs/design/) | Algorithm design — spec normalization, dependency detection, search modes, call ordering, ontology modes |
 | [Research](docs/research/) | Competitive analysis, API scale data, commerce patterns |
+| [Release Checklist](docs/release-checklist.md) | Release process, changelog flow, pre-release checks |
 | [OpenAPI Guide](docs/design/openapi-guide.md) | How to write API specs that produce better tool graphs |
 
 ---

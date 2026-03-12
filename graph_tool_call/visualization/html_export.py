@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -48,6 +49,18 @@ def _require_pyvis() -> None:
     if Network is None:
         msg = "pyvis required: pip install pyvis"
         raise ImportError(msg)
+
+
+def _escape_html(value: object) -> str:
+    return html.escape(str(value), quote=True)
+
+
+def _safe_json_for_script(value: object) -> str:
+    import json as _json
+
+    text = _json.dumps(value, ensure_ascii=False)
+    # Prevent inline </script> termination and HTML comment edge cases.
+    return text.replace("</", "<\\/").replace("<!--", "<\\!--")
 
 
 def export_html(
@@ -105,24 +118,24 @@ def export_html(
             size = base_size
 
         # Build tooltip
-        title_parts = [f"<b>{node_id}</b>", f"Type: {node_type}"]
+        title_parts = [f"<b>{_escape_html(node_id)}</b>", f"Type: {_escape_html(node_type)}"]
         desc = attrs.get("description", "")
         if desc:
             # Truncate long descriptions
             if len(str(desc)) > 200:
                 desc = str(desc)[:200] + "..."
-            title_parts.append(f"Description: {desc}")
+            title_parts.append(f"Description: {_escape_html(desc)}")
         tags = attrs.get("tags")
         if tags:
-            title_parts.append(f"Tags: {', '.join(str(t) for t in tags)}")
+            title_parts.append(f"Tags: {_escape_html(', '.join(str(t) for t in tags))}")
         if node_id in tools:
             tool = tools[node_id]
             param_names = [p.name for p in tool.parameters]
             if param_names:
-                title_parts.append(f"Params: {', '.join(param_names)}")
+                title_parts.append(f"Params: {_escape_html(', '.join(param_names))}")
         title = "<br>".join(title_parts)
 
-        net.add_node(node_id, label=node_id, color=color, size=size, title=title)
+        net.add_node(node_id, label=str(node_id), color=color, size=size, title=title)
 
     # Add edges
     for src, tgt, attrs in graph.edges():
@@ -163,8 +176,6 @@ def export_html_standalone(
         domains and categories, with tools hidden until a category is clicked.
         Useful for graphs with 100+ nodes.
     """
-    import json as _json
-
     nodes_data: list[dict] = []
     edges_data: list[dict] = []
 
@@ -226,8 +237,8 @@ def export_html_standalone(
             }
         )
 
-    nodes_json = _json.dumps(nodes_data, ensure_ascii=False)
-    edges_json = _json.dumps(edges_data, ensure_ascii=False)
+    nodes_json = _safe_json_for_script(nodes_data)
+    edges_json = _safe_json_for_script(edges_data)
 
     prog_hint = (
         "<hr style='margin:4px 0'><small>Double-click category to expand/collapse</small>"

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from graph_tool_call.ingest.arazzo import ingest_arazzo
@@ -131,6 +134,27 @@ class TestIngestArazzoFile:
         # adoptPet workflow: listPets → getPetById → updatePet
         assert any(r.source == "listPets" and r.target == "getPetById" for r in relations)
         assert any(r.source == "getPetById" and r.target == "updatePet" for r in relations)
+
+
+class TestRemoteSafety:
+    def test_private_host_blocked_by_default(self):
+        with pytest.raises(ConnectionError, match="private or local host"):
+            ingest_arazzo("http://127.0.0.1/workflow.json")
+
+    def test_private_host_allowed_with_opt_in(self):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(_simple_arazzo()).encode()
+        mock_resp.headers = {"Content-Type": "application/json"}
+        mock_resp.geturl.return_value = "http://127.0.0.1/workflow.json"
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("graph_tool_call.net._open_url", return_value=mock_resp):
+            relations = ingest_arazzo(
+                "http://127.0.0.1/workflow.json",
+                allow_private_hosts=True,
+            )
+        assert len(relations) >= 2
 
 
 class TestToolGraphIntegration:

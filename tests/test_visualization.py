@@ -136,6 +136,40 @@ class TestHTMLExport:
             with pytest.raises(ImportError, match="pyvis"):
                 tg.export_html(out)
 
+    def test_standalone_export_escapes_script_termination(self):
+        tg = ToolGraph()
+        tg.add_tool(
+            ToolSchema(
+                name='bad</script><script>alert(1)</script>',
+                description='desc </script><script>alert(2)</script>',
+                parameters=[],
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir) / "graph.html"
+            tg.export_html(out, standalone=True)
+            content = out.read_text()
+            assert "<\\/script><script>alert(1)<\\/script>" in content
+            assert "desc <\\/script><script>alert(2)<\\/script>" in content
+
+    def test_pyvis_tooltip_escapes_html(self):
+        pytest.importorskip("pyvis")
+        tg = ToolGraph()
+        tg.add_tool(
+            ToolSchema(
+                name='bad<script>alert(1)</script>',
+                description='<img src=x onerror=alert(2)>',
+                parameters=[],
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir) / "graph.html"
+            tg.export_html(out)
+            content = out.read_text()
+            assert "<img src=x onerror=alert(2)>" not in content
+            assert "<b>bad<script>alert(1)</script></b>" not in content
+            assert "\\u0026lt;img src=x onerror=alert(2)\\u0026gt;" in content
+
 
 # --- CLI ---
 

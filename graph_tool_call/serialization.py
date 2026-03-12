@@ -21,6 +21,7 @@ def save_graph(
     path: str | Path,
     *,
     metadata: dict[str, Any] | None = None,
+    retrieval_state: dict[str, Any] | None = None,
 ) -> None:
     """Save graph structure and tool schemas to a JSON file.
 
@@ -46,6 +47,8 @@ def save_graph(
         "graph": graph.to_dict(),
         "tools": {name: tool.model_dump() for name, tool in tools.items()},
     }
+    if retrieval_state:
+        data["retrieval_state"] = retrieval_state
     path = Path(path)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -60,13 +63,13 @@ def save_graph(
 
 def load_graph(
     path: str | Path,
-) -> tuple[GraphEngine, dict[str, ToolSchema], dict[str, Any]]:
+) -> tuple[GraphEngine, dict[str, ToolSchema], dict[str, Any], dict[str, Any]]:
     """Load graph structure, tool schemas, and build metadata from a JSON file.
 
     Returns
     -------
-    tuple[GraphEngine, dict[str, ToolSchema], dict[str, Any]]
-        (graph, tools, metadata). Metadata includes ``built_at``,
+    tuple[GraphEngine, dict[str, ToolSchema], dict[str, Any], dict[str, Any]]
+        (graph, tools, metadata, retrieval_state). Metadata includes ``built_at``,
         ``source_urls``, ``tool_count``, etc.
     """
     path = Path(path)
@@ -94,4 +97,5 @@ def load_graph(
     graph = NetworkXGraph.from_dict(data["graph"])
     tools = {name: ToolSchema(**schema) for name, schema in data.get("tools", {}).items()}
     metadata = data.get("metadata", {})
-    return graph, tools, metadata
+    retrieval_state = data.get("retrieval_state", {})
+    return graph, tools, metadata, retrieval_state

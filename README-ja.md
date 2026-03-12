@@ -140,6 +140,7 @@ pip install graph-tool-call[all]               # すべて
 pip install graph-tool-call[lint]              # + ai-api-lint spec自動修正
 pip install graph-tool-call[similarity]        # + rapidfuzz 重複検出
 pip install graph-tool-call[visualization]     # + pyvis HTMLグラフエクスポート
+pip install graph-tool-call[dashboard]         # + Dash Cytoscape ダッシュボード
 pip install graph-tool-call[langchain]         # + LangChain toolアダプター
 ```
 
@@ -385,6 +386,32 @@ tools = tg.retrieve("一時ファイルを削除", top_k=5)
 MCPアノテーション（`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`）は検索シグナルとして活用されます。
 参照クエリはread-onlyツールを、削除クエリはdestructiveツールをより優先的にランク付けできます。
 
+### MCPサーバーURLから直接収集
+
+```python
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph()
+
+# Public MCP endpoint
+tg.ingest_mcp_server("https://mcp.example.com/mcp")
+
+# ローカル/プライベートMCP endpointは明示的な許可が必要
+tg.ingest_mcp_server(
+    "http://127.0.0.1:3000/mcp",
+    allow_private_hosts=True,
+)
+```
+
+`ingest_mcp_server()` は HTTP JSON-RPC `tools/list` を呼び出してツール一覧を取得し、
+MCPアノテーションを保持したまま graph に登録します。
+
+リモート収集の既定セーフティ:
+- private / localhost host は既定でブロック
+- リモート応答サイズを制限
+- redirect 回数を制限
+- 想定外の content-type を拒否
+
 ### Python関数から生成
 
 ```python
@@ -481,6 +508,15 @@ tg = ToolGraph.from_url(url, cache="my_graph.json")
 ```
 
 グラフ構造全体（ノード、エッジ、関係タイプ、ウェイト）が保持されます。
+
+エンベディング検索を有効化した状態で保存すると、次も一緒に保持されます。
+- embedding vector
+- 復元可能な embedding provider 設定
+- retrieval weights
+- diversity 設定
+
+つまり `ToolGraph.load()` 後に embedding を再構築しなくても、
+hybrid retrieval 状態をそのまま復元できます。
 
 ---
 
@@ -621,6 +657,7 @@ tg = ToolGraph.from_url(url, lint=True)
 | `add_tools(tools)`             | 複数ツール追加                  |
 | `ingest_openapi(source)`       | OpenAPI / Swagger specから収集 |
 | `ingest_mcp_tools(tools)`      | MCPツールリストから収集          |
+| `ingest_mcp_server(url)`       | MCP HTTPサーバーから直接収集       |
 | `ingest_functions(fns)`        | Python callableから収集        |
 | `ingest_arazzo(source)`        | Arazzo 1.0.0ワークフロー spec収集  |
 | `from_url(url, cache=...)`     | Swagger UIまたはspec URLからビルド |
@@ -628,6 +665,8 @@ tg = ToolGraph.from_url(url, lint=True)
 | `auto_organize(llm=...)`       | ツール自動分類                  |
 | `build_ontology(llm=...)`      | 完全オントロジービルド                  |
 | `retrieve(query, top_k=10)`    | ツール検索                     |
+| `validate_tool_call(call)`     | ツール呼び出しの検証と自動補正        |
+| `assess_tool_call(call)`       | 実行ポリシーに基づく `allow/confirm/deny` 判定 |
 | `enable_embedding(provider)`   | ハイブリッドエンベディング検索を有効化            |
 | `enable_reranker(model)`       | cross-encoderリランキングを有効化       |
 | `enable_diversity(lambda_)`    | MMR多様性を有効化                 |
@@ -635,10 +674,12 @@ tg = ToolGraph.from_url(url, lint=True)
 | `find_duplicates(threshold)`   | 重複ツール検出                  |
 | `merge_duplicates(pairs)`      | 検出された重複を統合                   |
 | `apply_conflicts()`            | CONFLICTS_WITHエッジ検出/追加     |
+| `analyze()`                    | 運用分析レポートを生成                |
 | `save(path)` / `load(path)`    | シリアライズ / デシリアライズ                  |
 | `export_html(path)`            | インタラクティブHTML可視化エクスポート         |
 | `export_graphml(path)`         | GraphMLフォーマットエクスポート             |
 | `export_cypher(path)`          | Neo4j Cypher文エクスポート        |
+| `dashboard_app()` / `dashboard()` | ダッシュボードを生成 / 起動         |
 
 </details>
 

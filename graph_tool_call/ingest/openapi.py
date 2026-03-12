@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import copy
 import json
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any
 
 from graph_tool_call.core.tool import MCPAnnotations, ToolParameter, ToolSchema
 from graph_tool_call.ingest.normalizer import NormalizedSpec, normalize
+from graph_tool_call.net import fetch_url_text
 
 # ---------------------------------------------------------------------------
 # YAML support (optional)
@@ -31,7 +30,12 @@ except ImportError:  # pragma: no cover
 _HTTP_PREFIXES = ("http://", "https://")
 
 
-def _load_spec(source: dict[str, Any] | str) -> dict[str, Any]:
+def _load_spec(
+    source: dict[str, Any] | str,
+    *,
+    allow_private_hosts: bool = False,
+    max_response_bytes: int = 5_000_000,
+) -> dict[str, Any]:
     """Load a raw spec dict from *source* (dict, file path, or URL)."""
     if isinstance(source, dict):
         return source
@@ -42,15 +46,12 @@ def _load_spec(source: dict[str, Any] | str) -> dict[str, Any]:
 
     # URL
     if source.startswith(_HTTP_PREFIXES):
-        try:
-            with urllib.request.urlopen(source, timeout=30) as resp:  # noqa: S310
-                raw = resp.read().decode("utf-8")
-        except urllib.error.HTTPError as e:
-            msg = f"HTTP {e.code} from {source}: {e.reason}"
-            raise ConnectionError(msg) from None
-        except urllib.error.URLError as e:
-            msg = f"Cannot reach {source}: {e.reason}"
-            raise ConnectionError(msg) from None
+        raw = fetch_url_text(
+            source,
+            timeout=30,
+            allow_private_hosts=allow_private_hosts,
+            max_response_bytes=max_response_bytes,
+        )
         # Try JSON first, then YAML
         try:
             return json.loads(raw)
@@ -406,6 +407,8 @@ def ingest_openapi(
     *,
     required_only: bool = False,
     skip_deprecated: bool = True,
+    allow_private_hosts: bool = False,
+    max_response_bytes: int = 5_000_000,
 ) -> tuple[list[ToolSchema], NormalizedSpec]:
     """Ingest an OpenAPI/Swagger spec and return (tools, normalized_spec).
 
@@ -418,7 +421,11 @@ def ingest_openapi(
     skip_deprecated:
         If True (default), skip operations marked ``deprecated: true``.
     """
-    raw_spec = _load_spec(source)
+    raw_spec = _load_spec(
+        source,
+        allow_private_hosts=allow_private_hosts,
+        max_response_bytes=max_response_bytes,
+    )
     spec = normalize(raw_spec)
 
     # Resolve refs on the raw spec so all $ref pointers are expanded

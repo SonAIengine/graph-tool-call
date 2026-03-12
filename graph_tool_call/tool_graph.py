@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import re
-import urllib.request
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -13,6 +12,7 @@ from urllib.parse import quote, urljoin
 from graph_tool_call.core.graph import NetworkXGraph
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema, normalize_tool, parse_tool
+from graph_tool_call.net import fetch_url_text
 from graph_tool_call.ontology.builder import OntologyBuilder
 from graph_tool_call.ontology.schema import RelationType
 from graph_tool_call.retrieval.engine import RetrievalEngine, RetrievalResult, SearchMode
@@ -32,7 +32,12 @@ def _encode_spec_url(base: str, raw_url: str) -> str:
     return absolute
 
 
-def _discover_spec_urls(url: str) -> list[str]:
+def _discover_spec_urls(
+    url: str,
+    *,
+    allow_private_hosts: bool = False,
+    max_response_bytes: int = 5_000_000,
+) -> list[str]:
     """Discover OpenAPI spec URLs from a Swagger UI or direct spec URL.
 
     If the URL contains ``/swagger-ui``, attempts to find the swagger-config
@@ -57,15 +62,25 @@ def _discover_spec_urls(url: str) -> list[str]:
         f"{base}/api-docs/swagger-config",
     ]
     for config_url in config_urls_to_try:
-        result = _try_swagger_config(config_url, base)
+        result = _try_swagger_config(
+            config_url,
+            base,
+            allow_private_hosts=allow_private_hosts,
+            max_response_bytes=max_response_bytes,
+        )
         if result:
             return result
 
     # Step 2: Parse swagger-initializer.js to find configUrl
     init_js_url = f"{ui_base}/swagger-initializer.js"
     try:
-        with urllib.request.urlopen(init_js_url, timeout=10) as resp:  # noqa: S310
-            js_text = resp.read().decode("utf-8")
+        js_text = fetch_url_text(
+            init_js_url,
+            timeout=10,
+            allow_private_hosts=allow_private_hosts,
+            max_response_bytes=max_response_bytes,
+            allowed_content_types=("application/javascript", "text/javascript", "text/plain"),
+        )
         # Extract configUrl from JS: "configUrl" : "/api/bo/api-docs/swagger-config"
         match = re.search(r'"configUrl"\s*:\s*"([^"]+)"', js_text)
         if match:
@@ -79,7 +94,12 @@ def _discover_spec_urls(url: str) -> list[str]:
                 config_url = f"{parsed.scheme}://{parsed.netloc}{config_path}"
             else:
                 config_url = urljoin(base + "/", config_path)
-            result = _try_swagger_config(config_url, base)
+            result = _try_swagger_config(
+                config_url,
+                base,
+                allow_private_hosts=allow_private_hosts,
+                max_response_bytes=max_response_bytes,
+            )
             if result:
                 return result
     except Exception:  # noqa: BLE001
@@ -89,11 +109,22 @@ def _discover_spec_urls(url: str) -> list[str]:
     return [f"{base}/v3/api-docs"]
 
 
-def _try_swagger_config(config_url: str, base: str) -> list[str] | None:
+def _try_swagger_config(
+    config_url: str,
+    base: str,
+    *,
+    allow_private_hosts: bool = False,
+    max_response_bytes: int = 5_000_000,
+) -> list[str] | None:
     """Try fetching a swagger-config URL and extract spec URLs."""
     try:
-        with urllib.request.urlopen(config_url, timeout=10) as resp:  # noqa: S310
-            config = json.loads(resp.read().decode("utf-8"))
+        text = fetch_url_text(
+            config_url,
+            timeout=10,
+            allow_private_hosts=allow_private_hosts,
+            max_response_bytes=max_response_bytes,
+        )
+        config = json.loads(text)
         urls = config.get("urls", [])
         if urls:
             return [_encode_spec_url(base, u["url"]) for u in urls if "url" in u]
@@ -192,6 +223,8 @@ class ToolGraph:
         skip_deprecated: bool = True,
         detect_dependencies: bool = True,
         min_confidence: float = 0.7,
+        allow_private_hosts: bool = False,
+        max_response_bytes: int = 5_000_000,
     ) -> list[ToolSchema]:
         """Ingest an OpenAPI/Swagger spec, register tools, and auto-detect relations.
 
@@ -216,7 +249,11 @@ class ToolGraph:
         from graph_tool_call.ingest.openapi import ingest_openapi
 
         tools, spec = ingest_openapi(
-            source, required_only=required_only, skip_deprecated=skip_deprecated
+            source,
+            required_only=required_only,
+            skip_deprecated=skip_deprecated,
+            allow_private_hosts=allow_private_hosts,
+            max_response_bytes=max_response_bytes,
         )
 
         # Register tools
@@ -297,6 +334,37 @@ class ToolGraph:
         self._invalidate_retrieval()
         return schemas
 
+    def ingest_mcp_server(
+        self,
+        server_url: str,
+        *,
+        server_name: str | None = None,
+        detect_dependencies: bool = True,
+        min_confidence: float = 0.7,
+        allow_private_hosts: bool = False,
+        max_response_bytes: int = 5_000_000,
+        timeout: int = 30,
+    ) -> list[ToolSchema]:
+        """Fetch tools from an MCP server endpoint and ingest them.
+
+        The endpoint is expected to support HTTP JSON-RPC ``tools/list``.
+        """
+        from graph_tool_call.ingest.mcp import fetch_mcp_tools
+
+        remote_tools, discovered_name = fetch_mcp_tools(
+            server_url,
+            allow_private_hosts=allow_private_hosts,
+            max_response_bytes=max_response_bytes,
+            timeout=timeout,
+        )
+        effective_name = server_name or discovered_name
+        return self.ingest_mcp_tools(
+            remote_tools,
+            server_name=effective_name,
+            detect_dependencies=detect_dependencies,
+            min_confidence=min_confidence,
+        )
+
     def ingest_functions(
         self,
         fns: Iterable[Callable[..., Any]],
@@ -346,7 +414,13 @@ class ToolGraph:
         self._invalidate_retrieval()
         return tools
 
-    def ingest_arazzo(self, source: Any) -> list:
+    def ingest_arazzo(
+        self,
+        source: Any,
+        *,
+        allow_private_hosts: bool = False,
+        max_response_bytes: int = 5_000_000,
+    ) -> list:
         """Ingest an Arazzo 1.0.0 workflow spec, adding PRECEDES relations.
 
         Only adds relations between tools already registered in the graph.
@@ -358,7 +432,12 @@ class ToolGraph:
         """
         from graph_tool_call.ingest.arazzo import ingest_arazzo
 
-        relations = ingest_arazzo(source, registered_tools=set(self._tools.keys()))
+        relations = ingest_arazzo(
+            source,
+            registered_tools=set(self._tools.keys()),
+            allow_private_hosts=allow_private_hosts,
+            max_response_bytes=max_response_bytes,
+        )
         for rel in relations:
             self._builder.add_relation(rel.source, rel.target, rel.relation_type)
         self._invalidate_retrieval()
@@ -626,6 +705,8 @@ class ToolGraph:
         cache: str | Path | None = None,
         force: bool = False,
         progress: Callable[[str], None] | None = None,
+        allow_private_hosts: bool = False,
+        max_response_bytes: int = 5_000_000,
     ) -> ToolGraph:
         """Create a ToolGraph by fetching OpenAPI spec(s) from a URL.
 
@@ -669,13 +750,21 @@ class ToolGraph:
         from graph_tool_call.ingest.openapi import _load_spec
 
         _log(f"Discovering specs from {url}")
-        spec_urls = _discover_spec_urls(url)
+        spec_urls = _discover_spec_urls(
+            url,
+            allow_private_hosts=allow_private_hosts,
+            max_response_bytes=max_response_bytes,
+        )
         _log(f"Found {len(spec_urls)} spec(s)")
 
         tg = cls()
         for i, spec_url in enumerate(spec_urls, 1):
             _log(f"Ingesting spec {i}/{len(spec_urls)}: {spec_url}")
-            raw_spec = _load_spec(spec_url)
+            raw_spec = _load_spec(
+                spec_url,
+                allow_private_hosts=allow_private_hosts,
+                max_response_bytes=max_response_bytes,
+            )
 
             if lint:
                 from graph_tool_call.ingest.lint import lint_and_fix_spec
@@ -689,6 +778,8 @@ class ToolGraph:
                 skip_deprecated=skip_deprecated,
                 detect_dependencies=detect_dependencies,
                 min_confidence=min_confidence,
+                allow_private_hosts=allow_private_hosts,
+                max_response_bytes=max_response_bytes,
             )
 
         if llm is not None:
@@ -706,6 +797,8 @@ class ToolGraph:
                     "min_confidence": min_confidence,
                     "lint": lint,
                     "llm": llm is not None,
+                    "allow_private_hosts": allow_private_hosts,
+                    "max_response_bytes": max_response_bytes,
                 },
             }
             _log(f"Saving graph to {cache_path}")
@@ -724,16 +817,61 @@ class ToolGraph:
         metadata:
             Optional build metadata (source_urls, build_options, etc.).
         """
-        save_graph(self._graph, self._tools, path, metadata=metadata)
+        retrieval_state: dict[str, Any] | None = None
+        if self._retrieval is not None:
+            retrieval_state = {
+                "weights": {
+                    "keyword": self._retrieval._keyword_weight,
+                    "graph": self._retrieval._graph_weight,
+                    "embedding": self._retrieval._embedding_weight,
+                    "annotation": self._retrieval._annotation_weight,
+                },
+                "diversity_lambda": self._retrieval._diversity_lambda,
+            }
+            if self._retrieval._embedding_index is not None:
+                retrieval_state["embedding_index"] = self._retrieval._embedding_index.to_dict()
+
+        save_graph(
+            self._graph,
+            self._tools,
+            path,
+            metadata=metadata,
+            retrieval_state=retrieval_state,
+        )
 
     @classmethod
     def load(cls, path: str | Path) -> ToolGraph:
         """Load a tool graph from a JSON file."""
-        graph, tools, metadata = load_graph(path)
+        graph, tools, metadata, retrieval_state = load_graph(path)
         tg = cls(graph=graph)
         tg._tools = tools
         tg._metadata = metadata
+        tg._restore_retrieval_state(retrieval_state)
         return tg
+
+    def _restore_retrieval_state(self, retrieval_state: dict[str, Any]) -> None:
+        if not retrieval_state:
+            return
+
+        engine = self._get_retrieval_engine()
+        weights = retrieval_state.get("weights", {})
+        if isinstance(weights, dict):
+            engine.set_weights(
+                keyword=weights.get("keyword"),
+                graph=weights.get("graph"),
+                embedding=weights.get("embedding"),
+                annotation=weights.get("annotation"),
+            )
+
+        diversity_lambda = retrieval_state.get("diversity_lambda")
+        if isinstance(diversity_lambda, (int, float)):
+            engine.set_diversity(float(diversity_lambda))
+
+        embedding_state = retrieval_state.get("embedding_index")
+        if isinstance(embedding_state, dict):
+            from graph_tool_call.retrieval.embedding import EmbeddingIndex
+
+            engine.set_embedding_index(EmbeddingIndex.from_dict(embedding_state))
 
     @property
     def metadata(self) -> dict[str, Any]:
@@ -761,6 +899,24 @@ class ToolGraph:
         if added:
             self._invalidate_retrieval()
         return added
+
+    def analyze(
+        self,
+        *,
+        duplicate_threshold: float = 0.85,
+        conflict_min_confidence: float = 0.6,
+    ) -> Any:
+        """Build an operational analysis report for the current graph."""
+        from graph_tool_call.analyze.report import analyze_graph
+
+        duplicates = self.find_duplicates(threshold=duplicate_threshold)
+        conflicts = self.detect_conflicts(min_confidence=conflict_min_confidence)
+        return analyze_graph(
+            self._graph,
+            self._tools,
+            duplicates=duplicates,
+            conflicts=conflicts,
+        )
 
     # --- presets ---
 
@@ -800,6 +956,28 @@ class ToolGraph:
         from graph_tool_call.assist.validator import validate_tool_call as _validate
 
         return _validate(call, self._tools, fuzzy_threshold=fuzzy_threshold)
+
+    def assess_tool_call(
+        self,
+        call: dict[str, Any],
+        *,
+        policy: Any = None,
+        fuzzy_threshold: float = 0.7,
+    ) -> Any:
+        """Assess whether a tool call should be allowed, confirmed, or denied.
+
+        This wraps ``validate_tool_call()`` with an execution policy layer.
+        The returned assessment includes the corrected tool name/arguments and a
+        final decision: ``allow``, ``confirm``, or ``deny``.
+        """
+        from graph_tool_call.assist.policy import assess_tool_call as _assess
+
+        return _assess(
+            call,
+            self._tools,
+            policy=policy,
+            fuzzy_threshold=fuzzy_threshold,
+        )
 
     def suggest_next(
         self,
@@ -874,6 +1052,24 @@ class ToolGraph:
         from graph_tool_call.visualization.cypher_export import export_cypher
 
         export_cypher(self._graph, self._tools, path)
+
+    def dashboard_app(self, *, title: str = "graph-tool-call Dashboard") -> Any:
+        """Build a Dash Cytoscape dashboard app for this graph."""
+        from graph_tool_call.dashboard.app import build_dashboard_app
+
+        return build_dashboard_app(self, title=title)
+
+    def dashboard(
+        self,
+        *,
+        host: str = "127.0.0.1",
+        port: int = 8050,
+        debug: bool = False,
+    ) -> Any:
+        """Launch the interactive dashboard server."""
+        from graph_tool_call.dashboard.app import launch_dashboard
+
+        return launch_dashboard(self, host=host, port=port, debug=debug)
 
     # --- info ---
 

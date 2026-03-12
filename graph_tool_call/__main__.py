@@ -32,13 +32,25 @@ def _build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--organize", action="store_true", help="Run auto_organize()")
     p_ingest.add_argument("--lint", action="store_true", help="Run ai-api-lint auto-fix")
     p_ingest.add_argument("--lint-level", type=int, default=2, help="Lint level (1 or 2)")
+    p_ingest.add_argument(
+        "--allow-private-hosts",
+        action="store_true",
+        help="Allow localhost/private IP URLs for remote spec loading",
+    )
     p_ingest.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output")
 
     # --- analyze ---
     p_analyze = sub.add_parser("analyze", help="Analyze a saved graph")
     p_analyze.add_argument("graph_file", help="Graph JSON file")
     p_analyze.add_argument("--duplicates", action="store_true", help="Find duplicate tools")
+    p_analyze.add_argument("--conflicts", action="store_true", help="Show detected conflicts")
+    p_analyze.add_argument("--orphans", action="store_true", help="Show orphan tools")
+    p_analyze.add_argument("--categories", action="store_true", help="Show category coverage")
     p_analyze.add_argument("--threshold", type=float, default=0.85, help="Duplicate threshold")
+    p_analyze.add_argument(
+        "--conflict-threshold", type=float, default=0.6, help="Conflict confidence threshold"
+    )
+    p_analyze.add_argument("--json", action="store_true", dest="as_json", help="JSON output")
 
     # --- retrieve ---
     p_retrieve = sub.add_parser("retrieve", help="Search tools by query")
@@ -62,6 +74,13 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- info ---
     p_info = sub.add_parser("info", help="Show graph summary")
     p_info.add_argument("graph_file", help="Graph JSON file")
+
+    # --- dashboard ---
+    p_dash = sub.add_parser("dashboard", help="Launch interactive dashboard")
+    p_dash.add_argument("graph_file", help="Graph JSON file")
+    p_dash.add_argument("--host", default="127.0.0.1", help="Host to bind")
+    p_dash.add_argument("--port", type=int, default=8050, help="Port to bind")
+    p_dash.add_argument("--debug", action="store_true", help="Enable Dash debug mode")
 
     return parser
 
@@ -93,6 +112,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
             cache=args.output,
             force=args.force,
             progress=progress,
+            allow_private_hosts=args.allow_private_hosts,
         )
 
         # Post-build: organize without LLM if --organize but no --llm
@@ -111,6 +131,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
             required_only=args.required_only,
             skip_deprecated=not args.include_deprecated,
             min_confidence=args.min_confidence,
+            allow_private_hosts=args.allow_private_hosts,
         )
 
         if args.organize or args.llm:
@@ -145,16 +166,61 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     from graph_tool_call import ToolGraph
 
     tg = ToolGraph.load(args.graph_file)
+    report = tg.analyze(
+        duplicate_threshold=args.threshold,
+        conflict_min_confidence=args.conflict_threshold,
+    )
+
+    if args.as_json:
+        print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+        return
+
     print(tg)
+    print("\nSummary:")
+    print(f"  tools: {report.tool_count}")
+    print(f"  nodes: {report.node_count}")
+    print(f"  edges: {report.edge_count}")
+    print(f"  categories: {report.category_count}")
+    print(f"  orphan tools: {report.orphan_tool_count}")
+    print(f"  duplicates: {report.duplicate_count}")
+    print(f"  conflicts: {report.conflict_count}")
+
+    if report.relation_counts:
+        print("\nRelations:")
+        for rel, count in report.relation_counts.items():
+            print(f"  {rel}: {count}")
 
     if args.duplicates:
-        dupes = tg.find_duplicates(threshold=args.threshold)
-        if dupes:
-            print(f"\nDuplicates found ({len(dupes)}):")
-            for d in dupes:
+        if report.duplicates:
+            print(f"\nDuplicates found ({len(report.duplicates)}):")
+            for d in report.duplicates:
                 print(f"  {d.tool_a} <-> {d.tool_b}  (score: {d.score:.3f})")
         else:
             print("\nNo duplicates found.")
+
+    if args.conflicts:
+        if report.conflicts:
+            print(f"\nConflicts found ({len(report.conflicts)}):")
+            for conflict in report.conflicts:
+                print(
+                    f"  {conflict.source} <-> {conflict.target}  "
+                    f"(confidence: {conflict.confidence:.2f})"
+                )
+        else:
+            print("\nNo conflicts found.")
+
+    if args.orphans and report.orphan_tools:
+        print(f"\nOrphan tools ({len(report.orphan_tools)}):")
+        for tool_name in report.orphan_tools:
+            print(f"  {tool_name}")
+    elif args.orphans:
+        print("\nNo orphan tools.")
+
+    if args.categories and report.categories:
+        print(f"\nCategories ({len(report.categories)}):")
+        for category in report.categories:
+            domain = f" [{category.domain}]" if category.domain else ""
+            print(f"  {category.name}{domain}: {category.tool_count} tools")
 
 
 def cmd_retrieve(args: argparse.Namespace) -> None:
@@ -242,6 +308,13 @@ def cmd_info(args: argparse.Namespace) -> None:
             print(f"  {cat} ({tool_count} tools)")
 
 
+def cmd_dashboard(args: argparse.Namespace) -> None:
+    from graph_tool_call import ToolGraph
+
+    tg = ToolGraph.load(args.graph_file)
+    tg.dashboard(host=args.host, port=args.port, debug=args.debug)
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -256,6 +329,7 @@ def main() -> None:
         "retrieve": cmd_retrieve,
         "visualize": cmd_visualize,
         "info": cmd_info,
+        "dashboard": cmd_dashboard,
     }
     handlers[args.command](args)
 

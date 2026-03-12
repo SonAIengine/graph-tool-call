@@ -135,7 +135,7 @@ def test_pipeline_from_url_with_llm():
     spec_json = json.dumps(_mock_spec()).encode("utf-8")
 
     class FakeResp:
-        def read(self):
+        def read(self, _limit=None):
             return spec_json
 
         def __enter__(self):
@@ -144,7 +144,7 @@ def test_pipeline_from_url_with_llm():
         def __exit__(self, *a):
             pass
 
-    with patch("urllib.request.urlopen", return_value=FakeResp()):
+    with patch("graph_tool_call.net._open_url", return_value=FakeResp()):
         tg = ToolGraph.from_url(
             "https://example.com/openapi.json",
             llm=MockLLM(),

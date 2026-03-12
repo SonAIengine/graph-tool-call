@@ -139,6 +139,7 @@ pip install graph-tool-call[all]               # 全部
 pip install graph-tool-call[lint]              # + ai-api-lint spec 自动修复
 pip install graph-tool-call[similarity]        # + rapidfuzz 重复检测
 pip install graph-tool-call[visualization]     # + pyvis HTML 图导出
+pip install graph-tool-call[dashboard]         # + Dash Cytoscape 仪表板
 pip install graph-tool-call[langchain]         # + LangChain tool 适配器
 ```
 
@@ -384,6 +385,32 @@ tools = tg.retrieve("删除临时文件", top_k=5)
 MCP annotation (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) 被用作检索信号。
 查询意图会自动分类：读取查询优先返回 read-only 工具，删除查询优先返回 destructive 工具。
 
+### 直接从 MCP 服务器 URL 收集
+
+```python
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph()
+
+# Public MCP endpoint
+tg.ingest_mcp_server("https://mcp.example.com/mcp")
+
+# 本地/私有 MCP endpoint 需要显式允许
+tg.ingest_mcp_server(
+    "http://127.0.0.1:3000/mcp",
+    allow_private_hosts=True,
+)
+```
+
+`ingest_mcp_server()` 会调用 HTTP JSON-RPC `tools/list` 获取工具列表，
+并在保留 MCP annotation 的情况下直接注册到 graph 中。
+
+远程收集默认安全策略:
+- 默认阻止 private / localhost host
+- 限制远程响应大小
+- 限制 redirect 次数
+- 拒绝意外的 content-type
+
 ### 从 Python 函数生成
 
 ```python
@@ -480,6 +507,15 @@ tg = ToolGraph.from_url(url, cache="my_graph.json")
 ```
 
 完整图结构（节点、边、关系类型、权重）全部保留。
+
+启用嵌入检索后保存时，还会一并保留：
+- embedding vector
+- 可恢复的 embedding provider 配置
+- retrieval weights
+- diversity 配置
+
+这意味着 `ToolGraph.load()` 之后无需重新构建 embedding，
+就能直接恢复 hybrid retrieval 状态。
 
 ---
 
@@ -620,6 +656,7 @@ tg = ToolGraph.from_url(url, lint=True)
 | `add_tools(tools)`             | 添加多个工具                  |
 | `ingest_openapi(source)`       | 从 OpenAPI / Swagger spec 收集 |
 | `ingest_mcp_tools(tools)`      | 从 MCP tool list 收集          |
+| `ingest_mcp_server(url)`       | 直接从 MCP HTTP 服务器收集       |
 | `ingest_functions(fns)`        | 从 Python callable 收集        |
 | `ingest_arazzo(source)`        | 收集 Arazzo 1.0.0 工作流 spec  |
 | `from_url(url, cache=...)`     | 从 Swagger UI 或 spec URL 构建 |
@@ -627,6 +664,8 @@ tg = ToolGraph.from_url(url, lint=True)
 | `auto_organize(llm=...)`       | 工具自动分类                  |
 | `build_ontology(llm=...)`      | 构建完整本体                  |
 | `retrieve(query, top_k=10)`    | 工具检索                     |
+| `validate_tool_call(call)`     | 校验并自动纠正 tool call        |
+| `assess_tool_call(call)`       | 按执行策略返回 `allow/confirm/deny` 判定 |
 | `enable_embedding(provider)`   | 启用混合嵌入检索            |
 | `enable_reranker(model)`       | 启用 cross-encoder 重排序       |
 | `enable_diversity(lambda_)`    | 启用 MMR 多样性                 |
@@ -634,10 +673,12 @@ tg = ToolGraph.from_url(url, lint=True)
 | `find_duplicates(threshold)`   | 检测重复工具                  |
 | `merge_duplicates(pairs)`      | 合并已检测的重复工具                   |
 | `apply_conflicts()`            | 检测/添加 CONFLICTS_WITH 边     |
+| `analyze()`                    | 生成运行分析报告                    |
 | `save(path)` / `load(path)`    | 序列化 / 反序列化                  |
 | `export_html(path)`            | 导出交互式 HTML 可视化         |
 | `export_graphml(path)`         | 导出 GraphML 格式             |
 | `export_cypher(path)`          | 导出 Neo4j Cypher 语句        |
+| `dashboard_app()` / `dashboard()` | 生成 / 启动仪表板             |
 
 </details>
 

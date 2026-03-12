@@ -9,7 +9,7 @@
 | **2** | Analyze + Search | dedup, embedding, ontology modes, search tiers, from_url() | ✅ 완료 | - |
 | **2.5** | MCP Annotation | MCP ingest, intent classifier, annotation-aware retrieval | ✅ 완료 | - |
 | **3** | Production | CLI, 시각화, conflict detection, commerce preset | ✅ 완료 | - |
-| **4** | Community | LangChain 등록, interactive dashboard, 블로그, 최적화 | ⬜ 대기 | 2주 |
+| **4** | Community | LangChain 등록, interactive dashboard, 블로그, 최적화 | 🟨 진행 중 | 2주 |
 
 ## WBS 전체 트리
 
@@ -110,7 +110,9 @@ graph-tool-call
 │   └── 2.5-8. 테스트 74개 추가 (255개 total) ✅
 │
 ├── Phase 3: Production + Visualization ✅
-│   ├── 3-1. (완료 — Phase 2.5로 이동) MCP server ingest ✅
+│   ├── 3-1. MCP ingest
+│   │   ├── 3-1a. MCP server discovery/listing ⬜ Phase 4로 이월
+│   │   └── 3-1b. MCP tool list ingest → ToolSchema ✅ (Phase 2.5에서 완료)
 │   ├── 3-2. Conflict detection 강화 ✅
 │   ├── 3-3. CLI (ingest/analyze/retrieve/visualize/info) ✅
 │   ├── 3-4. Visualization — Static HTML ✅
@@ -127,7 +129,7 @@ graph-tool-call
 │   ├── 3-8. GitHub Actions CI ✅
 │   └── 3-9. PyPI 배포 ⬜ Phase 4로 이월
 │
-└── Phase 4: Community + Dashboard ⬜
+└── Phase 4: Community + Dashboard 🟨
     ├── 4-1. Interactive Dashboard (Dash Cytoscape) ← NEW
     │   ├── 4-1a. 그래프 탐색 UI
     │   ├── 4-1b. 수동 편집 (관계 추가/삭제)
@@ -146,8 +148,8 @@ graph-tool-call
 | 1 | 입력 소스 = 표준 포맷 확인 | 이미 반영 (OpenAPI/MCP/LangChain) | ✅ |
 | 2 | OpenAPI 작성 가이드 | 1-8, [design/openapi-guide.md](../design/openapi-guide.md) | ⬜ |
 | 3 | API 호출 순서/우선순위 | 1-4g~i, 2-5, [design/call-ordering.md](../design/call-ordering.md) | ⬜ |
-| 4 | 온톨로지 2모드 (Auto/LLM-Auto) + Dashboard 공통 | 2-3, 3-6, 4-1, [design/ontology-modes.md](../design/ontology-modes.md) | ⬜ |
-| 5 | Search modes 개선 | 1-7d~e, 2-4, 3-5, [design/search-modes.md](../design/search-modes.md) | ⬜ |
+| 4 | 온톨로지 2모드 (Auto/LLM-Auto) + Dashboard 공통 | 2-3 완료, 3-6/4-1 진행 예정, [design/ontology-modes.md](../design/ontology-modes.md) | 🟨 |
+| 5 | Search modes 개선 | 1-7d~e, 2-4, 3-5 구현 완료, [design/search-modes.md](../design/search-modes.md) | ✅ |
 
 ## 성공 기준
 

@@ -7,10 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-03-12
+
 ### Planned — Phase 4
-- Interactive Dashboard (Dash Cytoscape) — visualization + manual editing
+- Interactive dashboard manual editing and relation review workflow
 - LangChain community package
 - llama.cpp provider
+
+### Added
+- **Interactive dashboard MVP**
+  - `tg.dashboard_app()` to build a Dash Cytoscape app
+  - `tg.dashboard()` to launch interactive graph inspection locally
+  - relation/category filters, node detail panel, and query result highlighting
+- **Operational analyze report**
+  - `tg.analyze()` summary with duplicates, conflicts, orphan tools, category coverage
+  - CLI `analyze` now supports conflicts, orphans, categories, and JSON output
+- **Remote fetch hardening** for spec and workflow ingest
+  - shared safe network helper for remote OpenAPI / Swagger UI / Arazzo loading
+  - private / localhost hosts blocked by default
+  - response size limits, redirect limits, and content-type checks
+  - explicit opt-in via `allow_private_hosts=True`
+- **Execution policy layer** for tool calls
+  - `ToolCallDecision` (`allow`, `confirm`, `deny`)
+  - `ToolCallPolicy` and `ToolCallAssessment`
+  - `tg.assess_tool_call()` API on top of `validate_tool_call()`
+  - destructive auto-corrected calls denied by default
+- **MCP server ingest**
+  - `fetch_mcp_tools()` — HTTP JSON-RPC `tools/list`
+  - `tg.ingest_mcp_server()` — fetch + ingest MCP tool list from server URL
+  - supports both `{"result": {"tools": [...]}}` and `{"tools": [...]}`
+- **Embedding persistence**
+  - embedding vectors are now serialized with the graph
+  - restorable embedding provider config is preserved when available
+  - retrieval weights and diversity settings are restored on load
+
+### Changed
+- **Serialization format** now stores optional `retrieval_state`
+  - embedding index state
+  - retrieval weights
+  - diversity configuration
+- **Documentation sync**
+  - WBS updated to match actual Phase 3 implementation status
+  - `README.md`, `README-ko.md`, `README-ja.md`, `README-zh_CN.md` updated with
+    MCP server ingest, execution policy, remote fetch safety, and embedding persistence
 
 ## [0.5.0] - 2026-03-07
 
@@ -147,9 +186,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.8.0...HEAD
 [0.5.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SonAIengine/graph-tool-call/releases/tag/v0.1.0
+[0.8.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.5.0...v0.8.0

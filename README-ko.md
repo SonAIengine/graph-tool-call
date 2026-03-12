@@ -140,6 +140,7 @@ pip install graph-tool-call[all]               # 전부
 pip install graph-tool-call[lint]              # + ai-api-lint spec 자동 수정
 pip install graph-tool-call[similarity]        # + rapidfuzz 중복 탐지
 pip install graph-tool-call[visualization]     # + pyvis HTML 그래프 내보내기
+pip install graph-tool-call[dashboard]         # + Dash Cytoscape 대시보드
 pip install graph-tool-call[langchain]         # + LangChain tool 어댑터
 ```
 
@@ -385,6 +386,32 @@ tools = tg.retrieve("임시 파일 삭제", top_k=5)
 MCP annotation (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`)은 검색 신호로 활용됩니다.
 조회 쿼리는 read-only tool을, 삭제 쿼리는 destructive tool을 더 우선적으로 랭크할 수 있습니다.
 
+### MCP 서버 URL에서 바로 수집
+
+```python
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph()
+
+# Public MCP endpoint
+tg.ingest_mcp_server("https://mcp.example.com/mcp")
+
+# 로컬/사설 MCP endpoint는 명시적으로 허용해야 함
+tg.ingest_mcp_server(
+    "http://127.0.0.1:3000/mcp",
+    allow_private_hosts=True,
+)
+```
+
+`ingest_mcp_server()`는 HTTP JSON-RPC `tools/list`를 호출해 tool 목록을 가져오고,
+annotation을 보존한 채 graph에 등록합니다.
+
+원격 수집 기본 보안 정책:
+- private / localhost host는 기본 차단
+- 원격 응답 크기 제한
+- redirect 횟수 제한
+- 예상하지 않은 content-type 차단
+
 ### Python 함수에서 생성
 
 ```python
@@ -481,6 +508,14 @@ tg = ToolGraph.from_url(url, cache="my_graph.json")
 ```
 
 전체 그래프 구조(노드, 엣지, 관계 타입, 가중치)가 보존됩니다.
+
+임베딩 검색을 켠 상태에서 저장하면 아래도 함께 보존됩니다.
+- embedding vector
+- 복원 가능한 embedding provider 설정
+- retrieval weights
+- diversity 설정
+
+즉 `ToolGraph.load()` 후 embedding을 다시 만들지 않아도 hybrid retrieval 상태를 바로 복원할 수 있습니다.
 
 ---
 
@@ -621,6 +656,7 @@ tg = ToolGraph.from_url(url, lint=True)
 | `add_tools(tools)`             | 여러 tool 추가                  |
 | `ingest_openapi(source)`       | OpenAPI / Swagger spec에서 수집 |
 | `ingest_mcp_tools(tools)`      | MCP tool list에서 수집          |
+| `ingest_mcp_server(url)`       | MCP HTTP 서버에서 직접 수집       |
 | `ingest_functions(fns)`        | Python callable에서 수집        |
 | `ingest_arazzo(source)`        | Arazzo 1.0.0 워크플로우 spec 수집  |
 | `from_url(url, cache=...)`     | Swagger UI 또는 spec URL에서 빌드 |
@@ -628,6 +664,8 @@ tg = ToolGraph.from_url(url, lint=True)
 | `auto_organize(llm=...)`       | tool 자동 분류                  |
 | `build_ontology(llm=...)`      | 전체 온톨로지 빌드                  |
 | `retrieve(query, top_k=10)`    | tool 검색                     |
+| `validate_tool_call(call)`     | tool call 검증 및 자동 교정        |
+| `assess_tool_call(call)`       | 실행 정책 기준 `allow/confirm/deny` 판정 |
 | `enable_embedding(provider)`   | 하이브리드 임베딩 검색 활성화            |
 | `enable_reranker(model)`       | cross-encoder 리랭킹 활성화       |
 | `enable_diversity(lambda_)`    | MMR 다양성 활성화                 |
@@ -635,10 +673,12 @@ tg = ToolGraph.from_url(url, lint=True)
 | `find_duplicates(threshold)`   | 중복 tool 탐지                  |
 | `merge_duplicates(pairs)`      | 탐지된 중복 병합                   |
 | `apply_conflicts()`            | CONFLICTS_WITH 엣지 감지/추가     |
+| `analyze()`                    | 운영 분석 리포트 생성                |
 | `save(path)` / `load(path)`    | 직렬화 / 역직렬화                  |
 | `export_html(path)`            | 인터랙티브 HTML 시각화 내보내기         |
 | `export_graphml(path)`         | GraphML 포맷 내보내기             |
 | `export_cypher(path)`          | Neo4j Cypher 문장 내보내기        |
+| `dashboard_app()` / `dashboard()` | 대시보드 생성 / 실행             |
 
 </details>
 

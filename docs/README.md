@@ -57,6 +57,15 @@ docs/
 - **Annotation Scorer**: intent↔annotation alignment scoring → wRRF 4번째 source
 - **OpenAPI annotation 추론**: HTTP method → MCP annotation 자동 매핑 (RFC 7231)
 
+## 최근 추가 (vNext)
+
+- **MCP server ingest**: `tg.ingest_mcp_server()`로 HTTP JSON-RPC `tools/list` 직접 수집
+- **Remote fetch hardening**: private host 기본 차단, 응답 크기 제한, redirect 제한
+- **Execution policy layer**: `tg.assess_tool_call()` → `allow / confirm / deny`
+- **Embedding persistence**: `save()` / `load()` 시 embedding state + retrieval weights 복원
+- **Operational analyze report**: `tg.analyze()`로 orphan/conflict/category coverage 요약
+- **Interactive dashboard MVP**: `tg.dashboard()` / `tg.dashboard_app()`
+
 ### v2
 
 - **API 호출 순서 감지**: PRECEDES 관계, 상태 머신, Arazzo spec

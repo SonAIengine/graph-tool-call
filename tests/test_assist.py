@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from graph_tool_call import RetrievalResult, ToolGraph
+from graph_tool_call import RetrievalResult, ToolCallDecision, ToolCallPolicy, ToolGraph
 
 # ---------------------------------------------------------------------------
 # validate_tool_call()
@@ -121,6 +121,66 @@ class TestValidateToolCall:
         result = tg.validate_tool_call({"name": "getUser", "arguments": '{"user_id": "abc"}'})
         assert result.tool_name == "getUser"
         assert result.arguments == {"user_id": "abc"}
+
+
+class TestAssessToolCall:
+    def _make_graph(self) -> ToolGraph:
+        return TestValidateToolCall()._make_graph()
+
+    def test_read_only_tool_is_allowed(self) -> None:
+        tg = self._make_graph()
+        assessment = tg.assess_tool_call({"name": "getUser", "arguments": {"user_id": "abc"}})
+        assert assessment.decision == ToolCallDecision.ALLOW
+        assert assessment.tool_name == "getUser"
+
+    def test_destructive_tool_requires_confirmation(self) -> None:
+        tg = self._make_graph()
+        assessment = tg.assess_tool_call({"name": "deleteUser", "arguments": {"user_id": "123"}})
+        assert assessment.decision == ToolCallDecision.CONFIRM
+        assert any("destructive" in reason for reason in assessment.reasons)
+
+    def test_destructive_tool_with_name_correction_is_denied(self) -> None:
+        tg = self._make_graph()
+        assessment = tg.assess_tool_call({"name": "deleteuser", "arguments": {"user_id": "123"}})
+        assert assessment.decision == ToolCallDecision.DENY
+        assert any("auto-corrected" in reason for reason in assessment.reasons)
+
+    def test_unknown_tool_is_denied(self) -> None:
+        tg = self._make_graph()
+        assessment = tg.assess_tool_call({"name": "destroyDatabase", "arguments": {}})
+        assert assessment.decision == ToolCallDecision.DENY
+        assert any("unknown tool" in reason for reason in assessment.reasons)
+
+    def test_non_idempotent_write_requires_confirmation(self) -> None:
+        tg = ToolGraph()
+        tg.add_tool(
+            {
+                "name": "createUser",
+                "description": "Create user",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": False,
+                    "idempotentHint": False,
+                },
+            }
+        )
+        assessment = tg.assess_tool_call({"name": "createUser", "arguments": {"name": "son"}})
+        assert assessment.decision == ToolCallDecision.CONFIRM
+        assert any("non-idempotent" in reason for reason in assessment.reasons)
+
+    def test_policy_can_allow_corrected_non_destructive_call(self) -> None:
+        tg = self._make_graph()
+        policy = ToolCallPolicy(confirm_on_corrections=False)
+        assessment = tg.assess_tool_call(
+            {"name": "getuser", "arguments": {"user_id": "abc"}},
+            policy=policy,
+        )
+        assert assessment.decision == ToolCallDecision.ALLOW
 
 
 # ---------------------------------------------------------------------------

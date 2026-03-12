@@ -1,8 +1,10 @@
 """Tests for ToolGraph facade and serialization."""
 
 import json
+from unittest.mock import MagicMock, patch
 
 from graph_tool_call import ToolGraph
+from graph_tool_call.retrieval.embedding import EmbeddingIndex, OllamaEmbeddingProvider
 
 
 def test_add_openai_tools():
@@ -101,6 +103,64 @@ def test_save_and_load_metadata(tmp_path):
     tg2 = ToolGraph.load(save_path)
     assert tg2.metadata["source_url"] == "https://example.com"
     assert tg2.metadata["custom"] == 42
+
+
+def test_save_and_load_retrieval_state(tmp_path):
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {"name": "tool_a", "description": "alpha"},
+            {"name": "tool_b", "description": "beta"},
+        ]
+    )
+    engine = tg._get_retrieval_engine()
+    idx = EmbeddingIndex(provider=OllamaEmbeddingProvider())
+    idx.add("tool_a", [1.0, 0.0])
+    idx.add("tool_b", [0.0, 1.0])
+    engine.set_embedding_index(idx)
+    engine.set_weights(keyword=0.2, graph=0.4, embedding=0.35, annotation=0.05)
+    engine.set_diversity(0.6)
+
+    save_path = tmp_path / "graph.json"
+    tg.save(save_path)
+
+    data = json.loads(save_path.read_text())
+    assert "retrieval_state" in data
+    assert data["retrieval_state"]["weights"]["embedding"] == 0.35
+    assert "embedding_index" in data["retrieval_state"]
+
+    tg2 = ToolGraph.load(save_path)
+    engine2 = tg2._get_retrieval_engine()
+    assert engine2._embedding_index is not None
+    assert engine2._embedding_index.size == 2
+    assert engine2._embedding_weight == 0.35
+    assert engine2._graph_weight == 0.4
+    assert engine2._keyword_weight == 0.2
+    assert engine2._annotation_weight == 0.05
+    assert engine2._diversity_lambda == 0.6
+
+
+def test_loaded_embedding_state_can_encode_query(tmp_path):
+    tg = ToolGraph()
+    tg.add_tools([{"name": "tool_a", "description": "alpha"}])
+    engine = tg._get_retrieval_engine()
+    idx = EmbeddingIndex(provider=OllamaEmbeddingProvider())
+    idx.add("tool_a", [1.0, 0.0])
+    engine.set_embedding_index(idx)
+
+    save_path = tmp_path / "graph.json"
+    tg.save(save_path)
+    tg2 = ToolGraph.load(save_path)
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = json.dumps({"embeddings": [[1.0, 0.0]]}).encode()
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        results = tg2.retrieve("anything", top_k=1)
+    assert len(results) == 1
+    assert results[0].name == "tool_a"
 
 
 def test_repr():

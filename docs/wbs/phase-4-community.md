@@ -1,6 +1,6 @@
 # Phase 4: Community + Interactive Dashboard
 
-**상태**: ⬜ 대기
+**상태**: 🟨 일부 진행
 **목표 기간**: 2주
 **선행 조건**: Phase 3 완료
 
@@ -12,9 +12,9 @@
 
 | ID | 작업 | 파일 | 상태 |
 |----|------|------|------|
-| 4-1a | 그래프 탐색 UI (줌/팬/클릭 상세) | `dashboard/app.py` | ⬜ |
+| 4-1a | 그래프 탐색 UI (줌/팬/클릭 상세) | `dashboard/app.py` | ✅ |
 | 4-1b | 수동 편집 (관계 추가/삭제) | `dashboard/app.py` | ⬜ |
-| 4-1c | 검색 테스트 UI (쿼리 → 결과 하이라이트) | `dashboard/app.py` | ⬜ |
+| 4-1c | 검색 테스트 UI (쿼리 → 결과 하이라이트) | `dashboard/app.py` | ✅ |
 | 4-1d | 관계 검증 (confirm/reject) | `dashboard/app.py` | ⬜ |
 
 **세부**:
@@ -23,6 +23,7 @@
 - 중앙: 그래프 뷰 (Cytoscape.js dagre/cose 레이아웃)
 - 하단: 검색 바 + 결과 + 노드 상세
 - `tg.dashboard(port=8050)` 으로 시작
+- 현재 구현 범위: 탐색 UI, 카테고리/관계 필터, query 기반 결과 하이라이트, 노드 상세 패널
 
 ---
 

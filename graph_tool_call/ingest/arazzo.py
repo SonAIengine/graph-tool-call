@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from graph_tool_call.net import fetch_url_text
 from graph_tool_call.ontology.schema import RelationType
 
 # ---------------------------------------------------------------------------
@@ -39,15 +39,25 @@ class ArazzoRelation:
 _HTTP_PREFIXES = ("http://", "https://")
 
 
-def _load_spec(source: dict[str, Any] | str) -> dict[str, Any]:
+def _load_spec(
+    source: dict[str, Any] | str,
+    *,
+    allow_private_hosts: bool = False,
+    max_response_bytes: int = 5_000_000,
+) -> dict[str, Any]:
     """Load an Arazzo spec from a dict, file path, or URL."""
     if isinstance(source, dict):
         return source
 
     if isinstance(source, str) and source.startswith(_HTTP_PREFIXES):
-        req = urllib.request.Request(source, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-            return json.loads(resp.read().decode())
+        text = fetch_url_text(
+            source,
+            headers={"Accept": "application/json"},
+            timeout=30,
+            allow_private_hosts=allow_private_hosts,
+            max_response_bytes=max_response_bytes,
+        )
+        return json.loads(text)
 
     path = Path(source)
     text = path.read_text(encoding="utf-8")
@@ -87,6 +97,8 @@ def ingest_arazzo(
     source: dict[str, Any] | str,
     *,
     registered_tools: set[str] | None = None,
+    allow_private_hosts: bool = False,
+    max_response_bytes: int = 5_000_000,
 ) -> list[ArazzoRelation]:
     """Parse an Arazzo 1.0.0 spec and extract workflow step dependencies as PRECEDES relations.
 
@@ -103,7 +115,11 @@ def ingest_arazzo(
     list[ArazzoRelation]
         Detected PRECEDES relations from workflow step dependencies.
     """
-    spec = _load_spec(source)
+    spec = _load_spec(
+        source,
+        allow_private_hosts=allow_private_hosts,
+        max_response_bytes=max_response_bytes,
+    )
     relations: list[ArazzoRelation] = []
 
     workflows = spec.get("workflows", [])
