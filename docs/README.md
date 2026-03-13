@@ -57,7 +57,14 @@ docs/
 - **Annotation Scorer**: intent↔annotation alignment scoring → wRRF 4번째 source
 - **OpenAPI annotation 추론**: HTTP method → MCP annotation 자동 매핑 (RFC 7231)
 
-## 최근 추가 (vNext)
+## 최근 추가 (v0.9.0)
+
+- **MCP server mode**: `graph-tool-call serve` — Claude Code, Cursor 등에서 .mcp.json으로 즉시 사용
+- **`search` CLI**: `graph-tool-call search "query" --source <url>` — ingest+retrieve 원라인
+- **SDK middleware**: `patch_openai()` / `patch_anthropic()` — 기존 코드 한 줄로 tool 자동 필터링
+- **`[mcp]` extra**: MCP SDK optional dependency
+
+## 최근 추가 (v0.8.0)
 
 - **MCP server ingest**: `tg.ingest_mcp_server()`로 HTTP JSON-RPC `tools/list` 직접 수집
 - **Remote fetch hardening**: private host 기본 차단, 응답 크기 제한, redirect 제한

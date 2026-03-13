@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-03-13
+
+### Added
+- **MCP server mode** — run graph-tool-call as an MCP tool provider
+  - `graph-tool-call serve --source <url>` — stdio transport for Claude Code, Cursor, etc.
+  - 5 MCP tools: `search_tools`, `get_tool_schema`, `list_categories`, `graph_info`, `load_source`
+  - `create_mcp_server()` / `run_server()` programmatic API
+  - `[mcp]` optional extra (`pip install graph-tool-call[mcp]`)
+- **`search` CLI command** — one-liner ingest + retrieve
+  - `graph-tool-call search "query" --source <url>` — no pre-build step needed
+  - `--scores` for detailed relevance scores, `--json` for pipeline-friendly output
+  - Works with `uvx graph-tool-call search ...` for zero-install experience
+- **SDK middleware** for OpenAI and Anthropic clients
+  - `patch_openai(client, graph=tg)` / `patch_anthropic(client, graph=tg)`
+  - Automatically filters tool list based on user message before each API call
+  - `unpatch_openai()` / `unpatch_anthropic()` to restore original behavior
+  - Configurable `top_k` and `min_tools` thresholds
+
+### Changed
+- `_check_mcp_installed()` raises `ImportError` instead of `sys.exit(1)` for testability
+- CI: fixed ruff format issues in existing files, added `pytest.importorskip("numpy")` for embedding tests
+
 ## [0.8.0] - 2026-03-12
 
 ### Planned — Phase 4
@@ -186,7 +208,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.8.0...v0.9.0
 [0.5.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.2.0...v0.3.0

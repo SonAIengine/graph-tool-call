@@ -129,6 +129,7 @@ graph-tool-call 在以下场景中尤其有效。
 pip install graph-tool-call                    # core (BM25 + graph)
 pip install graph-tool-call[embedding]         # + 嵌入, cross-encoder reranker
 pip install graph-tool-call[openapi]           # + OpenAPI YAML 支持
+pip install graph-tool-call[mcp]              # + MCP 服务器模式
 pip install graph-tool-call[all]               # 全部
 ```
 
@@ -149,7 +150,31 @@ pip install graph-tool-call[langchain]         # + LangChain tool 适配器
 
 ## 快速开始
 
-### 30 秒示例
+### 30 秒体验（无需安装）
+
+```bash
+uvx graph-tool-call search "user authentication" \
+  --source https://petstore.swagger.io/v2/swagger.json
+```
+
+```text
+Query: "user authentication"
+Source: https://petstore.swagger.io/v2/swagger.json (19 tools)
+Results (5):
+
+  1. getUserByName
+     Get user by user name
+  2. deleteUser
+     Delete user
+  3. createUser
+     Create user
+  4. loginUser
+     Logs user into the system
+  5. updateUser
+     Updated user
+```
+
+### Python API
 
 ```python
 from graph_tool_call import ToolGraph
@@ -164,21 +189,59 @@ print(tg)
 # → ToolGraph(tools=19, nodes=22, edges=100)
 
 # 工具检索
-tools = tg.retrieve("注册新宠物", top_k=5)
+tools = tg.retrieve("create a new pet", top_k=5)
 for t in tools:
     print(f"{t.name}: {t.description}")
 ```
 
-预期结果：
+该规范下 `top_k=5` 基准，**Recall@5 98.3%**。
 
-```text
-addPet: Add a new pet to the store.
-updatePet: Update an existing pet.
-getPetById: Find pet by ID.
-...
+### MCP 服务器（Claude Code、Cursor、Windsurf 等）
+
+以 MCP 服务器模式运行 — 任何 MCP 兼容的 agent 只需一条配置即可使用工具搜索：
+
+```jsonc
+// .mcp.json
+{
+  "mcpServers": {
+    "tool-search": {
+      "command": "uvx",
+      "args": ["graph-tool-call[mcp]", "serve",
+               "--source", "https://api.example.com/openapi.json"]
+    }
+  }
+}
 ```
 
-该规范下 `top_k=5` 基准，**Recall@5 98.3%**。
+该服务器提供 5 个工具：`search_tools`、`get_tool_schema`、`list_categories`、`graph_info`、`load_source`。
+
+### SDK 中间件（OpenAI / Anthropic）
+
+在工具传递给 LLM 之前自动过滤 — **一行代码，无需改动现有逻辑**：
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.middleware import patch_openai
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+client = OpenAI()
+
+patch_openai(client, graph=tg, top_k=5)  # ← 添加这一行
+
+# 现有代码无需改动 — 248 个工具输入，只有 5 个相关工具被发送
+response = client.chat.completions.create(
+    model="gpt-4o",
+    tools=all_248_tools,
+    messages=messages,
+)
+```
+
+也支持 Anthropic：
+
+```python
+from graph_tool_call.middleware import patch_anthropic
+patch_anthropic(client, graph=tg, top_k=5)
+```
 
 ---
 
@@ -645,6 +708,34 @@ tg = ToolGraph.from_url(url, lint=True)
 
 ---
 
+## CLI 参考
+
+```bash
+# 一行命令搜索（收集 + 检索一步完成）
+graph-tool-call search "cancel order" --source https://api.example.com/openapi.json
+graph-tool-call search "delete user" --source ./openapi.json --scores --json
+
+# MCP 服务器
+graph-tool-call serve --source https://api.example.com/openapi.json
+graph-tool-call serve --graph prebuilt.json
+graph-tool-call serve -s https://api1.com/spec.json -s https://api2.com/spec.json
+
+# 构建并保存图
+graph-tool-call ingest https://api.example.com/openapi.json -o graph.json
+graph-tool-call ingest ./spec.yaml --embedding --organize
+
+# 从预构建图检索
+graph-tool-call retrieve "query" -g graph.json -k 10
+
+# 分析、可视化、仪表板
+graph-tool-call analyze graph.json --duplicates --conflicts
+graph-tool-call visualize graph.json -f html
+graph-tool-call info graph.json
+graph-tool-call dashboard graph.json --port 8050
+```
+
+---
+
 ## 完整 API 参考
 
 <details>
@@ -679,6 +770,7 @@ tg = ToolGraph.from_url(url, lint=True)
 | `export_graphml(path)`         | 导出 GraphML 格式             |
 | `export_cypher(path)`          | 导出 Neo4j Cypher 语句        |
 | `dashboard_app()` / `dashboard()` | 生成 / 启动仪表板             |
+| `suggest_next(tool, history=...)` | 基于图推荐下一步工具           |
 
 </details>
 

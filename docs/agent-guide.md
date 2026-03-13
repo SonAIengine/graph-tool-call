@@ -56,7 +56,7 @@ def _require_numpy():
 ```
 
 규칙:
-- extras 그룹은 `openapi`, `embedding`, `similarity`, `langchain`, `visualization`, `lint`, `all`
+- extras 그룹은 `openapi`, `embedding`, `similarity`, `langchain`, `visualization`, `lint`, `mcp`, `all`
 - optional dependency 관련 예외 메시지에는 설치 힌트를 포함한다.
 - extras 기능에 hard import를 추가하지 않는다.
 
@@ -90,7 +90,10 @@ select = ["E", "F", "I", "N", "W", "UP"]
 ```text
 graph_tool_call/
   __init__.py                # public exports, __version__
+  __main__.py                # CLI entry point (search/serve/ingest/...)
   tool_graph.py              # public facade
+  mcp_server.py              # MCP server (FastMCP, stdio/sse)
+  middleware.py              # SDK middleware (OpenAI/Anthropic patch)
   core/tool.py               # ToolSchema, MCPAnnotations, parsing
   ingest/openapi.py          # OpenAPI ingest
   ingest/mcp.py              # MCP ingest

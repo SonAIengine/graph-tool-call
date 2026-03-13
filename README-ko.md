@@ -130,6 +130,7 @@ graph-tool-call은 특히 다음 상황에서 효과적입니다.
 pip install graph-tool-call                    # core (BM25 + graph)
 pip install graph-tool-call[embedding]         # + 임베딩, cross-encoder reranker
 pip install graph-tool-call[openapi]           # + OpenAPI YAML 지원
+pip install graph-tool-call[mcp]              # + MCP 서버 모드
 pip install graph-tool-call[all]               # 전부
 ```
 
@@ -150,7 +151,31 @@ pip install graph-tool-call[langchain]         # + LangChain tool 어댑터
 
 ## 빠른 시작
 
-### 30초 예제
+### 30초 체험 (설치 없이)
+
+```bash
+uvx graph-tool-call search "user authentication" \
+  --source https://petstore.swagger.io/v2/swagger.json
+```
+
+```text
+Query: "user authentication"
+Source: https://petstore.swagger.io/v2/swagger.json (19 tools)
+Results (5):
+
+  1. getUserByName
+     Get user by user name
+  2. deleteUser
+     Delete user
+  3. createUser
+     Create user
+  4. loginUser
+     Logs user into the system
+  5. updateUser
+     Updated user
+```
+
+### Python API
 
 ```python
 from graph_tool_call import ToolGraph
@@ -165,21 +190,59 @@ print(tg)
 # → ToolGraph(tools=19, nodes=22, edges=100)
 
 # tool 검색
-tools = tg.retrieve("새 펫을 등록", top_k=5)
+tools = tg.retrieve("create a new pet", top_k=5)
 for t in tools:
     print(f"{t.name}: {t.description}")
 ```
 
-예상 결과:
+이 스펙에서는 `top_k=5` 기준으로 **Recall@5 98.3%** 를 기록했습니다.
 
-```text
-addPet: Add a new pet to the store.
-updatePet: Update an existing pet.
-getPetById: Find pet by ID.
-...
+### MCP 서버 (Claude Code, Cursor, Windsurf 등)
+
+MCP 서버로 실행하면, MCP를 지원하는 모든 Agent가 설정 한 줄로 tool 검색을 사용할 수 있습니다:
+
+```jsonc
+// .mcp.json
+{
+  "mcpServers": {
+    "tool-search": {
+      "command": "uvx",
+      "args": ["graph-tool-call[mcp]", "serve",
+               "--source", "https://api.example.com/openapi.json"]
+    }
+  }
+}
 ```
 
-이 스펙에서는 `top_k=5` 기준으로 **Recall@5 98.3%** 를 기록했습니다.
+서버는 5개의 tool을 노출합니다: `search_tools`, `get_tool_schema`, `list_categories`, `graph_info`, `load_source`.
+
+### SDK Middleware (OpenAI / Anthropic)
+
+LLM에 전달되기 전에 자동으로 tool을 필터링합니다 — **한 줄 추가, 기존 코드 변경 없음**:
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.middleware import patch_openai
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+client = OpenAI()
+
+patch_openai(client, graph=tg, top_k=5)  # ← 이 줄만 추가
+
+# 기존 코드 그대로 — 248개 tool이 들어가면, 관련 5개만 전달됨
+response = client.chat.completions.create(
+    model="gpt-4o",
+    tools=all_248_tools,
+    messages=messages,
+)
+```
+
+Anthropic도 동일하게 동작합니다:
+
+```python
+from graph_tool_call.middleware import patch_anthropic
+patch_anthropic(client, graph=tg, top_k=5)
+```
 
 ---
 
@@ -645,6 +708,34 @@ tg = ToolGraph.from_url(url, lint=True)
 
 ---
 
+## CLI 레퍼런스
+
+```bash
+# 원라인 검색 (수집 + 검색을 한 번에)
+graph-tool-call search "cancel order" --source https://api.example.com/openapi.json
+graph-tool-call search "delete user" --source ./openapi.json --scores --json
+
+# MCP 서버
+graph-tool-call serve --source https://api.example.com/openapi.json
+graph-tool-call serve --graph prebuilt.json
+graph-tool-call serve -s https://api1.com/spec.json -s https://api2.com/spec.json
+
+# 그래프 빌드 및 저장
+graph-tool-call ingest https://api.example.com/openapi.json -o graph.json
+graph-tool-call ingest ./spec.yaml --embedding --organize
+
+# 사전 빌드된 그래프에서 검색
+graph-tool-call retrieve "query" -g graph.json -k 10
+
+# 분석, 시각화, 대시보드
+graph-tool-call analyze graph.json --duplicates --conflicts
+graph-tool-call visualize graph.json -f html
+graph-tool-call info graph.json
+graph-tool-call dashboard graph.json --port 8050
+```
+
+---
+
 ## 전체 API 레퍼런스
 
 <details>
@@ -679,6 +770,7 @@ tg = ToolGraph.from_url(url, lint=True)
 | `export_graphml(path)`         | GraphML 포맷 내보내기             |
 | `export_cypher(path)`          | Neo4j Cypher 문장 내보내기        |
 | `dashboard_app()` / `dashboard()` | 대시보드 생성 / 실행             |
+| `suggest_next(tool, history=...)` | 그래프 기반 다음 tool 추천        |
 
 </details>
 

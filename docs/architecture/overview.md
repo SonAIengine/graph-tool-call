@@ -57,6 +57,9 @@ OpenAPI/MCP/코드 → [수집] → [분석] → [조직화] → [검색] → Ag
 │                                                   │
 │  ┌─────────────────────────────────────────────┐  │
 │  │  5. INTEGRATE (통합)                         │  │
+│  │     MCP Server (stdio/sse transport)        │  │
+│  │     SDK Middleware (OpenAI/Anthropic patch)  │  │
+│  │     CLI (search/serve/ingest/retrieve)      │  │
 │  │     LangChain BaseRetriever                  │  │
 │  │     Standalone Python API                    │  │
 │  │     Serialization (JSON 저장/로드)           │  │
@@ -70,7 +73,10 @@ OpenAPI/MCP/코드 → [수집] → [분석] → [조직화] → [검색] → Ag
 ```
 graph_tool_call/
 ├── __init__.py                    # ToolGraph public API
+├── __main__.py                    # CLI (search/serve/ingest/retrieve/...)
 ├── tool_graph.py                  # ToolGraph facade
+├── mcp_server.py                  # MCP 서버 (FastMCP 기반 tool provider)
+├── middleware.py                   # SDK middleware (OpenAI/Anthropic auto-filter)
 ├── serialization.py               # 그래프 저장/로드
 │
 ├── core/                          # 핵심 데이터 모델
@@ -153,5 +159,6 @@ core:      networkx, pydantic
 [embedding]: + numpy, sentence-transformers
 [similarity]: + rapidfuzz
 [langchain]: + langchain-core
+[mcp]: + mcp (MCP SDK)
 [all]: 전부
 ```
