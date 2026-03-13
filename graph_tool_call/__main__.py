@@ -52,8 +52,30 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_analyze.add_argument("--json", action="store_true", dest="as_json", help="JSON output")
 
+    # --- search (one-liner: ingest + retrieve) ---
+    p_search = sub.add_parser("search", help="Search tools from source (no pre-build needed)")
+    p_search.add_argument("query", help="Search query")
+    p_search.add_argument(
+        "-s",
+        "--source",
+        required=True,
+        help="OpenAPI spec URL, file path, or pre-built graph JSON",
+    )
+    p_search.add_argument("-k", "--top-k", type=int, default=5)
+    p_search.add_argument("--json", action="store_true", dest="as_json", help="JSON output")
+    p_search.add_argument(
+        "--allow-private-hosts",
+        action="store_true",
+        help="Allow localhost/private IP URLs",
+    )
+    p_search.add_argument(
+        "--scores",
+        action="store_true",
+        help="Show detailed relevance scores",
+    )
+
     # --- retrieve ---
-    p_retrieve = sub.add_parser("retrieve", help="Search tools by query")
+    p_retrieve = sub.add_parser("retrieve", help="Search tools from pre-built graph")
     p_retrieve.add_argument("query", help="Search query")
     p_retrieve.add_argument("-g", "--graph", required=True, help="Graph JSON file")
     p_retrieve.add_argument("-k", "--top-k", type=int, default=5)
@@ -81,6 +103,33 @@ def _build_parser() -> argparse.ArgumentParser:
     p_dash.add_argument("--host", default="127.0.0.1", help="Host to bind")
     p_dash.add_argument("--port", type=int, default=8050, help="Port to bind")
     p_dash.add_argument("--debug", action="store_true", help="Enable Dash debug mode")
+
+    # --- serve (MCP server) ---
+    p_serve = sub.add_parser("serve", help="Run as MCP server (stdio transport)")
+    p_serve.add_argument(
+        "-s",
+        "--source",
+        action="append",
+        dest="sources",
+        help="OpenAPI spec URL or file (repeatable)",
+    )
+    p_serve.add_argument(
+        "-g",
+        "--graph",
+        dest="graph_file",
+        help="Pre-built graph JSON file",
+    )
+    p_serve.add_argument(
+        "--allow-private-hosts",
+        action="store_true",
+        help="Allow localhost/private IP URLs",
+    )
+    p_serve.add_argument(
+        "--transport",
+        default="stdio",
+        choices=["stdio", "sse"],
+        help="MCP transport (default: stdio)",
+    )
 
     return parser
 
@@ -223,6 +272,72 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             print(f"  {category.name}{domain}: {category.tool_count} tools")
 
 
+def cmd_search(args: argparse.Namespace) -> None:
+    from graph_tool_call import ToolGraph
+
+    source = args.source
+
+    # Detect source type: pre-built graph JSON or OpenAPI spec
+    if source.endswith(".json") and not source.startswith(("http://", "https://")):
+        # Could be a pre-built graph or a local OpenAPI spec
+        try:
+            tg = ToolGraph.load(source)
+        except (KeyError, ValueError):
+            # Not a graph file — treat as OpenAPI spec
+            tg = ToolGraph()
+            tg.ingest_openapi(source, allow_private_hosts=args.allow_private_hosts)
+    elif source.startswith(("http://", "https://")):
+        tg = ToolGraph.from_url(
+            source,
+            progress=lambda msg: print(f"  {msg}", file=sys.stderr),
+            allow_private_hosts=args.allow_private_hosts,
+        )
+    else:
+        tg = ToolGraph()
+        tg.ingest_openapi(source, allow_private_hosts=args.allow_private_hosts)
+
+    if args.scores:
+        results = tg.retrieve_with_scores(args.query, top_k=args.top_k)
+        if args.as_json:
+            out = [
+                {
+                    "name": r.tool.name,
+                    "description": r.tool.description,
+                    "score": round(r.score, 4),
+                    "confidence": r.confidence,
+                }
+                for r in results
+            ]
+            print(json.dumps(out, indent=2, ensure_ascii=False))
+        else:
+            total = len(tg.tools)
+            print(f'Query: "{args.query}"')
+            print(f"Source: {source} ({total} tools)")
+            print(f"Results ({len(results)}):\n")
+            for i, r in enumerate(results, 1):
+                desc = r.tool.description
+                if len(desc) > 70:
+                    desc = desc[:70] + "..."
+                print(f"  {i}. {r.tool.name}  [{r.score:.4f} {r.confidence}]")
+                print(f"     {desc}")
+    else:
+        results = tg.retrieve(args.query, top_k=args.top_k)
+        if args.as_json:
+            out = [{"name": t.name, "description": t.description} for t in results]
+            print(json.dumps(out, indent=2, ensure_ascii=False))
+        else:
+            total = len(tg.tools)
+            print(f'Query: "{args.query}"')
+            print(f"Source: {source} ({total} tools)")
+            print(f"Results ({len(results)}):\n")
+            for i, t in enumerate(results, 1):
+                desc = t.description
+                if len(desc) > 70:
+                    desc = desc[:70] + "..."
+                print(f"  {i}. {t.name}")
+                print(f"     {desc}")
+
+
 def cmd_retrieve(args: argparse.Namespace) -> None:
     from graph_tool_call import ToolGraph
 
@@ -315,6 +430,17 @@ def cmd_dashboard(args: argparse.Namespace) -> None:
     tg.dashboard(host=args.host, port=args.port, debug=args.debug)
 
 
+def cmd_serve(args: argparse.Namespace) -> None:
+    from graph_tool_call.mcp_server import run_server
+
+    run_server(
+        sources=args.sources,
+        graph_file=args.graph_file,
+        allow_private_hosts=args.allow_private_hosts,
+        transport=args.transport,
+    )
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -326,10 +452,12 @@ def main() -> None:
     handlers = {
         "ingest": cmd_ingest,
         "analyze": cmd_analyze,
+        "search": cmd_search,
         "retrieve": cmd_retrieve,
         "visualize": cmd_visualize,
         "info": cmd_info,
         "dashboard": cmd_dashboard,
+        "serve": cmd_serve,
     }
     handlers[args.command](args)
 

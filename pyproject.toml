@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "graph-tool-call"
-version = "0.8.0"
+version = "0.9.0"
 description = "Graph-structured tool retrieval for LLM agents — ontology-aware hybrid search"
 authors = ["SonAIengine"]
 license = "MIT"
@@ -44,6 +44,7 @@ pyvis = {version = ">=0.3.0", optional = true}
 ai-api-lint = {version = ">=0.1.0", optional = true}
 dash = {version = ">=2.18.0", optional = true}
 dash-cytoscape = {version = ">=1.0.2", optional = true}
+mcp = {version = ">=1.0.0", optional = true}
 
 [tool.poetry.extras]
 openapi = ["pyyaml"]
@@ -53,7 +54,8 @@ langchain = ["langchain-core"]
 visualization = ["pyvis"]
 dashboard = ["dash", "dash-cytoscape"]
 lint = ["ai-api-lint"]
-all = ["pyyaml", "numpy", "sentence-transformers", "rapidfuzz", "langchain-core", "pyvis", "ai-api-lint", "dash", "dash-cytoscape"]
+mcp = ["mcp"]
+all = ["pyyaml", "numpy", "sentence-transformers", "rapidfuzz", "langchain-core", "pyvis", "ai-api-lint", "dash", "dash-cytoscape", "mcp"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
