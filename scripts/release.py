@@ -67,14 +67,13 @@ def prepare_changelog_release(text: str, version: str, date: str) -> str:
 
     release_block = f"## [{version}] - {date}\n\n{notes}\n\n"
     new_text = (
-        sections.before_unreleased
-        + "\n"
-        + release_block
-        + sections.after_unreleased.lstrip("\n")
+        sections.before_unreleased + "\n" + release_block + sections.after_unreleased.lstrip("\n")
     )
 
     compare_pattern = re.compile(r"(?m)^\[Unreleased\]:\s+.+$")
-    compare_line = f"[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v{version}...HEAD"
+    compare_line = (
+        f"[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v{version}...HEAD"
+    )
     if compare_pattern.search(new_text):
         new_text = compare_pattern.sub(compare_line, new_text, count=1)
     else:

@@ -23,9 +23,7 @@ def test_build_elements_contains_nodes_and_edges():
     elements = _build_elements(tg)
 
     node_ids = {item["data"]["id"] for item in elements if "source" not in item["data"]}
-    edge_relations = {
-        item["data"]["relation"] for item in elements if "source" in item["data"]
-    }
+    edge_relations = {item["data"]["relation"] for item in elements if "source" in item["data"]}
 
     assert {"get_user", "delete_user", "user_ops"}.issubset(node_ids)
     assert "conflicts_with" in edge_relations

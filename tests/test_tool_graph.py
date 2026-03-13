@@ -3,6 +3,8 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from graph_tool_call import ToolGraph
 from graph_tool_call.retrieval.embedding import EmbeddingIndex, OllamaEmbeddingProvider
 
@@ -141,6 +143,7 @@ def test_save_and_load_retrieval_state(tmp_path):
 
 
 def test_loaded_embedding_state_can_encode_query(tmp_path):
+    pytest.importorskip("numpy", reason="numpy required for embedding tests")
     tg = ToolGraph()
     tg.add_tools([{"name": "tool_a", "description": "alpha"}])
     engine = tg._get_retrieval_engine()

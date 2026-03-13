@@ -140,8 +140,8 @@ class TestHTMLExport:
         tg = ToolGraph()
         tg.add_tool(
             ToolSchema(
-                name='bad</script><script>alert(1)</script>',
-                description='desc </script><script>alert(2)</script>',
+                name="bad</script><script>alert(1)</script>",
+                description="desc </script><script>alert(2)</script>",
                 parameters=[],
             )
         )
@@ -157,8 +157,8 @@ class TestHTMLExport:
         tg = ToolGraph()
         tg.add_tool(
             ToolSchema(
-                name='bad<script>alert(1)</script>',
-                description='<img src=x onerror=alert(2)>',
+                name="bad<script>alert(1)</script>",
+                description="<img src=x onerror=alert(2)>",
                 parameters=[],
             )
         )

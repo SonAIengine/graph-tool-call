@@ -45,8 +45,7 @@ def test_prepare_changelog_release_inserts_version_block():
         in updated
     )
     assert (
-        "[0.8.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.5.0...v0.8.0"
-        in updated
+        "[0.8.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.5.0...v0.8.0" in updated
     )
 
 
