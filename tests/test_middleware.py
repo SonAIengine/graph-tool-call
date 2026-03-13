@@ -30,6 +30,7 @@ def _make_anthropic_client(create_fn=None):
     messages = SimpleNamespace(create=create_fn or (lambda **kw: MagicMock()))
     return SimpleNamespace(messages=messages)
 
+
 # --- Test data ---
 
 OPENAI_TOOLS = [

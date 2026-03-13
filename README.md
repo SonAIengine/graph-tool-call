@@ -129,6 +129,7 @@ graph-tool-call is especially effective in the following situations.
 pip install graph-tool-call                    # core (BM25 + graph)
 pip install graph-tool-call[embedding]         # + embedding, cross-encoder reranker
 pip install graph-tool-call[openapi]           # + YAML support for OpenAPI specs
+pip install graph-tool-call[mcp]              # + MCP server mode
 pip install graph-tool-call[all]               # everything
 ```
 
@@ -149,7 +150,31 @@ pip install graph-tool-call[langchain]         # + LangChain tool adapter
 
 ## Quick Start
 
-### 30-Second Example
+### Try it in 30 seconds (no install needed)
+
+```bash
+uvx graph-tool-call search "user authentication" \
+  --source https://petstore.swagger.io/v2/swagger.json
+```
+
+```text
+Query: "user authentication"
+Source: https://petstore.swagger.io/v2/swagger.json (19 tools)
+Results (5):
+
+  1. getUserByName
+     Get user by user name
+  2. deleteUser
+     Delete user
+  3. createUser
+     Create user
+  4. loginUser
+     Logs user into the system
+  5. updateUser
+     Updated user
+```
+
+### Python API
 
 ```python
 from graph_tool_call import ToolGraph
@@ -169,16 +194,54 @@ for t in tools:
     print(f"{t.name}: {t.description}")
 ```
 
-Expected output:
+On this spec, **Recall@5 is 98.3%** with `top_k=5`.
 
-```text
-addPet: Add a new pet to the store.
-updatePet: Update an existing pet.
-getPetById: Find pet by ID.
-...
+### MCP Server (Claude Code, Cursor, Windsurf, etc.)
+
+Run as an MCP server — any MCP-compatible agent can use tool search with just a config entry:
+
+```jsonc
+// .mcp.json
+{
+  "mcpServers": {
+    "tool-search": {
+      "command": "uvx",
+      "args": ["graph-tool-call[mcp]", "serve",
+               "--source", "https://api.example.com/openapi.json"]
+    }
+  }
+}
 ```
 
-On this spec, **Recall@5 is 98.3%** with `top_k=5`.
+The server exposes 5 tools: `search_tools`, `get_tool_schema`, `list_categories`, `graph_info`, `load_source`.
+
+### SDK Middleware (OpenAI / Anthropic)
+
+Automatically filter tools before they reach the LLM — **one line, no code changes**:
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.middleware import patch_openai
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+client = OpenAI()
+
+patch_openai(client, graph=tg, top_k=5)  # ← add this line
+
+# Existing code unchanged — 248 tools go in, only 5 relevant ones are sent
+response = client.chat.completions.create(
+    model="gpt-4o",
+    tools=all_248_tools,
+    messages=messages,
+)
+```
+
+Also works with Anthropic:
+
+```python
+from graph_tool_call.middleware import patch_anthropic
+patch_anthropic(client, graph=tg, top_k=5)
+```
 
 ---
 
@@ -656,6 +719,34 @@ tg = ToolGraph.from_url(url, lint=True)
 
 ---
 
+## CLI Reference
+
+```bash
+# One-liner search (ingest + retrieve in one step)
+graph-tool-call search "cancel order" --source https://api.example.com/openapi.json
+graph-tool-call search "delete user" --source ./openapi.json --scores --json
+
+# MCP server
+graph-tool-call serve --source https://api.example.com/openapi.json
+graph-tool-call serve --graph prebuilt.json
+graph-tool-call serve -s https://api1.com/spec.json -s https://api2.com/spec.json
+
+# Build and save graph
+graph-tool-call ingest https://api.example.com/openapi.json -o graph.json
+graph-tool-call ingest ./spec.yaml --embedding --organize
+
+# Search from pre-built graph
+graph-tool-call retrieve "query" -g graph.json -k 10
+
+# Analyze, visualize, dashboard
+graph-tool-call analyze graph.json --duplicates --conflicts
+graph-tool-call visualize graph.json -f html
+graph-tool-call info graph.json
+graph-tool-call dashboard graph.json --port 8050
+```
+
+---
+
 ## Full API Reference
 
 <details>
@@ -690,6 +781,7 @@ tg = ToolGraph.from_url(url, lint=True)
 | `export_graphml(path)` | Export to GraphML format |
 | `export_cypher(path)` | Export as Neo4j Cypher statements |
 | `dashboard_app()` / `dashboard()` | Build or launch interactive dashboard |
+| `suggest_next(tool, history=...)` | Suggest next tools based on graph |
 
 </details>
 

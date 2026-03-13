@@ -34,11 +34,8 @@ def _check_mcp_installed() -> None:
     try:
         import mcp  # noqa: F401
     except ImportError:
-        print(
-            'MCP SDK not installed. Install with:\n  pip install "graph-tool-call[mcp]"',
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        msg = 'MCP SDK not installed. Install with: pip install "graph-tool-call[mcp]"'
+        raise ImportError(msg) from None
 
 
 def create_mcp_server(
@@ -307,9 +304,13 @@ def run_server(
     transport: str = "stdio",
 ) -> None:
     """Create and run the MCP server."""
-    mcp_app = create_mcp_server(
-        sources,
-        graph_file=graph_file,
-        allow_private_hosts=allow_private_hosts,
-    )
+    try:
+        mcp_app = create_mcp_server(
+            sources,
+            graph_file=graph_file,
+            allow_private_hosts=allow_private_hosts,
+        )
+    except ImportError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
     mcp_app.run(transport=transport)
