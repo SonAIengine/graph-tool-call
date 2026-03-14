@@ -104,6 +104,19 @@ def _build_parser() -> argparse.ArgumentParser:
     p_dash.add_argument("--port", type=int, default=8050, help="Port to bind")
     p_dash.add_argument("--debug", action="store_true", help="Enable Dash debug mode")
 
+    # --- proxy (MCP proxy) ---
+    p_proxy = sub.add_parser(
+        "proxy",
+        help="Run as MCP proxy (aggregate + filter backend servers)",
+    )
+    p_proxy.add_argument(
+        "-c",
+        "--config",
+        required=True,
+        help="Proxy config JSON or .mcp.json file",
+    )
+    p_proxy.add_argument("--top-k", type=int, default=20, help="Default top-K for search")
+
     # --- serve (MCP server) ---
     p_serve = sub.add_parser("serve", help="Run as MCP server (stdio transport)")
     p_serve.add_argument(
@@ -430,6 +443,16 @@ def cmd_dashboard(args: argparse.Namespace) -> None:
     tg.dashboard(host=args.host, port=args.port, debug=args.debug)
 
 
+def cmd_proxy(args: argparse.Namespace) -> None:
+    from graph_tool_call.mcp_proxy import load_proxy_config, run_proxy
+
+    backends, options = load_proxy_config(args.config)
+    run_proxy(
+        backends,
+        top_k=args.top_k or options.get("top_k", 20),
+    )
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     from graph_tool_call.mcp_server import run_server
 
@@ -457,6 +480,7 @@ def main() -> None:
         "visualize": cmd_visualize,
         "info": cmd_info,
         "dashboard": cmd_dashboard,
+        "proxy": cmd_proxy,
         "serve": cmd_serve,
     }
     handlers[args.command](args)

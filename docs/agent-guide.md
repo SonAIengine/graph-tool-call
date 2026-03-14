@@ -93,6 +93,7 @@ graph_tool_call/
   __main__.py                # CLI entry point (search/serve/ingest/...)
   tool_graph.py              # public facade
   mcp_server.py              # MCP server (FastMCP, stdio/sse)
+  mcp_proxy.py               # MCP proxy (aggregate + filter backends)
   middleware.py              # SDK middleware (OpenAI/Anthropic patch)
   core/tool.py               # ToolSchema, MCPAnnotations, parsing
   ingest/openapi.py          # OpenAPI ingest

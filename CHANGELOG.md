@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-03-14
+
+### Added
+- **MCP Proxy mode** — aggregate multiple MCP servers, filter tools via ToolGraph
+  - `graph-tool-call proxy --config backends.json` — sits between client and backend servers
+  - Collects tools from all backends, builds ToolGraph, exposes filtered subset
+  - `search_tools` meta-tool: LLM searches → tool list dynamically filtered
+  - `reset_tool_filter` meta-tool: restore full tool list
+  - `tools/list_changed` notification: client auto-refreshes after filter change
+  - Tool name collision handling: auto-prefixes with backend name
+  - Config supports native format and `.mcp.json` format
+  - Graceful backend failure: if one backend fails, others still work
+
 ## [0.9.0] - 2026-03-13
 
 ### Added
@@ -208,7 +221,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.8.0...v0.9.0
 [0.5.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.3.0...v0.4.0

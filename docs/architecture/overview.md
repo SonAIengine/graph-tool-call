@@ -58,8 +58,9 @@ OpenAPI/MCP/코드 → [수집] → [분석] → [조직화] → [검색] → Ag
 │  ┌─────────────────────────────────────────────┐  │
 │  │  5. INTEGRATE (통합)                         │  │
 │  │     MCP Server (stdio/sse transport)        │  │
+│  │     MCP Proxy (aggregate + filter backends) │  │
 │  │     SDK Middleware (OpenAI/Anthropic patch)  │  │
-│  │     CLI (search/serve/ingest/retrieve)      │  │
+│  │     CLI (search/serve/proxy/ingest/retrieve)│  │
 │  │     LangChain BaseRetriever                  │  │
 │  │     Standalone Python API                    │  │
 │  │     Serialization (JSON 저장/로드)           │  │
@@ -76,6 +77,7 @@ graph_tool_call/
 ├── __main__.py                    # CLI (search/serve/ingest/retrieve/...)
 ├── tool_graph.py                  # ToolGraph facade
 ├── mcp_server.py                  # MCP 서버 (FastMCP 기반 tool provider)
+├── mcp_proxy.py                   # MCP 프록시 (다중 백엔드 집계 + 필터링)
 ├── middleware.py                   # SDK middleware (OpenAI/Anthropic auto-filter)
 ├── serialization.py               # 그래프 저장/로드
 │
