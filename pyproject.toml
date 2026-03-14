@@ -48,7 +48,8 @@ mcp = {version = ">=1.0.0", optional = true}
 
 [tool.poetry.extras]
 openapi = ["pyyaml"]
-embedding = ["numpy", "sentence-transformers"]
+embedding = ["numpy"]
+embedding-local = ["numpy", "sentence-transformers"]
 similarity = ["rapidfuzz"]
 langchain = ["langchain-core"]
 visualization = ["pyvis", "networkx"]

@@ -108,7 +108,7 @@ class MCPProxy:
         backends: list[BackendConfig],
         *,
         top_k: int = 10,
-        embedding: bool = False,
+        embedding: bool | str = False,
         passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
     ):
         self._backends_config = backends
@@ -117,7 +117,7 @@ class MCPProxy:
         self._all_tools: dict[str, Any] = {}  # name -> mcp.types.Tool
         self._tg: Any = None  # ToolGraph
         self._top_k = top_k
-        self._embedding = embedding
+        self._embedding = embedding  # True, False, or provider string
         self._passthrough_threshold = passthrough_threshold
         self._gateway_mode: bool = False  # determined after connect
         self._exit_stack: AsyncExitStack | None = None
@@ -230,7 +230,11 @@ class MCPProxy:
         # Enable embedding for cross-language search
         if self._embedding and self._tg.tools:
             try:
-                self._tg.enable_embedding()
+                provider = self._embedding if isinstance(self._embedding, str) else None
+                if provider:
+                    self._tg.enable_embedding(provider)
+                else:
+                    self._tg.enable_embedding()
                 logger.info("Embedding enabled (%d tools indexed)", len(self._tg.tools))
             except Exception as exc:
                 logger.warning("Embedding unavailable, BM25-only: %s", exc)
@@ -583,7 +587,7 @@ async def _run_proxy_async(
     backends: list[BackendConfig],
     *,
     top_k: int = 10,
-    embedding: bool = False,
+    embedding: bool | str = False,
     passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
 ) -> None:
     """Run the proxy server (async entry point)."""
@@ -614,7 +618,7 @@ def run_proxy(
     backends: list[BackendConfig],
     *,
     top_k: int = 10,
-    embedding: bool = False,
+    embedding: bool | str = False,
     passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
 ) -> None:
     """Run the MCP proxy (blocking entry point)."""

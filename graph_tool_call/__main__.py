@@ -118,8 +118,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_proxy.add_argument("--top-k", type=int, default=10, help="Default top-K for search")
     p_proxy.add_argument(
         "--embedding",
-        action="store_true",
-        help="Enable embedding for cross-language search",
+        nargs="?",
+        const=True,
+        default=False,
+        help="Enable embedding (optionally specify provider, e.g. ollama/qwen3-embedding:0.6b)",
     )
     p_proxy.add_argument(
         "--passthrough-threshold",
