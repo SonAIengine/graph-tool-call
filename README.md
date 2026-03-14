@@ -307,17 +307,86 @@ That's it. The proxy exposes `search_tools`, `get_tool_schema`, and `call_backen
 
 </details>
 
-### SDK Middleware (OpenAI / Anthropic)
+### Direct Integration (OpenAI, Ollama, vLLM, Azure, etc.)
 
-Automatically filter tools before they reach the LLM — **one line, no code changes**:
+Use `retrieve()` to search, then convert to OpenAI function-calling format. Works with **any OpenAI-compatible API**:
 
 ```python
 from openai import OpenAI
 from graph_tool_call import ToolGraph
+from graph_tool_call.langchain.tools import tool_schema_to_openai_function
+
+# Build graph from any source
+tg = ToolGraph.from_url(
+    "https://petstore3.swagger.io/api/v3/openapi.json",
+    cache="petstore.json",
+)
+
+# Retrieve only the relevant tools for a query
+tools = tg.retrieve("create a new pet", top_k=5)
+
+# Convert to OpenAI function-calling format
+openai_tools = [
+    {"type": "function", "function": tool_schema_to_openai_function(t)}
+    for t in tools
+]
+
+# Use with any provider — OpenAI, Azure, Ollama, vLLM, llama.cpp, etc.
+client = OpenAI()  # or OpenAI(base_url="http://localhost:11434/v1") for Ollama
+response = client.chat.completions.create(
+    model="gpt-4o",
+    tools=openai_tools,  # only 5 relevant tools instead of all 248
+    messages=[{"role": "user", "content": "create a new pet"}],
+)
+```
+
+<details>
+<summary>Anthropic Claude API</summary>
+
+```python
+from anthropic import Anthropic
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+tools = tg.retrieve("cancel an order", top_k=5)
+
+# Convert to Anthropic tool format
+anthropic_tools = [
+    {
+        "name": t.name,
+        "description": t.description,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                p.name: {"type": p.type, "description": p.description}
+                for p in t.parameters
+            },
+            "required": [p.name for p in t.parameters if p.required],
+        },
+    }
+    for t in tools
+]
+
+client = Anthropic()
+response = client.messages.create(
+    model="claude-sonnet-4-20250514",
+    tools=anthropic_tools,
+    messages=[{"role": "user", "content": "cancel my order"}],
+    max_tokens=1024,
+)
+```
+
+</details>
+
+### SDK Middleware (zero code changes)
+
+Already have tool-calling code? Add **one line** to automatically filter tools:
+
+```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.middleware import patch_openai
 
 tg = ToolGraph.from_url("https://api.example.com/openapi.json")
-client = OpenAI()
 
 patch_openai(client, graph=tg, top_k=5)  # ← add this line
 
@@ -329,45 +398,10 @@ response = client.chat.completions.create(
 )
 ```
 
-Also works with Anthropic:
-
 ```python
-from anthropic import Anthropic
+# Also works with Anthropic
 from graph_tool_call.middleware import patch_anthropic
-
-client = Anthropic()
 patch_anthropic(client, graph=tg, top_k=5)
-```
-
-### Direct Integration (any LLM provider)
-
-Use `retrieve()` directly and convert to your provider's tool format:
-
-```python
-from graph_tool_call import ToolGraph
-from graph_tool_call.langchain.tools import tool_schema_to_openai_function
-
-# Build graph from any source
-tg = ToolGraph.from_url(
-    "https://petstore3.swagger.io/api/v3/openapi.json",
-    cache="petstore.json",
-)
-
-# Retrieve relevant tools for a query
-tools = tg.retrieve("create a new pet", top_k=5)
-
-# Convert to OpenAI function-calling format
-openai_tools = [
-    {"type": "function", "function": tool_schema_to_openai_function(t)}
-    for t in tools
-]
-
-# Use with any OpenAI-compatible API (OpenAI, Azure, Ollama, vLLM, etc.)
-response = client.chat.completions.create(
-    model="gpt-4o",
-    tools=openai_tools,  # only 5 relevant tools instead of all
-    messages=[{"role": "user", "content": "create a new pet"}],
-)
 ```
 
 ### LangChain Integration
@@ -382,7 +416,7 @@ from graph_tool_call.langchain import GraphToolRetriever
 
 tg = ToolGraph.from_url("https://api.example.com/openapi.json")
 
-# Use as a LangChain retriever
+# Use as a LangChain retriever — compatible with any chain/agent
 retriever = GraphToolRetriever(tool_graph=tg, top_k=5)
 docs = retriever.invoke("cancel an order")
 
@@ -390,8 +424,6 @@ for doc in docs:
     print(doc.page_content)       # "cancelOrder: Cancel an existing order"
     print(doc.metadata["tags"])   # ["order"]
 ```
-
-Works with any LangChain chain or agent that accepts a retriever.
 
 ---
 

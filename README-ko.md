@@ -308,17 +308,86 @@ claude mcp list
 
 </details>
 
-### SDK Middleware (OpenAI / Anthropic)
+### 직접 연동 (OpenAI, Ollama, vLLM, Azure 등)
 
-LLM에 전달되기 전에 자동으로 tool을 필터링합니다 — **한 줄 추가, 기존 코드 변경 없음**:
+`retrieve()`로 검색 후 OpenAI function-calling 포맷으로 변환. **모든 OpenAI 호환 API**에서 사용 가능:
 
 ```python
 from openai import OpenAI
 from graph_tool_call import ToolGraph
+from graph_tool_call.langchain.tools import tool_schema_to_openai_function
+
+# 그래프 생성
+tg = ToolGraph.from_url(
+    "https://petstore3.swagger.io/api/v3/openapi.json",
+    cache="petstore.json",
+)
+
+# 쿼리에 맞는 tool만 검색
+tools = tg.retrieve("create a new pet", top_k=5)
+
+# OpenAI function-calling 포맷으로 변환
+openai_tools = [
+    {"type": "function", "function": tool_schema_to_openai_function(t)}
+    for t in tools
+]
+
+# 아무 provider나 사용 — OpenAI, Azure, Ollama, vLLM, llama.cpp 등
+client = OpenAI()  # 또는 OpenAI(base_url="http://localhost:11434/v1") for Ollama
+response = client.chat.completions.create(
+    model="gpt-4o",
+    tools=openai_tools,  # 전체 248개 대신 관련 5개만
+    messages=[{"role": "user", "content": "create a new pet"}],
+)
+```
+
+<details>
+<summary>Anthropic Claude API</summary>
+
+```python
+from anthropic import Anthropic
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+tools = tg.retrieve("cancel an order", top_k=5)
+
+# Anthropic tool 포맷으로 변환
+anthropic_tools = [
+    {
+        "name": t.name,
+        "description": t.description,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                p.name: {"type": p.type, "description": p.description}
+                for p in t.parameters
+            },
+            "required": [p.name for p in t.parameters if p.required],
+        },
+    }
+    for t in tools
+]
+
+client = Anthropic()
+response = client.messages.create(
+    model="claude-sonnet-4-20250514",
+    tools=anthropic_tools,
+    messages=[{"role": "user", "content": "주문 취소해줘"}],
+    max_tokens=1024,
+)
+```
+
+</details>
+
+### SDK Middleware (코드 변경 없이)
+
+이미 tool-calling 코드가 있으면 **한 줄 추가**로 자동 필터링:
+
+```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.middleware import patch_openai
 
 tg = ToolGraph.from_url("https://api.example.com/openapi.json")
-client = OpenAI()
 
 patch_openai(client, graph=tg, top_k=5)  # ← 이 줄만 추가
 
@@ -330,45 +399,10 @@ response = client.chat.completions.create(
 )
 ```
 
-Anthropic도 동일하게 동작합니다:
-
 ```python
-from anthropic import Anthropic
+# Anthropic도 동일
 from graph_tool_call.middleware import patch_anthropic
-
-client = Anthropic()
 patch_anthropic(client, graph=tg, top_k=5)
-```
-
-### 직접 연동 (모든 LLM provider)
-
-`retrieve()`로 검색한 후 원하는 포맷으로 변환해서 사용합니다:
-
-```python
-from graph_tool_call import ToolGraph
-from graph_tool_call.langchain.tools import tool_schema_to_openai_function
-
-# 그래프 생성 (어떤 소스든 가능)
-tg = ToolGraph.from_url(
-    "https://petstore3.swagger.io/api/v3/openapi.json",
-    cache="petstore.json",
-)
-
-# 쿼리에 맞는 tool 검색
-tools = tg.retrieve("create a new pet", top_k=5)
-
-# OpenAI function-calling 포맷으로 변환
-openai_tools = [
-    {"type": "function", "function": tool_schema_to_openai_function(t)}
-    for t in tools
-]
-
-# OpenAI 호환 API 어디서든 사용 (OpenAI, Azure, Ollama, vLLM 등)
-response = client.chat.completions.create(
-    model="gpt-4o",
-    tools=openai_tools,  # 전체 대신 관련 5개만
-    messages=[{"role": "user", "content": "create a new pet"}],
-)
 ```
 
 ### LangChain 연동
@@ -383,7 +417,7 @@ from graph_tool_call.langchain import GraphToolRetriever
 
 tg = ToolGraph.from_url("https://api.example.com/openapi.json")
 
-# LangChain retriever로 사용
+# LangChain retriever — 모든 chain/agent와 호환
 retriever = GraphToolRetriever(tool_graph=tg, top_k=5)
 docs = retriever.invoke("cancel an order")
 
@@ -391,8 +425,6 @@ for doc in docs:
     print(doc.page_content)       # "cancelOrder: Cancel an existing order"
     print(doc.metadata["tags"])   # ["order"]
 ```
-
-LangChain의 retriever를 받는 모든 chain/agent와 호환됩니다.
 
 ---
 

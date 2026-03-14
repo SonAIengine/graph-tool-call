@@ -281,43 +281,12 @@ claude mcp list
 # tool-proxy: ... - ✓ Connected
 ```
 
-### SDK 中间件（OpenAI / Anthropic）
+### 直接集成（OpenAI、Ollama、vLLM、Azure 等）
 
-在工具传递给 LLM 之前自动过滤 — **一行代码，无需改动现有逻辑**：
+使用 `retrieve()` 搜索后转换为 OpenAI function-calling 格式。兼容**任何 OpenAI 兼容 API**：
 
 ```python
 from openai import OpenAI
-from graph_tool_call import ToolGraph
-from graph_tool_call.middleware import patch_openai
-
-tg = ToolGraph.from_url("https://api.example.com/openapi.json")
-client = OpenAI()
-
-patch_openai(client, graph=tg, top_k=5)  # ← 添加这一行
-
-# 现有代码无需改动 — 248 个工具输入，只有 5 个相关工具被发送
-response = client.chat.completions.create(
-    model="gpt-4o",
-    tools=all_248_tools,
-    messages=messages,
-)
-```
-
-也支持 Anthropic：
-
-```python
-from anthropic import Anthropic
-from graph_tool_call.middleware import patch_anthropic
-
-client = Anthropic()
-patch_anthropic(client, graph=tg, top_k=5)
-```
-
-### 直接集成（任何 LLM provider）
-
-使用 `retrieve()` 搜索后，转换为你需要的格式：
-
-```python
 from graph_tool_call import ToolGraph
 from graph_tool_call.langchain.tools import tool_schema_to_openai_function
 
@@ -326,21 +295,81 @@ tg = ToolGraph.from_url(
     cache="petstore.json",
 )
 
-# 搜索相关工具
 tools = tg.retrieve("create a new pet", top_k=5)
 
-# 转换为 OpenAI function-calling 格式
 openai_tools = [
     {"type": "function", "function": tool_schema_to_openai_function(t)}
     for t in tools
 ]
 
-# 可用于任何 OpenAI 兼容 API（OpenAI、Azure、Ollama、vLLM 等）
+client = OpenAI()  # 或 OpenAI(base_url="http://localhost:11434/v1") for Ollama
 response = client.chat.completions.create(
     model="gpt-4o",
-    tools=openai_tools,
+    tools=openai_tools,  # 只传 5 个而非全部 248 个
     messages=[{"role": "user", "content": "create a new pet"}],
 )
+```
+
+<details>
+<summary>Anthropic Claude API</summary>
+
+```python
+from anthropic import Anthropic
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+tools = tg.retrieve("cancel an order", top_k=5)
+
+anthropic_tools = [
+    {
+        "name": t.name,
+        "description": t.description,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                p.name: {"type": p.type, "description": p.description}
+                for p in t.parameters
+            },
+            "required": [p.name for p in t.parameters if p.required],
+        },
+    }
+    for t in tools
+]
+
+client = Anthropic()
+response = client.messages.create(
+    model="claude-sonnet-4-20250514",
+    tools=anthropic_tools,
+    messages=[{"role": "user", "content": "取消我的订单"}],
+    max_tokens=1024,
+)
+```
+
+</details>
+
+### SDK 中间件（零代码改动）
+
+已有 tool-calling 代码？**一行代码**自动过滤：
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.middleware import patch_openai
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+
+patch_openai(client, graph=tg, top_k=5)  # ← 添加这一行
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    tools=all_248_tools,
+    messages=messages,
+)
+```
+
+```python
+# Anthropic 同样支持
+from graph_tool_call.middleware import patch_anthropic
+patch_anthropic(client, graph=tg, top_k=5)
 ```
 
 ### LangChain 集成
@@ -362,8 +391,6 @@ for doc in docs:
     print(doc.page_content)       # "cancelOrder: Cancel an existing order"
     print(doc.metadata["tags"])   # ["order"]
 ```
-
-LangChain 的 retriever 接口兼容所有 chain/agent。
 
 ---
 

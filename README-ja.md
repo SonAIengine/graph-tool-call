@@ -282,43 +282,12 @@ claude mcp list
 # tool-proxy: ... - ✓ Connected
 ```
 
-### SDKミドルウェア（OpenAI / Anthropic）
+### 直接統合（OpenAI、Ollama、vLLM、Azure等）
 
-LLMに送信される前にツールを自動フィルタ — **1行追加、コード変更不要**:
+`retrieve()` で検索後、OpenAI function-calling形式に変換。**すべてのOpenAI互換API**で使用可能:
 
 ```python
 from openai import OpenAI
-from graph_tool_call import ToolGraph
-from graph_tool_call.middleware import patch_openai
-
-tg = ToolGraph.from_url("https://api.example.com/openapi.json")
-client = OpenAI()
-
-patch_openai(client, graph=tg, top_k=5)  # ← この1行を追加
-
-# 既存コードはそのまま — 248ツールが入力され、関連する5つだけが送信される
-response = client.chat.completions.create(
-    model="gpt-4o",
-    tools=all_248_tools,
-    messages=messages,
-)
-```
-
-Anthropicでも同様:
-
-```python
-from anthropic import Anthropic
-from graph_tool_call.middleware import patch_anthropic
-
-client = Anthropic()
-patch_anthropic(client, graph=tg, top_k=5)
-```
-
-### 直接統合（任意のLLMプロバイダー）
-
-`retrieve()` で検索後、任意のフォーマットに変換して使用:
-
-```python
 from graph_tool_call import ToolGraph
 from graph_tool_call.langchain.tools import tool_schema_to_openai_function
 
@@ -327,21 +296,81 @@ tg = ToolGraph.from_url(
     cache="petstore.json",
 )
 
-# 関連ツールを検索
 tools = tg.retrieve("create a new pet", top_k=5)
 
-# OpenAI function-calling形式に変換
 openai_tools = [
     {"type": "function", "function": tool_schema_to_openai_function(t)}
     for t in tools
 ]
 
-# OpenAI互換APIならどこでも使用可能（OpenAI、Azure、Ollama、vLLM等）
+client = OpenAI()  # または OpenAI(base_url="http://localhost:11434/v1") for Ollama
 response = client.chat.completions.create(
     model="gpt-4o",
-    tools=openai_tools,
+    tools=openai_tools,  # 全248個ではなく関連5個のみ
     messages=[{"role": "user", "content": "create a new pet"}],
 )
+```
+
+<details>
+<summary>Anthropic Claude API</summary>
+
+```python
+from anthropic import Anthropic
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+tools = tg.retrieve("cancel an order", top_k=5)
+
+anthropic_tools = [
+    {
+        "name": t.name,
+        "description": t.description,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                p.name: {"type": p.type, "description": p.description}
+                for p in t.parameters
+            },
+            "required": [p.name for p in t.parameters if p.required],
+        },
+    }
+    for t in tools
+]
+
+client = Anthropic()
+response = client.messages.create(
+    model="claude-sonnet-4-20250514",
+    tools=anthropic_tools,
+    messages=[{"role": "user", "content": "注文をキャンセルして"}],
+    max_tokens=1024,
+)
+```
+
+</details>
+
+### SDKミドルウェア（コード変更ゼロ）
+
+既にtool-callingコードがあれば、**1行追加**で自動フィルタ:
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.middleware import patch_openai
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+
+patch_openai(client, graph=tg, top_k=5)  # ← この1行を追加
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    tools=all_248_tools,
+    messages=messages,
+)
+```
+
+```python
+# Anthropicも同様
+from graph_tool_call.middleware import patch_anthropic
+patch_anthropic(client, graph=tg, top_k=5)
 ```
 
 ### LangChain統合
@@ -363,8 +392,6 @@ for doc in docs:
     print(doc.page_content)       # "cancelOrder: Cancel an existing order"
     print(doc.metadata["tags"])   # ["order"]
 ```
-
-LangChainのretrieverインターフェースに対応するすべてのchain/agentと互換。
 
 ---
 
