@@ -232,6 +232,55 @@ for t in tools:
 
 该服务器提供 5 个工具：`search_tools`、`get_tool_schema`、`list_categories`、`graph_info`、`load_source`。
 
+### MCP Proxy（聚合多个 MCP 服务器）
+
+MCP 服务器多了，工具名称列表会占用大量 token。
+MCP Proxy 将它们打包到一个服务器后面 — **172 个工具 → 3 个 meta-tool**，每轮节省 ~1,200 token。
+
+**Step 1.** 用现有 MCP 服务器创建 `backends.json`：
+
+```jsonc
+// ~/backends.json
+{
+  "backends": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp", "--headless"]
+    },
+    "my-api": {
+      "command": "uvx",
+      "args": ["some-mcp-server"],
+      "env": { "API_KEY": "sk-..." }
+    }
+  },
+  "top_k": 10,
+  "cache_path": "~/.cache/mcp-proxy-cache.json"
+}
+```
+
+> **Embedding 可选。** 有 Ollama 的话加 `"embedding": "ollama/qwen3-embedding:0.6b"` 启用跨语言搜索。没有也能用 BM25 关键词搜索。
+
+**Step 2.** 注册到 Claude Code：
+
+```bash
+claude mcp add -s user tool-proxy -- \
+  uvx "graph-tool-call[mcp]" proxy --config ~/backends.json
+```
+
+**Step 3.** 删除原来的单独服务器（避免重复）：
+
+```bash
+claude mcp remove playwright -s user
+claude mcp remove my-api -s user
+```
+
+**Step 4.** 重启 Claude Code 后确认：
+
+```bash
+claude mcp list
+# tool-proxy: ... - ✓ Connected
+```
+
 ### SDK 中间件（OpenAI / Anthropic）
 
 在工具传递给 LLM 之前自动过滤 — **一行代码，无需改动现有逻辑**：

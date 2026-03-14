@@ -234,13 +234,69 @@ The server exposes 5 tools: `search_tools`, `get_tool_schema`, `list_categories`
 
 ### MCP Proxy (aggregate multiple MCP servers)
 
-Bundle multiple MCP servers behind a single proxy. In **gateway mode** (>30 tools), only 3 meta-tools are exposed — reducing context from ~1,500 tokens to ~300 tokens per turn:
+When you have many MCP servers, their tool names pile up in every LLM turn.
+MCP Proxy bundles them behind a single server — **172 tools → 3 meta-tools**, saving ~1,200 tokens per turn.
+
+**Step 1.** Create `backends.json` with your existing MCP servers:
 
 ```jsonc
-// .mcp.json
+// ~/backends.json
+{
+  "backends": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp", "--headless"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-filesystem", "/home"]
+    },
+    "my-api": {
+      "command": "uvx",
+      "args": ["some-mcp-server"],
+      "env": { "API_KEY": "sk-..." }
+    }
+  },
+  "top_k": 10,
+  "cache_path": "~/.cache/mcp-proxy-cache.json"
+}
+```
+
+> **Embedding is optional.** Add `"embedding": "ollama/qwen3-embedding:0.6b"` for cross-language search (requires Ollama running). Without it, BM25 keyword search still works.
+
+**Step 2.** Register the proxy with Claude Code:
+
+```bash
+claude mcp add -s user tool-proxy -- \
+  uvx "graph-tool-call[mcp]" proxy --config ~/backends.json
+```
+
+**Step 3.** Remove the original individual servers (so they don't duplicate):
+
+```bash
+claude mcp remove playwright -s user
+claude mcp remove filesystem -s user
+claude mcp remove my-api -s user
+```
+
+**Step 4.** Restart Claude Code and verify:
+
+```bash
+claude mcp list
+# tool-proxy: ... - ✓ Connected
+# (individual servers should be gone)
+```
+
+That's it. The proxy exposes `search_tools`, `get_tool_schema`, and `call_backend_tool`. After searching, matched tools are **dynamically injected** for 1-hop direct calling.
+
+<details>
+<summary>Alternative: .mcp.json config</summary>
+
+```jsonc
+// .mcp.json (project-level or global)
 {
   "mcpServers": {
-    "smart-tools": {
+    "tool-proxy": {
       "command": "uvx",
       "args": ["graph-tool-call[mcp]", "proxy",
                "--config", "/path/to/backends.json"]
@@ -249,25 +305,7 @@ Bundle multiple MCP servers behind a single proxy. In **gateway mode** (>30 tool
 }
 ```
 
-```jsonc
-// backends.json
-{
-  "backends": {
-    "ms365": {
-      "command": "npx",
-      "args": ["-y", "@softeria/ms-365-mcp-server"]
-    },
-    "playwright": {
-      "command": "npx",
-      "args": ["@playwright/mcp", "--headless"]
-    }
-  },
-  "embedding": "ollama/qwen3-embedding:0.6b",
-  "top_k": 10
-}
-```
-
-After `search_tools`, matched tools are **dynamically injected** into the tool list for 1-hop direct calling — no `call_backend_tool` wrapper needed.
+</details>
 
 ### SDK Middleware (OpenAI / Anthropic)
 

@@ -233,6 +233,55 @@ MCPサーバーとして起動すれば、MCP対応の任意のAgentが設定エ
 
 サーバーは5つのツールを公開します: `search_tools`、`get_tool_schema`、`list_categories`、`graph_info`、`load_source`。
 
+### MCP Proxy（複数のMCPサーバーを集約）
+
+MCPサーバーが増えると、ツール名リストが毎ターンのトークンを圧迫します。
+MCP Proxyはこれを1つにまとめ — **172ツール → 3つのmeta-tool**、ターンあたり~1,200トークン節約。
+
+**Step 1.** 既存のMCPサーバーで `backends.json` を作成：
+
+```jsonc
+// ~/backends.json
+{
+  "backends": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp", "--headless"]
+    },
+    "my-api": {
+      "command": "uvx",
+      "args": ["some-mcp-server"],
+      "env": { "API_KEY": "sk-..." }
+    }
+  },
+  "top_k": 10,
+  "cache_path": "~/.cache/mcp-proxy-cache.json"
+}
+```
+
+> **Embeddingはオプション。** Ollamaがあれば `"embedding": "ollama/qwen3-embedding:0.6b"` でクロスランゲージ検索可能。なくてもBM25キーワード検索で動作します。
+
+**Step 2.** Claude Codeに登録：
+
+```bash
+claude mcp add -s user tool-proxy -- \
+  uvx "graph-tool-call[mcp]" proxy --config ~/backends.json
+```
+
+**Step 3.** 元の個別サーバーを削除（重複防止）：
+
+```bash
+claude mcp remove playwright -s user
+claude mcp remove my-api -s user
+```
+
+**Step 4.** Claude Code再起動後に確認：
+
+```bash
+claude mcp list
+# tool-proxy: ... - ✓ Connected
+```
+
 ### SDKミドルウェア（OpenAI / Anthropic）
 
 LLMに送信される前にツールを自動フィルタ — **1行追加、コード変更不要**:
