@@ -7,13 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-03-14
+
 ### Changed
-- **MCP Proxy gateway 개선** — 1-hop direct calling + 경량 search + on-demand schema
-  - `search_tools`: inputSchema 제거, score/confidence 포함 (결과 토큰 ~70% 절감)
-  - `get_tool_schema`: on-demand full schema 조회 (필요할 때만 토큰 사용)
-  - Dynamic tool injection: search 후 매칭된 tool이 `tools/list`에 자동 등록 → 직접 호출 가능 (1-hop)
-  - Direct backend routing: `call_tool`이 backend tool 이름을 직접 수락 (2-hop `call_backend_tool` 불필요)
-  - `call_backend_tool` 유지 (하위 호환 fallback)
+- **MCP Proxy gateway 전면 개선**
+  - 1-hop direct calling: search 후 매칭 tool이 `tools/list`에 자동 등록 → 직접 호출
+  - `search_tools`: inputSchema 제거, score/confidence 포함, description 120자 축약
+  - `get_tool_schema`: on-demand full schema 조회
+  - Direct backend routing + `call_backend_tool` fallback 유지
+- **Graph 캐싱** — `cache_path` 옵션, 재시작 시 embedding 재계산 생략 (fingerprint 무효화)
+- **Embedding provider 문자열 지정** — `"ollama/qwen3-embedding:0.6b"` 형식 지원
+- **embedding extra 경량화** — `[embedding]` = numpy만, `[embedding-local]` = sentence-transformers
 
 ## [0.11.0] - 2026-03-14
 
