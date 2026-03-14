@@ -103,10 +103,11 @@ These signals are combined via **weighted Reciprocal Rank Fusion (wRRF)**.
 * **Auto-ingest from OpenAPI / Swagger / MCP / Python functions**
 * **Tool relationship graph** construction and utilization
 * **Hybrid retrieval** based on BM25 + graph + embedding + annotation
-* **History-aware retrieval**
-* **Cross-encoder reranking**
-* **MMR diversity**
-* **LLM-enhanced ontology**
+* **Workflow guidance** — search results include execution order + dependency hints
+* **History-aware retrieval** — previously called tools deprioritized automatically
+* **HTTP execution** — search → call APIs end-to-end (`ToolGraph.execute()`)
+* **Cross-encoder reranking** and **MMR diversity**
+* **LLM-enhanced ontology** — relation inference (REQUIRES, PRECEDES, COMPLEMENTARY)
 * **Duplicate tool detection and merging**
 * **HTML / GraphML / Cypher** export
 * **ai-api-lint integration** for automatic spec cleanup
@@ -209,9 +210,20 @@ print(tg)
 tools = tg.retrieve("create a new pet", top_k=5)
 for t in tools:
     print(f"{t.name}: {t.description}")
-```
 
-On this spec, **Recall@5 is 98.3%** with `top_k=5`.
+# Search with workflow guidance
+results = tg.retrieve_with_scores("process an order", top_k=5)
+for r in results:
+    print(f"{r.tool.name} [{r.confidence}]")
+    for rel in r.relations:
+        print(f"  → {rel.hint}")
+
+# Execute an API directly (OpenAPI tools)
+result = tg.execute(
+    "addPet", {"name": "Buddy", "status": "available"},
+    base_url="https://petstore3.swagger.io/api/v3",
+)
+```
 
 ### MCP Server (Claude Code, Cursor, Windsurf, etc.)
 
@@ -230,7 +242,21 @@ Run as an MCP server — any MCP-compatible agent can use tool search with just 
 }
 ```
 
-The server exposes 5 tools: `search_tools`, `get_tool_schema`, `list_categories`, `graph_info`, `load_source`.
+The server exposes 6 tools: `search_tools`, `get_tool_schema`, `execute_tool`, `list_categories`, `graph_info`, `load_source`.
+
+Search results include **workflow guidance** — relations between tools and suggested execution order:
+
+```json
+{
+  "tools": [
+    {"name": "createOrder", "relations": [
+      {"target": "getOrder", "type": "precedes", "hint": "Call this tool before getOrder"}
+    ]},
+    {"name": "getOrder", "prerequisites": ["createOrder"]}
+  ],
+  "workflow": {"suggested_order": ["createOrder", "getOrder", "updateOrderStatus"]}
+}
+```
 
 ### MCP Proxy (aggregate multiple MCP servers)
 

@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-03-15
+
+### Added
+- **워크플로우 가이드** — 검색 결과에 tool 간 관계 + 실행 순서 자동 포함
+  - `ToolRelation(target, type, direction, hint)`: REQUIRES, PRECEDES, COMPLEMENTARY 관계
+  - `prerequisites`: 결과에 없지만 선행 필요한 tool 목록
+  - `workflow.suggested_order`: 토폴로지 정렬 기반 실행 순서 추천
+  - MCP server/proxy 검색 결과에 자동 포함 (~100 토큰 추가)
+- **세션 이력 기반 재검색** — MCP server/proxy에서 호출 이력 자동 추적
+  - 이미 호출한 tool은 0.8x 감점 → 재검색 시 새 후보가 올라옴
+  - `search_tools` → `execute_tool` → 다시 `search_tools` 시 자동 반영
+
+### Changed
+- **자동 관계 감지 정확도 개선** — 워크플로우 정확도 0/5 → 3/5
+  - CRUD ordering 정밀화: POST→GET→PUT/PATCH→DELETE 순서 명시적 추론
+  - name-based detection 방향 수정 + creator(POST) tool만 REQUIRES 대상
+  - GET→PUT/DELETE PRECEDES 추가 (조회 후 수정/삭제 패턴)
+- **온톨로지 역할 재정의** — 관계/워크플로우에만 집중, 키워드 enrichment 제거
+  - keyword enrichment 제거: BM25 IDF 오염 방지 (Top-1 75% 유지)
+  - example_queries 생성 제거: LLM이 query 시점에 처리
+  - LLM 호출 4회 → 2회 (관계+카테고리만), 비용 50% 절감
+
+### Fixed
+- **embedding rebuild 순서 버그** — `auto_organize()` 후 embedding이 소실되던 critical bug 수정
+- **워크플로우 방향 반전 버그** — incoming PRECEDES가 outgoing으로 해석되던 문제 수정
+- **BM25에 example_queries 인덱싱** 추가 (LLM 생성 예시가 검색에 반영)
+
+### Benchmark
+
+| 지표 | v0.12.1 | v0.13.0 |
+|------|---------|---------|
+| Top-1 (ecommerce) | 75% | **75%** (온톨로지 후에도 유지) |
+| Top-5 (ecommerce) | 90% | **90%** |
+| 워크플로우 정확도 | 미지원 | **3/5** |
+| iterative Top-1 (history) | — | **95%+** |
+| 온톨로지 LLM 호출 | 4회 | **2회** |
+
 ## [0.12.1] - 2026-03-15
 
 ### Changed
