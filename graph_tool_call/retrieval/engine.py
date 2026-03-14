@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections import defaultdict, deque
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema
-from graph_tool_call.ontology.schema import NodeType
+from graph_tool_call.ontology.schema import NodeType, RelationType
 from graph_tool_call.retrieval.graph_search import GraphSearcher
 from graph_tool_call.retrieval.keyword import BM25Scorer
 
@@ -20,6 +21,15 @@ class SearchMode(str, Enum):
     BASIC = "basic"  # BM25 + graph + embedding + RRF
     ENHANCED = "enhanced"  # + query expansion (Tier 1)
     FULL = "full"  # + intent decomposition (Tier 2)
+
+
+@dataclass
+class ToolRelation:
+    """Relationship between a tool and another tool in the result set."""
+
+    target: str  # related tool name
+    type: str  # "requires", "precedes", "complementary", "conflicts_with"
+    hint: str  # LLM-readable 1-line description
 
 
 @dataclass
@@ -36,6 +46,8 @@ class RetrievalResult:
     graph_score: float = 0.0
     embedding_score: float = 0.0
     annotation_score: float = 0.0
+    relations: list[ToolRelation] = field(default_factory=list)
+    prerequisites: list[str] = field(default_factory=list)
 
     @property
     def confidence(self) -> str:
@@ -362,7 +374,74 @@ class RetrievalEngine:
             name_to_result = {r.tool.name: r for r in candidates}
             candidates = [name_to_result[n] for n in diverse_names if n in name_to_result]
 
-        return candidates[:top_k]
+        candidates = candidates[:top_k]
+
+        # --- Enrich with inter-result relations ---
+        self._enrich_relations(candidates)
+
+        return candidates
+
+    def _enrich_relations(self, results: list[RetrievalResult]) -> None:
+        """Attach inter-result relations and prerequisites to each result."""
+        if not results:
+            return
+
+        result_names = {r.tool.name for r in results}
+
+        _USEFUL_RELATIONS = {
+            RelationType.REQUIRES,
+            RelationType.PRECEDES,
+            RelationType.COMPLEMENTARY,
+            RelationType.CONFLICTS_WITH,
+        }
+        _HINTS_OUT = {
+            RelationType.REQUIRES: "Call {target} before this tool",
+            RelationType.PRECEDES: "Call this tool before {target}",
+            RelationType.COMPLEMENTARY: "Often used together with {target}",
+            RelationType.CONFLICTS_WITH: "Conflicts with {target}",
+        }
+        _HINTS_IN = {
+            RelationType.REQUIRES: "This tool is required by {source}",
+            RelationType.PRECEDES: "{source} should be called before this tool",
+        }
+
+        for result in results:
+            relations: list[ToolRelation] = []
+            prereqs: list[str] = []
+            seen_targets: set[str] = set()
+
+            try:
+                edges = self._graph.get_edges_from(result.tool.name, direction="both")
+            except (KeyError, ValueError):
+                continue
+
+            for src, tgt, attrs in edges:
+                rel_type = attrs.get("relation")
+                if rel_type not in _USEFUL_RELATIONS:
+                    continue
+
+                # Outgoing: this tool → target
+                rel_value = rel_type.value if hasattr(rel_type, "value") else str(rel_type)
+
+                if src == result.tool.name:
+                    if tgt in result_names and tgt not in seen_targets:
+                        hint = _HINTS_OUT.get(rel_type, "").format(target=tgt)
+                        relations.append(ToolRelation(target=tgt, type=rel_value, hint=hint))
+                        seen_targets.add(tgt)
+                    elif tgt not in result_names and rel_type == RelationType.REQUIRES:
+                        if tgt not in prereqs and tgt in self._tools:
+                            prereqs.append(tgt)
+
+                # Incoming: source → this tool
+                elif tgt == result.tool.name:
+                    if src in result_names and src not in seen_targets:
+                        hint = _HINTS_IN.get(rel_type, "").format(source=src)
+                        if hint:
+                            relations.append(ToolRelation(target=src, type=rel_value, hint=hint))
+                            seen_targets.add(src)
+
+            result.relations = relations
+            result.prerequisites = prereqs
 
     def retrieve(
         self,
@@ -479,3 +558,51 @@ class RetrievalEngine:
     def _tokenize(text: str) -> list[str]:
         """Split text into lowercase tokens."""
         return [t.lower() for t in re.split(r"[\s_\-/.,;:!?()]+", text) if t]
+
+
+def build_workflow_summary(results: list[RetrievalResult]) -> list[str] | None:
+    """Build a suggested execution order from REQUIRES/PRECEDES relations.
+
+    Returns a topologically sorted list of tool names, or None if no
+    ordering relations exist among the results.
+    """
+    order_pairs: list[tuple[str, str]] = []
+    for r in results:
+        for rel in r.relations:
+            if rel.type == "precedes":
+                order_pairs.append((r.tool.name, rel.target))
+            elif rel.type == "requires":
+                order_pairs.append((rel.target, r.tool.name))
+
+    if not order_pairs:
+        return None
+
+    # Kahn's algorithm for topological sort
+    graph: dict[str, set[str]] = defaultdict(set)
+    in_deg: dict[str, int] = defaultdict(int)
+    nodes: set[str] = set()
+    for a, b in order_pairs:
+        nodes.add(a)
+        nodes.add(b)
+        if b not in graph[a]:
+            graph[a].add(b)
+            in_deg[b] += 1
+    for n in nodes:
+        in_deg.setdefault(n, 0)
+
+    queue = deque(n for n in nodes if in_deg[n] == 0)
+    result: list[str] = []
+    while queue:
+        n = queue.popleft()
+        result.append(n)
+        for m in graph[n]:
+            in_deg[m] -= 1
+            if in_deg[m] == 0:
+                queue.append(m)
+
+    # Append remaining (cycle) nodes
+    for n in nodes:
+        if n not in result:
+            result.append(n)
+
+    return result

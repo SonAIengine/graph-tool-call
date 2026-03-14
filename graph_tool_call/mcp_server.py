@@ -124,9 +124,12 @@ def create_mcp_server(
         if not tg.tools:
             return json.dumps({"error": "No tools loaded. Use load_source() first."})
 
-        results = tg.retrieve(query, top_k=top_k, history=_call_history or None)
+        from graph_tool_call.retrieval.engine import build_workflow_summary
+
+        scored_results = tg.retrieve_with_scores(query, top_k=top_k, history=_call_history or None)
         tools_out = []
-        for tool in results:
+        for r in scored_results:
+            tool = r.tool
             tool_dict: dict[str, Any] = {
                 "name": tool.name,
                 "description": tool.description,
@@ -142,18 +145,26 @@ def create_mcp_server(
                 }
             if tool.domain:
                 tool_dict["category"] = tool.domain
+            if r.relations:
+                tool_dict["relations"] = [
+                    {"target": rel.target, "type": rel.type, "hint": rel.hint}
+                    for rel in r.relations
+                ]
+            if r.prerequisites:
+                tool_dict["prerequisites"] = r.prerequisites
             tools_out.append(tool_dict)
 
-        return json.dumps(
-            {
-                "query": query,
-                "count": len(tools_out),
-                "total_tools": len(tg.tools),
-                "tools": tools_out,
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
+        output: dict[str, Any] = {
+            "query": query,
+            "count": len(tools_out),
+            "total_tools": len(tg.tools),
+            "tools": tools_out,
+        }
+        workflow = build_workflow_summary(scored_results)
+        if workflow:
+            output["workflow"] = {"suggested_order": workflow}
+
+        return json.dumps(output, indent=2, ensure_ascii=False)
 
     @mcp_app.tool()
     def get_tool_schema(name: str) -> str:

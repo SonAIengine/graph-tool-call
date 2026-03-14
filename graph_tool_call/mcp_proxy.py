@@ -133,6 +133,8 @@ class MCPProxy:
         self._exposed_tools: dict[str, Any] = {}  # name -> mcp.types.Tool
         # Session history: track tool calls for history-aware retrieval
         self._call_history: list[str] = []
+        # Last workflow summary from search
+        self._last_workflow: list[str] | None = None
 
     @property
     def tool_graph(self) -> Any:
@@ -305,10 +307,13 @@ class MCPProxy:
         After search, matched tools are stored in ``_exposed_tools`` for
         dynamic injection into ``tools/list``.
         """
+        from graph_tool_call.retrieval.engine import build_workflow_summary
+
         k = top_k or self._top_k
         results = self._tg.retrieve_with_scores(
             query, top_k=k, history=self._call_history or None
         )
+        self._last_workflow = build_workflow_summary(results)
 
         # Zero-result fallback
         if not results:
@@ -347,6 +352,13 @@ class MCPProxy:
             }
             if r.tool.domain:
                 entry["category"] = r.tool.domain
+            if r.relations:
+                entry["relations"] = [
+                    {"target": rel.target, "type": rel.type, "hint": rel.hint}
+                    for rel in r.relations
+                ]
+            if r.prerequisites:
+                entry["prerequisites"] = r.prerequisites
             out.append(entry)
 
             # Register for dynamic injection
@@ -354,6 +366,10 @@ class MCPProxy:
                 self._exposed_tools[proxy_name] = mcp_tool
 
         return out
+
+    def get_workflow_summary(self) -> list[str] | None:
+        """Get workflow summary from the last search results."""
+        return self._last_workflow
 
     def get_tool_schema(self, name: str) -> dict[str, Any] | None:
         """Get full schema for a specific tool."""
@@ -571,20 +587,22 @@ def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
             top_k = arguments.get("top_k", proxy._top_k)
             results = proxy.search(query, top_k=top_k)
 
-            output = json.dumps(
-                {
-                    "query": query,
-                    "matched": len(results),
-                    "total_tools": len(proxy._all_tools),
-                    "tools": results,
-                    "hint": (
-                        "Matched tools are now directly callable by name. "
-                        "Use get_tool_schema to see full parameters if needed."
-                    ),
-                },
-                indent=2,
-                ensure_ascii=False,
-            )
+            output_dict: dict[str, Any] = {
+                "query": query,
+                "matched": len(results),
+                "total_tools": len(proxy._all_tools),
+                "tools": results,
+                "hint": (
+                    "Matched tools are now directly callable by name. "
+                    "Use get_tool_schema to see full parameters if needed."
+                ),
+            }
+            # Add workflow summary if available
+            workflow = proxy.get_workflow_summary()
+            if workflow:
+                output_dict["workflow"] = {"suggested_order": workflow}
+
+            output = json.dumps(output_dict, indent=2, ensure_ascii=False)
             return [types.TextContent(type="text", text=output)]
 
         # --- Meta-tool: get_tool_schema ---
