@@ -31,6 +31,7 @@ def _make_graph() -> ToolGraph:
 
 class TestGraphMLExport:
     def test_export_creates_file(self):
+        pytest.importorskip("networkx")
         tg = _make_graph()
         with tempfile.TemporaryDirectory() as tmpdir:
             out = Path(tmpdir) / "graph.graphml"
@@ -42,6 +43,7 @@ class TestGraphMLExport:
             assert "create_user" in content
 
     def test_export_contains_node_types(self):
+        pytest.importorskip("networkx")
         tg = _make_graph()
         with tempfile.TemporaryDirectory() as tmpdir:
             out = Path(tmpdir) / "graph.graphml"
@@ -51,6 +53,7 @@ class TestGraphMLExport:
             assert "category" in content.lower()
 
     def test_export_contains_edges(self):
+        pytest.importorskip("networkx")
         tg = _make_graph()
         with tempfile.TemporaryDirectory() as tmpdir:
             out = Path(tmpdir) / "graph.graphml"

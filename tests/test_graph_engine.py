@@ -5,18 +5,22 @@ import pytest
 from graph_tool_call.core.dict_graph import DictGraph
 
 try:
+    import networkx  # noqa: F401
+
     from graph_tool_call.core.graph import NetworkXGraph
 
     _HAS_NETWORKX = True
 except ImportError:
+    NetworkXGraph = None
     _HAS_NETWORKX = False
+
+_networkx_skip = pytest.mark.skipif(not _HAS_NETWORKX, reason="networkx not installed")
 
 
 def _graph_impls():
     """Yield graph implementations to test."""
     yield DictGraph
-    if _HAS_NETWORKX:
-        yield pytest.param(NetworkXGraph, id="networkx")
+    yield pytest.param(NetworkXGraph, id="networkx", marks=_networkx_skip)
 
 
 @pytest.fixture(params=list(_graph_impls()))
