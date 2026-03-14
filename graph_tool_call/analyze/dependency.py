@@ -310,33 +310,67 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
                 )
             )
 
-    # CRUD ordering: POST → GET → PUT → DELETE = PRECEDES
-    ordered_tools: list[tuple[int, ToolSchema]] = []
-    for tool in group:
-        method = tool.metadata["method"].lower()
-        if method in _CRUD_ORDER:
-            ordered_tools.append((_CRUD_ORDER[method], tool))
-    ordered_tools.sort(key=lambda x: x[0])
-
-    for i, (ord_a, tool_a) in enumerate(ordered_tools):
-        for ord_b, tool_b in ordered_tools[i + 1 :]:
-            if tool_a.name == tool_b.name:
+    # CRUD ordering: POST → GET/PUT/PATCH/DELETE = PRECEDES
+    # Only create PRECEDES between different CRUD stages (not within same stage)
+    # POST(create) → GET(read), PUT/PATCH(update), DELETE(delete)
+    # GET(read) → PUT/PATCH(update) — need to read before updating
+    # POST is prerequisite for single-resource operations
+    for post in posts:
+        for target in gets_single + updates + deletes:
+            if post.name == target.name:
                 continue
-            if ord_a < ord_b:
-                relations.append(
-                    DetectedRelation(
-                        source=tool_a.name,
-                        target=tool_b.name,
-                        relation_type=RelationType.PRECEDES,
-                        confidence=0.85,
-                        evidence=(
-                            f"{tool_a.name} ({tool_a.metadata['method'].upper()}) "
-                            f"precedes {tool_b.name} ({tool_b.metadata['method'].upper()}) "
-                            "in CRUD lifecycle"
-                        ),
-                        layer=1,
-                    )
+            relations.append(
+                DetectedRelation(
+                    source=post.name,
+                    target=target.name,
+                    relation_type=RelationType.PRECEDES,
+                    confidence=0.9,
+                    evidence=(
+                        f"{post.name} (POST/create) precedes "
+                        f"{target.name} ({target.metadata['method'].upper()}) — "
+                        "resource must exist first"
+                    ),
+                    layer=1,
                 )
+            )
+
+    # GET(single) → PUT/PATCH/DELETE: read before modify/delete
+    for get_s in gets_single:
+        for target in updates + deletes:
+            if get_s.name == target.name:
+                continue
+            relations.append(
+                DetectedRelation(
+                    source=get_s.name,
+                    target=target.name,
+                    relation_type=RelationType.PRECEDES,
+                    confidence=0.8,
+                    evidence=(
+                        f"{get_s.name} (GET) precedes {target.name} "
+                        f"({target.metadata['method'].upper()}) — read before modify"
+                    ),
+                    layer=1,
+                )
+            )
+
+    # PUT/PATCH → DELETE: update before delete (optional, lower confidence)
+    for upd in updates:
+        for dele in deletes:
+            if upd.name == dele.name:
+                continue
+            relations.append(
+                DetectedRelation(
+                    source=upd.name,
+                    target=dele.name,
+                    relation_type=RelationType.PRECEDES,
+                    confidence=0.7,
+                    evidence=(
+                        f"{upd.name} ({upd.metadata['method'].upper()}) precedes "
+                        f"{dele.name} (DELETE) in CRUD lifecycle"
+                    ),
+                    layer=1,
+                )
+            )
 
     return relations
 
@@ -472,28 +506,33 @@ def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
                     param_tokens.add(tok)
         tool_param_tokens[tool.name] = param_tokens
 
-    # Match: tool A's resource tokens appear in tool B's parameter tokens
-    for tool_a in tools:
-        resource_a = tool_tokens[tool_a.name]
-        if not resource_a:
+    # Match: tool A is a creator (POST) and tool B's params reference A's resource
+    # → tool B depends on tool A (tool B REQUIRES tool A)
+    # Only POST/creator tools can be dependency targets to avoid noisy relations.
+    creators = {
+        t.name: tool_tokens[t.name]
+        for t in tools
+        if t.metadata.get("method", "").lower() == "post"
+    }
+    for creator_name, resource_tokens in creators.items():
+        if not resource_tokens:
             continue
         for tool_b in tools:
-            if tool_a.name == tool_b.name:
+            if tool_b.name == creator_name:
                 continue
             params_b = tool_param_tokens[tool_b.name]
-            shared = resource_a & params_b
+            shared = resource_tokens & params_b
             if shared:
-                # Higher confidence when multiple tokens match
                 conf = 0.85 if len(shared) >= 2 else 0.8
                 relations.append(
                     DetectedRelation(
-                        source=tool_a.name,
-                        target=tool_b.name,
+                        source=tool_b.name,
+                        target=creator_name,
                         relation_type=RelationType.REQUIRES,
                         confidence=conf,
                         evidence=(
-                            f"{tool_b.name} has params matching {tool_a.name}'s "
-                            f"resource tokens: {', '.join(sorted(shared))}"
+                            f"{tool_b.name} has params referencing {creator_name}'s "
+                            f"resource: {', '.join(sorted(shared))}"
                         ),
                         layer=2,
                     )

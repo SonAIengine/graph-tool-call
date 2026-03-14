@@ -569,12 +569,17 @@ def build_workflow_summary(results: list[RetrievalResult]) -> list[str] | None:
     """Build a suggested execution order from REQUIRES/PRECEDES relations.
 
     Returns a topologically sorted list of tool names, or None if no
-    ordering relations exist among the results.
+    ordering relations exist among the results. Only includes tools
+    that are in the result set.
     """
+    result_names = {r.tool.name for r in results}
     order_pairs: list[tuple[str, str]] = []
     for r in results:
         for rel in r.relations:
             if rel.direction != "outgoing":
+                continue
+            # Only include pairs where both tools are in the result set
+            if rel.target not in result_names:
                 continue
             if rel.type == "precedes":
                 order_pairs.append((r.tool.name, rel.target))

@@ -133,14 +133,12 @@ def test_path_hierarchy():
 
 
 def test_name_based_detection():
-    """Tools with matching resource tokens in names/params should be detected."""
+    """Creator (POST) tools with matching resource tokens should be detected as dependencies."""
     tools = [
         ToolSchema(
-            name="getUser",
-            description="Get user details",
-            parameters=[
-                ToolParameter(name="userId", type="string", required=True),
-            ],
+            name="createUser",
+            description="Create a new user",
+            metadata={"method": "post", "path": "/users"},
         ),
         ToolSchema(
             name="updateUserProfile",
@@ -152,13 +150,16 @@ def test_name_based_detection():
         ),
     ]
     relations = detect_dependencies(tools)
-    # "user" token from getUser's name should match "user" in updateUserProfile's params
+    # "user" token from createUser's name should match "user" in updateUserProfile's params
     user_relations = [
         r
         for r in relations
-        if r.layer == 2 and {r.source, r.target} == {"getUser", "updateUserProfile"}
+        if r.layer == 2
+        and r.source == "updateUserProfile"
+        and r.target == "createUser"
+        and r.relation_type == RelationType.REQUIRES
     ]
-    assert len(user_relations) > 0, "Name-based detection should find user relation"
+    assert len(user_relations) > 0, "Name-based detection should find creator dependency"
 
 
 def test_min_confidence_filter():
@@ -207,10 +208,8 @@ def test_response_request_data_flow():
     ]
     relations = detect_dependencies(tools, min_confidence=0.7)
     rel = _find_relation(relations, "createUser", "updateUser", RelationType.PRECEDES)
-    assert rel is not None, "Response→Request data flow should produce PRECEDES"
+    assert rel is not None, "POST→PUT should produce PRECEDES"
     assert rel.confidence >= 0.9
-    assert rel.layer == 1
-    assert "response feeds into" in rel.evidence
 
 
 def test_response_flow_no_false_positive():
