@@ -145,7 +145,8 @@ pip install graph-tool-call[all]               # すべて
 | Extra | インストールされるパッケージ | 用途 |
 |-------|---------------------------|------|
 | `openapi` | pyyaml | YAML OpenAPI specパース |
-| `embedding` | numpy, sentence-transformers | セマンティック検索 |
+| `embedding` | numpy | セマンティック検索 (外部 Ollama/OpenAI/vLLM 接続) |
+| `embedding-local` | numpy, sentence-transformers | ローカル sentence-transformers モデル |
 | `similarity` | rapidfuzz | 重複ツール検出 |
 | `langchain` | langchain-core | LangChain統合 |
 | `visualization` | pyvis, networkx | HTMLグラフエクスポート、GraphML |
@@ -537,27 +538,28 @@ tg.add_relation("get_weather", "get_forecast", "complementary")
 ## エンベディングベースのハイブリッド検索
 
 BM25 + グラフの上にエンベディングベースのセマンティック検索を追加できます。
-OpenAI互換エンドポイントであればほとんど接続可能です。
+重い依存なし — 外部 embedding サーバー (Ollama, OpenAI, vLLM 等) を接続するか、ローカル sentence-transformers を使用できます。
 
 ```bash
-pip install graph-tool-call[embedding]
+pip install graph-tool-call[embedding]           # numpy のみ (~20MB)
+pip install graph-tool-call[embedding-local]      # + sentence-transformers (~2GB, ローカルモデル)
 ```
 
 ```python
-# Sentence-transformers（ローカル）
-tg.enable_embedding("sentence-transformers/all-MiniLM-L6-v2")
+# Ollama（推奨 — 軽量、クロスランゲージ対応）
+tg.enable_embedding("ollama/qwen3-embedding:0.6b")
 
 # OpenAI
 tg.enable_embedding("openai/text-embedding-3-large")
-
-# Ollama
-tg.enable_embedding("ollama/nomic-embed-text")
 
 # vLLM / llama.cpp / OpenAI互換サーバー
 tg.enable_embedding("vllm/Qwen/Qwen3-Embedding-0.6B")
 tg.enable_embedding("vllm/model@http://gpu-box:8000/v1")
 tg.enable_embedding("llamacpp/model@http://192.168.1.10:8080/v1")
 tg.enable_embedding("http://localhost:8000/v1@my-model")
+
+# Sentence-transformers（embedding-local extra 必要）
+tg.enable_embedding("sentence-transformers/all-MiniLM-L6-v2")
 
 # カスタムcallable
 tg.enable_embedding(lambda texts: my_embed_fn(texts))

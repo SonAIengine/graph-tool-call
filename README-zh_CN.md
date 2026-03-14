@@ -144,7 +144,8 @@ pip install graph-tool-call[all]               # 全部
 | Extra | 安装的包 | 用途 |
 |-------|---------|------|
 | `openapi` | pyyaml | YAML OpenAPI spec 解析 |
-| `embedding` | numpy, sentence-transformers | 语义搜索 |
+| `embedding` | numpy | 语义搜索 (连接外部 Ollama/OpenAI/vLLM) |
+| `embedding-local` | numpy, sentence-transformers | 本地 sentence-transformers 模型 |
 | `similarity` | rapidfuzz | 重复工具检测 |
 | `langchain` | langchain-core | LangChain 集成 |
 | `visualization` | pyvis, networkx | HTML 图导出, GraphML |
@@ -536,27 +537,28 @@ tg.add_relation("get_weather", "get_forecast", "complementary")
 ## 基于嵌入的混合检索
 
 在 BM25 + 图遍历基础上可以添加基于嵌入的语义检索。
-支持任何 OpenAI 兼容 endpoint。
+无需重型依赖 — 连接外部 embedding 服务器 (Ollama, OpenAI, vLLM 等) 或使用本地 sentence-transformers。
 
 ```bash
-pip install graph-tool-call[embedding]
+pip install graph-tool-call[embedding]           # 仅 numpy (~20MB)
+pip install graph-tool-call[embedding-local]      # + sentence-transformers (~2GB, 本地模型)
 ```
 
 ```python
-# Sentence-transformers（本地）
-tg.enable_embedding("sentence-transformers/all-MiniLM-L6-v2")
+# Ollama（推荐 — 轻量、跨语言支持）
+tg.enable_embedding("ollama/qwen3-embedding:0.6b")
 
 # OpenAI
 tg.enable_embedding("openai/text-embedding-3-large")
-
-# Ollama
-tg.enable_embedding("ollama/nomic-embed-text")
 
 # vLLM / llama.cpp / OpenAI 兼容服务器
 tg.enable_embedding("vllm/Qwen/Qwen3-Embedding-0.6B")
 tg.enable_embedding("vllm/model@http://gpu-box:8000/v1")
 tg.enable_embedding("llamacpp/model@http://192.168.1.10:8080/v1")
 tg.enable_embedding("http://localhost:8000/v1@my-model")
+
+# Sentence-transformers（需 embedding-local extra）
+tg.enable_embedding("sentence-transformers/all-MiniLM-L6-v2")
 
 # 自定义 callable
 tg.enable_embedding(lambda texts: my_embed_fn(texts))

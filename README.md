@@ -144,7 +144,8 @@ pip install graph-tool-call[all]               # everything
 | Extra | Installs | When to use |
 |-------|----------|-------------|
 | `openapi` | pyyaml | YAML OpenAPI specs |
-| `embedding` | numpy, sentence-transformers | Semantic search |
+| `embedding` | numpy | Semantic search (connect to Ollama/OpenAI/vLLM) |
+| `embedding-local` | numpy, sentence-transformers | Local sentence-transformers models |
 | `similarity` | rapidfuzz | Duplicate detection |
 | `langchain` | langchain-core | LangChain integration |
 | `visualization` | pyvis, networkx | HTML graph export, GraphML |
@@ -230,6 +231,43 @@ Run as an MCP server — any MCP-compatible agent can use tool search with just 
 ```
 
 The server exposes 5 tools: `search_tools`, `get_tool_schema`, `list_categories`, `graph_info`, `load_source`.
+
+### MCP Proxy (aggregate multiple MCP servers)
+
+Bundle multiple MCP servers behind a single proxy. In **gateway mode** (>30 tools), only 3 meta-tools are exposed — reducing context from ~1,500 tokens to ~300 tokens per turn:
+
+```jsonc
+// .mcp.json
+{
+  "mcpServers": {
+    "smart-tools": {
+      "command": "uvx",
+      "args": ["graph-tool-call[mcp]", "proxy",
+               "--config", "/path/to/backends.json"]
+    }
+  }
+}
+```
+
+```jsonc
+// backends.json
+{
+  "backends": {
+    "ms365": {
+      "command": "npx",
+      "args": ["-y", "@softeria/ms-365-mcp-server"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp", "--headless"]
+    }
+  },
+  "embedding": "ollama/qwen3-embedding:0.6b",
+  "top_k": 10
+}
+```
+
+After `search_tools`, matched tools are **dynamically injected** into the tool list for 1-hop direct calling — no `call_backend_tool` wrapper needed.
 
 ### SDK Middleware (OpenAI / Anthropic)
 
@@ -536,27 +574,29 @@ tg.add_relation("get_weather", "get_forecast", "complementary")
 ## Embedding-based Hybrid Search
 
 Add embedding-based semantic search on top of BM25 + graph.
-Any OpenAI-compatible endpoint works.
+No heavy dependencies needed — use any external embedding server (Ollama, OpenAI, vLLM, etc.)
+or local sentence-transformers.
 
 ```bash
-pip install graph-tool-call[embedding]
+pip install graph-tool-call[embedding]           # numpy only (~20MB)
+pip install graph-tool-call[embedding-local]      # + sentence-transformers (~2GB, local models)
 ```
 
 ```python
-# Sentence-transformers (local)
-tg.enable_embedding("sentence-transformers/all-MiniLM-L6-v2")
+# Ollama (recommended — lightweight, cross-language)
+tg.enable_embedding("ollama/qwen3-embedding:0.6b")
 
 # OpenAI
 tg.enable_embedding("openai/text-embedding-3-large")
-
-# Ollama
-tg.enable_embedding("ollama/nomic-embed-text")
 
 # vLLM / llama.cpp / any OpenAI-compatible server
 tg.enable_embedding("vllm/Qwen/Qwen3-Embedding-0.6B")
 tg.enable_embedding("vllm/model@http://gpu-box:8000/v1")
 tg.enable_embedding("llamacpp/model@http://192.168.1.10:8080/v1")
 tg.enable_embedding("http://localhost:8000/v1@my-model")
+
+# Sentence-transformers (requires embedding-local extra)
+tg.enable_embedding("sentence-transformers/all-MiniLM-L6-v2")
 
 # Custom callable
 tg.enable_embedding(lambda texts: my_embed_fn(texts))
