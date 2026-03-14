@@ -224,6 +224,10 @@ class BM25Scorer:
         for param in tool.parameters:
             tokens.extend(BM25Scorer._tokenize(param.name))
         tokens.extend(BM25Scorer._extract_metadata_tokens(tool))
+        # Include LLM-generated example queries for richer keyword matching
+        if hasattr(tool, "metadata") and tool.metadata:
+            for eq in tool.metadata.get("example_queries", []):
+                tokens.extend(BM25Scorer._tokenize(eq))
         return tokens
 
     @staticmethod

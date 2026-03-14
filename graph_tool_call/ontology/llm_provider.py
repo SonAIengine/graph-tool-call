@@ -53,7 +53,7 @@ Only output the JSON array, nothing else."""
 
 _CATEGORY_PROMPT = """\
 Group these API tools into logical categories. Each tool should belong to exactly one category.
-
+{existing_categories}
 Tools:
 {tools_list}
 
@@ -67,17 +67,18 @@ Output a JSON object:
 Only output the JSON object, nothing else."""
 
 _KEYWORD_ENRICHMENT_PROMPT = """\
-For each API tool below, generate 3-5 English search keywords that would help \
-find the tool via keyword search. Include synonyms, domain terms, and common \
-query patterns. If the description is in a non-English language, also include \
-translated terms.
+For each API tool below, generate 3-5 **distinctive** English search keywords \
+that uniquely identify THIS tool and distinguish it from other tools in the list. \
+Do NOT use generic words like "create", "get", "list", "update", "delete", "user", \
+"data", "info", "manage", "item". Instead use domain-specific synonyms, \
+alternative phrasings, and terms a user would search for.
 
 Tools:
 {tools_list}
 
 Output a JSON object:
 {{
-  "tool_name": ["keyword1", "keyword2", "keyword3"],
+  "tool_name": ["distinctive_keyword1", "distinctive_keyword2"],
   ...
 }}
 Only output the JSON object, nothing else."""
@@ -178,9 +179,20 @@ class OntologyLLM(ABC):
     def suggest_categories(
         self,
         tools: list[ToolSummary],
+        existing_categories: list[str] | None = None,
     ) -> dict[str, list[str]]:
         """Suggest category groupings for tools."""
-        prompt = _CATEGORY_PROMPT.format(tools_list=_format_tools_list(tools))
+        existing_str = ""
+        if existing_categories:
+            existing_str = (
+                "\nExisting categories (reuse these instead of creating duplicates): "
+                + ", ".join(existing_categories)
+                + "\n"
+            )
+        prompt = _CATEGORY_PROMPT.format(
+            tools_list=_format_tools_list(tools),
+            existing_categories=existing_str,
+        )
         response = self.generate(prompt)
 
         try:

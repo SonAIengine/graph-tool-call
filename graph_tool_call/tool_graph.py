@@ -484,8 +484,22 @@ class ToolGraph:
             from graph_tool_call.ontology.llm_provider import wrap_llm
 
             wrapped = wrap_llm(llm)
+        # Save embedding state before invalidation
+        _saved_embedding_provider = None
+        if self._retrieval is not None and self._retrieval._embedding_index is not None:
+            _saved_embedding_provider = self._retrieval._embedding_index._provider
+
         auto_organize(self._builder, list(self._tools.values()), wrapped)
-        self._invalidate_retrieval()  # BM25/embedding must rebuild from enriched ToolSchema
+        self._invalidate_retrieval()  # BM25 must rebuild from enriched ToolSchema
+
+        # Rebuild embedding index with enriched data (tags, example_queries)
+        if _saved_embedding_provider is not None:
+            from graph_tool_call.retrieval.embedding import EmbeddingIndex
+
+            new_index = EmbeddingIndex(provider=_saved_embedding_provider)
+            new_index.build_from_tools(self._tools)
+            engine = self._get_retrieval_engine()
+            engine.set_embedding_index(new_index)
 
     def build_ontology(self, llm: Any = None, *, lint: bool = False, lint_level: int = 2) -> None:
         """Build a complete ontology from registered tools.

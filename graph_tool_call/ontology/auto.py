@@ -262,7 +262,7 @@ def _llm_auto_organize(
     # Infer relations
     relations = llm.infer_relations(summaries, batch_size=50)
     for rel in relations:
-        if rel.confidence < 0.7:
+        if rel.confidence < 0.85:
             continue
         if rel.source not in tool_names or rel.target not in tool_names:
             continue
@@ -270,8 +270,15 @@ def _llm_auto_organize(
             continue
         builder.add_relation(rel.source, rel.target, rel.relation_type)
 
-    # Suggest categories and sync to ToolSchema tags
-    categories = llm.suggest_categories(summaries)
+    # Suggest categories (pass existing to avoid duplicates)
+    from graph_tool_call.ontology.schema import NodeType
+
+    existing_cats = [
+        n
+        for n in builder._graph.nodes()
+        if builder._graph.get_node_attrs(n).get("node_type") == NodeType.CATEGORY
+    ]
+    categories = llm.suggest_categories(summaries, existing_categories=existing_cats)
     for cat_name, cat_tools in categories.items():
         cat_name_clean = cat_name.lower().strip()
         if not cat_name_clean:
@@ -290,21 +297,37 @@ def _llm_auto_organize(
 
     # Enrich keywords for BM25 search quality
     keywords = llm.enrich_keywords(summaries)
+
+    # IDF filter: remove keywords that appear in too many tools (>30% = noise)
+    if keywords:
+        kw_doc_freq: dict[str, int] = {}
+        for kws in keywords.values():
+            for k in set(kw.lower() for kw in kws):
+                kw_doc_freq[k] = kw_doc_freq.get(k, 0) + 1
+        n_tools = len(tool_names)
+        max_freq = max(2, int(n_tools * 0.3))
+        noisy_kws = {k for k, freq in kw_doc_freq.items() if freq > max_freq}
+
     for tool_name, kws in keywords.items():
         if tool_name not in tool_names:
             continue
         if not builder._graph.has_node(tool_name):
             continue
+        # Filter out noisy (too common) keywords
+        filtered_kws = [k.lower() for k in kws if k.lower() not in noisy_kws]
+        if not filtered_kws:
+            continue
+
         attrs = builder._graph.get_node_attrs(tool_name)
         existing_tags = attrs.get("tags", [])
-        new_tags = list(set(existing_tags + [k.lower() for k in kws]))
+        new_tags = list(set(existing_tags + filtered_kws))
         builder._graph.set_node_attrs(tool_name, tags=new_tags)
 
         # Sync enriched keywords back to ToolSchema for BM25/embedding
         if tool_name in tool_map:
             tool = tool_map[tool_name]
             existing = set(tool.tags)
-            added = [k.lower() for k in kws if k.lower() not in existing]
+            added = [k for k in filtered_kws if k not in existing]
             if added:
                 tool.tags = tool.tags + added
 
