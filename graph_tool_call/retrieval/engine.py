@@ -248,6 +248,71 @@ class RetrievalEngine:
                 continue
             final_scores[name] = score
 
+        # --- Post-fusion boosts for Top-1 precision ---
+        # 1. Name-query direct overlap boost
+        query_tokens_lower = set(re.split(r"[\s_\-/.,;:!?()]+", query.lower()))
+        query_tokens_lower.discard("")
+        for name in final_scores:
+            name_tokens = set(re.split(r"[\s_\-/.,;:!?()]+", name.lower()))
+            # camelCase split
+            expanded: set[str] = set()
+            for t in name_tokens:
+                parts = re.sub(r"([a-z])([A-Z])", r"\1 \2", t).lower().split()
+                expanded.update(parts)
+            overlap = len(query_tokens_lower & expanded)
+            if overlap > 0:
+                boost = 1.0 + 0.1 * overlap  # 10% per matching token
+                final_scores[name] *= boost
+
+        # 2. HTTP method-intent alignment
+        if query_intent and not query_intent.is_neutral:
+            for name, score in list(final_scores.items()):
+                tool = self._tools.get(name)
+                if not tool or not tool.metadata:
+                    continue
+                method = tool.metadata.get("method", "").upper()
+                if not method:
+                    continue
+                # Reward method-intent match, penalize mismatch
+                if query_intent.write_intent > 0.5 and method == "POST":
+                    final_scores[name] *= 1.15
+                elif query_intent.read_intent > 0.5 and method == "GET":
+                    final_scores[name] *= 1.1
+                elif query_intent.delete_intent > 0.5 and method == "DELETE":
+                    final_scores[name] *= 1.15
+
+        # 3. Embedding rerank: description-only similarity for top candidates
+        # Single batch encode (1 API call for query + descriptions)
+        if self._embedding_index is not None and self._embedding_index._provider is not None:
+            try:
+                top_n = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+                if top_n:
+                    descs = []
+                    desc_names = []
+                    for name, _ in top_n:
+                        tool = self._tools.get(name)
+                        if tool and tool.description:
+                            descs.append(tool.description)
+                            desc_names.append(name)
+                    if descs:
+                        # Batch encode: [query, desc1, desc2, ...] in 1 API call
+                        all_texts = [query] + descs
+                        all_embs = self._embedding_index._provider.encode_batch(all_texts)
+                        if len(all_embs) == len(all_texts):
+                            np = __import__("numpy")
+                            q_vec = np.array(all_embs[0], dtype=np.float32)
+                            q_norm = np.linalg.norm(q_vec)
+                            if q_norm > 0:
+                                q_vec = q_vec / q_norm
+                                for i, name in enumerate(desc_names):
+                                    d_vec = np.array(all_embs[i + 1], dtype=np.float32)
+                                    d_norm = np.linalg.norm(d_vec)
+                                    if d_norm > 0:
+                                        sim = float(np.dot(q_vec, d_vec / d_norm))
+                                        final_scores[name] *= 1.0 + 0.2 * max(sim, 0.0)
+            except (ValueError, ImportError):
+                pass
+
         # History boost: slightly demote already-used tools to favor new discoveries
         if history:
             for tool_name in history:

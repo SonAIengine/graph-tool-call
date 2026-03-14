@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-03-15
+
+### Changed
+- **Top-1 정확도 25% 향상** — wRRF fusion 후 3단계 post-processing 추가
+  - Name-query overlap boost: tool name과 쿼리 토큰의 직접 매칭 시 가산
+  - HTTP method-intent alignment: 쿼리 의도(생성/조회/삭제)와 HTTP method 대조
+  - Description-only embedding rerank: Top-10 후보의 description만 batch encode (1회 API 호출)로 재정렬
+  - Ecommerce 20쿼리: Top-1 **60% → 75%**, Top-5 90% 유지
+  - GitHub 1,062 tools: Top-1 **60% → 70%**, Top-5 90% 유지
+
 ## [0.12.0] - 2026-03-15
 
 ### Added
