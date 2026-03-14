@@ -4,13 +4,14 @@
 
 **LLM Agent를 위한 그래프 기반 Tool 검색 엔진**
 
-OpenAPI, MCP, Python 함수에서 tool을 수집하고,  
+의존성 제로. OpenAPI, MCP, Python 함수에서 tool을 수집하고,
 tool 간 관계를 그래프로 조직화한 뒤, **필요한 tool만 정확하게 검색해 LLM에 전달**합니다.
 
 [![PyPI](https://img.shields.io/pypi/v/graph-tool-call.svg)](https://pypi.org/project/graph-tool-call/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml/badge.svg)](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml)
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](https://pypi.org/project/graph-tool-call/)
 
 [English](README.md) · 한국어 · [中文](README-zh_CN.md) · [日本語](README-ja.md)
 
@@ -99,6 +100,7 @@ OpenAPI / MCP / 코드 → 수집 → 분석 → 조직화 → 검색 → Agent
 
 ## 주요 기능
 
+* **의존성 제로** — 코어는 Python 표준 라이브러리만으로 동작, 필요한 기능만 extras로 추가
 * **OpenAPI / Swagger / MCP / Python 함수**에서 tool 자동 수집
 * **tool 관계 그래프** 생성 및 활용
 * **BM25 + 그래프 + 임베딩 + annotation** 기반 하이브리드 검색
@@ -126,8 +128,11 @@ graph-tool-call은 특히 다음 상황에서 효과적입니다.
 
 ## 설치
 
+코어 패키지는 **의존성 제로** — Python 표준 라이브러리만 사용합니다.
+필요한 기능만 골라서 설치하세요:
+
 ```bash
-pip install graph-tool-call                    # core (BM25 + graph)
+pip install graph-tool-call                    # core (BM25 + graph) — 의존성 없음
 pip install graph-tool-call[embedding]         # + 임베딩, cross-encoder reranker
 pip install graph-tool-call[openapi]           # + OpenAPI YAML 지원
 pip install graph-tool-call[mcp]              # + MCP 서버 모드
@@ -137,12 +142,23 @@ pip install graph-tool-call[all]               # 전부
 <details>
 <summary>모든 extras</summary>
 
+| Extra | 설치되는 패키지 | 용도 |
+|-------|----------------|------|
+| `openapi` | pyyaml | YAML OpenAPI spec 파싱 |
+| `embedding` | numpy, sentence-transformers | 시맨틱 검색 |
+| `similarity` | rapidfuzz | 중복 tool 탐지 |
+| `langchain` | langchain-core | LangChain 통합 |
+| `visualization` | pyvis, networkx | HTML 그래프 내보내기, GraphML |
+| `dashboard` | dash, dash-cytoscape | 인터랙티브 대시보드 |
+| `lint` | ai-api-lint | API spec 자동 수정 |
+| `mcp` | mcp | MCP 서버 모드 |
+
 ```bash
-pip install graph-tool-call[lint]              # + ai-api-lint spec 자동 수정
-pip install graph-tool-call[similarity]        # + rapidfuzz 중복 탐지
-pip install graph-tool-call[visualization]     # + pyvis HTML 그래프 내보내기
-pip install graph-tool-call[dashboard]         # + Dash Cytoscape 대시보드
-pip install graph-tool-call[langchain]         # + LangChain tool 어댑터
+pip install graph-tool-call[lint]
+pip install graph-tool-call[similarity]
+pip install graph-tool-call[visualization]
+pip install graph-tool-call[dashboard]
+pip install graph-tool-call[langchain]
 ```
 
 </details>

@@ -1,18 +1,31 @@
-"""NetworkX-based GraphEngine implementation."""
+"""NetworkX-based GraphEngine implementation (optional dependency)."""
 
 from __future__ import annotations
 
 from collections import deque
 from typing import Any
 
-import networkx as nx
+try:
+    import networkx as nx
+
+    _HAS_NETWORKX = True
+except ImportError:
+    _HAS_NETWORKX = False
+
+
+def _check_networkx() -> None:
+    if not _HAS_NETWORKX:
+        raise ImportError(
+            "networkx is required for NetworkXGraph. Install with: pip install networkx"
+        )
 
 
 class NetworkXGraph:
     """GraphEngine backed by NetworkX DiGraph."""
 
-    def __init__(self, graph: nx.DiGraph | None = None) -> None:
-        self._g: nx.DiGraph = graph if graph is not None else nx.DiGraph()
+    def __init__(self, graph: Any | None = None) -> None:
+        _check_networkx()
+        self._g: Any = graph if graph is not None else nx.DiGraph()
 
     # --- nodes ---
 
@@ -118,6 +131,7 @@ class NetworkXGraph:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> NetworkXGraph:
+        _check_networkx()
         g = nx.DiGraph()
         for node in data.get("nodes", []):
             nid = node["id"]

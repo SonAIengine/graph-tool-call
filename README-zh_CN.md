@@ -4,12 +4,13 @@
 
 **面向 LLM Agent 的基于图的工具检索引擎**
 
-从 OpenAPI、MCP、Python 函数收集工具，将工具间关系组织为图，**只将 LLM 需要的工具精准检索并传递**。
+零依赖核心。从 OpenAPI、MCP、Python 函数收集工具，将工具间关系组织为图，**只将 LLM 需要的工具精准检索并传递**。
 
 [![PyPI](https://img.shields.io/pypi/v/graph-tool-call.svg)](https://pypi.org/project/graph-tool-call/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml/badge.svg)](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml)
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](https://pypi.org/project/graph-tool-call/)
 
 [English](README.md) · [한국어](README-ko.md) · 中文 · [日本語](README-ja.md)
 
@@ -98,6 +99,7 @@ OpenAPI / MCP / 代码 → 收集 → 分析 → 组织 → 检索 → Agent
 
 ## 主要功能
 
+* **零依赖** — 核心仅使用 Python 标准库，按需添加 extras
 * 从 **OpenAPI / Swagger / MCP / Python 函数** 自动收集工具
 * 生成并利用**工具关系图**
 * 基于 **BM25 + 图 + 嵌入 + annotation** 的混合检索
@@ -125,8 +127,11 @@ graph-tool-call 在以下场景中尤其有效。
 
 ## 安装
 
+核心包**零依赖** — 仅使用 Python 标准库。
+按需安装所需功能：
+
 ```bash
-pip install graph-tool-call                    # core (BM25 + graph)
+pip install graph-tool-call                    # core (BM25 + graph) — 无依赖
 pip install graph-tool-call[embedding]         # + 嵌入, cross-encoder reranker
 pip install graph-tool-call[openapi]           # + OpenAPI YAML 支持
 pip install graph-tool-call[mcp]              # + MCP 服务器模式
@@ -136,12 +141,23 @@ pip install graph-tool-call[all]               # 全部
 <details>
 <summary>所有 extras</summary>
 
+| Extra | 安装的包 | 用途 |
+|-------|---------|------|
+| `openapi` | pyyaml | YAML OpenAPI spec 解析 |
+| `embedding` | numpy, sentence-transformers | 语义搜索 |
+| `similarity` | rapidfuzz | 重复工具检测 |
+| `langchain` | langchain-core | LangChain 集成 |
+| `visualization` | pyvis, networkx | HTML 图导出, GraphML |
+| `dashboard` | dash, dash-cytoscape | 交互式仪表板 |
+| `lint` | ai-api-lint | API spec 自动修复 |
+| `mcp` | mcp | MCP 服务器模式 |
+
 ```bash
-pip install graph-tool-call[lint]              # + ai-api-lint spec 自动修复
-pip install graph-tool-call[similarity]        # + rapidfuzz 重复检测
-pip install graph-tool-call[visualization]     # + pyvis HTML 图导出
-pip install graph-tool-call[dashboard]         # + Dash Cytoscape 仪表板
-pip install graph-tool-call[langchain]         # + LangChain tool 适配器
+pip install graph-tool-call[lint]
+pip install graph-tool-call[similarity]
+pip install graph-tool-call[visualization]
+pip install graph-tool-call[dashboard]
+pip install graph-tool-call[langchain]
 ```
 
 </details>

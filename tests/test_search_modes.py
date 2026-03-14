@@ -22,10 +22,10 @@ def _tool(name: str, desc: str = "", tags: list[str] | None = None) -> ToolSchem
 
 
 def _make_engine(tools: dict[str, ToolSchema]) -> RetrievalEngine:
-    from graph_tool_call.core.graph import NetworkXGraph
+    from graph_tool_call.core.dict_graph import DictGraph
     from graph_tool_call.ontology.schema import NodeType
 
-    graph = NetworkXGraph()
+    graph = DictGraph()
     for name in tools:
         graph.add_node(name, node_type=NodeType.TOOL)
     return RetrievalEngine(graph, tools)

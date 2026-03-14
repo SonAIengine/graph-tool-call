@@ -4,12 +4,13 @@
 
 **Graph-based Tool Retrieval for LLM Agents**
 
-Collects tools from OpenAPI, MCP, Python functions, organizes relationships as a graph, and **retrieves only the tools needed for LLM agents**.
+Zero-dependency core. Collects tools from OpenAPI, MCP, Python functions, organizes relationships as a graph, and **retrieves only the tools needed for LLM agents**.
 
 [![PyPI](https://img.shields.io/pypi/v/graph-tool-call.svg)](https://pypi.org/project/graph-tool-call/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml/badge.svg)](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml)
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](https://pypi.org/project/graph-tool-call/)
 
 English · [한국어](README-ko.md) · [中文](README-zh_CN.md) · [日本語](README-ja.md)
 
@@ -98,6 +99,7 @@ These signals are combined via **weighted Reciprocal Rank Fusion (wRRF)**.
 
 ## Key Features
 
+* **Zero dependencies** — core runs on Python stdlib only, add extras as needed
 * **Auto-ingest from OpenAPI / Swagger / MCP / Python functions**
 * **Tool relationship graph** construction and utilization
 * **Hybrid retrieval** based on BM25 + graph + embedding + annotation
@@ -125,8 +127,11 @@ graph-tool-call is especially effective in the following situations.
 
 ## Installation
 
+The core package has **zero dependencies** — just Python standard library.
+Install only what you need:
+
 ```bash
-pip install graph-tool-call                    # core (BM25 + graph)
+pip install graph-tool-call                    # core (BM25 + graph) — no dependencies
 pip install graph-tool-call[embedding]         # + embedding, cross-encoder reranker
 pip install graph-tool-call[openapi]           # + YAML support for OpenAPI specs
 pip install graph-tool-call[mcp]              # + MCP server mode
@@ -136,12 +141,23 @@ pip install graph-tool-call[all]               # everything
 <details>
 <summary>All extras</summary>
 
+| Extra | Installs | When to use |
+|-------|----------|-------------|
+| `openapi` | pyyaml | YAML OpenAPI specs |
+| `embedding` | numpy, sentence-transformers | Semantic search |
+| `similarity` | rapidfuzz | Duplicate detection |
+| `langchain` | langchain-core | LangChain integration |
+| `visualization` | pyvis, networkx | HTML graph export, GraphML |
+| `dashboard` | dash, dash-cytoscape | Interactive dashboard |
+| `lint` | ai-api-lint | Auto-fix bad API specs |
+| `mcp` | mcp | MCP server mode |
+
 ```bash
-pip install graph-tool-call[lint]              # + ai-api-lint spec auto-fix
-pip install graph-tool-call[similarity]        # + rapidfuzz for deduplication
-pip install graph-tool-call[visualization]     # + pyvis for HTML graph export
-pip install graph-tool-call[dashboard]         # + Dash Cytoscape dashboard
-pip install graph-tool-call[langchain]         # + LangChain tool adapter
+pip install graph-tool-call[lint]
+pip install graph-tool-call[similarity]
+pip install graph-tool-call[visualization]
+pip install graph-tool-call[dashboard]
+pip install graph-tool-call[langchain]
 ```
 
 </details>
@@ -791,6 +807,7 @@ graph-tool-call dashboard graph.json --port 8050
 
 | Feature | Vector-only solutions | graph-tool-call |
 |---------|----------------------|-----------------|
+| Dependencies | Embedding model required | **Zero** (core runs on stdlib) |
 | Tool source | Manual registration | Auto-ingest from Swagger / OpenAPI / MCP |
 | Search method | Flat vector similarity | Multi-stage hybrid (wRRF + rerank + MMR) |
 | Behavioral semantics | None | MCP annotation-aware retrieval |
@@ -826,7 +843,7 @@ Contributions are welcome.
 git clone https://github.com/SonAIengine/graph-tool-call.git
 cd graph-tool-call
 pip install poetry
-poetry install --with dev
+poetry install --with dev --all-extras   # install all optional deps for full test coverage
 
 # Run tests
 poetry run pytest -v

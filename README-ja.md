@@ -4,13 +4,14 @@
 
 **LLM Agentのためのグラフベースツール検索エンジン**
 
-OpenAPI、MCP、Python関数からツールを収集し、
+ゼロ依存コア。OpenAPI、MCP、Python関数からツールを収集し、
 ツール間の関係をグラフで組織化した上で、**LLMに必要なツールだけを正確に検索して渡します**。
 
 [![PyPI](https://img.shields.io/pypi/v/graph-tool-call.svg)](https://pypi.org/project/graph-tool-call/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml/badge.svg)](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml)
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](https://pypi.org/project/graph-tool-call/)
 
 [English](README.md) · [한국어](README-ko.md) · [中文](README-zh_CN.md) · 日本語
 
@@ -99,6 +100,7 @@ OpenAPI / MCP / コード → 収集 → 分析 → 組織化 → 検索 → Age
 
 ## 主な機能
 
+* **ゼロ依存** — コアはPython標準ライブラリのみで動作、必要な機能だけextrasで追加
 * **OpenAPI / Swagger / MCP / Python関数**からツール自動収集
 * **ツール関係グラフ**の生成と活用
 * **BM25 + グラフ + エンベディング + annotation** ベースのハイブリッド検索
@@ -126,8 +128,11 @@ graph-tool-callは特に以下の状況で効果的です。
 
 ## インストール
 
+コアパッケージは**ゼロ依存** — Python標準ライブラリのみ使用します。
+必要な機能だけ選んでインストール：
+
 ```bash
-pip install graph-tool-call                    # core (BM25 + graph)
+pip install graph-tool-call                    # core (BM25 + graph) — 依存なし
 pip install graph-tool-call[embedding]         # + エンベディング、cross-encoder reranker
 pip install graph-tool-call[openapi]           # + OpenAPI YAMLサポート
 pip install graph-tool-call[mcp]              # + MCPサーバーモード
@@ -137,12 +142,23 @@ pip install graph-tool-call[all]               # すべて
 <details>
 <summary>すべてのextras</summary>
 
+| Extra | インストールされるパッケージ | 用途 |
+|-------|---------------------------|------|
+| `openapi` | pyyaml | YAML OpenAPI specパース |
+| `embedding` | numpy, sentence-transformers | セマンティック検索 |
+| `similarity` | rapidfuzz | 重複ツール検出 |
+| `langchain` | langchain-core | LangChain統合 |
+| `visualization` | pyvis, networkx | HTMLグラフエクスポート、GraphML |
+| `dashboard` | dash, dash-cytoscape | インタラクティブダッシュボード |
+| `lint` | ai-api-lint | API spec自動修正 |
+| `mcp` | mcp | MCPサーバーモード |
+
 ```bash
-pip install graph-tool-call[lint]              # + ai-api-lint spec自動修正
-pip install graph-tool-call[similarity]        # + rapidfuzz 重複検出
-pip install graph-tool-call[visualization]     # + pyvis HTMLグラフエクスポート
-pip install graph-tool-call[dashboard]         # + Dash Cytoscape ダッシュボード
-pip install graph-tool-call[langchain]         # + LangChain toolアダプター
+pip install graph-tool-call[lint]
+pip install graph-tool-call[similarity]
+pip install graph-tool-call[visualization]
+pip install graph-tool-call[dashboard]
+pip install graph-tool-call[langchain]
 ```
 
 </details>

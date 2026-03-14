@@ -58,7 +58,7 @@ if _HAS_LANGCHAIN:
                         page_content=f"{tool.name}: {tool.description}",
                         metadata={
                             "tool_name": tool.name,
-                            "parameters": [p.model_dump() for p in tool.parameters],
+                            "parameters": [p.to_dict() for p in tool.parameters],
                             "tags": tool.tags,
                         },
                     )

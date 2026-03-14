@@ -1,25 +1,46 @@
-"""Tests for NetworkX GraphEngine implementation."""
+"""Tests for GraphEngine implementations (DictGraph + NetworkXGraph)."""
 
-from graph_tool_call.core.graph import NetworkXGraph
+import pytest
+
+from graph_tool_call.core.dict_graph import DictGraph
+
+try:
+    from graph_tool_call.core.graph import NetworkXGraph
+
+    _HAS_NETWORKX = True
+except ImportError:
+    _HAS_NETWORKX = False
 
 
-def test_add_and_has_node():
-    g = NetworkXGraph()
+def _graph_impls():
+    """Yield graph implementations to test."""
+    yield DictGraph
+    if _HAS_NETWORKX:
+        yield pytest.param(NetworkXGraph, id="networkx")
+
+
+@pytest.fixture(params=list(_graph_impls()))
+def graph_cls(request):
+    return request.param
+
+
+def test_add_and_has_node(graph_cls):
+    g = graph_cls()
     g.add_node("a", label="A")
     assert g.has_node("a")
     assert not g.has_node("b")
 
 
-def test_node_attrs():
-    g = NetworkXGraph()
+def test_node_attrs(graph_cls):
+    g = graph_cls()
     g.add_node("a", color="red")
     assert g.get_node_attrs("a") == {"color": "red"}
     g.set_node_attrs("a", color="blue", size=10)
     assert g.get_node_attrs("a") == {"color": "blue", "size": 10}
 
 
-def test_add_and_has_edge():
-    g = NetworkXGraph()
+def test_add_and_has_edge(graph_cls):
+    g = graph_cls()
     g.add_node("a")
     g.add_node("b")
     g.add_edge("a", "b", weight=0.5)
@@ -28,8 +49,8 @@ def test_add_and_has_edge():
     assert g.get_edge_attrs("a", "b") == {"weight": 0.5}
 
 
-def test_remove_node():
-    g = NetworkXGraph()
+def test_remove_node(graph_cls):
+    g = graph_cls()
     g.add_node("a")
     g.add_node("b")
     g.add_edge("a", "b")
@@ -38,8 +59,8 @@ def test_remove_node():
     assert g.node_count() == 1
 
 
-def test_neighbors():
-    g = NetworkXGraph()
+def test_neighbors(graph_cls):
+    g = graph_cls()
     g.add_node("a")
     g.add_node("b")
     g.add_node("c")
@@ -57,8 +78,8 @@ def test_neighbors():
     assert "c" in both_neighbors
 
 
-def test_bfs():
-    g = NetworkXGraph()
+def test_bfs(graph_cls):
+    g = graph_cls()
     for n in ["a", "b", "c", "d", "e"]:
         g.add_node(n)
     g.add_edge("a", "b")
@@ -73,8 +94,8 @@ def test_bfs():
     assert "d" not in result  # depth 3
 
 
-def test_subgraph():
-    g = NetworkXGraph()
+def test_subgraph(graph_cls):
+    g = graph_cls()
     for n in ["a", "b", "c"]:
         g.add_node(n)
     g.add_edge("a", "b")
@@ -88,14 +109,14 @@ def test_subgraph():
     assert sg.has_edge("a", "b")
 
 
-def test_serialization_roundtrip():
-    g = NetworkXGraph()
+def test_serialization_roundtrip(graph_cls):
+    g = graph_cls()
     g.add_node("a", label="A")
     g.add_node("b", label="B")
     g.add_edge("a", "b", weight=0.5)
 
     data = g.to_dict()
-    g2 = NetworkXGraph.from_dict(data)
+    g2 = graph_cls.from_dict(data)
 
     assert g2.has_node("a")
     assert g2.has_node("b")
@@ -104,8 +125,8 @@ def test_serialization_roundtrip():
     assert g2.get_edge_attrs("a", "b")["weight"] == 0.5
 
 
-def test_edges_list():
-    g = NetworkXGraph()
+def test_edges_list(graph_cls):
+    g = graph_cls()
     g.add_node("a")
     g.add_node("b")
     g.add_edge("a", "b", relation="requires")
@@ -113,3 +134,25 @@ def test_edges_list():
     edges = g.edges()
     assert len(edges) == 1
     assert edges[0] == ("a", "b", {"relation": "requires"})
+
+
+def test_dict_graph_cross_compat_with_networkx_format():
+    """DictGraph.from_dict should load data serialized by NetworkXGraph and vice-versa."""
+    data = {
+        "nodes": [
+            {"id": "x", "label": "X"},
+            {"id": "y", "label": "Y"},
+        ],
+        "edges": [
+            {"source": "x", "target": "y", "weight": 1.0},
+        ],
+    }
+    g = DictGraph.from_dict(data)
+    assert g.has_node("x")
+    assert g.has_edge("x", "y")
+    assert g.get_edge_attrs("x", "y")["weight"] == 1.0
+
+    # Round-trip
+    data2 = g.to_dict()
+    assert len(data2["nodes"]) == 2
+    assert len(data2["edges"]) == 1

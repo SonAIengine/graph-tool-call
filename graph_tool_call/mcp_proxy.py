@@ -277,8 +277,7 @@ class MCPProxy:
                 content=[
                     types.TextContent(
                         type="text",
-                        text=f"Tool '{name}' not found. "
-                        "Use search_tools to find the correct name.",
+                        text=f"Tool '{name}' not found. Use search_tools to find the correct name.",
                     )
                 ],
                 isError=True,
@@ -381,8 +380,7 @@ def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
                         "query": {
                             "type": "string",
                             "description": (
-                                "Describe what you want to do. "
-                                "Use English for best results."
+                                "Describe what you want to do. Use English for best results."
                             ),
                         },
                         "top_k": {

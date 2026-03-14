@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from graph_tool_call.core.graph import NetworkXGraph
+from graph_tool_call.core.dict_graph import DictGraph
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema
 
@@ -45,7 +45,7 @@ def save_graph(
         "library_version": __version__,
         "metadata": build_meta,
         "graph": graph.to_dict(),
-        "tools": {name: tool.model_dump() for name, tool in tools.items()},
+        "tools": {name: tool.to_dict() for name, tool in tools.items()},
     }
     if retrieval_state:
         data["retrieval_state"] = retrieval_state
@@ -94,7 +94,7 @@ def load_graph(
         msg = f"Missing 'graph' key in {path}. File may be corrupted."
         raise ValueError(msg)
 
-    graph = NetworkXGraph.from_dict(data["graph"])
+    graph = DictGraph.from_dict(data["graph"])
     tools = {name: ToolSchema(**schema) for name, schema in data.get("tools", {}).items()}
     metadata = data.get("metadata", {})
     retrieval_state = data.get("retrieval_state", {})

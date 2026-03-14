@@ -25,9 +25,9 @@ from graph_tool_call.ontology.schema import NodeType, RelationType
 
 
 def _make_builder():
-    from graph_tool_call.core.graph import NetworkXGraph
+    from graph_tool_call.core.dict_graph import DictGraph
 
-    return OntologyBuilder(NetworkXGraph())
+    return OntologyBuilder(DictGraph())
 
 
 def _tool(

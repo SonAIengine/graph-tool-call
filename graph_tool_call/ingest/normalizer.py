@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import copy
 import re
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
-
-from pydantic import BaseModel, Field
 
 
 class SpecVersion(str, Enum):
@@ -18,15 +17,16 @@ class SpecVersion(str, Enum):
     OPENAPI_3_1 = "openapi_3.1"
 
 
-class NormalizedSpec(BaseModel):
+@dataclass
+class NormalizedSpec:
     """Unified internal representation of an API specification."""
 
     version: SpecVersion
-    info: dict[str, Any] = Field(default_factory=dict)
-    servers: list[dict[str, Any]] = Field(default_factory=list)
-    paths: dict[str, Any] = Field(default_factory=dict)
-    schemas: dict[str, Any] = Field(default_factory=dict)
-    raw: dict[str, Any] = Field(default_factory=dict)
+    info: dict[str, Any] = field(default_factory=dict)
+    servers: list[dict[str, Any]] = field(default_factory=list)
+    paths: dict[str, Any] = field(default_factory=dict)
+    schemas: dict[str, Any] = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 def detect_version(spec: dict[str, Any]) -> SpecVersion:

@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import Any
-
-from pydantic import BaseModel, Field
 
 # camelCase → snake_case mapping for MCP annotations
 _MCP_ANNOTATION_MAP = {
@@ -17,7 +16,8 @@ _MCP_ANNOTATION_MAP = {
 _MCP_ANNOTATION_REVERSE = {v: k for k, v in _MCP_ANNOTATION_MAP.items()}
 
 
-class MCPAnnotations(BaseModel):
+@dataclass
+class MCPAnnotations:
     """MCP tool annotations (behavioral semantics).
 
     See: https://spec.modelcontextprotocol.io/2025-03-26/server/tools/
@@ -46,8 +46,17 @@ class MCPAnnotations(BaseModel):
                 result[camel] = val
         return result
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict (omitting None values)."""
+        return {k: v for k, v in self.__dict__.items() if v is not None}
 
-class ToolParameter(BaseModel):
+    def model_dump(self) -> dict[str, Any]:
+        """Compatibility shim for code that used pydantic's model_dump()."""
+        return {k: v for k, v in self.__dict__.items()}
+
+
+@dataclass
+class ToolParameter:
     """Single parameter of a tool."""
 
     name: str
@@ -56,26 +65,74 @@ class ToolParameter(BaseModel):
     required: bool = False
     enum: list[str] | None = None
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict."""
+        d: dict[str, Any] = {
+            "name": self.name,
+            "type": self.type,
+            "description": self.description,
+            "required": self.required,
+        }
+        if self.enum is not None:
+            d["enum"] = list(self.enum)
+        else:
+            d["enum"] = None
+        return d
 
-class ToolSchema(BaseModel):
+    def model_dump(self) -> dict[str, Any]:
+        """Compatibility shim for code that used pydantic's model_dump()."""
+        return self.to_dict()
+
+
+@dataclass
+class ToolSchema:
     """Internal unified tool representation."""
 
     name: str
     description: str = ""
-    parameters: list[ToolParameter] = Field(default_factory=list)
-    tags: list[str] = Field(default_factory=list)
+    parameters: list[ToolParameter] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
     domain: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     annotations: MCPAnnotations | None = None
 
     # keep the original callable if available (for LangChain tool execution)
-    _callable: Any = None
+    _callable: Any = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Auto-convert dicts to proper dataclass instances during deserialization."""
+        # parameters: list of dicts → list of ToolParameter
+        if self.parameters and isinstance(self.parameters[0], dict):
+            self.parameters = [ToolParameter(**p) for p in self.parameters]
+        # annotations: dict → MCPAnnotations
+        if isinstance(self.annotations, dict):
+            self.annotations = MCPAnnotations(**self.annotations)
 
     def set_callable(self, fn: Any) -> None:
-        object.__setattr__(self, "_callable", fn)
+        self._callable = fn
 
     def get_callable(self) -> Any:
-        return object.__getattribute__(self, "_callable")
+        return self._callable
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-compatible dict (recursive)."""
+        d: dict[str, Any] = {
+            "name": self.name,
+            "description": self.description,
+            "parameters": [p.to_dict() for p in self.parameters],
+            "tags": list(self.tags),
+            "domain": self.domain,
+            "metadata": dict(self.metadata),
+        }
+        if self.annotations is not None:
+            d["annotations"] = self.annotations.model_dump()
+        else:
+            d["annotations"] = None
+        return d
+
+    def model_dump(self) -> dict[str, Any]:
+        """Compatibility shim for code that used pydantic's model_dump()."""
+        return self.to_dict()
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from graph_tool_call.core.graph import NetworkXGraph
+from graph_tool_call.core.dict_graph import DictGraph
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.ontology.schema import NodeType, RelationType
@@ -12,7 +12,7 @@ class OntologyBuilder:
     """Builds an ontology graph from tools and explicit relations."""
 
     def __init__(self, graph: GraphEngine | None = None) -> None:
-        self._graph: GraphEngine = graph if graph is not None else NetworkXGraph()
+        self._graph: GraphEngine = graph if graph is not None else DictGraph()
 
     @property
     def graph(self) -> GraphEngine:

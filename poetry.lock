@@ -33,9 +33,10 @@ files = [
 name = "annotated-types"
 version = "0.7.0"
 description = "Reusable constraint types to use with typing.Annotated"
-optional = false
+optional = true
 python-versions = ">=3.8"
 groups = ["main"]
+markers = "extra == \"langchain\" or extra == \"all\" or extra == \"mcp\""
 files = [
     {file = "annotated_types-0.7.0-py3-none-any.whl", hash = "sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53"},
     {file = "annotated_types-0.7.0.tar.gz", hash = "sha256:aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89"},
@@ -1331,9 +1332,10 @@ files = [
 name = "networkx"
 version = "3.4.2"
 description = "Python package for creating and manipulating graphs and networks"
-optional = false
+optional = true
 python-versions = ">=3.10"
 groups = ["main"]
+markers = "extra == \"visualization\" or extra == \"all\" or extra == \"embedding\""
 files = [
     {file = "networkx-3.4.2-py3-none-any.whl", hash = "sha256:df5d4365b724cf81b8c6a7312509d0c22386097011ad1abe274afd5e9d3bbc5f"},
     {file = "networkx-3.4.2.tar.gz", hash = "sha256:307c3669428c5362aab27c8a1260aa8f47c4e91d3891f48be0141738d8d053e1"},
@@ -1869,9 +1871,10 @@ files = [
 name = "pydantic"
 version = "2.12.5"
 description = "Data validation using Python type hints"
-optional = false
+optional = true
 python-versions = ">=3.9"
 groups = ["main"]
+markers = "extra == \"langchain\" or extra == \"all\" or extra == \"mcp\""
 files = [
     {file = "pydantic-2.12.5-py3-none-any.whl", hash = "sha256:e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d"},
     {file = "pydantic-2.12.5.tar.gz", hash = "sha256:4d351024c75c0f085a9febbb665ce8c0c6ec5d30e903bdb6394b7ede26aebb49"},
@@ -1891,9 +1894,10 @@ timezone = ["tzdata ; python_version >= \"3.9\" and platform_system == \"Windows
 name = "pydantic-core"
 version = "2.41.5"
 description = "Core functionality for Pydantic validation and serialization"
-optional = false
+optional = true
 python-versions = ">=3.9"
 groups = ["main"]
+markers = "extra == \"langchain\" or extra == \"all\" or extra == \"mcp\""
 files = [
     {file = "pydantic_core-2.41.5-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:77b63866ca88d804225eaa4af3e664c5faf3568cea95360d21f4725ab6e07146"},
     {file = "pydantic_core-2.41.5-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:dfa8a0c812ac681395907e71e1274819dec685fec28273a28905df579ef137e2"},
@@ -3434,15 +3438,16 @@ files = [
     {file = "typing_extensions-4.15.0-py3-none-any.whl", hash = "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548"},
     {file = "typing_extensions-4.15.0.tar.gz", hash = "sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466"},
 ]
-markers = {dev = "python_version == \"3.10\""}
+markers = {main = "extra == \"embedding\" or extra == \"all\" or extra == \"langchain\" or extra == \"mcp\" or extra == \"dashboard\" or (extra == \"embedding\" or extra == \"all\" or extra == \"langchain\" or extra == \"mcp\" or extra == \"dashboard\" or extra == \"visualization\") and python_version < \"3.12\"", dev = "python_version == \"3.10\""}
 
 [[package]]
 name = "typing-inspection"
 version = "0.4.2"
 description = "Runtime typing introspection tools"
-optional = false
+optional = true
 python-versions = ">=3.9"
 groups = ["main"]
+markers = "extra == \"langchain\" or extra == \"all\" or extra == \"mcp\""
 files = [
     {file = "typing_inspection-0.4.2-py3-none-any.whl", hash = "sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7"},
     {file = "typing_inspection-0.4.2.tar.gz", hash = "sha256:ba561c48a67c5958007083d386c3295464928b01faa735ab8547c5692e87f464"},
@@ -3842,7 +3847,7 @@ files = [
 cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and python_version < \"3.14\"", "cffi (>=2.0.0b0) ; platform_python_implementation != \"PyPy\" and python_version >= \"3.14\""]
 
 [extras]
-all = ["ai-api-lint", "dash", "dash-cytoscape", "langchain-core", "mcp", "numpy", "pyvis", "pyyaml", "rapidfuzz", "sentence-transformers"]
+all = ["ai-api-lint", "dash", "dash-cytoscape", "langchain-core", "mcp", "networkx", "numpy", "pyvis", "pyyaml", "rapidfuzz", "sentence-transformers"]
 dashboard = ["dash", "dash-cytoscape"]
 embedding = ["numpy", "sentence-transformers"]
 langchain = ["langchain-core"]
@@ -3850,9 +3855,9 @@ lint = ["ai-api-lint"]
 mcp = ["mcp"]
 openapi = ["pyyaml"]
 similarity = ["rapidfuzz"]
-visualization = ["pyvis"]
+visualization = ["networkx", "pyvis"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "8fa79ec63d201c1b72336c9d670fc13a81a9f6936909375bf0bb5b5ba2ee2a39"
+content-hash = "950391b1fcc67735eaa86e664e01bba0309ad3c49ad24090ad1966a8f950fa68"

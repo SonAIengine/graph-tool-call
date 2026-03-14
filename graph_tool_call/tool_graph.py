@@ -9,14 +9,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urljoin
 
-from graph_tool_call.core.graph import NetworkXGraph
+from graph_tool_call.core.dict_graph import DictGraph
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema, normalize_tool, parse_tool
-from graph_tool_call.net import fetch_url_text
 from graph_tool_call.ontology.builder import OntologyBuilder
 from graph_tool_call.ontology.schema import RelationType
-from graph_tool_call.retrieval.engine import RetrievalEngine, RetrievalResult, SearchMode
-from graph_tool_call.serialization import load_graph, save_graph
 
 
 def _encode_spec_url(base: str, raw_url: str) -> str:
@@ -48,6 +45,8 @@ def _discover_spec_urls(
     2. Parse ``swagger-initializer.js`` to extract ``configUrl``
     3. Fallback to ``{base}/v3/api-docs``
     """
+    from graph_tool_call.net import fetch_url_text
+
     swagger_ui_marker = "/swagger-ui"
     if swagger_ui_marker not in url:
         return [url]
@@ -117,6 +116,8 @@ def _try_swagger_config(
     max_response_bytes: int = 5_000_000,
 ) -> list[str] | None:
     """Try fetching a swagger-config URL and extract spec URLs."""
+    from graph_tool_call.net import fetch_url_text
+
     try:
         text = fetch_url_text(
             config_url,
@@ -145,10 +146,10 @@ class ToolGraph:
     """
 
     def __init__(self, graph: GraphEngine | None = None) -> None:
-        self._graph: GraphEngine = graph if graph is not None else NetworkXGraph()
+        self._graph: GraphEngine = graph if graph is not None else DictGraph()
         self._builder = OntologyBuilder(self._graph)
         self._tools: dict[str, ToolSchema] = {}
-        self._retrieval: RetrievalEngine | None = None
+        self._retrieval: Any = None
 
     @property
     def graph(self) -> GraphEngine:
@@ -625,7 +626,7 @@ class ToolGraph:
         query: str,
         top_k: int = 10,
         max_graph_depth: int = 2,
-        mode: str | SearchMode = SearchMode.BASIC,
+        mode: str = "basic",
         llm: Any = None,
         history: list[str] | None = None,
     ) -> list[ToolSchema]:
@@ -633,6 +634,8 @@ class ToolGraph:
 
         Parameters
         ----------
+        mode:
+            Search mode: "basic", "enhanced", or "full" (or SearchMode enum).
         llm:
             Optional SearchLLM for ENHANCED/FULL modes.
             If None, ENHANCED/FULL fall back to BASIC.
@@ -654,10 +657,10 @@ class ToolGraph:
         query: str,
         top_k: int = 10,
         max_graph_depth: int = 2,
-        mode: str | SearchMode = SearchMode.BASIC,
+        mode: str = "basic",
         llm: Any = None,
         history: list[str] | None = None,
-    ) -> list[RetrievalResult]:
+    ) -> list:
         """Retrieve tools with full score breakdown.
 
         Returns ``RetrievalResult`` objects with per-source scores
@@ -680,8 +683,10 @@ class ToolGraph:
             history=history,
         )
 
-    def _get_retrieval_engine(self) -> RetrievalEngine:
+    def _get_retrieval_engine(self) -> Any:
         if self._retrieval is None:
+            from graph_tool_call.retrieval.engine import RetrievalEngine
+
             self._retrieval = RetrievalEngine(self._graph, self._tools)
         return self._retrieval
 
@@ -831,6 +836,8 @@ class ToolGraph:
             if self._retrieval._embedding_index is not None:
                 retrieval_state["embedding_index"] = self._retrieval._embedding_index.to_dict()
 
+        from graph_tool_call.serialization import save_graph
+
         save_graph(
             self._graph,
             self._tools,
@@ -842,6 +849,8 @@ class ToolGraph:
     @classmethod
     def load(cls, path: str | Path) -> ToolGraph:
         """Load a tool graph from a JSON file."""
+        from graph_tool_call.serialization import load_graph
+
         graph, tools, metadata, retrieval_state = load_graph(path)
         tg = cls(graph=graph)
         tg._tools = tools

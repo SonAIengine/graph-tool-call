@@ -159,11 +159,11 @@ class TestRetrievalEngineIntegration:
     def test_embedding_scores_in_rrf(self):
         """Embedding scores are included in RRF fusion."""
         pytest.importorskip("numpy")
-        from graph_tool_call.core.graph import NetworkXGraph
+        from graph_tool_call.core.dict_graph import DictGraph
         from graph_tool_call.ontology.schema import NodeType
         from graph_tool_call.retrieval.engine import RetrievalEngine
 
-        graph = NetworkXGraph()
+        graph = DictGraph()
         tools = _make_tools_dict(
             _make_tool("get_user", "Retrieve user information"),
             _make_tool("list_users", "List all users"),

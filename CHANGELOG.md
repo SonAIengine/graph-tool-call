@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-03-14
+
+### Changed
+- **Zero-dependency core** — pydantic, networkx 필수 의존성 완전 제거
+  - `pydantic.BaseModel` → `dataclasses.dataclass` 마이그레이션 (ToolSchema, ToolParameter, MCPAnnotations, NormalizedSpec)
+  - `networkx.DiGraph` → 경량 `DictGraph` 자체 구현 (~150줄, 순수 Python dict 기반)
+  - `model_dump()` 호환 shim 유지 → 기존 코드 100% 호환
+  - `NetworkXGraph`는 `[visualization]` extra로 이동 (GraphML export용)
+  - `ToolSchema(**dict)` 역직렬화: `__post_init__`에서 nested dict → dataclass 자동 변환
+- **Lazy import 전면 적용** — `import graph_tool_call` 시 외부 모듈 로드 505개 → 26개 (95% 감소)
+  - `__init__.py`: analyze/assist 심볼 `__getattr__` lazy
+  - `analyze/`, `assist/`, `dashboard/`, `langchain/`, `ontology/` 서브패키지 lazy
+  - `tool_graph.py`: retrieval/serialization/net 사용 시점 import
+- **extras 재정리**
+  - `visualization = ["pyvis", "networkx"]` — networkx는 GraphML export에만 필요
+  - `all` extra에 networkx 포함
+
 ## [0.10.1] - 2026-03-14
 
 ### Changed
