@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-03-14
+
+### Changed
+- **MCP Proxy gateway 모드** — `tools/list`에 2개 meta-tool만 노출 (99.9% 토큰 절감)
+  - `search_tools` + `call_backend_tool` 2-hop 패턴으로 context 최소화
+  - 적응형 모드: tool ≤ 30개 → passthrough, > 30개 → gateway 자동 전환
+  - `--embedding` 옵션: cross-language embedding 검색 지원
+  - `--passthrough-threshold` 옵션: 모드 전환 기준값 설정
+  - search 결과에 inputSchema 포함 → LLM이 바로 인자 구성 가능
+  - zero-result fallback: 검색 0건 시 빈 filter 대신 안내 메시지 반환
+
 ## [0.10.0] - 2026-03-14
 
 ### Added
@@ -221,7 +232,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.8.0...v0.9.0
 [0.5.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.4.0...v0.5.0
