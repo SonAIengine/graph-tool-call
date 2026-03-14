@@ -147,7 +147,8 @@ def create_mcp_server(
                 tool_dict["category"] = tool.domain
             if r.relations:
                 tool_dict["relations"] = [
-                    {"target": rel.target, "type": rel.type, "hint": rel.hint}
+                    {"target": rel.target, "type": rel.type,
+                     "direction": rel.direction, "hint": rel.hint}
                     for rel in r.relations
                 ]
             if r.prerequisites:

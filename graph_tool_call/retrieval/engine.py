@@ -29,6 +29,7 @@ class ToolRelation:
 
     target: str  # related tool name
     type: str  # "requires", "precedes", "complementary", "conflicts_with"
+    direction: str  # "outgoing" (this→target) or "incoming" (target→this)
     hint: str  # LLM-readable 1-line description
 
 
@@ -426,7 +427,9 @@ class RetrievalEngine:
                 if src == result.tool.name:
                     if tgt in result_names and tgt not in seen_targets:
                         hint = _HINTS_OUT.get(rel_type, "").format(target=tgt)
-                        relations.append(ToolRelation(target=tgt, type=rel_value, hint=hint))
+                        relations.append(ToolRelation(
+                            target=tgt, type=rel_value, direction="outgoing", hint=hint,
+                        ))
                         seen_targets.add(tgt)
                     elif tgt not in result_names and rel_type == RelationType.REQUIRES:
                         if tgt not in prereqs and tgt in self._tools:
@@ -437,7 +440,9 @@ class RetrievalEngine:
                     if src in result_names and src not in seen_targets:
                         hint = _HINTS_IN.get(rel_type, "").format(source=src)
                         if hint:
-                            relations.append(ToolRelation(target=src, type=rel_value, hint=hint))
+                            relations.append(ToolRelation(
+                                target=src, type=rel_value, direction="incoming", hint=hint,
+                            ))
                             seen_targets.add(src)
 
             result.relations = relations
@@ -569,6 +574,8 @@ def build_workflow_summary(results: list[RetrievalResult]) -> list[str] | None:
     order_pairs: list[tuple[str, str]] = []
     for r in results:
         for rel in r.relations:
+            if rel.direction != "outgoing":
+                continue
             if rel.type == "precedes":
                 order_pairs.append((r.tool.name, rel.target))
             elif rel.type == "requires":

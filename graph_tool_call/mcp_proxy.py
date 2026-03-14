@@ -354,7 +354,8 @@ class MCPProxy:
                 entry["category"] = r.tool.domain
             if r.relations:
                 entry["relations"] = [
-                    {"target": rel.target, "type": rel.type, "hint": rel.hint}
+                    {"target": rel.target, "type": rel.type,
+                     "direction": rel.direction, "hint": rel.hint}
                     for rel in r.relations
                 ]
             if r.prerequisites:
