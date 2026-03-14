@@ -115,7 +115,18 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Proxy config JSON or .mcp.json file",
     )
-    p_proxy.add_argument("--top-k", type=int, default=20, help="Default top-K for search")
+    p_proxy.add_argument("--top-k", type=int, default=10, help="Default top-K for search")
+    p_proxy.add_argument(
+        "--embedding",
+        action="store_true",
+        help="Enable embedding for cross-language search",
+    )
+    p_proxy.add_argument(
+        "--passthrough-threshold",
+        type=int,
+        default=30,
+        help="Max tools for passthrough mode (default: 30)",
+    )
 
     # --- serve (MCP server) ---
     p_serve = sub.add_parser("serve", help="Run as MCP server (stdio transport)")
@@ -449,7 +460,11 @@ def cmd_proxy(args: argparse.Namespace) -> None:
     backends, options = load_proxy_config(args.config)
     run_proxy(
         backends,
-        top_k=args.top_k or options.get("top_k", 20),
+        top_k=args.top_k or options.get("top_k", 10),
+        embedding=args.embedding or options.get("embedding", False),
+        passthrough_threshold=(
+            args.passthrough_threshold or options.get("passthrough_threshold", 30)
+        ),
     )
 
 

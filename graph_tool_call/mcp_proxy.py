@@ -1,8 +1,19 @@
 """MCP Proxy: aggregate multiple MCP servers and filter tools via ToolGraph.
 
 Sits between an MCP client (Claude Code, Cursor, etc.) and real MCP servers.
-Collects all backend tools, builds a ToolGraph, and dynamically filters
-which tools are exposed to the client based on search queries.
+Collects all backend tools, builds a ToolGraph, and exposes only two
+meta-tools (``search_tools`` + ``call_backend_tool``) to keep the LLM
+context minimal.
+
+Modes
+-----
+- **gateway** (default, ``tool_count > passthrough_threshold``):
+  Only ``search_tools`` and ``call_backend_tool`` appear in ``tools/list``.
+  The LLM searches first, then calls the tool by name through the proxy.
+  This reduces context from ~117K tokens (172 tools) to ~500 tokens.
+
+- **passthrough** (``tool_count <= passthrough_threshold``):
+  All backend tools are exposed directly — no proxy overhead.
 
 Usage::
 
@@ -33,7 +44,9 @@ Config format (backends.json)::
                 "args": ["-y", "@anthropic/mcp-filesystem", "/home"]
             }
         },
-        "top_k": 20
+        "top_k": 10,
+        "embedding": true,
+        "passthrough_threshold": 30
     }
 
 Or use .mcp.json format directly (``mcpServers`` key).
@@ -49,6 +62,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger("graph-tool-call.mcp-proxy")
+
+# Default: if total tools <= this, expose all directly (no gateway overhead)
+DEFAULT_PASSTHROUGH_THRESHOLD = 30
 
 
 def _check_mcp_installed() -> None:
@@ -85,7 +101,9 @@ class MCPProxy:
         self,
         backends: list[BackendConfig],
         *,
-        top_k: int = 20,
+        top_k: int = 10,
+        embedding: bool = False,
+        passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
     ):
         self._backends_config = backends
         self._connections: dict[str, BackendConnection] = {}
@@ -93,7 +111,9 @@ class MCPProxy:
         self._all_tools: dict[str, Any] = {}  # name -> mcp.types.Tool
         self._tg: Any = None  # ToolGraph
         self._top_k = top_k
-        self._active_filter: set[str] | None = None
+        self._embedding = embedding
+        self._passthrough_threshold = passthrough_threshold
+        self._gateway_mode: bool = False  # determined after connect
         self._exit_stack: AsyncExitStack | None = None
 
     @property
@@ -109,12 +129,12 @@ class MCPProxy:
         return dict(self._tool_to_backend)
 
     @property
-    def active_filter(self) -> set[str] | None:
-        return self._active_filter
-
-    @property
     def backend_count(self) -> int:
         return len(self._connections)
+
+    @property
+    def is_gateway_mode(self) -> bool:
+        return self._gateway_mode
 
     async def connect_backends(self) -> None:
         """Connect to all backend MCP servers via stdio, collect tools."""
@@ -124,7 +144,6 @@ class MCPProxy:
         self._exit_stack = AsyncExitStack()
         await self._exit_stack.__aenter__()
 
-        # Connect sequentially (stdio_client context managers must stay in same task)
         for cfg in self._backends_config:
             try:
                 params = StdioServerParameters(
@@ -141,11 +160,7 @@ class MCPProxy:
                 await session.initialize()
                 result = await session.list_tools()
                 tools = result.tools
-                logger.info(
-                    "Connected to %s: %d tools",
-                    cfg.name,
-                    len(tools),
-                )
+                logger.info("Connected to %s: %d tools", cfg.name, len(tools))
                 conn = BackendConnection(config=cfg, session=session, tools=tools)
             except Exception as exc:
                 logger.warning("Failed to connect to %s: %s", cfg.name, exc)
@@ -154,10 +169,9 @@ class MCPProxy:
             for tool in conn.tools:
                 name = tool.name
                 if name in self._tool_to_backend:
-                    # Name collision — prefix with backend name
                     original_backend = self._tool_to_backend[name]
                     logger.warning(
-                        "Tool name collision: '%s' from both '%s' and '%s'. "
+                        "Tool name collision: '%s' from '%s' and '%s'. "
                         "Prefixing with backend name.",
                         name,
                         original_backend,
@@ -171,11 +185,16 @@ class MCPProxy:
                     self._all_tools[name] = tool
 
         self._build_tool_graph()
+
+        # Decide mode
         total = len(self._all_tools)
+        self._gateway_mode = total > self._passthrough_threshold
+        mode = "gateway" if self._gateway_mode else "passthrough"
         logger.info(
-            "Proxy ready: %d backends, %d total tools",
+            "Proxy ready: %d backends, %d tools, mode=%s",
             len(self._connections),
             total,
+            mode,
         )
 
     def _build_tool_graph(self) -> None:
@@ -200,38 +219,53 @@ class MCPProxy:
             if tool_dicts:
                 self._tg.ingest_mcp_tools(tool_dicts, server_name=backend_name)
 
-    def get_filtered_tool_names(self) -> list[str]:
-        """Return currently active tool name list."""
-        if self._active_filter is not None:
-            return [n for n in self._all_tools if n in self._active_filter]
-        return list(self._all_tools.keys())
+        # Enable embedding for cross-language search
+        if self._embedding and self._tg.tools:
+            try:
+                self._tg.enable_embedding()
+                logger.info("Embedding enabled (%d tools indexed)", len(self._tg.tools))
+            except Exception as exc:
+                logger.warning("Embedding unavailable, BM25-only: %s", exc)
 
     def search(self, query: str, top_k: int | None = None) -> list[dict[str, Any]]:
-        """Search tools via ToolGraph and update active filter."""
+        """Search tools via ToolGraph. Returns tool info with inputSchema."""
         k = top_k or self._top_k
         results = self._tg.retrieve(query, top_k=k)
 
-        # Map ToolSchema names back to proxy tool names (handle prefixed names)
-        matched_names: set[str] = set()
+        # Zero-result fallback: don't return empty
+        if not results:
+            return [
+                {
+                    "error": "No matching tools found.",
+                    "suggestion": "Try a different query or use English keywords.",
+                    "total_tools": len(self._all_tools),
+                }
+            ]
+
+        out: list[dict[str, Any]] = []
         for r in results:
-            if r.name in self._all_tools:
-                matched_names.add(r.name)
-            else:
+            # Find the MCP tool object to get inputSchema
+            proxy_name = r.name
+            mcp_tool = self._all_tools.get(proxy_name)
+            if not mcp_tool:
                 # Check prefixed variants
-                for proxy_name in self._all_tools:
-                    if proxy_name.endswith(f"__{r.name}"):
-                        matched_names.add(proxy_name)
+                for pn in self._all_tools:
+                    if pn.endswith(f"__{r.name}"):
+                        proxy_name = pn
+                        mcp_tool = self._all_tools[pn]
+                        break
 
-        self._active_filter = matched_names
-
-        return [
-            {
-                "name": r.name,
+            entry: dict[str, Any] = {
+                "name": proxy_name,
                 "description": r.description,
-                **({"category": r.domain} if r.domain else {}),
             }
-            for r in results
-        ]
+            if mcp_tool and mcp_tool.inputSchema:
+                entry["inputSchema"] = mcp_tool.inputSchema
+            if r.domain:
+                entry["category"] = r.domain
+            out.append(entry)
+
+        return out
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Route a tool call to the correct backend."""
@@ -243,14 +277,14 @@ class MCPProxy:
                 content=[
                     types.TextContent(
                         type="text",
-                        text=f"Tool '{name}' not found in any backend.",
+                        text=f"Tool '{name}' not found. "
+                        "Use search_tools to find the correct name.",
                     )
                 ],
                 isError=True,
             )
 
         conn = self._connections[backend_name]
-        # Resolve actual tool name (strip prefix if present)
         actual_name = name
         if "__" in name:
             actual_name = name.split("__", 1)[1]
@@ -269,8 +303,8 @@ def load_proxy_config(path: str) -> tuple[list[BackendConfig], dict[str, Any]]:
     """Load proxy configuration from a JSON file.
 
     Supports two formats:
-    - Native proxy config: ``{"backends": {"name": {"command": ..., "args": [...]}}}``
-    - .mcp.json format: ``{"mcpServers": {"name": {"command": ..., "args": [...]}}}``
+    - Native: ``{"backends": {"name": {"command": ..., "args": [...]}}}``
+    - .mcp.json: ``{"mcpServers": {"name": {"command": ..., "args": [...]}}}``
     """
     with open(path) as f:
         data = json.load(f)
@@ -311,64 +345,123 @@ def create_proxy_server(
 ) -> Any:
     """Create a low-level MCP Server wired to the proxy.
 
-    Returns the ``mcp.server.lowlevel.Server`` instance.
+    In **gateway mode** (many tools), exposes only ``search_tools`` and
+    ``call_backend_tool``. In **passthrough mode** (few tools), exposes
+    all backend tools directly.
     """
     _check_mcp_installed()
 
-    import mcp.types as types
     from mcp.server.lowlevel import Server
 
     server = Server("graph-tool-call-proxy")
 
+    if proxy.is_gateway_mode:
+        return _create_gateway_server(server, proxy)
+    return _create_passthrough_server(server, proxy)
+
+
+def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
+    """Gateway mode: only search_tools + call_backend_tool."""
+    import mcp.types as types
+
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:
-        # Meta-tool: search_tools
-        search_tool = types.Tool(
-            name="search_tools",
-            description=(
-                "Search for relevant tools by natural language query. "
-                "Call this first to find the right tool instead of browsing "
-                "the full list. After calling this, only matching tools will "
-                "appear in subsequent tool listings."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "What you want to do",
+        return [
+            types.Tool(
+                name="search_tools",
+                description=(
+                    f"Search across {len(proxy._all_tools)} tools from "
+                    f"{proxy.backend_count} MCP servers. Returns matching "
+                    "tools with their full inputSchema so you can call them. "
+                    "Always call this first to find the right tool."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": (
+                                "Describe what you want to do. "
+                                "Use English for best results."
+                            ),
+                        },
+                        "top_k": {
+                            "type": "integer",
+                            "description": "Max results",
+                            "default": 10,
+                        },
                     },
-                    "top_k": {
-                        "type": "integer",
-                        "description": "Max results (default: 20)",
-                        "default": 20,
-                    },
+                    "required": ["query"],
                 },
-                "required": ["query"],
-            },
-        )
-
-        # Meta-tool: reset_filter
-        reset_tool = types.Tool(
-            name="reset_tool_filter",
-            description=(
-                "Reset tool filter to show all available tools. "
-                "Use this after search_tools() if you need to browse "
-                "the full tool list again."
             ),
-            inputSchema={
-                "type": "object",
-                "properties": {},
-            },
-        )
+            types.Tool(
+                name="call_backend_tool",
+                description=(
+                    "Call a backend tool by name. Use search_tools first "
+                    "to find the tool name and its inputSchema, then call "
+                    "it here with the correct arguments."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tool_name": {
+                            "type": "string",
+                            "description": "Exact tool name from search_tools results",
+                        },
+                        "arguments": {
+                            "type": "object",
+                            "description": "Arguments matching the tool's inputSchema",
+                        },
+                    },
+                    "required": ["tool_name"],
+                },
+            ),
+        ]
 
-        result = [search_tool, reset_tool]
+    @server.call_tool()
+    async def call_tool(
+        name: str, arguments: dict[str, Any]
+    ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+        if name == "search_tools":
+            query = arguments.get("query", "")
+            top_k = arguments.get("top_k", proxy._top_k)
+            results = proxy.search(query, top_k=top_k)
+            output = json.dumps(
+                {
+                    "query": query,
+                    "matched": len(results),
+                    "total_tools": len(proxy._all_tools),
+                    "tools": results,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+            return [types.TextContent(type="text", text=output)]
 
-        # Add filtered or all backend tools
-        active_names = proxy.get_filtered_tool_names()
-        for name in active_names:
-            tool = proxy._all_tools[name]
-            # Re-create Tool with potentially prefixed name
+        if name == "call_backend_tool":
+            tool_name = arguments.get("tool_name", "")
+            tool_args = arguments.get("arguments", {})
+            result = await proxy.call_tool(tool_name, tool_args)
+            return result.content
+
+        return [
+            types.TextContent(
+                type="text",
+                text=f"Unknown meta-tool '{name}'. Use search_tools or call_backend_tool.",
+            )
+        ]
+
+    return server
+
+
+def _create_passthrough_server(server: Any, proxy: MCPProxy) -> Any:
+    """Passthrough mode: expose all backend tools directly."""
+    import mcp.types as types
+
+    @server.list_tools()
+    async def list_tools() -> list[types.Tool]:
+        result: list[types.Tool] = []
+        for name, tool in proxy._all_tools.items():
             result.append(
                 types.Tool(
                     name=name,
@@ -376,62 +469,12 @@ def create_proxy_server(
                     inputSchema=tool.inputSchema if tool.inputSchema else {},
                 )
             )
-
         return result
 
     @server.call_tool()
     async def call_tool(
         name: str, arguments: dict[str, Any]
     ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-        # Meta-tool: search_tools
-        if name == "search_tools":
-            query = arguments.get("query", "")
-            top_k = arguments.get("top_k", proxy._top_k)
-            results = proxy.search(query, top_k=top_k)
-
-            # Send list_changed notification so client refreshes tools
-            try:
-                await server.request_context.session.send_tool_list_changed()
-            except Exception:
-                pass  # Client may not support notifications
-
-            output = json.dumps(
-                {
-                    "query": query,
-                    "matched": len(results),
-                    "total_tools": len(proxy._all_tools),
-                    "tools": results,
-                    "hint": (
-                        "Tool list has been filtered. "
-                        "The matched tools are now directly available to call."
-                    ),
-                },
-                indent=2,
-                ensure_ascii=False,
-            )
-            return [types.TextContent(type="text", text=output)]
-
-        # Meta-tool: reset_tool_filter
-        if name == "reset_tool_filter":
-            proxy._active_filter = None
-            try:
-                await server.request_context.session.send_tool_list_changed()
-            except Exception:
-                pass
-            return [
-                types.TextContent(
-                    type="text",
-                    text=json.dumps(
-                        {
-                            "status": "ok",
-                            "total_tools": len(proxy._all_tools),
-                            "message": "Filter reset. All tools are now visible.",
-                        }
-                    ),
-                )
-            ]
-
-        # Route to backend
         result = await proxy.call_tool(name, arguments)
         return result.content
 
@@ -441,12 +484,19 @@ def create_proxy_server(
 async def _run_proxy_async(
     backends: list[BackendConfig],
     *,
-    top_k: int = 20,
+    top_k: int = 10,
+    embedding: bool = False,
+    passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
 ) -> None:
     """Run the proxy server (async entry point)."""
     import mcp.server.stdio
 
-    proxy = MCPProxy(backends, top_k=top_k)
+    proxy = MCPProxy(
+        backends,
+        top_k=top_k,
+        embedding=embedding,
+        passthrough_threshold=passthrough_threshold,
+    )
 
     try:
         await proxy.connect_backends()
@@ -465,7 +515,9 @@ async def _run_proxy_async(
 def run_proxy(
     backends: list[BackendConfig],
     *,
-    top_k: int = 20,
+    top_k: int = 10,
+    embedding: bool = False,
+    passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
 ) -> None:
     """Run the MCP proxy (blocking entry point)."""
     try:
@@ -476,4 +528,11 @@ def run_proxy(
 
     import asyncio
 
-    asyncio.run(_run_proxy_async(backends, top_k=top_k))
+    asyncio.run(
+        _run_proxy_async(
+            backends,
+            top_k=top_k,
+            embedding=embedding,
+            passthrough_threshold=passthrough_threshold,
+        )
+    )

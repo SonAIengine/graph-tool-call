@@ -25,6 +25,7 @@ def test_load_proxy_config_native_format(tmp_path):
             },
         },
         "top_k": 10,
+        "embedding": True,
     }
     p = tmp_path / "config.json"
     p.write_text(json.dumps(config))
@@ -36,6 +37,7 @@ def test_load_proxy_config_native_format(tmp_path):
     assert backends[1].name == "filesystem"
     assert backends[1].env == {"HOME": "/home"}
     assert options["top_k"] == 10
+    assert options["embedding"] is True
 
 
 def test_load_proxy_config_mcp_json_format(tmp_path):
@@ -95,42 +97,37 @@ def test_proxy_init():
     backends = [BackendConfig(name="a", command="echo")]
     proxy = MCPProxy(backends, top_k=10)
     assert proxy.backend_count == 0
-    assert proxy.active_filter is None
     assert proxy.all_tools == {}
     assert proxy.tool_to_backend == {}
 
 
 def test_proxy_build_tool_graph_empty():
-    """ToolGraph can be built with no tools."""
     proxy = MCPProxy([], top_k=5)
     proxy._build_tool_graph()
     assert proxy.tool_graph is not None
     assert len(proxy.tool_graph.tools) == 0
 
 
-def test_proxy_get_filtered_tool_names_no_filter():
-    """Without active filter, all tools are returned."""
-    proxy = MCPProxy([], top_k=5)
-    proxy._all_tools = {"a": None, "b": None, "c": None}
-    names = proxy.get_filtered_tool_names()
-    assert set(names) == {"a", "b", "c"}
+def test_proxy_gateway_mode_determined_by_threshold():
+    """Gateway mode activates when tools > threshold."""
+    proxy = MCPProxy([], top_k=5, passthrough_threshold=2)
+    proxy._build_tool_graph()
+    # Manually add tools to simulate
+    proxy._all_tools = {f"tool_{i}": None for i in range(10)}
+    proxy._gateway_mode = len(proxy._all_tools) > proxy._passthrough_threshold
+    assert proxy.is_gateway_mode is True
+
+    proxy2 = MCPProxy([], top_k=5, passthrough_threshold=20)
+    proxy2._build_tool_graph()
+    proxy2._all_tools = {f"tool_{i}": None for i in range(10)}
+    proxy2._gateway_mode = len(proxy2._all_tools) > proxy2._passthrough_threshold
+    assert proxy2.is_gateway_mode is False
 
 
-def test_proxy_get_filtered_tool_names_with_filter():
-    """With active filter, only matching tools are returned."""
-    proxy = MCPProxy([], top_k=5)
-    proxy._all_tools = {"a": None, "b": None, "c": None}
-    proxy._active_filter = {"a", "c"}
-    names = proxy.get_filtered_tool_names()
-    assert set(names) == {"a", "c"}
-
-
-def test_proxy_search_updates_filter():
-    """search() should update active_filter."""
+def test_proxy_search_returns_results():
+    """search() returns tool info with descriptions."""
     proxy = MCPProxy([], top_k=5)
     proxy._build_tool_graph()
-
-    # Add some tools to ToolGraph manually
     proxy._tg.add_tools(
         [
             {"name": "get_users", "description": "Get all users"},
@@ -146,22 +143,46 @@ def test_proxy_search_updates_filter():
 
     results = proxy.search("user management", top_k=2)
     assert len(results) <= 2
-    assert proxy.active_filter is not None
-    # At least one user-related tool should match
     result_names = {r["name"] for r in results}
     assert result_names & {"get_users", "create_user"}
+
+
+def test_proxy_search_zero_result_fallback():
+    """search() returns suggestion when no matches found."""
+    proxy = MCPProxy([], top_k=5)
+    proxy._build_tool_graph()
+    proxy._all_tools = {"a": None}
+
+    results = proxy.search("완전히 관련없는 검색어 xyz123")
+    assert len(results) == 1
+    assert "error" in results[0] or "suggestion" in results[0]
 
 
 # --- create_proxy_server ---
 
 
-def test_create_proxy_server_requires_mcp():
-    """create_proxy_server should work when mcp is installed."""
+def test_create_gateway_server():
+    """Gateway mode creates server with only 2 meta-tools."""
     pytest.importorskip("mcp", reason="mcp required")
 
     from graph_tool_call.mcp_proxy import create_proxy_server
 
-    proxy = MCPProxy([], top_k=5)
+    proxy = MCPProxy([], top_k=5, passthrough_threshold=0)
     proxy._build_tool_graph()
+    proxy._all_tools = {"a": None}
+    proxy._gateway_mode = True
+    server = create_proxy_server(proxy)
+    assert server is not None
+
+
+def test_create_passthrough_server():
+    """Passthrough mode creates server that exposes all tools."""
+    pytest.importorskip("mcp", reason="mcp required")
+
+    from graph_tool_call.mcp_proxy import create_proxy_server
+
+    proxy = MCPProxy([], top_k=5, passthrough_threshold=100)
+    proxy._build_tool_graph()
+    proxy._gateway_mode = False
     server = create_proxy_server(proxy)
     assert server is not None
