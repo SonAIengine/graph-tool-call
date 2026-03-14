@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **MCP Proxy gateway 개선** — 1-hop direct calling + 경량 search + on-demand schema
+  - `search_tools`: inputSchema 제거, score/confidence 포함 (결과 토큰 ~70% 절감)
+  - `get_tool_schema`: on-demand full schema 조회 (필요할 때만 토큰 사용)
+  - Dynamic tool injection: search 후 매칭된 tool이 `tools/list`에 자동 등록 → 직접 호출 가능 (1-hop)
+  - Direct backend routing: `call_tool`이 backend tool 이름을 직접 수락 (2-hop `call_backend_tool` 불필요)
+  - `call_backend_tool` 유지 (하위 호환 fallback)
+
 ## [0.11.0] - 2026-03-14
 
 ### Changed

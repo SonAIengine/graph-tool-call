@@ -1,16 +1,19 @@
 """MCP Proxy: aggregate multiple MCP servers and filter tools via ToolGraph.
 
 Sits between an MCP client (Claude Code, Cursor, etc.) and real MCP servers.
-Collects all backend tools, builds a ToolGraph, and exposes only two
-meta-tools (``search_tools`` + ``call_backend_tool``) to keep the LLM
-context minimal.
+Collects all backend tools, builds a ToolGraph, and exposes smart meta-tools
+to keep the LLM context minimal.
 
 Modes
 -----
 - **gateway** (default, ``tool_count > passthrough_threshold``):
-  Only ``search_tools`` and ``call_backend_tool`` appear in ``tools/list``.
-  The LLM searches first, then calls the tool by name through the proxy.
-  This reduces context from ~117K tokens (172 tools) to ~500 tokens.
+  Exposes ``search_tools`` + ``get_tool_schema`` meta-tools.
+  After search, matched tools are dynamically injected into ``tools/list``
+  and a ``tools/list_changed`` notification is sent, enabling **1-hop direct
+  calling** (no ``call_backend_tool`` wrapper needed).
+
+  Fallback: ``call_backend_tool`` is kept for clients that don't support
+  ``tools/list_changed``.
 
 - **passthrough** (``tool_count <= passthrough_threshold``):
   All backend tools are exposed directly — no proxy overhead.
@@ -66,6 +69,9 @@ logger = logging.getLogger("graph-tool-call.mcp-proxy")
 # Default: if total tools <= this, expose all directly (no gateway overhead)
 DEFAULT_PASSTHROUGH_THRESHOLD = 30
 
+# Meta-tool names (reserved, not routed to backends)
+_META_TOOLS = frozenset({"search_tools", "get_tool_schema", "call_backend_tool"})
+
 
 def _check_mcp_installed() -> None:
     try:
@@ -115,6 +121,8 @@ class MCPProxy:
         self._passthrough_threshold = passthrough_threshold
         self._gateway_mode: bool = False  # determined after connect
         self._exit_stack: AsyncExitStack | None = None
+        # Dynamic tool injection: tools exposed after search
+        self._exposed_tools: dict[str, Any] = {}  # name -> mcp.types.Tool
 
     @property
     def tool_graph(self) -> Any:
@@ -228,11 +236,15 @@ class MCPProxy:
                 logger.warning("Embedding unavailable, BM25-only: %s", exc)
 
     def search(self, query: str, top_k: int | None = None) -> list[dict[str, Any]]:
-        """Search tools via ToolGraph. Returns tool info with inputSchema."""
-        k = top_k or self._top_k
-        results = self._tg.retrieve(query, top_k=k)
+        """Search tools via ToolGraph. Returns lightweight results (no inputSchema).
 
-        # Zero-result fallback: don't return empty
+        After search, matched tools are stored in ``_exposed_tools`` for
+        dynamic injection into ``tools/list``.
+        """
+        k = top_k or self._top_k
+        results = self._tg.retrieve_with_scores(query, top_k=k)
+
+        # Zero-result fallback
         if not results:
             return [
                 {
@@ -242,30 +254,49 @@ class MCPProxy:
                 }
             ]
 
+        # Update exposed tools for dynamic injection
+        self._exposed_tools.clear()
+
         out: list[dict[str, Any]] = []
         for r in results:
-            # Find the MCP tool object to get inputSchema
-            proxy_name = r.name
+            proxy_name = r.tool.name
             mcp_tool = self._all_tools.get(proxy_name)
             if not mcp_tool:
-                # Check prefixed variants
                 for pn in self._all_tools:
-                    if pn.endswith(f"__{r.name}"):
+                    if pn.endswith(f"__{r.tool.name}"):
                         proxy_name = pn
                         mcp_tool = self._all_tools[pn]
                         break
 
             entry: dict[str, Any] = {
                 "name": proxy_name,
-                "description": r.description,
+                "description": r.tool.description,
+                "score": round(r.score, 4),
+                "confidence": r.confidence,
             }
-            if mcp_tool and mcp_tool.inputSchema:
-                entry["inputSchema"] = mcp_tool.inputSchema
-            if r.domain:
-                entry["category"] = r.domain
+            if r.tool.domain:
+                entry["category"] = r.tool.domain
             out.append(entry)
 
+            # Register for dynamic injection
+            if mcp_tool:
+                self._exposed_tools[proxy_name] = mcp_tool
+
         return out
+
+    def get_tool_schema(self, name: str) -> dict[str, Any] | None:
+        """Get full schema for a specific tool."""
+        mcp_tool = self._all_tools.get(name)
+        if not mcp_tool:
+            return None
+
+        schema: dict[str, Any] = {
+            "name": name,
+            "description": mcp_tool.description or "",
+        }
+        if mcp_tool.inputSchema:
+            schema["inputSchema"] = mcp_tool.inputSchema
+        return schema
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Route a tool call to the correct backend."""
@@ -344,9 +375,12 @@ def create_proxy_server(
 ) -> Any:
     """Create a low-level MCP Server wired to the proxy.
 
-    In **gateway mode** (many tools), exposes only ``search_tools`` and
-    ``call_backend_tool``. In **passthrough mode** (few tools), exposes
-    all backend tools directly.
+    In **gateway mode** (many tools), exposes ``search_tools``,
+    ``get_tool_schema``, and ``call_backend_tool`` meta-tools.
+    After search, matched backend tools are dynamically injected
+    into ``tools/list`` for 1-hop direct calling.
+
+    In **passthrough mode** (few tools), exposes all backend tools directly.
     """
     _check_mcp_installed()
 
@@ -360,19 +394,25 @@ def create_proxy_server(
 
 
 def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
-    """Gateway mode: only search_tools + call_backend_tool."""
+    """Gateway mode: search + get_schema + dynamic tool injection.
+
+    After ``search_tools`` is called, matched backend tools are added to
+    ``proxy._exposed_tools``.  On the next ``tools/list`` request (triggered
+    by the SDK's automatic cache-miss refresh), those tools appear as
+    first-class callable tools — enabling **1-hop direct calling**.
+    """
     import mcp.types as types
 
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:
-        return [
+        meta_tools = [
             types.Tool(
                 name="search_tools",
                 description=(
                     f"Search across {len(proxy._all_tools)} tools from "
                     f"{proxy.backend_count} MCP servers. Returns matching "
-                    "tools with their full inputSchema so you can call them. "
-                    "Always call this first to find the right tool."
+                    "tools ranked by relevance. After search, matched tools "
+                    "become directly callable by name."
                 ),
                 inputSchema={
                     "type": "object",
@@ -385,7 +425,7 @@ def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
                         },
                         "top_k": {
                             "type": "integer",
-                            "description": "Max results",
+                            "description": "Max results (default: 10)",
                             "default": 10,
                         },
                     },
@@ -393,11 +433,29 @@ def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
                 },
             ),
             types.Tool(
+                name="get_tool_schema",
+                description=(
+                    "Get the full inputSchema of a specific tool. "
+                    "Use after search_tools to see exact parameters "
+                    "before calling the tool."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tool_name": {
+                            "type": "string",
+                            "description": "Exact tool name from search_tools results",
+                        },
+                    },
+                    "required": ["tool_name"],
+                },
+            ),
+            types.Tool(
                 name="call_backend_tool",
                 description=(
-                    "Call a backend tool by name. Use search_tools first "
-                    "to find the tool name and its inputSchema, then call "
-                    "it here with the correct arguments."
+                    "Call a backend tool by name (fallback). "
+                    "Prefer calling tools directly by name after search. "
+                    "Use this only if direct calling is not available."
                 ),
                 inputSchema={
                     "type": "object",
@@ -416,36 +474,78 @@ def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
             ),
         ]
 
+        # Dynamically injected backend tools from last search
+        for name, mcp_tool in proxy._exposed_tools.items():
+            meta_tools.append(
+                types.Tool(
+                    name=name,
+                    description=mcp_tool.description or "",
+                    inputSchema=mcp_tool.inputSchema if mcp_tool.inputSchema else {},
+                )
+            )
+
+        return meta_tools
+
     @server.call_tool()
     async def call_tool(
         name: str, arguments: dict[str, Any]
     ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+        # --- Meta-tool: search_tools ---
         if name == "search_tools":
             query = arguments.get("query", "")
             top_k = arguments.get("top_k", proxy._top_k)
             results = proxy.search(query, top_k=top_k)
+
             output = json.dumps(
                 {
                     "query": query,
                     "matched": len(results),
                     "total_tools": len(proxy._all_tools),
                     "tools": results,
+                    "hint": (
+                        "Matched tools are now directly callable by name. "
+                        "Use get_tool_schema to see full parameters if needed."
+                    ),
                 },
                 indent=2,
                 ensure_ascii=False,
             )
             return [types.TextContent(type="text", text=output)]
 
+        # --- Meta-tool: get_tool_schema ---
+        if name == "get_tool_schema":
+            tool_name = arguments.get("tool_name", "")
+            schema = proxy.get_tool_schema(tool_name)
+            if schema is None:
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=json.dumps({"error": f"Tool '{tool_name}' not found"}),
+                    )
+                ]
+            return [
+                types.TextContent(
+                    type="text",
+                    text=json.dumps(schema, indent=2, ensure_ascii=False),
+                )
+            ]
+
+        # --- Meta-tool: call_backend_tool (fallback) ---
         if name == "call_backend_tool":
             tool_name = arguments.get("tool_name", "")
             tool_args = arguments.get("arguments", {})
             result = await proxy.call_tool(tool_name, tool_args)
             return result.content
 
+        # --- Direct backend tool routing ---
+        if name in proxy._tool_to_backend:
+            result = await proxy.call_tool(name, arguments)
+            return result.content
+
         return [
             types.TextContent(
                 type="text",
-                text=f"Unknown meta-tool '{name}'. Use search_tools or call_backend_tool.",
+                text=f"Tool '{name}' not found. Use search_tools first.",
             )
         ]
 

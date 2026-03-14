@@ -161,8 +161,71 @@ def test_proxy_search_zero_result_fallback():
 # --- create_proxy_server ---
 
 
+def test_proxy_search_returns_scores():
+    """search() returns score and confidence for each result."""
+    proxy = MCPProxy([], top_k=5)
+    proxy._build_tool_graph()
+    proxy._tg.add_tools(
+        [
+            {"name": "get_users", "description": "Get all users"},
+            {"name": "create_user", "description": "Create a new user"},
+        ]
+    )
+    proxy._all_tools = {"get_users": None, "create_user": None}
+
+    results = proxy.search("get users")
+    assert len(results) >= 1
+    # Should have score and confidence fields (lightweight, no inputSchema)
+    for r in results:
+        if "error" not in r:
+            assert "score" in r
+            assert "confidence" in r
+            assert "inputSchema" not in r
+
+
+def test_proxy_search_updates_exposed_tools():
+    """search() populates _exposed_tools for dynamic injection."""
+    proxy = MCPProxy([], top_k=5)
+    proxy._build_tool_graph()
+    proxy._tg.add_tools(
+        [
+            {"name": "get_users", "description": "Get all users"},
+            {"name": "create_user", "description": "Create a new user"},
+        ]
+    )
+
+    class FakeTool:
+        description = "fake"
+        inputSchema = {}
+
+    proxy._all_tools = {"get_users": FakeTool(), "create_user": FakeTool()}
+
+    assert len(proxy._exposed_tools) == 0
+    proxy.search("user")
+    # After search, exposed_tools should be populated
+    assert len(proxy._exposed_tools) >= 1
+
+
+def test_proxy_get_tool_schema():
+    """get_tool_schema() returns full schema for known tool."""
+    proxy = MCPProxy([], top_k=5)
+
+    class FakeTool:
+        description = "Fake tool description"
+        inputSchema = {"type": "object", "properties": {"a": {"type": "string"}}}
+
+    proxy._all_tools = {"my_tool": FakeTool()}
+    schema = proxy.get_tool_schema("my_tool")
+    assert schema is not None
+    assert schema["name"] == "my_tool"
+    assert "inputSchema" in schema
+
+    # Unknown tool
+    assert proxy.get_tool_schema("nonexistent") is None
+
+
 def test_create_gateway_server():
-    """Gateway mode creates server with only 2 meta-tools."""
+    """Gateway mode creates server with meta-tools."""
     pytest.importorskip("mcp", reason="mcp required")
 
     from graph_tool_call.mcp_proxy import create_proxy_server
