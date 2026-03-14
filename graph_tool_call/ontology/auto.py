@@ -291,51 +291,7 @@ def _llm_auto_organize(
                     builder.assign_category(tname, cat_name_clean)
                 except (KeyError, ValueError):
                     pass
-                # Sync category name to ToolSchema tags for BM25
-                if tname in tool_map and cat_name_clean not in tool_map[tname].tags:
-                    tool_map[tname].tags = tool_map[tname].tags + [cat_name_clean]
 
-    # Enrich keywords for BM25 search quality
-    keywords = llm.enrich_keywords(summaries)
-
-    # IDF filter: remove keywords that appear in too many tools (>30% = noise)
-    if keywords:
-        kw_doc_freq: dict[str, int] = {}
-        for kws in keywords.values():
-            for k in set(kw.lower() for kw in kws):
-                kw_doc_freq[k] = kw_doc_freq.get(k, 0) + 1
-        n_tools = len(tool_names)
-        max_freq = max(2, int(n_tools * 0.3))
-        noisy_kws = {k for k, freq in kw_doc_freq.items() if freq > max_freq}
-
-    for tool_name, kws in keywords.items():
-        if tool_name not in tool_names:
-            continue
-        if not builder._graph.has_node(tool_name):
-            continue
-        # Filter out noisy (too common) keywords
-        filtered_kws = [k.lower() for k in kws if k.lower() not in noisy_kws]
-        if not filtered_kws:
-            continue
-
-        attrs = builder._graph.get_node_attrs(tool_name)
-        existing_tags = attrs.get("tags", [])
-        new_tags = list(set(existing_tags + filtered_kws))
-        builder._graph.set_node_attrs(tool_name, tags=new_tags)
-
-        # Sync enriched keywords back to ToolSchema for BM25/embedding
-        if tool_name in tool_map:
-            tool = tool_map[tool_name]
-            existing = set(tool.tags)
-            added = [k for k in filtered_kws if k not in existing]
-            if added:
-                tool.tags = tool.tags + added
-
-    # Generate example queries for embedding enrichment
-    example_queries = llm.generate_example_queries(summaries)
-    for tool_name, queries in example_queries.items():
-        if tool_name not in tool_names:
-            continue
-        if tool_name in tool_map:
-            tool = tool_map[tool_name]
-            tool.metadata["example_queries"] = queries
+    # NOTE: keyword enrichment and example_queries are intentionally omitted.
+    # The calling LLM already handles query expansion at search time,
+    # and adding keywords to tools pollutes BM25 IDF scores.

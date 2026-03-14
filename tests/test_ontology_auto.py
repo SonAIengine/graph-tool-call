@@ -309,10 +309,11 @@ class TestToolGraphAutoOrganize:
         tg.auto_organize()
 
 
-class TestLLMKeywordSyncToToolSchema:
-    """Verify that LLM-enriched keywords sync back to ToolSchema for BM25."""
+class TestLLMOntologyFocus:
+    """Verify that LLM ontology focuses on relations and categories only."""
 
-    def test_keywords_sync_to_tool_tags(self):
+    def test_keywords_not_added_to_tags(self):
+        """Keyword enrichment is intentionally omitted — LLM handles query expansion."""
         builder = _make_builder()
         tools = [
             _tool("listPods", "list pods in namespace", tags=["pod"]),
@@ -332,12 +333,11 @@ class TestLLMKeywordSyncToToolSchema:
 
         auto_organize(builder, tools, llm=llm)
 
-        # Enriched keywords should be in ToolSchema.tags (not just graph attrs)
-        assert "kubernetes" in tools[0].tags
-        assert "container" in tools[0].tags
-        assert "deploy" in tools[1].tags
+        # Keywords should NOT be added to tags (avoids BM25 IDF pollution)
+        assert "kubernetes" not in tools[0].tags
+        assert "deploy" not in tools[1].tags
 
-    def test_categories_sync_to_tool_tags(self):
+    def test_categories_created_in_graph(self):
         builder = _make_builder()
         tools = [
             _tool("listPods", "list pods"),
@@ -354,9 +354,8 @@ class TestLLMKeywordSyncToToolSchema:
 
         auto_organize(builder, tools, llm=llm)
 
-        # Category name should be in ToolSchema.tags
-        assert "pod_management" in tools[0].tags
-        assert "pod_management" in tools[1].tags
+        # Category should exist in graph
+        assert builder._graph.has_node("pod_management")
 
     def test_auto_organize_invalidates_retrieval_cache(self):
         from graph_tool_call import ToolGraph

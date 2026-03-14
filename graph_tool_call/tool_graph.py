@@ -490,9 +490,9 @@ class ToolGraph:
             _saved_embedding_provider = self._retrieval._embedding_index._provider
 
         auto_organize(self._builder, list(self._tools.values()), wrapped)
-        self._invalidate_retrieval()  # BM25 must rebuild from enriched ToolSchema
+        self._invalidate_retrieval()  # BM25 must rebuild with updated graph
 
-        # Rebuild embedding index with enriched data (tags, example_queries)
+        # Restore embedding index (tool data unchanged, but re-attach to new engine)
         if _saved_embedding_provider is not None:
             from graph_tool_call.retrieval.embedding import EmbeddingIndex
 

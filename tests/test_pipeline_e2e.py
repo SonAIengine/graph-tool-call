@@ -122,12 +122,9 @@ def test_pipeline_with_llm():
     tg.ingest_openapi(_mock_spec())
     tg.auto_organize(llm=MockLLM())
 
-    # Check that keywords were enriched
-    attrs = tg.graph.get_node_attrs("cancelOrder")
-    tags = attrs.get("tags", [])
-    assert any(k in tags for k in ["cancel", "void", "refund"]), (
-        f"Expected enriched keywords, got: {tags}"
-    )
+    # Keywords are intentionally NOT enriched (LLM handles query expansion).
+    # Check that relations or categories were added instead.
+    assert tg.graph.edge_count() > 0, "LLM should add relations to the graph"
 
 
 def test_pipeline_from_url_with_llm():
