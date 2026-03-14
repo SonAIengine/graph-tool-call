@@ -101,6 +101,9 @@ def create_mcp_server(
             except Exception as e:
                 logger.warning("Failed to ingest %s: %s", source, e)
 
+    # Session history: track tool calls for history-aware retrieval
+    _call_history: list[str] = []
+
     # --- MCP Tools ---
 
     @mcp_app.tool()
@@ -109,6 +112,8 @@ def create_mcp_server(
 
         Returns the most relevant tools for the given query, ranked by
         graph-based hybrid retrieval (BM25 + graph traversal + embedding).
+        Previously called tools are automatically deprioritized to surface
+        new candidates on repeated searches.
 
         Args:
             query: Natural language description of what you want to do.
@@ -119,7 +124,7 @@ def create_mcp_server(
         if not tg.tools:
             return json.dumps({"error": "No tools loaded. Use load_source() first."})
 
-        results = tg.retrieve(query, top_k=top_k)
+        results = tg.retrieve(query, top_k=top_k, history=_call_history or None)
         tools_out = []
         for tool in results:
             tool_dict: dict[str, Any] = {
@@ -289,6 +294,9 @@ def create_mcp_server(
                 base_url=base_url or None,
                 auth_token=auth_token or None,
             )
+            # Track call history for future searches
+            if tool_name not in _call_history:
+                _call_history.append(tool_name)
             return json.dumps(result, indent=2, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"error": str(e)})

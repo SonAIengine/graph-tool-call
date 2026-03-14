@@ -131,6 +131,8 @@ class MCPProxy:
         self._cache_path = Path(cache_path) if cache_path else None
         # Dynamic tool injection: tools exposed after search
         self._exposed_tools: dict[str, Any] = {}  # name -> mcp.types.Tool
+        # Session history: track tool calls for history-aware retrieval
+        self._call_history: list[str] = []
 
     @property
     def tool_graph(self) -> Any:
@@ -304,7 +306,9 @@ class MCPProxy:
         dynamic injection into ``tools/list``.
         """
         k = top_k or self._top_k
-        results = self._tg.retrieve_with_scores(query, top_k=k)
+        results = self._tg.retrieve_with_scores(
+            query, top_k=k, history=self._call_history or None
+        )
 
         # Zero-result fallback
         if not results:
@@ -366,7 +370,11 @@ class MCPProxy:
         return schema
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        """Route a tool call to the correct backend."""
+        """Route a tool call to the correct backend and track history."""
+        # Track call history for future searches
+        if name not in self._call_history:
+            self._call_history.append(name)
+
         backend_name = self._tool_to_backend.get(name)
         if not backend_name:
             from mcp import types
