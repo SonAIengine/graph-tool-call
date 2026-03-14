@@ -287,6 +287,7 @@ claude mcp list
 LLMに送信される前にツールを自動フィルタ — **1行追加、コード変更不要**:
 
 ```python
+from openai import OpenAI
 from graph_tool_call import ToolGraph
 from graph_tool_call.middleware import patch_openai
 
@@ -303,12 +304,67 @@ response = client.chat.completions.create(
 )
 ```
 
-Anthropicでも同様に使用可能:
+Anthropicでも同様:
 
 ```python
+from anthropic import Anthropic
 from graph_tool_call.middleware import patch_anthropic
+
+client = Anthropic()
 patch_anthropic(client, graph=tg, top_k=5)
 ```
+
+### 直接統合（任意のLLMプロバイダー）
+
+`retrieve()` で検索後、任意のフォーマットに変換して使用:
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.langchain.tools import tool_schema_to_openai_function
+
+tg = ToolGraph.from_url(
+    "https://petstore3.swagger.io/api/v3/openapi.json",
+    cache="petstore.json",
+)
+
+# 関連ツールを検索
+tools = tg.retrieve("create a new pet", top_k=5)
+
+# OpenAI function-calling形式に変換
+openai_tools = [
+    {"type": "function", "function": tool_schema_to_openai_function(t)}
+    for t in tools
+]
+
+# OpenAI互換APIならどこでも使用可能（OpenAI、Azure、Ollama、vLLM等）
+response = client.chat.completions.create(
+    model="gpt-4o",
+    tools=openai_tools,
+    messages=[{"role": "user", "content": "create a new pet"}],
+)
+```
+
+### LangChain統合
+
+```bash
+pip install graph-tool-call[langchain]
+```
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.langchain import GraphToolRetriever
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+
+retriever = GraphToolRetriever(tool_graph=tg, top_k=5)
+docs = retriever.invoke("cancel an order")
+
+for doc in docs:
+    print(doc.page_content)       # "cancelOrder: Cancel an existing order"
+    print(doc.metadata["tags"])   # ["order"]
+```
+
+LangChainのretrieverインターフェースに対応するすべてのchain/agentと互換。
 
 ---
 

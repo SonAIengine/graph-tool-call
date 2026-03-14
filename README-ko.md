@@ -313,6 +313,7 @@ claude mcp list
 LLM에 전달되기 전에 자동으로 tool을 필터링합니다 — **한 줄 추가, 기존 코드 변경 없음**:
 
 ```python
+from openai import OpenAI
 from graph_tool_call import ToolGraph
 from graph_tool_call.middleware import patch_openai
 
@@ -332,9 +333,66 @@ response = client.chat.completions.create(
 Anthropic도 동일하게 동작합니다:
 
 ```python
+from anthropic import Anthropic
 from graph_tool_call.middleware import patch_anthropic
+
+client = Anthropic()
 patch_anthropic(client, graph=tg, top_k=5)
 ```
+
+### 직접 연동 (모든 LLM provider)
+
+`retrieve()`로 검색한 후 원하는 포맷으로 변환해서 사용합니다:
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.langchain.tools import tool_schema_to_openai_function
+
+# 그래프 생성 (어떤 소스든 가능)
+tg = ToolGraph.from_url(
+    "https://petstore3.swagger.io/api/v3/openapi.json",
+    cache="petstore.json",
+)
+
+# 쿼리에 맞는 tool 검색
+tools = tg.retrieve("create a new pet", top_k=5)
+
+# OpenAI function-calling 포맷으로 변환
+openai_tools = [
+    {"type": "function", "function": tool_schema_to_openai_function(t)}
+    for t in tools
+]
+
+# OpenAI 호환 API 어디서든 사용 (OpenAI, Azure, Ollama, vLLM 등)
+response = client.chat.completions.create(
+    model="gpt-4o",
+    tools=openai_tools,  # 전체 대신 관련 5개만
+    messages=[{"role": "user", "content": "create a new pet"}],
+)
+```
+
+### LangChain 연동
+
+```bash
+pip install graph-tool-call[langchain]
+```
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.langchain import GraphToolRetriever
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+
+# LangChain retriever로 사용
+retriever = GraphToolRetriever(tool_graph=tg, top_k=5)
+docs = retriever.invoke("cancel an order")
+
+for doc in docs:
+    print(doc.page_content)       # "cancelOrder: Cancel an existing order"
+    print(doc.metadata["tags"])   # ["order"]
+```
+
+LangChain의 retriever를 받는 모든 chain/agent와 호환됩니다.
 
 ---
 

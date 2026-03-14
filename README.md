@@ -312,6 +312,7 @@ That's it. The proxy exposes `search_tools`, `get_tool_schema`, and `call_backen
 Automatically filter tools before they reach the LLM — **one line, no code changes**:
 
 ```python
+from openai import OpenAI
 from graph_tool_call import ToolGraph
 from graph_tool_call.middleware import patch_openai
 
@@ -331,9 +332,66 @@ response = client.chat.completions.create(
 Also works with Anthropic:
 
 ```python
+from anthropic import Anthropic
 from graph_tool_call.middleware import patch_anthropic
+
+client = Anthropic()
 patch_anthropic(client, graph=tg, top_k=5)
 ```
+
+### Direct Integration (any LLM provider)
+
+Use `retrieve()` directly and convert to your provider's tool format:
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.langchain.tools import tool_schema_to_openai_function
+
+# Build graph from any source
+tg = ToolGraph.from_url(
+    "https://petstore3.swagger.io/api/v3/openapi.json",
+    cache="petstore.json",
+)
+
+# Retrieve relevant tools for a query
+tools = tg.retrieve("create a new pet", top_k=5)
+
+# Convert to OpenAI function-calling format
+openai_tools = [
+    {"type": "function", "function": tool_schema_to_openai_function(t)}
+    for t in tools
+]
+
+# Use with any OpenAI-compatible API (OpenAI, Azure, Ollama, vLLM, etc.)
+response = client.chat.completions.create(
+    model="gpt-4o",
+    tools=openai_tools,  # only 5 relevant tools instead of all
+    messages=[{"role": "user", "content": "create a new pet"}],
+)
+```
+
+### LangChain Integration
+
+```bash
+pip install graph-tool-call[langchain]
+```
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.langchain import GraphToolRetriever
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+
+# Use as a LangChain retriever
+retriever = GraphToolRetriever(tool_graph=tg, top_k=5)
+docs = retriever.invoke("cancel an order")
+
+for doc in docs:
+    print(doc.page_content)       # "cancelOrder: Cancel an existing order"
+    print(doc.metadata["tags"])   # ["order"]
+```
+
+Works with any LangChain chain or agent that accepts a retriever.
 
 ---
 
