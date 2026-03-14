@@ -129,6 +129,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=30,
         help="Max tools for passthrough mode (default: 30)",
     )
+    p_proxy.add_argument(
+        "--cache",
+        dest="cache_path",
+        help="Cache path for ToolGraph (skip embedding rebuild on restart)",
+    )
 
     # --- serve (MCP server) ---
     p_serve = sub.add_parser("serve", help="Run as MCP server (stdio transport)")
@@ -467,6 +472,7 @@ def cmd_proxy(args: argparse.Namespace) -> None:
         passthrough_threshold=(
             args.passthrough_threshold or options.get("passthrough_threshold", 30)
         ),
+        cache_path=args.cache_path or options.get("cache_path"),
     )
 
 

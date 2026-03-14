@@ -48,8 +48,9 @@ Config format (backends.json)::
             }
         },
         "top_k": 10,
-        "embedding": true,
-        "passthrough_threshold": 30
+        "embedding": "ollama/qwen3-embedding:0.6b",
+        "passthrough_threshold": 30,
+        "cache_path": "/tmp/graph-tool-call-proxy-cache.json"
     }
 
 Or use .mcp.json format directly (``mcpServers`` key).
@@ -57,17 +58,22 @@ Or use .mcp.json format directly (``mcpServers`` key).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sys
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("graph-tool-call.mcp-proxy")
 
 # Default: if total tools <= this, expose all directly (no gateway overhead)
 DEFAULT_PASSTHROUGH_THRESHOLD = 30
+
+# Max description length in search results (truncated with "...")
+_SEARCH_DESC_MAX = 120
 
 # Meta-tool names (reserved, not routed to backends)
 _META_TOOLS = frozenset({"search_tools", "get_tool_schema", "call_backend_tool"})
@@ -110,6 +116,7 @@ class MCPProxy:
         top_k: int = 10,
         embedding: bool | str = False,
         passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
+        cache_path: str | None = None,
     ):
         self._backends_config = backends
         self._connections: dict[str, BackendConnection] = {}
@@ -121,6 +128,7 @@ class MCPProxy:
         self._passthrough_threshold = passthrough_threshold
         self._gateway_mode: bool = False  # determined after connect
         self._exit_stack: AsyncExitStack | None = None
+        self._cache_path = Path(cache_path) if cache_path else None
         # Dynamic tool injection: tools exposed after search
         self._exposed_tools: dict[str, Any] = {}  # name -> mcp.types.Tool
 
@@ -205,8 +213,55 @@ class MCPProxy:
             mode,
         )
 
+    def _tool_fingerprint(self) -> str:
+        """Hash of all tool names — used for cache invalidation."""
+        names = sorted(self._all_tools.keys())
+        return hashlib.md5("|".join(names).encode()).hexdigest()[:12]
+
+    def _try_load_cache(self) -> bool:
+        """Try to load ToolGraph from cache. Returns True on success."""
+        if not self._cache_path or not self._cache_path.exists():
+            return False
+        try:
+            text = self._cache_path.read_text(encoding="utf-8")
+            cache_data = json.loads(text)
+            # Validate fingerprint
+            if cache_data.get("fingerprint") != self._tool_fingerprint():
+                logger.info("Cache fingerprint mismatch, rebuilding")
+                return False
+            from graph_tool_call import ToolGraph
+
+            self._tg = ToolGraph.load(self._cache_path.with_suffix(".graph.json"))
+            logger.info("Loaded ToolGraph from cache (%d tools)", len(self._tg.tools))
+            return True
+        except Exception as exc:
+            logger.debug("Cache load failed: %s", exc)
+            return False
+
+    def _save_cache(self) -> None:
+        """Save ToolGraph to cache for fast restart."""
+        if not self._cache_path or not self._tg:
+            return
+        try:
+            # Save fingerprint metadata
+            cache_meta = {
+                "fingerprint": self._tool_fingerprint(),
+                "tool_count": len(self._all_tools),
+            }
+            self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self._cache_path.write_text(json.dumps(cache_meta))
+            # Save ToolGraph (with embedding index)
+            self._tg.save(self._cache_path.with_suffix(".graph.json"))
+            logger.info("Saved ToolGraph cache to %s", self._cache_path)
+        except Exception as exc:
+            logger.warning("Cache save failed: %s", exc)
+
     def _build_tool_graph(self) -> None:
         """Build ToolGraph from all collected backend tools."""
+        # Try cache first
+        if self._try_load_cache():
+            return
+
         from graph_tool_call import ToolGraph
 
         self._tg = ToolGraph()
@@ -238,6 +293,9 @@ class MCPProxy:
                 logger.info("Embedding enabled (%d tools indexed)", len(self._tg.tools))
             except Exception as exc:
                 logger.warning("Embedding unavailable, BM25-only: %s", exc)
+
+        # Save cache for next startup
+        self._save_cache()
 
     def search(self, query: str, top_k: int | None = None) -> list[dict[str, Any]]:
         """Search tools via ToolGraph. Returns lightweight results (no inputSchema).
@@ -272,9 +330,14 @@ class MCPProxy:
                         mcp_tool = self._all_tools[pn]
                         break
 
+            # Truncate description for lightweight results
+            desc = r.tool.description
+            if len(desc) > _SEARCH_DESC_MAX:
+                desc = desc[:_SEARCH_DESC_MAX].rsplit(" ", 1)[0] + "..."
+
             entry: dict[str, Any] = {
                 "name": proxy_name,
-                "description": r.tool.description,
+                "description": desc,
                 "score": round(r.score, 4),
                 "confidence": r.confidence,
             }
@@ -589,6 +652,7 @@ async def _run_proxy_async(
     top_k: int = 10,
     embedding: bool | str = False,
     passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
+    cache_path: str | None = None,
 ) -> None:
     """Run the proxy server (async entry point)."""
     import mcp.server.stdio
@@ -598,6 +662,7 @@ async def _run_proxy_async(
         top_k=top_k,
         embedding=embedding,
         passthrough_threshold=passthrough_threshold,
+        cache_path=cache_path,
     )
 
     try:
@@ -620,6 +685,7 @@ def run_proxy(
     top_k: int = 10,
     embedding: bool | str = False,
     passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
+    cache_path: str | None = None,
 ) -> None:
     """Run the MCP proxy (blocking entry point)."""
     try:
@@ -636,5 +702,6 @@ def run_proxy(
             top_k=top_k,
             embedding=embedding,
             passthrough_threshold=passthrough_threshold,
+            cache_path=cache_path,
         )
     )
