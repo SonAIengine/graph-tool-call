@@ -259,6 +259,41 @@ def create_mcp_server(
         return json.dumps(info, indent=2, ensure_ascii=False)
 
     @mcp_app.tool()
+    def execute_tool(
+        tool_name: str,
+        arguments: str,
+        base_url: str = "",
+        auth_token: str = "",
+    ) -> str:
+        """Execute an OpenAPI tool via HTTP.
+
+        Sends the actual HTTP request based on the tool's method and path
+        from the OpenAPI spec. Use after search_tools() + get_tool_schema()
+        to call the API.
+
+        Args:
+            tool_name: Exact tool name (as returned by search_tools)
+            arguments: JSON string of parameter values (e.g. '{"owner":"me","repo":"test"}')
+            base_url: API base URL (e.g. https://api.github.com). Required if not inferrable.
+            auth_token: Bearer token for authentication (optional)
+        """
+        try:
+            args = json.loads(arguments) if isinstance(arguments, str) else arguments
+        except json.JSONDecodeError:
+            return json.dumps({"error": f"Invalid JSON arguments: {arguments}"})
+
+        try:
+            result = tg.execute(
+                tool_name,
+                args,
+                base_url=base_url or None,
+                auth_token=auth_token or None,
+            )
+            return json.dumps(result, indent=2, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    @mcp_app.tool()
     def load_source(source: str) -> str:
         """Load additional tools from an OpenAPI spec URL or file path.
 

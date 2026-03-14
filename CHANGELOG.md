@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-03-15
+
+### Added
+- **HTTP Execution 파이프라인** — OpenAPI 검색 → 실제 API 호출까지 end-to-end
+  - `ToolGraph.execute(tool_name, args, base_url=...)` — 검색 결과로 바로 HTTP 호출
+  - `ToolGraph.dry_run(tool_name, args, ...)` — request 미리보기 (디버깅용)
+  - CLI `graph-tool-call call "query" --source spec.json --base-url https://...`
+  - MCP server `execute_tool` — LLM이 search → schema → execute 자동 연결
+  - path/query/body 파라미터 자동 분류, Bearer 인증 지원
+  - `--dry-run` 모드로 실행 전 request 확인 가능
+  - zero-dependency (`urllib.request`만 사용)
+- **CLI `search` 개선**
+  - `--embedding` 옵션: `graph-tool-call search "query" --source spec.json --embedding ollama/...`
+  - `--cache` 옵션: 반복 검색 시 그래프 재빌드 생략 (첫 실행 16s → 캐시 2s)
+
+### Changed
+- **Embedding 검색 3000x 속도 향상** — per-item loop → pre-computed matrix matmul
+  - 1,062 tool 기준: cosine search **300ms → 0.1ms**
+  - `EmbeddingIndex`: normalized matrix + `np.argpartition` 사용
+  - 첫 검색 시 1회 matrix 빌드 후 캐시 (dirty flag)
+- **BM25 정확도 향상** (대규모 spec에서 Top-5 +10%)
+  - Name-length penalty: 긴 operationId의 부분 매칭 노이즈 억제
+  - Subsequence boost: 쿼리 토큰이 tool name에 순서대로 매칭 시 최대 1.5x 가산
+  - tf_map pre-computation: score() 호출마다 반복하던 TF 계산을 빌드 시 1회로
+- **wRRF 기본 weight 재조정** — keyword 0.3→0.5, graph 0.7→0.5 (BM25 신뢰도 ↑)
+
+### Benchmark (GitHub API — 1,062 tools, 43 categories)
+
+| 지표 | v0.11.1 | v0.12.0 |
+|------|---------|---------|
+| BM25 Top-5 Recall | 80% | **90%** |
+| BM25+Embedding Top-5 | 90% | **90%** |
+| Embedding search latency | ~300ms | **0.1ms** |
+| CLI 반복 검색 (cache) | 16s | **2s** |
+
+### Benchmark (Ecommerce — 46 tools, 한글+영문 20쿼리)
+
+| 지표 | v0.11.1 | v0.12.0 |
+|------|---------|---------|
+| BM25+Embedding Top-5 | 90% | **90%** |
+| BM25+Embedding Top-1 | — | **60%** |
+
 ## [0.11.1] - 2026-03-14
 
 ### Changed

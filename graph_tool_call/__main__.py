@@ -73,6 +73,17 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show detailed relevance scores",
     )
+    p_search.add_argument(
+        "--embedding",
+        nargs="?",
+        const="auto",
+        help="Enable embedding (e.g. ollama/qwen3-embedding:0.6b)",
+    )
+    p_search.add_argument(
+        "--cache",
+        dest="cache_file",
+        help="Cache graph to file for faster repeated searches",
+    )
 
     # --- retrieve ---
     p_retrieve = sub.add_parser("retrieve", help="Search tools from pre-built graph")
@@ -133,6 +144,25 @@ def _build_parser() -> argparse.ArgumentParser:
         "--cache",
         dest="cache_path",
         help="Cache path for ToolGraph (skip embedding rebuild on restart)",
+    )
+
+    # --- call (search + execute) ---
+    p_call = sub.add_parser("call", help="Search + execute an API tool via HTTP")
+    p_call.add_argument("query", help="Search query to find the tool")
+    p_call.add_argument("-s", "--source", required=True, help="OpenAPI spec or graph JSON")
+    p_call.add_argument("--base-url", help="API base URL (e.g. https://api.github.com)")
+    p_call.add_argument("--auth-token", help="Bearer token for authentication")
+    p_call.add_argument(
+        "--args",
+        type=json.loads,
+        default={},
+        help='JSON arguments (e.g. \'{"owner":"me","repo":"test"}\')',
+    )
+    p_call.add_argument("--tool", help="Exact tool name (skip search)")
+    p_call.add_argument("--dry-run", action="store_true", help="Show request without executing")
+    p_call.add_argument("--embedding", nargs="?", const="auto", help="Enable embedding for search")
+    p_call.add_argument(
+        "--allow-private-hosts", action="store_true", help="Allow localhost/private IP URLs"
     )
 
     # --- serve (MCP server) ---
@@ -307,25 +337,46 @@ def cmd_search(args: argparse.Namespace) -> None:
     from graph_tool_call import ToolGraph
 
     source = args.source
+    cache_file = getattr(args, "cache_file", None)
 
-    # Detect source type: pre-built graph JSON or OpenAPI spec
-    if source.endswith(".json") and not source.startswith(("http://", "https://")):
-        # Could be a pre-built graph or a local OpenAPI spec
+    # Try loading from cache first
+    tg = None
+    if cache_file:
         try:
-            tg = ToolGraph.load(source)
-        except (KeyError, ValueError):
-            # Not a graph file — treat as OpenAPI spec
+            tg = ToolGraph.load(cache_file)
+        except (FileNotFoundError, KeyError, ValueError):
+            pass
+
+    if tg is None:
+        # Detect source type: pre-built graph JSON or OpenAPI spec
+        if source.endswith(".json") and not source.startswith(("http://", "https://")):
+            try:
+                tg = ToolGraph.load(source)
+            except (KeyError, ValueError):
+                tg = ToolGraph()
+                tg.ingest_openapi(source, allow_private_hosts=args.allow_private_hosts)
+        elif source.startswith(("http://", "https://")):
+            tg = ToolGraph.from_url(
+                source,
+                progress=lambda msg: print(f"  {msg}", file=sys.stderr),
+                allow_private_hosts=args.allow_private_hosts,
+            )
+        else:
             tg = ToolGraph()
             tg.ingest_openapi(source, allow_private_hosts=args.allow_private_hosts)
-    elif source.startswith(("http://", "https://")):
-        tg = ToolGraph.from_url(
-            source,
-            progress=lambda msg: print(f"  {msg}", file=sys.stderr),
-            allow_private_hosts=args.allow_private_hosts,
-        )
-    else:
-        tg = ToolGraph()
-        tg.ingest_openapi(source, allow_private_hosts=args.allow_private_hosts)
+
+    # Enable embedding if requested
+    embedding_arg = getattr(args, "embedding", None)
+    if embedding_arg:
+        model = None if embedding_arg == "auto" else embedding_arg
+        if model:
+            tg.enable_embedding(model)
+        else:
+            tg.enable_embedding()
+
+        # Save to cache if specified
+        if cache_file:
+            tg.save(cache_file)
 
     if args.scores:
         results = tg.retrieve_with_scores(args.query, top_k=args.top_k)
@@ -476,6 +527,66 @@ def cmd_proxy(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_call(args: argparse.Namespace) -> None:
+    from graph_tool_call import ToolGraph
+
+    source = args.source
+
+    # Load graph
+    if source.endswith(".json") and not source.startswith(("http://", "https://")):
+        try:
+            tg = ToolGraph.load(source)
+        except (KeyError, ValueError):
+            tg = ToolGraph()
+            tg.ingest_openapi(source, allow_private_hosts=args.allow_private_hosts)
+    elif source.startswith(("http://", "https://")):
+        tg = ToolGraph.from_url(
+            source,
+            progress=lambda msg: print(f"  {msg}", file=sys.stderr),
+            allow_private_hosts=args.allow_private_hosts,
+        )
+    else:
+        tg = ToolGraph()
+        tg.ingest_openapi(source, allow_private_hosts=args.allow_private_hosts)
+
+    # Enable embedding if requested
+    embedding_arg = getattr(args, "embedding", None)
+    if embedding_arg:
+        model = None if embedding_arg == "auto" else embedding_arg
+        tg.enable_embedding(model) if model else tg.enable_embedding()
+
+    # Find tool: explicit name or search
+    tool_name = args.tool
+    if not tool_name:
+        results = tg.retrieve(args.query, top_k=1)
+        if not results:
+            print("No matching tools found.", file=sys.stderr)
+            sys.exit(1)
+        tool_name = results[0].name
+        print(f"Selected: {tool_name} — {results[0].description}", file=sys.stderr)
+
+    if tool_name not in tg.tools:
+        print(f"Tool '{tool_name}' not found.", file=sys.stderr)
+        sys.exit(1)
+
+    if args.dry_run:
+        result = tg.dry_run(
+            tool_name,
+            args.args,
+            base_url=args.base_url,
+            auth_token=args.auth_token,
+        )
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        result = tg.execute(
+            tool_name,
+            args.args,
+            base_url=args.base_url,
+            auth_token=args.auth_token,
+        )
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     from graph_tool_call.mcp_server import run_server
 
@@ -504,6 +615,7 @@ def main() -> None:
         "info": cmd_info,
         "dashboard": cmd_dashboard,
         "proxy": cmd_proxy,
+        "call": cmd_call,
         "serve": cmd_serve,
     }
     handlers[args.command](args)

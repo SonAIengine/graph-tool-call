@@ -330,6 +330,10 @@ class EmbeddingIndex:
     ) -> None:
         self._embeddings: dict[str, list[float]] = {}
         self._provider = provider
+        # Pre-computed matrix for fast search
+        self._matrix: Any = None  # np.ndarray (N x D), pre-normalized
+        self._names: list[str] = []  # index -> name mapping
+        self._dirty: bool = True  # matrix needs rebuild
         # Backward compat: model_name without provider → sentence-transformers
         if provider is None and model_name is not None:
             self._provider = SentenceTransformerProvider(model_name=model_name)
@@ -375,9 +379,22 @@ class EmbeddingIndex:
 
     def add(self, tool_name: str, embedding: list[float]) -> None:
         self._embeddings[tool_name] = embedding
+        self._dirty = True
+
+    def _ensure_matrix(self) -> None:
+        """Build pre-normalized matrix for fast cosine similarity."""
+        if not self._dirty or not self._embeddings:
+            return
+        np = _require_numpy()
+        self._names = list(self._embeddings.keys())
+        mat = np.array([self._embeddings[n] for n in self._names], dtype=np.float32)
+        norms = np.linalg.norm(mat, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        self._matrix = mat / norms
+        self._dirty = False
 
     def search(self, query_embedding: list[float], top_k: int = 10) -> list[tuple[str, float]]:
-        """Cosine similarity search against stored embeddings."""
+        """Cosine similarity search via pre-computed matrix multiply."""
         np = _require_numpy()
 
         if not self._embeddings:
@@ -389,18 +406,15 @@ class EmbeddingIndex:
             return []
         q = q / q_norm
 
-        results: list[tuple[str, float]] = []
-        for name, emb in self._embeddings.items():
-            v = np.array(emb, dtype=np.float32)
-            v_norm = np.linalg.norm(v)
-            if v_norm == 0:
-                continue
-            v = v / v_norm
-            sim = float(np.dot(q, v))
-            results.append((name, sim))
-
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:top_k]
+        self._ensure_matrix()
+        sims = self._matrix @ q  # (N, D) @ (D,) = (N,)
+        k = min(top_k, len(sims))
+        if k >= len(sims):
+            top_idx = np.argsort(-sims)
+        else:
+            top_idx = np.argpartition(-sims, k)[:k]
+            top_idx = top_idx[np.argsort(-sims[top_idx])]
+        return [(self._names[i], float(sims[i])) for i in top_idx]
 
     @property
     def size(self) -> int:

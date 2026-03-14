@@ -598,6 +598,91 @@ class ToolGraph:
         engine = self._get_retrieval_engine()
         engine.set_diversity(lambda_)
 
+    # --- execution ---
+
+    def execute(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        base_url: str | None = None,
+        headers: dict[str, Any] | None = None,
+        auth_token: str | None = None,
+        timeout: int = 30,
+    ) -> dict[str, Any]:
+        """Execute an OpenAPI tool via HTTP.
+
+        Parameters
+        ----------
+        tool_name:
+            Name of the tool to execute (must exist in the graph).
+        arguments:
+            Parameter values. Path/query/body params are auto-classified.
+        base_url:
+            API base URL. If None, inferred from graph metadata.
+        headers:
+            Extra HTTP headers (e.g. custom auth).
+        auth_token:
+            Bearer token (shorthand for ``Authorization: Bearer <token>``).
+        timeout:
+            Request timeout in seconds (default: 30).
+        """
+        from graph_tool_call.execute.http_executor import HttpExecutor
+
+        tool = self._tools.get(tool_name)
+        if not tool:
+            raise ValueError(f"Tool '{tool_name}' not found")
+
+        effective_base = base_url or self._infer_base_url()
+        executor = HttpExecutor(
+            effective_base,
+            headers=headers,
+            auth_token=auth_token,
+            timeout=timeout,
+        )
+        return executor.execute(tool, arguments)
+
+    def dry_run(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        base_url: str | None = None,
+        headers: dict[str, Any] | None = None,
+        auth_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Preview an HTTP request without executing it.
+
+        Returns dict with ``method``, ``url``, ``headers``, and optional ``body``.
+        """
+        from graph_tool_call.execute.http_executor import HttpExecutor
+
+        tool = self._tools.get(tool_name)
+        if not tool:
+            raise ValueError(f"Tool '{tool_name}' not found")
+
+        effective_base = base_url or self._infer_base_url()
+        executor = HttpExecutor(
+            effective_base,
+            headers=headers,
+            auth_token=auth_token,
+        )
+        return executor.dry_run(tool, arguments)
+
+    def _infer_base_url(self) -> str:
+        """Infer API base URL from graph metadata."""
+        meta = getattr(self, "_metadata", {})
+        source_url = meta.get("source_url", "")
+        if source_url:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(source_url)
+            return f"{parsed.scheme}://{parsed.netloc}"
+        raise ValueError(
+            "base_url required: cannot infer from metadata. "
+            "Pass base_url explicitly or build graph from a URL source."
+        )
+
     def set_weights(
         self,
         *,

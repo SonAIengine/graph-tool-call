@@ -119,15 +119,25 @@ class BM25Scorer:
             return
 
         total_len = 0
+        self._tf_maps: dict[str, dict[str, int]] = {}  # pre-computed tf per doc
+        self._name_token_counts: dict[str, int] = {}  # operationId token count
         for name, tool in self._tools.items():
             tokens = self._tokenize_tool(tool)
             self._tool_tokens[name] = tokens
             self._doc_lens[name] = len(tokens)
             total_len += len(tokens)
 
+            # Pre-compute term frequency map
+            tf_map: dict[str, int] = {}
+            for t in tokens:
+                tf_map[t] = tf_map.get(t, 0) + 1
+            self._tf_maps[name] = tf_map
+
+            # Count name tokens for length penalty
+            self._name_token_counts[name] = len(self._tokenize(name))
+
             # Count document frequency (unique terms per document)
-            unique_terms = set(tokens)
-            for term in unique_terms:
+            for term in tf_map:
                 self._doc_freqs[term] = self._doc_freqs.get(term, 0) + 1
 
         self._avg_dl = total_len / self._n_docs if self._n_docs > 0 else 0.0
@@ -159,14 +169,10 @@ class BM25Scorer:
         query_tokens = self._expand_query_tokens(query_tokens, query)
 
         scores: dict[str, float] = {}
-        for name, doc_tokens in self._tool_tokens.items():
+        for name in self._tool_tokens:
             doc_len = self._doc_lens[name]
+            tf_map = self._tf_maps[name]
             doc_score = 0.0
-
-            # Count term frequencies in this document
-            tf_map: dict[str, int] = {}
-            for token in doc_tokens:
-                tf_map[token] = tf_map.get(token, 0) + 1
 
             for q_term in query_tokens:
                 tf = tf_map.get(q_term, 0)
@@ -183,9 +189,29 @@ class BM25Scorer:
                 doc_score += idf * numerator / denominator
 
             if doc_score > 0:
+                # Penalize long operationIds (noisy partial matches)
+                name_len = self._name_token_counts.get(name, 0)
+                if name_len > 6:
+                    doc_score *= 1.0 / (1.0 + 0.15 * (name_len - 6))
+
+                # Boost when query tokens appear as ordered subsequence in name
+                doc_score *= self._name_subsequence_boost(query_tokens, name)
+
                 scores[name] = doc_score
 
         return scores
+
+    def _name_subsequence_boost(self, query_tokens: list[str], tool_name: str) -> float:
+        """Boost score when query tokens match tool name in order."""
+        name_tokens = self._tokenize(tool_name)
+        if not name_tokens or not query_tokens:
+            return 1.0
+        qi = 0
+        for nt in name_tokens:
+            if qi < len(query_tokens) and nt == query_tokens[qi]:
+                qi += 1
+        match_ratio = qi / len(query_tokens)
+        return 1.0 + match_ratio * 0.5  # up to 1.5x boost
 
     @staticmethod
     def _tokenize_tool(tool: ToolSchema) -> list[str]:

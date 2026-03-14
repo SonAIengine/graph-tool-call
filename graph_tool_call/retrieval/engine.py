@@ -54,8 +54,8 @@ class RetrievalEngine:
         self,
         graph: GraphEngine,
         tools: dict[str, ToolSchema],
-        graph_weight: float = 0.7,
-        keyword_weight: float = 0.3,
+        graph_weight: float = 0.5,
+        keyword_weight: float = 0.5,
         embedding_weight: float = 0.0,
         annotation_weight: float = 0.2,
     ) -> None:
@@ -81,7 +81,8 @@ class RetrievalEngine:
         """Attach an EmbeddingIndex for hybrid search."""
         self._embedding_index = index
         # Rebalance weights when embedding is available.
-        # Keep BM25 influence strong — it's precise for exact keyword matches.
+        # Boost embedding to cover semantic/cross-language gaps;
+        # keep keyword strong for exact matches; reduce graph noise.
         if self._embedding_weight == 0.0:
             self._graph_weight = 0.45
             self._keyword_weight = 0.25
