@@ -18,6 +18,10 @@ Vector search finds *similar* tools, but misses the *workflow* they belong to.<b
 
 <br>
 
+<img src="assets/demo.gif" alt="graph-tool-call demo" width="800">
+
+<br>
+
 [![PyPI](https://img.shields.io/pypi/v/graph-tool-call.svg)](https://pypi.org/project/graph-tool-call/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
