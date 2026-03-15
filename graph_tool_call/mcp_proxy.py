@@ -559,8 +559,12 @@ def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
                             "description": "Exact tool name from search_tools results",
                         },
                         "arguments": {
-                            "type": "object",
-                            "description": "Arguments matching the tool's inputSchema",
+                            "oneOf": [
+                                {"type": "object"},
+                                {"type": "string"},
+                                {"type": "null"},
+                            ],
+                            "description": "Arguments for the tool (object or JSON string)",
                         },
                     },
                     "required": ["tool_name"],
@@ -629,7 +633,13 @@ def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
         # --- Meta-tool: call_backend_tool (fallback) ---
         if name == "call_backend_tool":
             tool_name = arguments.get("tool_name", "")
-            tool_args = arguments.get("arguments", {})
+            tool_args = arguments.get("arguments") or {}
+            # LLM clients may serialize arguments as a JSON string
+            if isinstance(tool_args, str):
+                try:
+                    tool_args = json.loads(tool_args)
+                except (json.JSONDecodeError, TypeError):
+                    tool_args = {}
             result = await proxy.call_tool(tool_name, tool_args)
             return result.content
 

@@ -224,6 +224,73 @@ def test_proxy_get_tool_schema():
     assert proxy.get_tool_schema("nonexistent") is None
 
 
+@pytest.mark.asyncio
+async def test_call_backend_tool_string_arguments():
+    """call_backend_tool should handle arguments serialized as JSON string."""
+    mcp_mod = pytest.importorskip("mcp", reason="mcp required")
+    types = mcp_mod.types
+
+    from graph_tool_call.mcp_proxy import create_proxy_server
+
+    proxy = MCPProxy([], top_k=5, passthrough_threshold=0)
+    proxy._build_tool_graph()
+    proxy._all_tools = {"my_tool": None}
+    proxy._tool_to_backend = {"my_tool": "backend1"}
+    proxy._gateway_mode = True
+
+    received_args = []
+
+    # Mock the backend connection
+    class FakeSession:
+        async def call_tool(self, name, arguments):
+            received_args.append(arguments)
+            return types.CallToolResult(content=[types.TextContent(type="text", text="ok")])
+
+    class FakeConn:
+        session = FakeSession()
+
+    proxy._connections = {"backend1": FakeConn()}
+
+    server = create_proxy_server(proxy)
+    handler = server.request_handlers[types.CallToolRequest]
+
+    # Case 1: arguments as JSON string (the bug this fix addresses)
+    request = types.CallToolRequest(
+        method="tools/call",
+        params=types.CallToolRequestParams(
+            name="call_backend_tool",
+            arguments={"tool_name": "my_tool", "arguments": '{"action": "check"}'},
+        ),
+    )
+    result = await handler(request)
+    assert not result.root.isError
+    assert received_args[-1] == {"action": "check"}
+
+    # Case 2: arguments as None
+    request2 = types.CallToolRequest(
+        method="tools/call",
+        params=types.CallToolRequestParams(
+            name="call_backend_tool",
+            arguments={"tool_name": "my_tool", "arguments": None},
+        ),
+    )
+    result2 = await handler(request2)
+    assert not result2.root.isError
+    assert received_args[-1] == {}
+
+    # Case 3: arguments as proper dict (should still work)
+    request3 = types.CallToolRequest(
+        method="tools/call",
+        params=types.CallToolRequestParams(
+            name="call_backend_tool",
+            arguments={"tool_name": "my_tool", "arguments": {"action": "check"}},
+        ),
+    )
+    result3 = await handler(request3)
+    assert not result3.root.isError
+    assert received_args[-1] == {"action": "check"}
+
+
 def test_create_gateway_server():
     """Gateway mode creates server with meta-tools."""
     pytest.importorskip("mcp", reason="mcp required")
