@@ -1,9 +1,9 @@
-# graph-tool-call demo — 4 scenarios
+# graph-tool-call demo — 3 scenarios
 Output assets/demo.gif
-Set Shell zsh
-Set FontSize 16
+Set Shell bash
+Set FontSize 15
 Set Width 1100
-Set Height 520
+Set Height 550
 Set Padding 20
 Set Margin 12
 Set MarginFill "#1a1b26"
@@ -15,14 +15,14 @@ Set LineHeight 1.3
 Set CursorBlink false
 Set Framerate 30
 Set PlaybackSpeed 1
-Set TypingSpeed 45ms
+Set TypingSpeed 40ms
 Set Theme "TokyoNight"
 
 Hide
-Type "export PATH=/Users/sonseongjun/Projects/personal/graph-tool-call/.venv/bin:$PATH"
+Type "export PATH=/home/son/projects/app/graph-tool-call/.venv/bin:$PATH"
 Enter
 Sleep 500ms
-Type "cd /Users/sonseongjun/Projects/personal/graph-tool-call"
+Type "cd /home/son/projects/app/graph-tool-call"
 Enter
 Sleep 500ms
 Type "clear"
@@ -30,9 +30,19 @@ Enter
 Sleep 300ms
 Show
 
-# === Scenario 1: Search 248 K8s API tools ===
-Sleep 500ms
-Type "graph-tool-call search 'delete a pod' --source benchmarks/specs/k8s_core_v1.json --scores"
+# ━━━ Scenario 1: Token Savings ━━━
+Sleep 300ms
+Type "echo ''"
+Enter
+Type "echo '  ━━━ 1. Token Savings: 248 K8s API tools ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'"
+Enter
+Type "echo '  LLMs choke on 248 tool definitions. graph-tool-call picks only what matters.'"
+Enter
+Type "echo ''"
+Enter
+Sleep 1.5s
+
+Type "python examples/token_savings_demo.py benchmarks/specs/k8s_core_v1.json 'scale my deployment and check health'"
 Enter
 Sleep 8s
 Sleep 3s
@@ -43,9 +53,19 @@ Enter
 Sleep 300ms
 Show
 
-# === Scenario 2: Token savings — K8s (248 tools) ===
-Sleep 500ms
-Type "python examples/token_savings_demo.py benchmarks/specs/k8s_core_v1.json 'delete a pod'"
+# ━━━ Scenario 2: Workflow Search — E-Commerce ━━━
+Sleep 300ms
+Type "echo ''"
+Enter
+Type "echo '  ━━━ 2. Workflow Search: E-Commerce (46 tools) ━━━━━━━━━━━━━━━━━━━━━━━━'"
+Enter
+Type "echo '  Vector search finds cancelOrder. graph-tool-call finds the full workflow.'"
+Enter
+Type "echo ''"
+Enter
+Sleep 1.5s
+
+Type "graph-tool-call search 'cancel my order and get a refund' --source tests/fixtures/ecommerce_openapi.json --scores"
 Enter
 Sleep 6s
 Sleep 3s
@@ -56,27 +76,19 @@ Enter
 Sleep 300ms
 Show
 
-# === Scenario 3: Token savings — GitHub API (58 tools) ===
-Sleep 500ms
-Type "python examples/token_savings_demo.py benchmarks/specs/github_subset.json 'create a pull request'"
+# ━━━ Scenario 3: Developer Workflow — GitHub API ━━━
+Sleep 300ms
+Type "echo ''"
+Enter
+Type "echo '  ━━━ 3. Developer Workflow: GitHub API (58 tools) ━━━━━━━━━━━━━━━━━━━━━━'"
+Enter
+Type "echo '  Every developer knows this flow. graph-tool-call finds it automatically.'"
+Enter
+Type "echo ''"
+Enter
+Sleep 1.5s
+
+Type "graph-tool-call search 'review and merge a pull request' --source benchmarks/specs/github_subset.json --scores"
 Enter
 Sleep 6s
-Sleep 3s
-
-Hide
-Type "clear"
-Enter
-Sleep 300ms
-Show
-
-# === Scenario 4: Ingest + Graph Info ===
-Sleep 500ms
-Type "graph-tool-call ingest benchmarks/specs/petstore3.json -o /tmp/petstore.json --organize"
-Enter
-Sleep 4s
-Sleep 1s
-
-Type "graph-tool-call info /tmp/petstore.json"
-Enter
-Sleep 3s
 Sleep 3s

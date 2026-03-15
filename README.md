@@ -2,9 +2,21 @@
 
 # graph-tool-call
 
-**Graph-based Tool Retrieval for LLM Agents**
+**LLM agents can't fit thousands of tool definitions into context.**<br>
+Vector search finds *similar* tools, but misses the *workflow* they belong to.<br>
+**graph-tool-call** builds a tool graph and retrieves the right chain — not just one match.
 
-Zero-dependency core. Collects tools from OpenAPI, MCP, Python functions, organizes relationships as a graph, and **retrieves only the tools needed for LLM agents**.
+<br>
+
+| | Baseline (all tools) | graph-tool-call |
+|---|:---:|:---:|
+| **248 tools (K8s API)** | 12% accuracy | **82% accuracy** |
+| **Token usage** | 8,192 tokens | 1,699 tokens (**79% reduction**) |
+| **50 tools (GitHub API)** | 100% accuracy | 90% accuracy, **88% fewer tokens** |
+
+<sub>Measured with qwen3:4b (4-bit) — <a href="#benchmark">full benchmark below</a></sub>
+
+<br>
 
 [![PyPI](https://img.shields.io/pypi/v/graph-tool-call.svg)](https://pypi.org/project/graph-tool-call/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -18,48 +30,50 @@ English · [한국어](README-ko.md) · [中文](README-zh_CN.md) · [日本語]
 
 ---
 
-## What is graph-tool-call?
+## The Problem
 
-The number of tools available to LLM agents is growing rapidly.
-A commerce platform may have **1,200+ API endpoints**, and a company's internal systems can have **500+ functions** across multiple services.
+LLM agents need tools. But as tool count grows, two things break:
 
-The problem is simple.
+1. **Context overflow** — 248 Kubernetes API endpoints = 8,192 tokens of tool definitions. The LLM chokes and accuracy drops to **12%**.
+2. **Vector search misses workflows** — Searching "cancel my order" finds `cancelOrder`, but the actual flow is `listOrders → getOrder → cancelOrder → processRefund`. Vector search returns one tool; you need the chain.
 
-> **You can't put all tool definitions in the context window every time.**
+**graph-tool-call** solves both. It models tool relationships as a graph, retrieves multi-step workflows via hybrid search (BM25 + graph traversal + embedding + MCP annotations), and cuts token usage by 64–91% while maintaining or improving accuracy.
 
-The common solution is vector search.
-Embed tool descriptions and find the tools closest to the user request.
+### At a Glance
 
-But real-world tool usage is different from document retrieval.
-
-- Some tools **lead to the next-step tool**.
-- Some tools **must be called together**.
-- Some tools are **read-only**, others are **destructive**.
-- Some tools **depend on the result of a previously called tool**.
-
-In other words, **tools are not independent text fragments — they are execution units that form workflows**.
-
-**graph-tool-call** focuses on this point.
-It treats tools not as a flat list but as a **graph with relationships**, and delivers only the tools the LLM needs via multi-signal hybrid retrieval.
+| What you get | How |
+|---|---|
+| **Workflow-aware retrieval** | Graph edges encode PRECEDES, REQUIRES, COMPLEMENTARY relations |
+| **Hybrid search** | BM25 + graph traversal + embedding + MCP annotations, fused via wRRF |
+| **Zero dependencies** | Core runs on Python stdlib only — add extras as needed |
+| **Any tool source** | Auto-ingest from OpenAPI / Swagger / MCP / Python functions |
+| **History-aware** | Previously called tools are demoted; next-step tools are boosted |
+| **MCP Proxy** | 172 tools across servers → 3 meta-tools, saving ~1,200 tokens/turn |
 
 ---
 
-## Why is it needed?
+## Why Not Just Vector Search?
 
-For example, suppose a user says:
+| Scenario | Vector-only | graph-tool-call |
+|----------|------------|-----------------|
+| *"cancel my order"* | Returns `cancelOrder` | `listOrders → getOrder → cancelOrder → processRefund` |
+| *"read and save file"* | Returns `read_file` | `read_file` + `write_file` (COMPLEMENTARY relation) |
+| *"delete old records"* | Returns any tool matching "delete" | Destructive tools ranked first via MCP annotations |
+| *"now cancel it"* (after listing orders) | No context from history | Demotes used tools, boosts next-step tools |
+| Multiple Swagger specs with overlapping tools | Duplicate tools in results | Cross-source auto-deduplication |
+| 1,200 API endpoints | Slow, noisy results | Categorized + graph traversal for precise retrieval |
 
-> Cancel my order and process a refund
+---
 
-Vector search can find `cancelOrder`.
-But actual execution usually requires the following flow:
+## How It Works
 
 ```text
-listOrders → getOrder → cancelOrder → processRefund
-````
+OpenAPI / MCP / Python functions → Ingest → Build tool graph → Hybrid retrieve → Agent
+```
 
-What matters is not "one similar tool" but **the execution flow that includes the needed tool and the tools that follow**.
+**Example**: User says *"cancel my order and process a refund"*
 
-graph-tool-call models these relationships as a graph.
+Vector search finds `cancelOrder`. But the actual workflow is:
 
 ```text
                     ┌──────────┐
@@ -76,53 +90,12 @@ graph-tool-call models these relationships as a graph.
                                  └──────────────┘
 ```
 
----
+graph-tool-call returns the entire chain, not just one tool. Retrieval combines four signals via **weighted Reciprocal Rank Fusion (wRRF)**:
 
-## Core Idea
-
-graph-tool-call operates with the following pipeline.
-
-```text
-OpenAPI / MCP / Code → Ingest → Analyze → Organize → Retrieve → Agent
-```
-
-The retrieval stage uses multiple signals together.
-
-* **BM25**: keyword matching
-* **Graph traversal**: relation-based expansion
-* **Embedding similarity**: semantic similarity
-* **MCP annotations**: read-only / destructive / idempotent / open-world hints
-
-These signals are combined via **weighted Reciprocal Rank Fusion (wRRF)**.
-
----
-
-## Key Features
-
-* **Zero dependencies** — core runs on Python stdlib only, add extras as needed
-* **Auto-ingest from OpenAPI / Swagger / MCP / Python functions**
-* **Tool relationship graph** construction and utilization
-* **Hybrid retrieval** based on BM25 + graph + embedding + annotation
-* **Workflow guidance** — search results include execution order + dependency hints
-* **History-aware retrieval** — previously called tools deprioritized automatically
-* **HTTP execution** — search → call APIs end-to-end (`ToolGraph.execute()`)
-* **Cross-encoder reranking** and **MMR diversity**
-* **LLM-enhanced ontology** — relation inference (REQUIRES, PRECEDES, COMPLEMENTARY)
-* **Duplicate tool detection and merging**
-* **HTML / GraphML / Cypher** export
-* **ai-api-lint integration** for automatic spec cleanup
-
----
-
-## When to use?
-
-graph-tool-call is especially effective in the following situations.
-
-* When the number of tools is too large to **fit entirely in the context window**
-* When **call ordering / relationship information** matters more than simple similarity
-* When retrieval needs to reflect **MCP annotations**
-* When you need to **unify tools from multiple API specs or services into a single retrieval layer**
-* When you want the agent to **find the next tool better based on previous call history**
+* **BM25** — keyword matching
+* **Graph traversal** — relation-based expansion (PRECEDES, REQUIRES, COMPLEMENTARY)
+* **Embedding similarity** — semantic search (optional, any provider)
+* **MCP annotations** — read-only / destructive / idempotent hints
 
 ---
 
@@ -913,19 +886,6 @@ pip install graph-tool-call[lint]
 ```python
 tg = ToolGraph.from_url(url, lint=True)
 ```
-
----
-
-## Why Not Just Vector Search?
-
-| Scenario | Vector-only | graph-tool-call |
-|----------|------------|-----------------|
-| *"cancel my order"* | Returns `cancelOrder` | `listOrders → getOrder → cancelOrder → processRefund` |
-| *"read and save file"* | Returns `read_file` | `read_file` + `write_file` (COMPLEMENTARY relation) |
-| *"delete old records"* | Returns any tool matching "delete" | Destructive tools ranked first |
-| *"now cancel it"* (history) | No context | Demotes used tools, boosts next-step tools |
-| Multiple Swagger specs with overlapping tools | Duplicate tools in results | Cross-source auto-deduplication |
-| 1,200 API endpoints | Slow, noisy results | Categorized + graph traversal for precise retrieval |
 
 ---
 
