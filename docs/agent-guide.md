@@ -86,6 +86,21 @@ select = ["E", "F", "I", "N", "W", "UP"]
 2. `poetry run ruff format --check .`
 3. `poetry run pytest tests/ -q`
 
+## 배포 프로세스
+버전을 올리고 PyPI에 배포할 때는 반드시 아래 순서를 따른다.
+
+1. 코드 수정 및 push
+2. **CI 통과 확인** (`gh run view` 또는 GitHub Actions 페이지)
+3. CI가 green이면 버전 bump (`pyproject.toml` + `graph_tool_call/__init__.py`)
+4. 버전 bump commit 및 push
+5. **CI 재확인** (버전 bump 커밋도 통과해야 함)
+6. `poetry build && uvx twine upload dist/graph_tool_call-{version}*`
+7. 서버 업데이트: `uv tool install "graph-tool-call[mcp]" --force --reinstall`
+
+주의:
+- CI 실패 상태에서 절대 PyPI 배포하지 않는다.
+- 버전은 `pyproject.toml`과 `__init__.py` 두 곳을 동시에 수정한다.
+
 ## 주요 경로
 ```text
 graph_tool_call/
