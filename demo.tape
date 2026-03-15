@@ -19,12 +19,9 @@ Set TypingSpeed 40ms
 Set Theme "TokyoNight"
 
 Hide
-Type "export PATH=/home/son/projects/app/graph-tool-call/.venv/bin:$PATH"
+Type "cd /home/son/projects/app/graph-tool-call && source .venv/bin/activate"
 Enter
-Sleep 500ms
-Type "cd /home/son/projects/app/graph-tool-call"
-Enter
-Sleep 500ms
+Sleep 1s
 Type "clear"
 Enter
 Sleep 300ms
@@ -44,7 +41,7 @@ Sleep 1.5s
 
 Type "python examples/token_savings_demo.py benchmarks/specs/k8s_core_v1.json 'scale my deployment and check health'"
 Enter
-Sleep 8s
+Sleep 15s
 Sleep 3s
 
 Hide
@@ -67,7 +64,7 @@ Sleep 1.5s
 
 Type "graph-tool-call search 'cancel my order and get a refund' --source tests/fixtures/ecommerce_openapi.json --scores"
 Enter
-Sleep 6s
+Sleep 8s
 Sleep 3s
 
 Hide
@@ -90,5 +87,5 @@ Sleep 1.5s
 
 Type "graph-tool-call search 'review and merge a pull request' --source benchmarks/specs/github_subset.json --scores"
 Enter
-Sleep 6s
+Sleep 8s
 Sleep 3s
