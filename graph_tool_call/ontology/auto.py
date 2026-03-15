@@ -257,7 +257,6 @@ def _llm_auto_organize(
     ]
 
     tool_names = {t.name for t in tools}
-    tool_map = {t.name: t for t in tools}
 
     # Infer relations
     relations = llm.infer_relations(summaries, batch_size=50)

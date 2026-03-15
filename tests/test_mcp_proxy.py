@@ -196,7 +196,7 @@ def test_proxy_search_updates_exposed_tools():
 
     class FakeTool:
         description = "fake"
-        inputSchema = {}
+        inputSchema = {}  # noqa: N815
 
     proxy._all_tools = {"get_users": FakeTool(), "create_user": FakeTool()}
 
@@ -212,7 +212,7 @@ def test_proxy_get_tool_schema():
 
     class FakeTool:
         description = "Fake tool description"
-        inputSchema = {"type": "object", "properties": {"a": {"type": "string"}}}
+        inputSchema = {"type": "object", "properties": {"a": {"type": "string"}}}  # noqa: N815
 
     proxy._all_tools = {"my_tool": FakeTool()}
     schema = proxy.get_tool_schema("my_tool")

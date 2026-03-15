@@ -389,19 +389,19 @@ class RetrievalEngine:
 
         result_names = {r.tool.name for r in results}
 
-        _USEFUL_RELATIONS = {
+        useful_relations = {
             RelationType.REQUIRES,
             RelationType.PRECEDES,
             RelationType.COMPLEMENTARY,
             RelationType.CONFLICTS_WITH,
         }
-        _HINTS_OUT = {
+        hints_out = {
             RelationType.REQUIRES: "Call {target} before this tool",
             RelationType.PRECEDES: "Call this tool before {target}",
             RelationType.COMPLEMENTARY: "Often used together with {target}",
             RelationType.CONFLICTS_WITH: "Conflicts with {target}",
         }
-        _HINTS_IN = {
+        hints_in = {
             RelationType.REQUIRES: "This tool is required by {source}",
             RelationType.PRECEDES: "{source} should be called before this tool",
         }
@@ -418,7 +418,7 @@ class RetrievalEngine:
 
             for src, tgt, attrs in edges:
                 rel_type = attrs.get("relation")
-                if rel_type not in _USEFUL_RELATIONS:
+                if rel_type not in useful_relations:
                     continue
 
                 # Outgoing: this tool → target
@@ -426,7 +426,7 @@ class RetrievalEngine:
 
                 if src == result.tool.name:
                     if tgt in result_names and tgt not in seen_targets:
-                        hint = _HINTS_OUT.get(rel_type, "").format(target=tgt)
+                        hint = hints_out.get(rel_type, "").format(target=tgt)
                         relations.append(ToolRelation(
                             target=tgt, type=rel_value, direction="outgoing", hint=hint,
                         ))
@@ -438,7 +438,7 @@ class RetrievalEngine:
                 # Incoming: source → this tool
                 elif tgt == result.tool.name:
                     if src in result_names and src not in seen_targets:
-                        hint = _HINTS_IN.get(rel_type, "").format(source=src)
+                        hint = hints_in.get(rel_type, "").format(source=src)
                         if hint:
                             relations.append(ToolRelation(
                                 target=src, type=rel_value, direction="incoming", hint=hint,
