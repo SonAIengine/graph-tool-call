@@ -28,17 +28,7 @@ Sleep 300ms
 Show
 
 # ━━━ Scenario 1: Token Savings ━━━
-Sleep 300ms
-Type "echo ''"
-Enter
-Type "echo '  ━━━ 1. Token Savings: 248 K8s API tools ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'"
-Enter
-Type "echo '  LLMs choke on 248 tool definitions. graph-tool-call picks only what matters.'"
-Enter
-Type "echo ''"
-Enter
-Sleep 1.5s
-
+Sleep 500ms
 Type "python examples/token_savings_demo.py benchmarks/specs/k8s_core_v1.json 'scale my deployment and check health'"
 Enter
 Sleep 15s
@@ -51,17 +41,7 @@ Sleep 300ms
 Show
 
 # ━━━ Scenario 2: Workflow Search — E-Commerce ━━━
-Sleep 300ms
-Type "echo ''"
-Enter
-Type "echo '  ━━━ 2. Workflow Search: E-Commerce (46 tools) ━━━━━━━━━━━━━━━━━━━━━━━━'"
-Enter
-Type "echo '  Vector search finds cancelOrder. graph-tool-call finds the full workflow.'"
-Enter
-Type "echo ''"
-Enter
-Sleep 1.5s
-
+Sleep 500ms
 Type "graph-tool-call search 'cancel my order and get a refund' --source tests/fixtures/ecommerce_openapi.json --scores"
 Enter
 Sleep 8s
@@ -74,17 +54,7 @@ Sleep 300ms
 Show
 
 # ━━━ Scenario 3: Developer Workflow — GitHub API ━━━
-Sleep 300ms
-Type "echo ''"
-Enter
-Type "echo '  ━━━ 3. Developer Workflow: GitHub API (58 tools) ━━━━━━━━━━━━━━━━━━━━━━'"
-Enter
-Type "echo '  Every developer knows this flow. graph-tool-call finds it automatically.'"
-Enter
-Type "echo ''"
-Enter
-Sleep 1.5s
-
+Sleep 500ms
 Type "graph-tool-call search 'review and merge a pull request' --source benchmarks/specs/github_subset.json --scores"
 Enter
 Sleep 8s
