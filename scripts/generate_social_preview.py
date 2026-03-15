@@ -1,8 +1,7 @@
 """Generate GitHub social preview image (1280x640)."""
 
-import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import numpy as np
+import matplotlib.pyplot as plt
 
 # ── Config ──
 WIDTH, HEIGHT = 1280, 640
@@ -23,13 +22,24 @@ ax.axis("off")
 
 # ── Title ──
 ax.text(
-    6.4, 5.6, "graph-tool-call",
-    fontsize=42, fontweight="bold", color=TEXT_COLOR,
-    ha="center", va="center", fontfamily="monospace",
+    6.4,
+    5.6,
+    "graph-tool-call",
+    fontsize=42,
+    fontweight="bold",
+    color=TEXT_COLOR,
+    ha="center",
+    va="center",
+    fontfamily="monospace",
 )
 ax.text(
-    6.4, 5.0, "Graph-based tool retrieval for LLM agents",
-    fontsize=18, color=DIM, ha="center", va="center",
+    6.4,
+    5.0,
+    "Graph-based tool retrieval for LLM agents",
+    fontsize=18,
+    color=DIM,
+    ha="center",
+    va="center",
 )
 
 # ── Benchmark bars ──
@@ -50,29 +60,48 @@ for i, (label, value, color, pct_label) in enumerate(scenarios):
 
     # Bar background
     bg_rect = mpatches.FancyBboxPatch(
-        (bar_x_start, y - bar_height / 2), bar_max_width, bar_height,
-        boxstyle="round,pad=0.05", facecolor="#161b22", edgecolor="none",
+        (bar_x_start, y - bar_height / 2),
+        bar_max_width,
+        bar_height,
+        boxstyle="round,pad=0.05",
+        facecolor="#161b22",
+        edgecolor="none",
     )
     ax.add_patch(bg_rect)
 
     # Bar fill
     fill_rect = mpatches.FancyBboxPatch(
-        (bar_x_start, y - bar_height / 2), w, bar_height,
-        boxstyle="round,pad=0.05", facecolor=color, edgecolor="none", alpha=0.85,
+        (bar_x_start, y - bar_height / 2),
+        w,
+        bar_height,
+        boxstyle="round,pad=0.05",
+        facecolor=color,
+        edgecolor="none",
+        alpha=0.85,
     )
     ax.add_patch(fill_rect)
 
     # Percentage
     ax.text(
-        bar_x_start + w + 0.2, y, pct_label,
-        fontsize=22, fontweight="bold", color=color,
-        ha="left", va="center",
+        bar_x_start + w + 0.2,
+        y,
+        pct_label,
+        fontsize=22,
+        fontweight="bold",
+        color=color,
+        ha="left",
+        va="center",
     )
 
     # Label
     ax.text(
-        bar_x_start - 0.1, y, label,
-        fontsize=13, color=DIM, ha="right", va="center",
+        bar_x_start - 0.1,
+        y,
+        label,
+        fontsize=13,
+        color=DIM,
+        ha="right",
+        va="center",
     )
 
 # ── Bottom stats ──
