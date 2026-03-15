@@ -310,9 +310,7 @@ class MCPProxy:
         from graph_tool_call.retrieval.engine import build_workflow_summary
 
         k = top_k or self._top_k
-        results = self._tg.retrieve_with_scores(
-            query, top_k=k, history=self._call_history or None
-        )
+        results = self._tg.retrieve_with_scores(query, top_k=k, history=self._call_history or None)
         self._last_workflow = build_workflow_summary(results)
 
         # Zero-result fallback
@@ -354,8 +352,12 @@ class MCPProxy:
                 entry["category"] = r.tool.domain
             if r.relations:
                 entry["relations"] = [
-                    {"target": rel.target, "type": rel.type,
-                     "direction": rel.direction, "hint": rel.hint}
+                    {
+                        "target": rel.target,
+                        "type": rel.type,
+                        "direction": rel.direction,
+                        "hint": rel.hint,
+                    }
                     for rel in r.relations
                 ]
             if r.prerequisites:

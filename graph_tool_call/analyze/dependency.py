@@ -510,9 +510,7 @@ def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
     # → tool B depends on tool A (tool B REQUIRES tool A)
     # Only POST/creator tools can be dependency targets to avoid noisy relations.
     creators = {
-        t.name: tool_tokens[t.name]
-        for t in tools
-        if t.metadata.get("method", "").lower() == "post"
+        t.name: tool_tokens[t.name] for t in tools if t.metadata.get("method", "").lower() == "post"
     }
     for creator_name, resource_tokens in creators.items():
         if not resource_tokens:

@@ -56,8 +56,12 @@ def main() -> None:
     before_bar = bar(1.0)
     after_bar = bar(top_tokens / all_tokens)
     n_all = len(all_tools)
-    before_line = f"  {DIM}Before{RESET}  {before_bar}  {RED}{all_tokens:,} tokens{RESET}  ({n_all} tools)"  # noqa: E501
-    after_line = f"  {BOLD}After{RESET}   {after_bar}  {GREEN}{top_tokens:,} tokens{RESET}  ({top_k} tools)"  # noqa: E501
+    before_line = (
+        f"  {DIM}Before{RESET}  {before_bar}  {RED}{all_tokens:,} tokens{RESET}  ({n_all} tools)"  # noqa: E501
+    )
+    after_line = (
+        f"  {BOLD}After{RESET}   {after_bar}  {GREEN}{top_tokens:,} tokens{RESET}  ({top_k} tools)"  # noqa: E501
+    )
     print(before_line)
     print(after_line)
     print()
