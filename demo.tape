@@ -2,7 +2,6 @@
 Output assets/demo.gif
 Set Shell zsh
 Set FontSize 16
-Set FontFamily "JetBrains Mono"
 Set Width 1100
 Set Height 520
 Set Padding 20
