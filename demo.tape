@@ -1,12 +1,23 @@
 # graph-tool-call demo — 4 scenarios
 Output assets/demo.gif
 Set Shell zsh
-Set FontSize 18
+Set FontSize 16
+Set FontFamily "JetBrains Mono"
 Set Width 1100
-Set Height 500
+Set Height 520
 Set Padding 20
+Set Margin 12
+Set MarginFill "#1a1b26"
+Set BorderRadius 10
+Set WindowBar Colorful
+Set WindowBarSize 36
+Set LetterSpacing 0
+Set LineHeight 1.3
+Set CursorBlink false
+Set Framerate 30
+Set PlaybackSpeed 1
 Set TypingSpeed 45ms
-Set Theme "Dracula"
+Set Theme "TokyoNight"
 
 Hide
 Type "export PATH=/Users/sonseongjun/Projects/personal/graph-tool-call/.venv/bin:$PATH"
