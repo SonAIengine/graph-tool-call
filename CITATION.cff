@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "graph-tool-call"
+abstract: "Graph-structured tool retrieval for LLM agents — zero-dependency, ontology-aware hybrid search"
+authors:
+  - name: "SonAIengine"
+license: MIT
+url: "https://github.com/SonAIengine/graph-tool-call"
+repository-code: "https://github.com/SonAIengine/graph-tool-call"
+keywords:
+  - llm
+  - agent
+  - tool-calling
+  - graph
+  - mcp
+  - openapi
+  - hybrid-search
+  - bm25

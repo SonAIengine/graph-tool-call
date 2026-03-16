@@ -10,17 +10,25 @@ authors = ["SonAIengine"]
 license = "MIT"
 readme = "README.md"
 packages = [{include = "graph_tool_call"}]
-keywords = ["llm", "agent", "tool-calling", "graph", "langchain"]
+keywords = [
+    "llm", "agent", "tool-calling", "function-calling", "graph",
+    "langchain", "mcp", "mcp-server", "openapi", "swagger",
+    "tool-retrieval", "rag", "bm25", "hybrid-search", "workflow",
+    "openai", "anthropic", "claude", "token-optimization", "agentic",
+    "zero-dependency",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
 ]
 
 [tool.poetry.urls]
