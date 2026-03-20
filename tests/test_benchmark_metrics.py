@@ -6,7 +6,14 @@ import math
 
 import pytest
 
-from benchmarks.metrics import ndcg_at_k, precision_at_k, recall_at_k, workflow_coverage
+from benchmarks.metrics import (
+    average_precision,
+    mrr,
+    ndcg_at_k,
+    precision_at_k,
+    recall_at_k,
+    workflow_coverage,
+)
 
 
 class TestPrecisionAtK:
@@ -70,6 +77,52 @@ class TestNdcgAtK:
 
     def test_k_zero(self):
         assert ndcg_at_k(["a"], {"a"}, 0) == 0.0
+
+
+class TestMRR:
+    def test_first_hit(self):
+        assert mrr(["a", "b", "c"], {"a"}) == 1.0
+
+    def test_second_hit(self):
+        assert mrr(["x", "a", "b"], {"a", "b"}) == pytest.approx(0.5)
+
+    def test_third_hit(self):
+        assert mrr(["x", "y", "a"], {"a"}) == pytest.approx(1.0 / 3)
+
+    def test_no_hit(self):
+        assert mrr(["x", "y", "z"], {"a"}) == 0.0
+
+    def test_empty_retrieved(self):
+        assert mrr([], {"a"}) == 0.0
+
+    def test_empty_relevant(self):
+        assert mrr(["a", "b"], set()) == 0.0
+
+
+class TestAveragePrecision:
+    def test_perfect_ranking(self):
+        assert average_precision(["a", "b", "c"], {"a", "b", "c"}) == pytest.approx(1.0)
+
+    def test_no_relevant(self):
+        assert average_precision(["x", "y"], {"a", "b"}) == 0.0
+
+    def test_interleaved(self):
+        # retrieved: a, x, b → hits at pos 1 (prec=1/1) and pos 3 (prec=2/3)
+        # AP = (1/1 + 2/3) / 2 = 5/6
+        assert average_precision(["a", "x", "b"], {"a", "b"}) == pytest.approx(5.0 / 6)
+
+    def test_relevant_at_end(self):
+        # retrieved: x, y, a → hit at pos 3 (prec=1/3)
+        # AP = (1/3) / 1 = 1/3
+        assert average_precision(["x", "y", "a"], {"a"}) == pytest.approx(1.0 / 3)
+
+    def test_empty_relevant(self):
+        assert average_precision(["a"], set()) == 1.0
+
+    def test_partial_recall(self):
+        # retrieved: a, x → hit at pos 1 (prec=1/1)
+        # AP = (1/1) / 2 = 0.5 (denominator is len(relevant)=2)
+        assert average_precision(["a", "x"], {"a", "b"}) == pytest.approx(0.5)
 
 
 class TestWorkflowCoverage:

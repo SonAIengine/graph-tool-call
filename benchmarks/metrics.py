@@ -96,6 +96,55 @@ def ndcg_at_k(retrieved: list[str], relevant: set[str], k: int) -> float:
     return dcg / idcg
 
 
+def mrr(retrieved: list[str], relevant: set[str]) -> float:
+    """Mean Reciprocal Rank: 1/rank of the first relevant result.
+
+    Parameters
+    ----------
+    retrieved:
+        Ordered list of retrieved tool names.
+    relevant:
+        Set of relevant (ground-truth) tool names.
+
+    Returns
+    -------
+    float
+        1/rank of first relevant item, or 0.0 if none found.
+    """
+    for i, name in enumerate(retrieved):
+        if name in relevant:
+            return 1.0 / (i + 1)
+    return 0.0
+
+
+def average_precision(retrieved: list[str], relevant: set[str]) -> float:
+    """Average Precision: average of precision@k at each relevant hit.
+
+    Parameters
+    ----------
+    retrieved:
+        Ordered list of retrieved tool names.
+    relevant:
+        Set of relevant (ground-truth) tool names.
+
+    Returns
+    -------
+    float
+        AP value between 0.0 and 1.0.
+    """
+    if not relevant:
+        return 1.0
+    hits = 0
+    sum_precision = 0.0
+    for i, name in enumerate(retrieved):
+        if name in relevant:
+            hits += 1
+            sum_precision += hits / (i + 1)
+    if hits == 0:
+        return 0.0
+    return sum_precision / len(relevant)
+
+
 def workflow_coverage(
     retrieved: list[str],
     workflow_steps: list[str],

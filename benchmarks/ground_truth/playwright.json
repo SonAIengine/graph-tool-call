@@ -1,0 +1,157 @@
+{
+  "name": "Playwright MCP",
+  "description": "Playwright browser automation — 22 tools for web interaction, navigation, and testing",
+  "tool_count": 22,
+  "queries": [
+    {
+      "query": "Take a screenshot of the current page",
+      "expected_tools": ["browser_take_screenshot"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Click the submit button",
+      "expected_tools": ["browser_click"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Go to https://example.com",
+      "expected_tools": ["browser_navigate"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Type my email into the login form",
+      "expected_tools": ["browser_type"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Fill out the registration form with name and email",
+      "expected_tools": ["browser_fill_form"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Press Enter to submit",
+      "expected_tools": ["browser_press_key"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Upload my profile picture",
+      "expected_tools": ["browser_file_upload"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Select the country from the dropdown",
+      "expected_tools": ["browser_select_option"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Hover over the menu to see the submenu",
+      "expected_tools": ["browser_hover"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Drag the item to the shopping cart",
+      "expected_tools": ["browser_drag"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Go back to the previous page",
+      "expected_tools": ["browser_navigate_back"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Wait until the loading spinner disappears",
+      "expected_tools": ["browser_wait_for"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Get the accessibility tree of the page",
+      "expected_tools": ["browser_snapshot"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Check if there are any console errors",
+      "expected_tools": ["browser_console_messages"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "See all network requests the page made",
+      "expected_tools": ["browser_network_requests"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Run some JavaScript to get the page title",
+      "expected_tools": ["browser_evaluate"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Close the browser tab",
+      "expected_tools": ["browser_close"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Accept the cookie consent popup",
+      "expected_tools": ["browser_handle_dialog"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Resize the window to mobile dimensions",
+      "expected_tools": ["browser_resize"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Switch to the second tab",
+      "expected_tools": ["browser_tabs"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Install the browser if not available",
+      "expected_tools": ["browser_install"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Run a Playwright test script",
+      "expected_tools": ["browser_run_code"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Open a website, fill the search box, and click search",
+      "expected_tools": ["browser_navigate", "browser_fill_form", "browser_click"],
+      "category": "workflow",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Check if the page has loaded by looking at the DOM",
+      "expected_tools": ["browser_snapshot", "browser_evaluate"],
+      "category": "read",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Dismiss the alert dialog box",
+      "expected_tools": ["browser_handle_dialog"],
+      "category": "write",
+      "difficulty": "medium"
+    }
+  ]
+}

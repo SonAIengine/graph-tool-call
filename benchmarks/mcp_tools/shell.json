@@ -1,0 +1,152 @@
+{
+  "name": "shell",
+  "description": "Shell/system MCP tools — bash execution, process management, system info",
+  "tools": [
+    {
+      "name": "run_command",
+      "description": "Execute a shell command and return stdout/stderr",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {"type": "string", "description": "Shell command to execute"},
+          "cwd": {"type": "string", "description": "Working directory"},
+          "timeout": {"type": "integer", "description": "Timeout in seconds"}
+        },
+        "required": ["command"]
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": true}
+    },
+    {
+      "name": "run_script",
+      "description": "Execute a multi-line shell script",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "script": {"type": "string", "description": "Shell script content"},
+          "interpreter": {"type": "string", "description": "Script interpreter (bash, python, node)"}
+        },
+        "required": ["script"]
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": true}
+    },
+    {
+      "name": "list_processes",
+      "description": "List running processes with CPU and memory usage",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filter": {"type": "string", "description": "Filter by process name"}
+        }
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "kill_process",
+      "description": "Kill a running process by PID or name",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pid": {"type": "integer", "description": "Process ID to kill"},
+          "signal": {"type": "string", "description": "Signal to send (TERM, KILL, etc.)"}
+        },
+        "required": ["pid"]
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": true}
+    },
+    {
+      "name": "get_system_info",
+      "description": "Get system information: OS, CPU, memory, disk usage",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "get_disk_usage",
+      "description": "Check disk space usage for a path or all mounted filesystems",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Path to check disk usage for"}
+        }
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "get_network_info",
+      "description": "Get network interfaces, IP addresses, and connection status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "set_environment_variable",
+      "description": "Set an environment variable for the current session",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Variable name"},
+          "value": {"type": "string", "description": "Variable value"}
+        },
+        "required": ["name", "value"]
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "get_environment_variable",
+      "description": "Get the value of an environment variable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Variable name"}
+        },
+        "required": ["name"]
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "install_package",
+      "description": "Install a system or language package (apt, pip, npm, etc.)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "package": {"type": "string", "description": "Package name to install"},
+          "manager": {"type": "string", "description": "Package manager (apt, pip, npm, cargo)"}
+        },
+        "required": ["package"]
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": false}
+    },
+    {
+      "name": "http_request",
+      "description": "Make an HTTP request (GET, POST, PUT, DELETE) to a URL",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {"type": "string", "description": "Request URL"},
+          "method": {"type": "string", "description": "HTTP method"},
+          "headers": {"type": "object", "description": "Request headers"},
+          "body": {"type": "string", "description": "Request body"}
+        },
+        "required": ["url"]
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "watch_file",
+      "description": "Watch a file or directory for changes and report events",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Path to watch"},
+          "events": {"type": "array", "items": {"type": "string"}, "description": "Event types to watch (create, modify, delete)"}
+        },
+        "required": ["path"]
+      },
+      "annotations": {"readOnlyHint": true}
+    }
+  ]
+}

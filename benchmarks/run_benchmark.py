@@ -21,7 +21,7 @@ import sys
 from datetime import datetime, timezone
 
 from benchmarks.config import DATASET_REGISTRY, BenchmarkConfig
-from benchmarks.metrics import recall_at_k
+from benchmarks.metrics import average_precision, mrr, ndcg_at_k, recall_at_k
 from benchmarks.reporter import (
     BenchmarkReport,
     DatasetResult,
@@ -79,6 +79,8 @@ def run_retrieval_benchmark(
         top_k=config.top_k,
     )
 
+    import time
+
     for ds_name in config.datasets:
         reg = DATASET_REGISTRY.get(ds_name)
         if not reg or reg.get("legacy"):
@@ -91,11 +93,31 @@ def run_retrieval_benchmark(
         ds_result = DatasetResult(name=gt["name"], tool_count=gt.get("tool_count", len(tg._tools)))
 
         for q in gt["queries"]:
-            results = tg.retrieve(q["query"], top_k=config.top_k)
-            retrieved_names = [r.name for r in results]
             expected = set(q["expected_tools"])
 
+            # Retrieve with scores for component attribution
+            start = time.perf_counter()
+            scored_results = tg.retrieve_with_scores(q["query"], top_k=config.top_k)
+            elapsed_ms = (time.perf_counter() - start) * 1000
+
+            retrieved_names = [r.tool.name for r in scored_results]
+
+            # Compute all metrics
             recall = recall_at_k(retrieved_names, expected, config.top_k)
+            query_mrr = mrr(retrieved_names, expected)
+            query_ap = average_precision(retrieved_names, expected)
+            query_ndcg = ndcg_at_k(retrieved_names, expected, config.top_k)
+
+            # Component attribution: average score breakdown of top-1 result
+            breakdown: dict[str, float] = {}
+            if scored_results:
+                top1 = scored_results[0]
+                breakdown = {
+                    "keyword": top1.keyword_score,
+                    "graph": top1.graph_score,
+                    "embedding": top1.embedding_score,
+                    "annotation": top1.annotation_score,
+                }
 
             qr = QueryResult(
                 query=q["query"],
@@ -103,13 +125,21 @@ def run_retrieval_benchmark(
                 difficulty=q.get("difficulty", ""),
                 expected_tools=q["expected_tools"],
                 recall_at_k=recall,
+                mrr=query_mrr,
+                average_precision=query_ap,
+                ndcg_at_k=query_ndcg,
+                latency_ms=elapsed_ms,
                 retrieved_tools=retrieved_names,
+                score_breakdown=breakdown,
             )
             ds_result.queries.append(qr)
 
             if config.verbose:
                 mark = "✓" if recall == 1.0 else "✗"
-                print(f"    {mark} [{recall:.0%}] {q['query']}")
+                print(
+                    f"    {mark} [{recall:.0%}] {q['query']}"
+                    f"  (MRR={query_mrr:.2f}, {elapsed_ms:.1f}ms)"
+                )
                 if recall < 1.0:
                     print(f"        expected: {q['expected_tools']}")
                     print(f"        got:      {retrieved_names}")

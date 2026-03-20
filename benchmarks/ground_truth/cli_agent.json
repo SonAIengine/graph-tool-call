@@ -1,0 +1,307 @@
+{
+  "name": "CLI Agent (78 tools)",
+  "description": "Full CLI agent tool set — filesystem + git + docker + shell + github (78 tools). Simulates a coding agent choosing the right tool for developer tasks.",
+  "tool_count": 78,
+  "queries": [
+    {
+      "query": "Read the README file",
+      "expected_tools": ["read_file"],
+      "category": "file",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Write unit test results to output.txt",
+      "expected_tools": ["write_file"],
+      "category": "file",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Find all Python files in the project",
+      "expected_tools": ["search_files"],
+      "category": "file",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Show the project directory tree",
+      "expected_tools": ["directory_tree"],
+      "category": "file",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Edit the import statements in app.py",
+      "expected_tools": ["edit_file"],
+      "category": "file",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Check what files have been modified",
+      "expected_tools": ["git_status"],
+      "category": "git",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Show recent commit history",
+      "expected_tools": ["git_log"],
+      "category": "git",
+      "difficulty": "easy"
+    },
+    {
+      "query": "See the changes I made",
+      "expected_tools": ["git_diff"],
+      "category": "git",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Commit my changes with a message",
+      "expected_tools": ["git_commit"],
+      "category": "git",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Stage the modified files",
+      "expected_tools": ["git_add"],
+      "category": "git",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a new feature branch",
+      "expected_tools": ["git_checkout", "git_branch"],
+      "category": "git",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Push my branch to origin",
+      "expected_tools": ["git_push"],
+      "category": "git",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Pull the latest changes from remote",
+      "expected_tools": ["git_pull"],
+      "category": "git",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Merge the feature branch into main",
+      "expected_tools": ["git_merge"],
+      "category": "git",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Save my work-in-progress without committing",
+      "expected_tools": ["git_stash"],
+      "category": "git",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Who last changed this line of code?",
+      "expected_tools": ["git_blame"],
+      "category": "git",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Clone the repository",
+      "expected_tools": ["git_clone"],
+      "category": "git",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a release tag v2.0",
+      "expected_tools": ["git_tag"],
+      "category": "git",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Run the test suite",
+      "expected_tools": ["run_command"],
+      "category": "shell",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Install the numpy package",
+      "expected_tools": ["install_package"],
+      "category": "shell",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Check how much disk space is left",
+      "expected_tools": ["get_disk_usage"],
+      "category": "shell",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Kill the hung process",
+      "expected_tools": ["kill_process"],
+      "category": "shell",
+      "difficulty": "medium"
+    },
+    {
+      "query": "What processes are using the most CPU?",
+      "expected_tools": ["list_processes"],
+      "category": "shell",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Set the DATABASE_URL environment variable",
+      "expected_tools": ["set_environment_variable"],
+      "category": "shell",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Make an API call to the health endpoint",
+      "expected_tools": ["http_request"],
+      "category": "shell",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Start the app container",
+      "expected_tools": ["docker_run"],
+      "category": "docker",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Check running containers",
+      "expected_tools": ["docker_list_containers"],
+      "category": "docker",
+      "difficulty": "easy"
+    },
+    {
+      "query": "View container logs",
+      "expected_tools": ["docker_logs"],
+      "category": "docker",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Stop the database container",
+      "expected_tools": ["docker_stop"],
+      "category": "docker",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Build the Docker image from Dockerfile",
+      "expected_tools": ["docker_build"],
+      "category": "docker",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Run a command inside the container",
+      "expected_tools": ["docker_exec"],
+      "category": "docker",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Start all services with docker compose",
+      "expected_tools": ["docker_compose_up"],
+      "category": "docker",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Tear down the compose stack",
+      "expected_tools": ["docker_compose_down"],
+      "category": "docker",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Pull the latest postgres image",
+      "expected_tools": ["docker_pull"],
+      "category": "docker",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Open an issue for the bug",
+      "expected_tools": ["create_issue"],
+      "category": "github",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Open a pull request",
+      "expected_tools": ["create_pull_request"],
+      "category": "github",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Search for repos about kubernetes",
+      "expected_tools": ["search_repositories"],
+      "category": "github",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Fork the upstream project",
+      "expected_tools": ["fork_repository"],
+      "category": "github",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Merge the approved PR",
+      "expected_tools": ["merge_pull_request"],
+      "category": "github",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Fix the bug, stage changes, commit, and push",
+      "expected_tools": ["edit_file", "git_add", "git_commit", "git_push"],
+      "category": "workflow",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Build the Docker image and push to registry",
+      "expected_tools": ["docker_build", "docker_push"],
+      "category": "workflow",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Check container logs to debug the crash",
+      "expected_tools": ["docker_logs"],
+      "category": "docker",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Undo the last commit but keep the changes",
+      "expected_tools": ["git_reset"],
+      "category": "git",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Run a Python script to migrate the database",
+      "expected_tools": ["run_command", "run_script"],
+      "category": "shell",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Deploy — build image, push, then compose up",
+      "expected_tools": ["docker_build", "docker_push", "docker_compose_up"],
+      "category": "workflow",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Remove the old container and its image",
+      "expected_tools": ["docker_remove"],
+      "category": "docker",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Check the server's IP address",
+      "expected_tools": ["get_network_info"],
+      "category": "shell",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Watch for file changes in the src directory",
+      "expected_tools": ["watch_file"],
+      "category": "shell",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Get detailed info about the nginx container",
+      "expected_tools": ["docker_inspect"],
+      "category": "docker",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Check system memory and CPU info",
+      "expected_tools": ["get_system_info"],
+      "category": "shell",
+      "difficulty": "easy"
+    }
+  ]
+}

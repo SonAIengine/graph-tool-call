@@ -1,0 +1,414 @@
+{
+  "openapi": "3.0.0",
+  "info": {"title": "E-Commerce Platform API", "version": "2.0.0"},
+  "paths": {
+    "/users": {
+      "get": {
+        "operationId": "listUsers",
+        "summary": "List all users with pagination",
+        "tags": ["users"],
+        "parameters": [
+          {"name": "page", "in": "query", "schema": {"type": "integer"}},
+          {"name": "limit", "in": "query", "schema": {"type": "integer"}},
+          {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["active", "inactive", "banned"]}}
+        ],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "post": {
+        "operationId": "createUser",
+        "summary": "Create a new user account",
+        "tags": ["users"],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["email", "name"], "properties": {"email": {"type": "string"}, "name": {"type": "string"}, "phone": {"type": "string"}}}}}},
+        "responses": {"201": {"description": "Created"}}
+      }
+    },
+    "/users/{userId}": {
+      "get": {
+        "operationId": "getUser",
+        "summary": "Get user by ID",
+        "tags": ["users"],
+        "parameters": [{"name": "userId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "put": {
+        "operationId": "updateUser",
+        "summary": "Update user profile",
+        "tags": ["users"],
+        "parameters": [{"name": "userId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"name": {"type": "string"}, "phone": {"type": "string"}, "address": {"type": "string"}}}}}},
+        "responses": {"200": {"description": "OK"}}
+      },
+      "delete": {
+        "operationId": "deleteUser",
+        "summary": "Delete a user account permanently",
+        "tags": ["users"],
+        "parameters": [{"name": "userId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"204": {"description": "Deleted"}}
+      }
+    },
+    "/users/{userId}/orders": {
+      "get": {
+        "operationId": "getUserOrders",
+        "summary": "Get all orders for a specific user",
+        "tags": ["users", "orders"],
+        "parameters": [{"name": "userId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/users/{userId}/addresses": {
+      "get": {
+        "operationId": "listUserAddresses",
+        "summary": "List shipping addresses for a user",
+        "tags": ["users"],
+        "parameters": [{"name": "userId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "post": {
+        "operationId": "addUserAddress",
+        "summary": "Add a new shipping address",
+        "tags": ["users"],
+        "parameters": [{"name": "userId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["street", "city", "zipCode"], "properties": {"street": {"type": "string"}, "city": {"type": "string"}, "zipCode": {"type": "string"}, "country": {"type": "string"}}}}}},
+        "responses": {"201": {"description": "Created"}}
+      }
+    },
+    "/products": {
+      "get": {
+        "operationId": "listProducts",
+        "summary": "List all products with filtering and sorting",
+        "tags": ["products"],
+        "parameters": [
+          {"name": "category", "in": "query", "schema": {"type": "string"}},
+          {"name": "minPrice", "in": "query", "schema": {"type": "number"}},
+          {"name": "maxPrice", "in": "query", "schema": {"type": "number"}},
+          {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["price_asc", "price_desc", "name", "newest"]}},
+          {"name": "inStock", "in": "query", "schema": {"type": "boolean"}}
+        ],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "post": {
+        "operationId": "createProduct",
+        "summary": "Create a new product listing",
+        "tags": ["products"],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["name", "price", "category"], "properties": {"name": {"type": "string"}, "price": {"type": "number"}, "category": {"type": "string"}, "description": {"type": "string"}, "stock": {"type": "integer"}}}}}},
+        "responses": {"201": {"description": "Created"}}
+      }
+    },
+    "/products/{productId}": {
+      "get": {
+        "operationId": "getProduct",
+        "summary": "Get product details by ID",
+        "tags": ["products"],
+        "parameters": [{"name": "productId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "put": {
+        "operationId": "updateProduct",
+        "summary": "Update product information",
+        "tags": ["products"],
+        "parameters": [{"name": "productId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "delete": {
+        "operationId": "deleteProduct",
+        "summary": "Remove a product from the catalog",
+        "tags": ["products"],
+        "parameters": [{"name": "productId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"204": {"description": "Deleted"}}
+      }
+    },
+    "/products/search": {
+      "get": {
+        "operationId": "searchProducts",
+        "summary": "Full-text search across product names and descriptions",
+        "tags": ["products"],
+        "parameters": [
+          {"name": "q", "in": "query", "required": true, "schema": {"type": "string"}},
+          {"name": "limit", "in": "query", "schema": {"type": "integer"}}
+        ],
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/products/{productId}/reviews": {
+      "get": {
+        "operationId": "listProductReviews",
+        "summary": "Get all reviews for a product",
+        "tags": ["products", "reviews"],
+        "parameters": [{"name": "productId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "post": {
+        "operationId": "createProductReview",
+        "summary": "Submit a review for a product",
+        "tags": ["reviews"],
+        "parameters": [{"name": "productId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["rating", "comment"], "properties": {"rating": {"type": "integer", "minimum": 1, "maximum": 5}, "comment": {"type": "string"}}}}}},
+        "responses": {"201": {"description": "Created"}}
+      }
+    },
+    "/products/{productId}/inventory": {
+      "get": {
+        "operationId": "getProductInventory",
+        "summary": "Check current inventory level for a product",
+        "tags": ["inventory"],
+        "parameters": [{"name": "productId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "put": {
+        "operationId": "updateProductInventory",
+        "summary": "Update inventory stock level",
+        "tags": ["inventory"],
+        "parameters": [{"name": "productId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["quantity"], "properties": {"quantity": {"type": "integer"}, "warehouse": {"type": "string"}}}}}},
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/categories": {
+      "get": {
+        "operationId": "listCategories",
+        "summary": "List all product categories",
+        "tags": ["categories"],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "post": {
+        "operationId": "createCategory",
+        "summary": "Create a new product category",
+        "tags": ["categories"],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "parentId": {"type": "string"}, "description": {"type": "string"}}}}}},
+        "responses": {"201": {"description": "Created"}}
+      }
+    },
+    "/orders": {
+      "get": {
+        "operationId": "listOrders",
+        "summary": "List all orders with status filtering",
+        "tags": ["orders"],
+        "parameters": [
+          {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["pending", "confirmed", "shipped", "delivered", "cancelled", "refunded"]}},
+          {"name": "from", "in": "query", "schema": {"type": "string", "format": "date"}},
+          {"name": "to", "in": "query", "schema": {"type": "string", "format": "date"}}
+        ],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "post": {
+        "operationId": "createOrder",
+        "summary": "Place a new order",
+        "tags": ["orders"],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["userId", "items"], "properties": {"userId": {"type": "string"}, "items": {"type": "array", "items": {"type": "object", "properties": {"productId": {"type": "string"}, "quantity": {"type": "integer"}}}}, "shippingAddressId": {"type": "string"}, "couponCode": {"type": "string"}}}}}},
+        "responses": {"201": {"description": "Created"}}
+      }
+    },
+    "/orders/{orderId}": {
+      "get": {
+        "operationId": "getOrder",
+        "summary": "Get order details by ID",
+        "tags": ["orders"],
+        "parameters": [{"name": "orderId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "delete": {
+        "operationId": "cancelOrder",
+        "summary": "Cancel an order (only if status is pending)",
+        "tags": ["orders"],
+        "parameters": [{"name": "orderId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/orders/{orderId}/status": {
+      "put": {
+        "operationId": "updateOrderStatus",
+        "summary": "Update order status (admin only)",
+        "tags": ["orders"],
+        "parameters": [{"name": "orderId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["status"], "properties": {"status": {"type": "string", "enum": ["confirmed", "shipped", "delivered", "cancelled", "refunded"]}, "trackingNumber": {"type": "string"}}}}}},
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/orders/{orderId}/refund": {
+      "post": {
+        "operationId": "requestRefund",
+        "summary": "Request a refund for an order",
+        "tags": ["orders", "payments"],
+        "parameters": [{"name": "orderId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["reason"], "properties": {"reason": {"type": "string"}, "amount": {"type": "number"}}}}}},
+        "responses": {"201": {"description": "Created"}}
+      }
+    },
+    "/orders/{orderId}/tracking": {
+      "get": {
+        "operationId": "getOrderTracking",
+        "summary": "Get shipping tracking information",
+        "tags": ["orders", "shipping"],
+        "parameters": [{"name": "orderId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/cart": {
+      "get": {
+        "operationId": "getCart",
+        "summary": "Get current shopping cart contents",
+        "tags": ["cart"],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "delete": {
+        "operationId": "clearCart",
+        "summary": "Clear all items from the shopping cart",
+        "tags": ["cart"],
+        "responses": {"204": {"description": "Cleared"}}
+      }
+    },
+    "/cart/items": {
+      "post": {
+        "operationId": "addToCart",
+        "summary": "Add a product to the shopping cart",
+        "tags": ["cart"],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["productId", "quantity"], "properties": {"productId": {"type": "string"}, "quantity": {"type": "integer"}}}}}},
+        "responses": {"201": {"description": "Added"}}
+      }
+    },
+    "/cart/items/{itemId}": {
+      "put": {
+        "operationId": "updateCartItem",
+        "summary": "Update quantity of a cart item",
+        "tags": ["cart"],
+        "parameters": [{"name": "itemId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["quantity"], "properties": {"quantity": {"type": "integer"}}}}}},
+        "responses": {"200": {"description": "OK"}}
+      },
+      "delete": {
+        "operationId": "removeFromCart",
+        "summary": "Remove an item from the shopping cart",
+        "tags": ["cart"],
+        "parameters": [{"name": "itemId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"204": {"description": "Removed"}}
+      }
+    },
+    "/cart/checkout": {
+      "post": {
+        "operationId": "checkout",
+        "summary": "Process checkout and create order from cart",
+        "tags": ["cart", "orders"],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["paymentMethod", "shippingAddressId"], "properties": {"paymentMethod": {"type": "string", "enum": ["credit_card", "paypal", "bank_transfer"]}, "shippingAddressId": {"type": "string"}, "couponCode": {"type": "string"}}}}}},
+        "responses": {"201": {"description": "Order created"}}
+      }
+    },
+    "/payments": {
+      "get": {
+        "operationId": "listPayments",
+        "summary": "List payment transactions",
+        "tags": ["payments"],
+        "parameters": [
+          {"name": "orderId", "in": "query", "schema": {"type": "string"}},
+          {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["pending", "completed", "failed", "refunded"]}}
+        ],
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/payments/{paymentId}": {
+      "get": {
+        "operationId": "getPayment",
+        "summary": "Get payment details",
+        "tags": ["payments"],
+        "parameters": [{"name": "paymentId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/coupons": {
+      "get": {
+        "operationId": "listCoupons",
+        "summary": "List all available discount coupons",
+        "tags": ["coupons"],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "post": {
+        "operationId": "createCoupon",
+        "summary": "Create a new discount coupon",
+        "tags": ["coupons"],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["code", "discountPercent"], "properties": {"code": {"type": "string"}, "discountPercent": {"type": "number"}, "maxUses": {"type": "integer"}, "expiresAt": {"type": "string", "format": "date-time"}}}}}},
+        "responses": {"201": {"description": "Created"}}
+      }
+    },
+    "/coupons/validate": {
+      "post": {
+        "operationId": "validateCoupon",
+        "summary": "Check if a coupon code is valid and get discount details",
+        "tags": ["coupons"],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["code"], "properties": {"code": {"type": "string"}}}}}},
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/shipping/rates": {
+      "post": {
+        "operationId": "calculateShipping",
+        "summary": "Calculate shipping rates for given items and destination",
+        "tags": ["shipping"],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["items", "destination"], "properties": {"items": {"type": "array", "items": {"type": "object"}}, "destination": {"type": "object", "properties": {"zipCode": {"type": "string"}, "country": {"type": "string"}}}}}}}},
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/notifications/preferences": {
+      "get": {
+        "operationId": "getNotificationPreferences",
+        "summary": "Get user notification preferences",
+        "tags": ["notifications"],
+        "responses": {"200": {"description": "OK"}}
+      },
+      "put": {
+        "operationId": "updateNotificationPreferences",
+        "summary": "Update notification preferences (email, SMS, push)",
+        "tags": ["notifications"],
+        "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"email": {"type": "boolean"}, "sms": {"type": "boolean"}, "push": {"type": "boolean"}}}}}},
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/analytics/sales": {
+      "get": {
+        "operationId": "getSalesAnalytics",
+        "summary": "Get sales analytics and revenue reports",
+        "tags": ["analytics"],
+        "parameters": [
+          {"name": "period", "in": "query", "schema": {"type": "string", "enum": ["daily", "weekly", "monthly", "yearly"]}},
+          {"name": "from", "in": "query", "schema": {"type": "string", "format": "date"}},
+          {"name": "to", "in": "query", "schema": {"type": "string", "format": "date"}}
+        ],
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/analytics/products/top": {
+      "get": {
+        "operationId": "getTopProducts",
+        "summary": "Get top selling products by revenue or quantity",
+        "tags": ["analytics", "products"],
+        "parameters": [
+          {"name": "metric", "in": "query", "schema": {"type": "string", "enum": ["revenue", "quantity"]}},
+          {"name": "limit", "in": "query", "schema": {"type": "integer"}}
+        ],
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/wishlist": {
+      "get": {
+        "operationId": "getWishlist",
+        "summary": "Get user's wishlist",
+        "tags": ["wishlist"],
+        "responses": {"200": {"description": "OK"}}
+      }
+    },
+    "/wishlist/{productId}": {
+      "post": {
+        "operationId": "addToWishlist",
+        "summary": "Add a product to the wishlist",
+        "tags": ["wishlist"],
+        "parameters": [{"name": "productId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"201": {"description": "Added"}}
+      },
+      "delete": {
+        "operationId": "removeFromWishlist",
+        "summary": "Remove a product from the wishlist",
+        "tags": ["wishlist"],
+        "parameters": [{"name": "productId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"204": {"description": "Removed"}}
+      }
+    }
+  }
+}

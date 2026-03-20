@@ -1,0 +1,170 @@
+{
+  "name": "docker",
+  "description": "Docker MCP tools — container and image management",
+  "tools": [
+    {
+      "name": "docker_list_containers",
+      "description": "List running or all Docker containers",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "all": {"type": "boolean", "description": "Include stopped containers"}
+        }
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "docker_run",
+      "description": "Create and start a new Docker container from an image",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "image": {"type": "string", "description": "Docker image name"},
+          "name": {"type": "string", "description": "Container name"},
+          "ports": {"type": "array", "items": {"type": "string"}, "description": "Port mappings (host:container)"},
+          "env": {"type": "object", "description": "Environment variables"},
+          "volumes": {"type": "array", "items": {"type": "string"}, "description": "Volume mounts"},
+          "detach": {"type": "boolean", "description": "Run in background"}
+        },
+        "required": ["image"]
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "docker_stop",
+      "description": "Stop a running Docker container",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "container": {"type": "string", "description": "Container name or ID"}
+        },
+        "required": ["container"]
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": true}
+    },
+    {
+      "name": "docker_remove",
+      "description": "Remove a stopped Docker container",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "container": {"type": "string", "description": "Container name or ID"},
+          "force": {"type": "boolean", "description": "Force remove running container"}
+        },
+        "required": ["container"]
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": true}
+    },
+    {
+      "name": "docker_logs",
+      "description": "View logs from a Docker container",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "container": {"type": "string", "description": "Container name or ID"},
+          "tail": {"type": "integer", "description": "Number of lines to show from the end"},
+          "follow": {"type": "boolean", "description": "Follow log output"}
+        },
+        "required": ["container"]
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "docker_exec",
+      "description": "Execute a command inside a running Docker container",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "container": {"type": "string", "description": "Container name or ID"},
+          "command": {"type": "string", "description": "Command to execute"}
+        },
+        "required": ["container", "command"]
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "docker_build",
+      "description": "Build a Docker image from a Dockerfile",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Build context path"},
+          "tag": {"type": "string", "description": "Image tag (name:version)"},
+          "dockerfile": {"type": "string", "description": "Dockerfile path"}
+        },
+        "required": ["path"]
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "docker_list_images",
+      "description": "List Docker images on the local system",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "docker_pull",
+      "description": "Pull a Docker image from a registry",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "image": {"type": "string", "description": "Image name with optional tag"}
+        },
+        "required": ["image"]
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "docker_push",
+      "description": "Push a Docker image to a registry",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "image": {"type": "string", "description": "Image name with tag"}
+        },
+        "required": ["image"]
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "docker_compose_up",
+      "description": "Start services defined in docker-compose.yml",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Path to docker-compose.yml"},
+          "detach": {"type": "boolean", "description": "Run in background"},
+          "services": {"type": "array", "items": {"type": "string"}, "description": "Specific services to start"}
+        }
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "docker_compose_down",
+      "description": "Stop and remove containers defined in docker-compose.yml",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "Path to docker-compose.yml"},
+          "volumes": {"type": "boolean", "description": "Also remove volumes"}
+        }
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": true}
+    },
+    {
+      "name": "docker_inspect",
+      "description": "Get detailed information about a container or image",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {"type": "string", "description": "Container or image name/ID"}
+        },
+        "required": ["target"]
+      },
+      "annotations": {"readOnlyHint": true}
+    }
+  ]
+}

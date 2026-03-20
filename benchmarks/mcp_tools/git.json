@@ -1,0 +1,199 @@
+{
+  "name": "git",
+  "description": "Git MCP tools — version control operations",
+  "tools": [
+    {
+      "name": "git_status",
+      "description": "Show the working tree status — modified, staged, and untracked files",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string", "description": "Path to git repository"}
+        }
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "git_log",
+      "description": "Show commit history with messages, authors, and dates",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "max_count": {"type": "integer", "description": "Maximum number of commits to show"},
+          "branch": {"type": "string", "description": "Branch name"}
+        }
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "git_diff",
+      "description": "Show changes between commits, working tree, and staging area",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "staged": {"type": "boolean", "description": "Show staged changes only"},
+          "file": {"type": "string", "description": "Specific file to diff"}
+        }
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "git_commit",
+      "description": "Create a new commit with staged changes",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "message": {"type": "string", "description": "Commit message"}
+        },
+        "required": ["message"]
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "git_add",
+      "description": "Stage files for the next commit",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "files": {"type": "array", "items": {"type": "string"}, "description": "Files to stage"}
+        },
+        "required": ["files"]
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "git_checkout",
+      "description": "Switch branches or restore working tree files",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "branch": {"type": "string", "description": "Branch name to checkout"},
+          "create": {"type": "boolean", "description": "Create new branch"}
+        },
+        "required": ["branch"]
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "git_branch",
+      "description": "List, create, or delete branches",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "name": {"type": "string", "description": "Branch name to create"},
+          "delete": {"type": "boolean", "description": "Delete the branch"}
+        }
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "git_merge",
+      "description": "Merge a branch into the current branch",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "branch": {"type": "string", "description": "Branch to merge"}
+        },
+        "required": ["branch"]
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "git_push",
+      "description": "Push commits to a remote repository",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "remote": {"type": "string", "description": "Remote name (default: origin)"},
+          "branch": {"type": "string", "description": "Branch to push"}
+        }
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "git_pull",
+      "description": "Fetch and integrate changes from a remote repository",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "remote": {"type": "string"},
+          "branch": {"type": "string"}
+        }
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "git_stash",
+      "description": "Stash or restore uncommitted changes",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "action": {"type": "string", "description": "Action: save, pop, list, drop"}
+        }
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "git_blame",
+      "description": "Show what revision and author last modified each line of a file",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "file": {"type": "string", "description": "File to blame"}
+        },
+        "required": ["file"]
+      },
+      "annotations": {"readOnlyHint": true}
+    },
+    {
+      "name": "git_reset",
+      "description": "Reset current HEAD to a specified state, unstage files",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "mode": {"type": "string", "description": "Reset mode: soft, mixed, hard"},
+          "commit": {"type": "string", "description": "Target commit"}
+        }
+      },
+      "annotations": {"readOnlyHint": false, "destructiveHint": true}
+    },
+    {
+      "name": "git_tag",
+      "description": "Create, list, or delete tags",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": {"type": "string"},
+          "name": {"type": "string", "description": "Tag name"},
+          "message": {"type": "string", "description": "Tag message for annotated tags"}
+        }
+      },
+      "annotations": {"readOnlyHint": false}
+    },
+    {
+      "name": "git_clone",
+      "description": "Clone a remote repository to local filesystem",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {"type": "string", "description": "Repository URL to clone"},
+          "path": {"type": "string", "description": "Local path to clone into"}
+        },
+        "required": ["url"]
+      },
+      "annotations": {"readOnlyHint": false}
+    }
+  ]
+}

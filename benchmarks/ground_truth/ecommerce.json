@@ -1,0 +1,265 @@
+{
+  "name": "E-Commerce API",
+  "description": "Full e-commerce API — 46 operations: users, products, orders, cart, payments, analytics",
+  "tool_count": 46,
+  "queries": [
+    {
+      "query": "Search for a product by name",
+      "expected_tools": ["searchProducts"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Add item to my cart",
+      "expected_tools": ["addToCart"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "View my shopping cart",
+      "expected_tools": ["getCart"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Remove item from shopping cart",
+      "expected_tools": ["removeFromCart"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Checkout and pay",
+      "expected_tools": ["checkout"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Place a new order",
+      "expected_tools": ["createOrder"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Cancel my order",
+      "expected_tools": ["cancelOrder"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Check order tracking status",
+      "expected_tools": ["getOrderTracking"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Request a refund for a defective product",
+      "expected_tools": ["requestRefund"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Create a new user account",
+      "expected_tools": ["createUser"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Update my profile information",
+      "expected_tools": ["updateUser"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Delete my account",
+      "expected_tools": ["deleteUser"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Show my order history",
+      "expected_tools": ["getUserOrders"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Add a new shipping address",
+      "expected_tools": ["addUserAddress"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "List my saved addresses",
+      "expected_tools": ["listUserAddresses"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Browse all product categories",
+      "expected_tools": ["listCategories"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "See product reviews before buying",
+      "expected_tools": ["listProductReviews"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Write a review for a product I bought",
+      "expected_tools": ["createProductReview"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Check if a coupon code is valid",
+      "expected_tools": ["validateCoupon"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "How much does shipping cost?",
+      "expected_tools": ["calculateShipping"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Check product stock availability",
+      "expected_tools": ["getProductInventory"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Add a product to my wishlist",
+      "expected_tools": ["addToWishlist"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "View my wishlist",
+      "expected_tools": ["getWishlist"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Remove item from wishlist",
+      "expected_tools": ["removeFromWishlist"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Get sales revenue report",
+      "expected_tools": ["getSalesAnalytics"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "What are the best selling products?",
+      "expected_tools": ["getTopProducts"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Manage my notification settings",
+      "expected_tools": ["updateNotificationPreferences"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Create a new product listing",
+      "expected_tools": ["createProduct"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Update the price of a product",
+      "expected_tools": ["updateProduct"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Remove discontinued product from catalog",
+      "expected_tools": ["deleteProduct"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Update inventory stock count",
+      "expected_tools": ["updateProductInventory"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Create a 20% off discount coupon",
+      "expected_tools": ["createCoupon"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Update the order status to shipped",
+      "expected_tools": ["updateOrderStatus"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Change quantity of an item in my cart",
+      "expected_tools": ["updateCartItem"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Empty my shopping cart",
+      "expected_tools": ["clearCart"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "I want to buy something — search, add to cart, then checkout",
+      "expected_tools": ["searchProducts", "addToCart", "checkout"],
+      "category": "workflow",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Return a product — find order, then request refund",
+      "expected_tools": ["getOrder", "requestRefund"],
+      "category": "workflow",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Check payment details for my order",
+      "expected_tools": ["getPayment"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "장바구니에 상품 추가",
+      "expected_tools": ["addToCart"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "주문 취소하고 싶어요",
+      "expected_tools": ["cancelOrder"],
+      "category": "delete",
+      "difficulty": "medium"
+    },
+    {
+      "query": "상품 후기 작성",
+      "expected_tools": ["createProductReview"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "배송비 얼마예요?",
+      "expected_tools": ["calculateShipping"],
+      "category": "read",
+      "difficulty": "hard"
+    },
+    {
+      "query": "환불 요청",
+      "expected_tools": ["requestRefund"],
+      "category": "write",
+      "difficulty": "hard"
+    }
+  ]
+}

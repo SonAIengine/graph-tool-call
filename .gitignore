@@ -25,8 +25,9 @@ htmlcov/
 .env
 .env.local
 
-# Benchmark results (environment-dependent)
+# Benchmark results (environment-dependent, except baselines)
 benchmarks/results/
+!benchmarks/results/baseline*.json
 
 # Personal memo
 memo/

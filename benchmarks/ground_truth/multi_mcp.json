@@ -1,0 +1,187 @@
+{
+  "name": "Multi-MCP (Playwright + Filesystem + GitHub)",
+  "description": "3 MCP servers combined — 60+ tools across browser, filesystem, and GitHub domains",
+  "tool_count": 60,
+  "queries": [
+    {
+      "query": "Take a screenshot of the current page",
+      "expected_tools": ["browser_take_screenshot"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Read the config file",
+      "expected_tools": ["read_file"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a GitHub issue",
+      "expected_tools": ["create_issue"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Click the login button on the website",
+      "expected_tools": ["browser_click"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Write test results to output.json",
+      "expected_tools": ["write_file"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Navigate to the documentation page",
+      "expected_tools": ["browser_navigate"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Find all test files in the repository",
+      "expected_tools": ["search_files"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Fill in the contact form on the website",
+      "expected_tools": ["browser_fill_form"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Fork the open source project",
+      "expected_tools": ["fork_repository"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Check for JavaScript errors in the browser console",
+      "expected_tools": ["browser_console_messages"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "List the directory contents",
+      "expected_tools": ["list_directory"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Create a new branch for the bugfix",
+      "expected_tools": ["create_branch"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Upload a profile picture on the website",
+      "expected_tools": ["browser_file_upload"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Move the log files to archive directory",
+      "expected_tools": ["move_file"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Open a pull request with my changes",
+      "expected_tools": ["create_pull_request"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Wait for the page to finish loading",
+      "expected_tools": ["browser_wait_for"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Edit the configuration in settings.json",
+      "expected_tools": ["edit_file"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Merge the feature PR after review",
+      "expected_tools": ["merge_pull_request"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Get the accessibility tree of the web page",
+      "expected_tools": ["browser_snapshot"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Read multiple files at once",
+      "expected_tools": ["read_multiple_files"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Search repositories for machine learning projects",
+      "expected_tools": ["search_repositories"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Select an option from the dropdown menu",
+      "expected_tools": ["browser_select_option"],
+      "category": "write",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Show the file tree structure of the project",
+      "expected_tools": ["directory_tree"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "View the commit history of the repo",
+      "expected_tools": ["list_commits"],
+      "category": "read",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Close the browser after testing",
+      "expected_tools": ["browser_close"],
+      "category": "delete",
+      "difficulty": "easy"
+    },
+    {
+      "query": "Run a custom JavaScript snippet in the browser",
+      "expected_tools": ["browser_evaluate"],
+      "category": "write",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Check what API calls the page makes",
+      "expected_tools": ["browser_network_requests"],
+      "category": "read",
+      "difficulty": "medium"
+    },
+    {
+      "query": "Open a website, take a screenshot, then read a local file to compare",
+      "expected_tools": ["browser_navigate", "browser_take_screenshot", "read_file"],
+      "category": "workflow",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Read test results from file and create a GitHub issue if failed",
+      "expected_tools": ["read_file", "create_issue"],
+      "category": "workflow",
+      "difficulty": "hard"
+    },
+    {
+      "query": "Run browser test, save screenshot, then push to GitHub",
+      "expected_tools": ["browser_run_code", "browser_take_screenshot", "push_files"],
+      "category": "workflow",
+      "difficulty": "hard"
+    }
+  ]
+}

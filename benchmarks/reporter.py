@@ -23,7 +23,14 @@ class QueryResult:
 
     # Retrieval metrics
     recall_at_k: float = 0.0
+    mrr: float = 0.0
+    average_precision: float = 0.0
+    ndcg_at_k: float = 0.0
+    latency_ms: float = 0.0
     retrieved_tools: list[str] = field(default_factory=list)
+
+    # Score breakdown (component attribution)
+    score_breakdown: dict[str, float] = field(default_factory=dict)
 
     # LLM metrics (None if retrieval-only mode)
     baseline_tool: str | None = None
@@ -50,6 +57,16 @@ class DatasetResult:
 
     # Retrieval-only metrics
     avg_recall_at_k: float = 0.0
+    avg_mrr: float = 0.0
+    avg_map: float = 0.0
+    avg_ndcg_at_k: float = 0.0
+    avg_latency_ms: float = 0.0
+
+    # Component attribution averages
+    avg_keyword_contribution: float = 0.0
+    avg_graph_contribution: float = 0.0
+    avg_embedding_contribution: float = 0.0
+    avg_annotation_contribution: float = 0.0
 
     # LLM comparison metrics
     baseline_accuracy: float = 0.0
@@ -78,8 +95,25 @@ def compute_dataset_metrics(ds: DatasetResult) -> None:
     n = len(ds.queries)
     ds.query_count = n
 
-    # Recall@K
+    # Retrieval metrics
     ds.avg_recall_at_k = sum(q.recall_at_k for q in ds.queries) / n
+    ds.avg_mrr = sum(q.mrr for q in ds.queries) / n
+    ds.avg_map = sum(q.average_precision for q in ds.queries) / n
+    ds.avg_ndcg_at_k = sum(q.ndcg_at_k for q in ds.queries) / n
+
+    # Latency
+    latencies = [q.latency_ms for q in ds.queries if q.latency_ms > 0]
+    if latencies:
+        ds.avg_latency_ms = sum(latencies) / len(latencies)
+
+    # Component attribution
+    breakdowns = [q.score_breakdown for q in ds.queries if q.score_breakdown]
+    if breakdowns:
+        nb = len(breakdowns)
+        ds.avg_keyword_contribution = sum(b.get("keyword", 0.0) for b in breakdowns) / nb
+        ds.avg_graph_contribution = sum(b.get("graph", 0.0) for b in breakdowns) / nb
+        ds.avg_embedding_contribution = sum(b.get("embedding", 0.0) for b in breakdowns) / nb
+        ds.avg_annotation_contribution = sum(b.get("annotation", 0.0) for b in breakdowns) / nb
 
     # LLM metrics (only if present)
     baseline_results = [q for q in ds.queries if q.baseline_correct is not None]
@@ -122,13 +156,37 @@ def print_retrieval_report(report: BenchmarkReport) -> None:
     for ds in report.datasets:
         print(f"\n  {ds.name}  ({ds.tool_count} tools, {ds.query_count} queries)")
         print(f"  {'─' * 50}")
-        print(f"  {'Recall@' + str(report.top_k):<20} {ds.avg_recall_at_k:.1%}")
+        k = report.top_k
+        print(f"  {'Recall@' + str(k):<20} {ds.avg_recall_at_k:.1%}")
+        print(f"  {'MRR':<20} {ds.avg_mrr:.3f}")
+        print(f"  {'MAP':<20} {ds.avg_map:.3f}")
+        print(f"  {'NDCG@' + str(k):<20} {ds.avg_ndcg_at_k:.3f}")
+        if ds.avg_latency_ms > 0:
+            print(f"  {'Avg Latency':<20} {ds.avg_latency_ms:.1f}ms")
+
+        # Component attribution
+        has_attribution = any(
+            v > 0
+            for v in [
+                ds.avg_keyword_contribution,
+                ds.avg_graph_contribution,
+                ds.avg_embedding_contribution,
+                ds.avg_annotation_contribution,
+            ]
+        )
+        if has_attribution:
+            print("\n  Component Attribution (avg score contribution of top-1):")
+            print(f"    {'keyword':<16} {ds.avg_keyword_contribution:.4f}")
+            print(f"    {'graph':<16} {ds.avg_graph_contribution:.4f}")
+            print(f"    {'embedding':<16} {ds.avg_embedding_contribution:.4f}")
+            print(f"    {'annotation':<16} {ds.avg_annotation_contribution:.4f}")
 
         # Breakdown by category
         cats: dict[str, list[float]] = {}
         for q in ds.queries:
             cats.setdefault(q.category, []).append(q.recall_at_k)
         if len(cats) > 1:
+            print("\n  By Category:")
             for cat, scores in sorted(cats.items()):
                 avg = sum(scores) / len(scores)
                 print(f"    {cat:<18} {avg:.1%}  ({len(scores)} queries)")
@@ -138,7 +196,7 @@ def print_retrieval_report(report: BenchmarkReport) -> None:
         for q in ds.queries:
             diffs.setdefault(q.difficulty, []).append(q.recall_at_k)
         if len(diffs) > 1:
-            print()
+            print("\n  By Difficulty:")
             for diff in ["easy", "medium", "hard"]:
                 if diff in diffs:
                     scores = diffs[diff]
