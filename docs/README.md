@@ -29,7 +29,8 @@ docs/
 │   ├── search-modes.md         # 3-Tier 검색 아키텍처
 │   ├── ontology-modes.md       # Auto/Manual/LLM 온톨로지 모드
 │   ├── visualization-dashboard.md # 시각화 + 대시보드
-│   └── openapi-guide.md        # OpenAPI 작성 가이드
+│   ├── openapi-guide.md        # OpenAPI 작성 가이드
+│   └── benchmark.md            # 벤치마크 메트릭 + 데이터셋 + 결과
 │
 └── research/                   # 리서치 노트
     ├── competitive-analysis.md # 경쟁 생태계 (RAG-MCP, LAPIS)
@@ -48,6 +49,15 @@ docs/
 3. **현재 Phase 상세**: [wbs/phase-1-ingest.md](wbs/phase-1-ingest.md)
 4. **설계 깊이 파기**: `design/` 디렉토리
 5. **리서치 근거**: `research/` 디렉토리
+
+## 최근 추가 (v0.12)
+
+- **Retrieval Phase 3**: intent-aware 그래프 가중치, 다단계 seed, 동적 wRRF, name overlap 강화
+- **벤치마크 메트릭 7종 추가**: 95% CI, MissRate, HitRate, Recall@K 곡선, Stdev, Paired t-test, Token Efficiency
+- **벤치마크 설계 문서**: [design/benchmark.md](design/benchmark.md)
+- **파이프라인 분해**: `_run_pipeline()` 250줄 → 12개 단일 책임 메서드
+- **middleware 통합**: OpenAI/Anthropic 중복 함수 50% 축소
+- **`RetrievalResult.to_dict()`**: 검색결과 직렬화 공통화
 
 ## 최근 추가 (v2.5)
 

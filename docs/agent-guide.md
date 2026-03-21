@@ -125,6 +125,13 @@ graph_tool_call/
   analyze/similarity.py      # duplicate detection
   visualization/             # HTML, GraphML, Cypher export
 tests/
+benchmarks/
+  metrics.py               # Recall, MRR, MAP, NDCG, CI, t-test 등
+  run_benchmark.py         # retrieval/e2e/pipeline 벤치마크 실행
+  reporter.py              # 결과 출력 및 JSON 저장
+  pipeline.py              # 다중 파이프라인 비교
+  config.py                # 데이터셋/파이프라인 레지스트리
+  results/                 # 벤치마크 결과 JSON
 docs/
 ```
 
