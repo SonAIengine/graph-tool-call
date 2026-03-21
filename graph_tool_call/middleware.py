@@ -47,116 +47,51 @@ logger = logging.getLogger("graph-tool-call.middleware")
 _ORIGINAL_ATTR = "_gtc_original_create"
 
 
-def _extract_query_from_openai_messages(messages: list[dict[str, Any]]) -> str | None:
-    """Extract the latest user message text from OpenAI-format messages."""
+def _extract_query_from_messages(messages: list[dict[str, Any]]) -> str | None:
+    """Extract the latest user message text (works with both OpenAI and Anthropic formats)."""
     for msg in reversed(messages):
-        role = msg.get("role", "")
-        if role == "user":
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                return content
-            # content can be a list of parts
-            if isinstance(content, list):
-                texts = []
-                for part in content:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        texts.append(part.get("text", ""))
-                    elif isinstance(part, str):
-                        texts.append(part)
-                if texts:
-                    return " ".join(texts)
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            texts = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    texts.append(part.get("text", ""))
+                elif isinstance(part, str):
+                    texts.append(part)
+            if texts:
+                return " ".join(texts)
     return None
 
 
-def _extract_query_from_anthropic_messages(messages: list[dict[str, Any]]) -> str | None:
-    """Extract the latest user message text from Anthropic-format messages."""
-    for msg in reversed(messages):
-        role = msg.get("role", "")
-        if role == "user":
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                texts = []
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        texts.append(block.get("text", ""))
-                    elif isinstance(block, str):
-                        texts.append(block)
-                if texts:
-                    return " ".join(texts)
-    return None
+def _extract_tool_name(tool: dict[str, Any]) -> str:
+    """Extract tool name from OpenAI (function.name) or Anthropic (name) format."""
+    if "function" in tool:
+        return tool["function"].get("name", "")
+    return tool.get("name", "")
 
 
-def _filter_tools_openai(
+def _filter_tools(
     tools: list[dict[str, Any]],
     query: str,
     graph: Any,
     top_k: int,
 ) -> list[dict[str, Any]]:
-    """Filter OpenAI-format tools using ToolGraph retrieval."""
+    """Filter tools using ToolGraph retrieval (format-agnostic)."""
     from graph_tool_call import ToolGraph
 
     tg: ToolGraph = graph
 
-    # Build a temporary graph if not already containing these tools
-    tool_names_in_graph = set(tg.tools.keys())
-
-    # Extract names from the tool list
     input_tool_map: dict[str, dict[str, Any]] = {}
     for tool in tools:
-        if "function" in tool:
-            name = tool["function"].get("name", "")
-        else:
-            name = tool.get("name", "")
+        name = _extract_tool_name(tool)
         if name:
             input_tool_map[name] = tool
 
-    # If the graph doesn't have these tools, add them temporarily
-    if not tool_names_in_graph.intersection(input_tool_map.keys()):
-        tg.add_tools(tools)
-
-    # Retrieve relevant tools
-    results = tg.retrieve(query, top_k=top_k)
-    result_names = {r.name for r in results}
-
-    # Filter original tool dicts to only include retrieved ones
-    filtered = [t for name, t in input_tool_map.items() if name in result_names]
-
-    if filtered:
-        logger.debug(
-            "Filtered %d → %d tools for query: %s",
-            len(tools),
-            len(filtered),
-            query[:50],
-        )
-        return filtered
-
-    # Fallback: if retrieval returned nothing, pass all tools
-    logger.debug("Retrieval returned no results, passing all %d tools", len(tools))
-    return tools
-
-
-def _filter_tools_anthropic(
-    tools: list[dict[str, Any]],
-    query: str,
-    graph: Any,
-    top_k: int,
-) -> list[dict[str, Any]]:
-    """Filter Anthropic-format tools using ToolGraph retrieval."""
-    from graph_tool_call import ToolGraph
-
-    tg: ToolGraph = graph
-
-    tool_names_in_graph = set(tg.tools.keys())
-
-    input_tool_map: dict[str, dict[str, Any]] = {}
-    for tool in tools:
-        name = tool.get("name", "")
-        if name:
-            input_tool_map[name] = tool
-
-    if not tool_names_in_graph.intersection(input_tool_map.keys()):
+    if not set(tg.tools.keys()).intersection(input_tool_map.keys()):
         tg.add_tools(tools)
 
     results = tg.retrieve(query, top_k=top_k)
@@ -217,9 +152,9 @@ def patch_openai(
         messages = kwargs.get("messages")
 
         if tools and messages and len(tools) >= min_tools:
-            query = _extract_query_from_openai_messages(messages)
+            query = _extract_query_from_messages(messages)
             if query:
-                kwargs["tools"] = _filter_tools_openai(tools, query, graph, top_k)
+                kwargs["tools"] = _filter_tools(tools, query, graph, top_k)
 
         return original_create(*args, **kwargs)
 
@@ -275,9 +210,9 @@ def patch_anthropic(
         messages = kwargs.get("messages")
 
         if tools and messages and len(tools) >= min_tools:
-            query = _extract_query_from_anthropic_messages(messages)
+            query = _extract_query_from_messages(messages)
             if query:
-                kwargs["tools"] = _filter_tools_anthropic(tools, query, graph, top_k)
+                kwargs["tools"] = _filter_tools(tools, query, graph, top_k)
 
         return original_create(*args, **kwargs)
 

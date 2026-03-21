@@ -128,37 +128,7 @@ def create_mcp_server(
         from graph_tool_call.retrieval.engine import build_workflow_summary
 
         scored_results = tg.retrieve_with_scores(query, top_k=top_k, history=_call_history or None)
-        tools_out = []
-        for r in scored_results:
-            tool = r.tool
-            tool_dict: dict[str, Any] = {
-                "name": tool.name,
-                "description": tool.description,
-            }
-            if tool.parameters:
-                tool_dict["parameters"] = {
-                    p.name: {
-                        "type": p.type,
-                        "description": p.description,
-                        **({"required": True} if p.required else {}),
-                    }
-                    for p in tool.parameters
-                }
-            if tool.domain:
-                tool_dict["category"] = tool.domain
-            if r.relations:
-                tool_dict["relations"] = [
-                    {
-                        "target": rel.target,
-                        "type": rel.type,
-                        "direction": rel.direction,
-                        "hint": rel.hint,
-                    }
-                    for rel in r.relations
-                ]
-            if r.prerequisites:
-                tool_dict["prerequisites"] = r.prerequisites
-            tools_out.append(tool_dict)
+        tools_out = [r.to_dict(include_params=True) for r in scored_results]
 
         output: dict[str, Any] = {
             "query": query,

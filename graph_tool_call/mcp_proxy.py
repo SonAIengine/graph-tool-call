@@ -337,34 +337,10 @@ class MCPProxy:
                         mcp_tool = self._all_tools[pn]
                         break
 
-            # Truncate description for lightweight results
-            desc = r.tool.description
-            if len(desc) > _SEARCH_DESC_MAX:
-                desc = desc[:_SEARCH_DESC_MAX].rsplit(" ", 1)[0] + "..."
-
-            entry: dict[str, Any] = {
-                "name": proxy_name,
-                "description": desc,
-                "score": round(r.score, 4),
-                "confidence": r.confidence,
-            }
-            if r.tool.domain:
-                entry["category"] = r.tool.domain
-            if r.relations:
-                entry["relations"] = [
-                    {
-                        "target": rel.target,
-                        "type": rel.type,
-                        "direction": rel.direction,
-                        "hint": rel.hint,
-                    }
-                    for rel in r.relations
-                ]
-            if r.prerequisites:
-                entry["prerequisites"] = r.prerequisites
+            entry = r.to_dict(include_score=True, max_desc=_SEARCH_DESC_MAX)
+            entry["name"] = proxy_name  # override with prefixed name if needed
             out.append(entry)
 
-            # Register for dynamic injection
             if mcp_tool:
                 self._exposed_tools[proxy_name] = mcp_tool
 

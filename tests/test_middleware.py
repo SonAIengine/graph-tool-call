@@ -9,8 +9,7 @@ import pytest
 
 from graph_tool_call import ToolGraph
 from graph_tool_call.middleware import (
-    _extract_query_from_anthropic_messages,
-    _extract_query_from_openai_messages,
+    _extract_query_from_messages,
     patch_anthropic,
     patch_openai,
     unpatch_anthropic,
@@ -133,7 +132,7 @@ def tool_graph():
 class TestExtractQuery:
     def test_openai_simple_string(self):
         msgs = [{"role": "user", "content": "delete user"}]
-        assert _extract_query_from_openai_messages(msgs) == "delete user"
+        assert _extract_query_from_messages(msgs) == "delete user"
 
     def test_openai_multipart_content(self):
         msgs = [
@@ -145,7 +144,7 @@ class TestExtractQuery:
                 ],
             }
         ]
-        assert _extract_query_from_openai_messages(msgs) == "find user"
+        assert _extract_query_from_messages(msgs) == "find user"
 
     def test_openai_picks_last_user_message(self):
         msgs = [
@@ -153,15 +152,15 @@ class TestExtractQuery:
             {"role": "assistant", "content": "response"},
             {"role": "user", "content": "new query"},
         ]
-        assert _extract_query_from_openai_messages(msgs) == "new query"
+        assert _extract_query_from_messages(msgs) == "new query"
 
     def test_openai_no_user_message(self):
         msgs = [{"role": "system", "content": "you are helpful"}]
-        assert _extract_query_from_openai_messages(msgs) is None
+        assert _extract_query_from_messages(msgs) is None
 
     def test_anthropic_simple_string(self):
         msgs = [{"role": "user", "content": "delete user"}]
-        assert _extract_query_from_anthropic_messages(msgs) == "delete user"
+        assert _extract_query_from_messages(msgs) == "delete user"
 
     def test_anthropic_content_blocks(self):
         msgs = [
@@ -170,7 +169,7 @@ class TestExtractQuery:
                 "content": [{"type": "text", "text": "manage orders"}],
             }
         ]
-        assert _extract_query_from_anthropic_messages(msgs) == "manage orders"
+        assert _extract_query_from_messages(msgs) == "manage orders"
 
 
 # --- Patch/unpatch tests ---

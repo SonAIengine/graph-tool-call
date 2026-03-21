@@ -59,6 +59,54 @@ class RetrievalResult:
             return "medium"
         return "low"
 
+    def to_dict(
+        self, *, include_params: bool = False, max_desc: int = 0, include_score: bool = False
+    ) -> dict[str, Any]:
+        """Serialize to a dict for JSON output.
+
+        Parameters
+        ----------
+        include_params:
+            Include parameter details.
+        max_desc:
+            Truncate description to this length (0 = no truncation).
+        include_score:
+            Include score and confidence fields.
+        """
+        tool = self.tool
+        desc = tool.description
+        if max_desc and len(desc) > max_desc:
+            desc = desc[:max_desc].rsplit(" ", 1)[0] + "..."
+
+        d: dict[str, Any] = {"name": tool.name, "description": desc}
+        if include_score:
+            d["score"] = round(self.score, 4)
+            d["confidence"] = self.confidence
+        if include_params and tool.parameters:
+            d["parameters"] = {
+                p.name: {
+                    "type": p.type,
+                    "description": p.description,
+                    **({"required": True} if p.required else {}),
+                }
+                for p in tool.parameters
+            }
+        if tool.domain:
+            d["category"] = tool.domain
+        if self.relations:
+            d["relations"] = [
+                {
+                    "target": rel.target,
+                    "type": rel.type,
+                    "direction": rel.direction,
+                    "hint": rel.hint,
+                }
+                for rel in self.relations
+            ]
+        if self.prerequisites:
+            d["prerequisites"] = self.prerequisites
+        return d
+
 
 class RetrievalEngine:
     """Combines keyword matching, graph traversal, and optional embedding for tool retrieval."""
@@ -146,65 +194,18 @@ class RetrievalEngine:
         if isinstance(mode, str):
             mode = SearchMode(mode)
 
-        # --- History-aware query augmentation ---
-        effective_query = query
-        if history:
-            history_context = []
-            for tool_name in history:
-                if tool_name in self._tools:
-                    t = self._tools[tool_name]
-                    history_context.append(f"{t.name} {t.description}")
-            if history_context:
-                effective_query = query + " " + " ".join(history_context)
+        effective_query = self._augment_query(query, history)
 
-        # --- BASIC pipeline (always runs) ---
-        keyword_scores = self._get_bm25().score(effective_query)
-        if not keyword_scores:
-            keyword_scores = self._keyword_match(query)
+        # --- Score computation ---
+        keyword_scores = self._compute_keyword_scores(effective_query, query)
+        seed_tools = self._build_seed_tools(keyword_scores, history)
+        graph_scores = self._compute_graph_scores(seed_tools, max_graph_depth, top_k)
+        embedding_scores = self._compute_embedding_scores(query, top_k)
 
-        # Graph expansion from keyword seeds + history seeds
-        sorted_by_score = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
-        seed_tools = [name for name, _ in sorted_by_score[:10]]
-        if history:
-            for tool_name in history:
-                if tool_name in self._tools and tool_name not in seed_tools:
-                    seed_tools.append(tool_name)
-        graph_scores: dict[str, float] = {}
-        if seed_tools:
-            expanded = self._searcher.expand_from_seeds(
-                seed_tools, max_depth=max_graph_depth, max_results=top_k * 3
-            )
-            graph_scores = dict(expanded)
-
-        # Optional embedding scores
-        embedding_scores: dict[str, float] = {}
-        if self._embedding_index is not None and self._embedding_index.size > 0:
-            try:
-                query_emb = self._embedding_index.encode(query)
-                emb_results = self._embedding_index.search(query_emb, top_k=top_k * 3)
-                embedding_scores = dict(emb_results)
-            except (ValueError, ImportError):
-                pass
-
-        # Embedding-augmented graph seeds: add top embedding hits as extra seeds
-        # so graph expansion benefits from semantic matches, not just BM25 keywords.
-        if embedding_scores:
-            emb_top = sorted(embedding_scores.items(), key=lambda x: x[1], reverse=True)
-            for name, _ in emb_top[:3]:
-                if name not in seed_tools:
-                    seed_tools.append(name)
-            if seed_tools and not graph_scores:
-                expanded = self._searcher.expand_from_seeds(
-                    seed_tools, max_depth=max_graph_depth, max_results=top_k * 3
-                )
-                graph_scores = dict(expanded)
-            elif seed_tools:
-                extra = self._searcher.expand_from_seeds(
-                    seed_tools, max_depth=max_graph_depth, max_results=top_k * 3
-                )
-                for name, score in extra:
-                    if name not in graph_scores or score > graph_scores[name]:
-                        graph_scores[name] = score
+        # Re-expand graph with embedding seeds
+        graph_scores = self._augment_graph_with_embedding_seeds(
+            embedding_scores, seed_tools, graph_scores, max_graph_depth, top_k
+        )
 
         # Annotation-aware scoring
         from graph_tool_call.retrieval.annotation_scorer import compute_annotation_scores
@@ -213,7 +214,7 @@ class RetrievalEngine:
         query_intent = classify_intent(query)
         annotation_scores = compute_annotation_scores(query_intent, self._tools)
 
-        # Collect all score sources for wRRF (use configured weights)
+        # Collect all score sources for wRRF
         score_sources: list[tuple[dict[str, float], float]] = [
             (keyword_scores, self._keyword_weight),
             (graph_scores, self._graph_weight),
@@ -221,136 +222,244 @@ class RetrievalEngine:
             (annotation_scores, self._annotation_weight),
         ]
 
-        # --- ENHANCED: query expansion (Tier 1) ---
-        if mode in (SearchMode.ENHANCED, SearchMode.FULL) and llm is not None:
-            expanded = llm.expand_query(query)
-            expanded_terms = expanded.keywords + expanded.synonyms + expanded.english_terms
-            if expanded_terms:
-                expanded_query = " ".join(expanded_terms)
-                expanded_scores = self._get_bm25().score(expanded_query)
-                if not expanded_scores:
-                    expanded_scores = self._keyword_match(expanded_query)
-                if expanded_scores:
-                    score_sources.append((expanded_scores, 0.7))
+        # ENHANCED/FULL: LLM-assisted expansion
+        self._apply_llm_expansion(mode, llm, query, score_sources)
 
-        # --- FULL: intent decomposition (Tier 2) ---
-        if mode == SearchMode.FULL and llm is not None:
-            intents = llm.decompose_intents(query)
-            for intent in intents:
-                intent_query = intent.to_query()
-                intent_scores = self._get_bm25().score(intent_query)
-                if not intent_scores:
-                    intent_scores = self._keyword_match(intent_query)
-                if intent_scores:
-                    score_sources.append((intent_scores, 0.5))
+        # wRRF fusion → filter to TOOL nodes
+        final_scores = self._fuse_and_filter(score_sources)
 
-        # --- wRRF fusion ---
-        active_sources = [(s, w) for s, w in score_sources if s]
-        if active_sources:
-            fused_scores = self._wrrf_fuse(active_sources)
-        else:
-            fused_scores = {}
-
-        # Filter to TOOL nodes only and sort
-        final_scores: dict[str, float] = {}
-        for name, score in fused_scores.items():
-            if not self._graph.has_node(name):
-                continue
-            attrs = self._graph.get_node_attrs(name)
-            if attrs.get("node_type") != NodeType.TOOL:
-                continue
-            final_scores[name] = score
-
-        # --- Post-fusion boosts for Top-1 precision ---
-        # 1. Name-query direct overlap boost
-        query_tokens_lower = set(re.split(r"[\s_\-/.,;:!?()]+", query.lower()))
-        query_tokens_lower.discard("")
-        for name in final_scores:
-            name_tokens = set(re.split(r"[\s_\-/.,;:!?()]+", name.lower()))
-            # camelCase split
-            expanded: set[str] = set()
-            for t in name_tokens:
-                parts = re.sub(r"([a-z])([A-Z])", r"\1 \2", t).lower().split()
-                expanded.update(parts)
-            overlap = len(query_tokens_lower & expanded)
-            if overlap > 0:
-                boost = 1.0 + 0.1 * overlap  # 10% per matching token
-                final_scores[name] *= boost
-
-        # 2. HTTP method-intent alignment
-        if query_intent and not query_intent.is_neutral:
-            for name, score in list(final_scores.items()):
-                tool = self._tools.get(name)
-                if not tool or not tool.metadata:
-                    continue
-                method = tool.metadata.get("method", "").upper()
-                if not method:
-                    continue
-                # Reward method-intent match, penalize mismatch
-                if query_intent.write_intent > 0.5 and method == "POST":
-                    final_scores[name] *= 1.15
-                elif query_intent.read_intent > 0.5 and method == "GET":
-                    final_scores[name] *= 1.1
-                elif query_intent.delete_intent > 0.5 and method == "DELETE":
-                    final_scores[name] *= 1.15
-
-        # 3. Embedding rerank: description-only similarity for top candidates
-        # Single batch encode (1 API call for query + descriptions)
-        if self._embedding_index is not None and self._embedding_index._provider is not None:
-            try:
-                top_n = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)[:10]
-                if top_n:
-                    descs = []
-                    desc_names = []
-                    for name, _ in top_n:
-                        tool = self._tools.get(name)
-                        if tool and tool.description:
-                            descs.append(tool.description)
-                            desc_names.append(name)
-                    if descs:
-                        # Batch encode: [query, desc1, desc2, ...] in 1 API call
-                        all_texts = [query] + descs
-                        all_embs = self._embedding_index._provider.encode_batch(all_texts)
-                        if len(all_embs) == len(all_texts):
-                            np = __import__("numpy")
-                            q_vec = np.array(all_embs[0], dtype=np.float32)
-                            q_norm = np.linalg.norm(q_vec)
-                            if q_norm > 0:
-                                q_vec = q_vec / q_norm
-                                for i, name in enumerate(desc_names):
-                                    d_vec = np.array(all_embs[i + 1], dtype=np.float32)
-                                    d_norm = np.linalg.norm(d_vec)
-                                    if d_norm > 0:
-                                        sim = float(np.dot(q_vec, d_vec / d_norm))
-                                        final_scores[name] *= 1.0 + 0.2 * max(sim, 0.0)
-            except (ValueError, ImportError):
-                pass
-
-        # History boost: slightly demote already-used tools to favor new discoveries
+        # Post-fusion boosts
+        self._boost_name_overlap(query, final_scores)
+        self._boost_method_intent(query_intent, final_scores)
+        self._boost_embedding_rerank(query, final_scores)
         if history:
             for tool_name in history:
                 if tool_name in final_scores:
                     final_scores[tool_name] *= 0.8
 
+        # Build candidates and post-process
+        candidates = self._build_candidates(
+            final_scores, keyword_scores, graph_scores, embedding_scores, annotation_scores, top_k
+        )
+        candidates = self._post_process(candidates, query, final_scores, top_k)
+
+        self._enrich_relations(candidates)
+        return candidates
+
+    # --- Pipeline stage methods ---
+
+    def _augment_query(self, query: str, history: list[str] | None) -> str:
+        """Augment query with history context for better retrieval."""
+        if not history:
+            return query
+        context = [f"{t.name} {t.description}" for name in history if (t := self._tools.get(name))]
+        return query + " " + " ".join(context) if context else query
+
+    def _compute_keyword_scores(
+        self, effective_query: str, fallback_query: str
+    ) -> dict[str, float]:
+        """Compute BM25 keyword scores, falling back to simple matching."""
+        scores = self._get_bm25().score(effective_query)
+        return scores if scores else self._keyword_match(fallback_query)
+
+    def _build_seed_tools(
+        self, keyword_scores: dict[str, float], history: list[str] | None
+    ) -> list[str]:
+        """Build seed tool list from keyword scores and history."""
+        sorted_by_score = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
+        seeds = [name for name, _ in sorted_by_score[:10]]
+        if history:
+            for tool_name in history:
+                if tool_name in self._tools and tool_name not in seeds:
+                    seeds.append(tool_name)
+        return seeds
+
+    def _compute_graph_scores(
+        self, seed_tools: list[str], max_depth: int, top_k: int
+    ) -> dict[str, float]:
+        """Expand graph from seed tools."""
+        if not seed_tools:
+            return {}
+        expanded = self._searcher.expand_from_seeds(
+            seed_tools, max_depth=max_depth, max_results=top_k * 3
+        )
+        return dict(expanded)
+
+    def _compute_embedding_scores(self, query: str, top_k: int) -> dict[str, float]:
+        """Compute embedding similarity scores."""
+        if self._embedding_index is None or self._embedding_index.size <= 0:
+            return {}
+        try:
+            query_emb = self._embedding_index.encode(query)
+            return dict(self._embedding_index.search(query_emb, top_k=top_k * 3))
+        except (ValueError, ImportError):
+            return {}
+
+    def _augment_graph_with_embedding_seeds(
+        self,
+        embedding_scores: dict[str, float],
+        seed_tools: list[str],
+        graph_scores: dict[str, float],
+        max_depth: int,
+        top_k: int,
+    ) -> dict[str, float]:
+        """Add top embedding hits as extra graph seeds for semantic coverage."""
+        if not embedding_scores:
+            return graph_scores
+        emb_top = sorted(embedding_scores.items(), key=lambda x: x[1], reverse=True)
+        for name, _ in emb_top[:3]:
+            if name not in seed_tools:
+                seed_tools.append(name)
+        extra = self._searcher.expand_from_seeds(
+            seed_tools, max_depth=max_depth, max_results=top_k * 3
+        )
+        merged = dict(graph_scores)
+        for name, score in extra:
+            if name not in merged or score > merged[name]:
+                merged[name] = score
+        return merged
+
+    def _apply_llm_expansion(
+        self,
+        mode: SearchMode,
+        llm: Any,
+        query: str,
+        score_sources: list[tuple[dict[str, float], float]],
+    ) -> None:
+        """Apply LLM-based query expansion (ENHANCED) and intent decomposition (FULL)."""
+        if llm is None:
+            return
+        if mode in (SearchMode.ENHANCED, SearchMode.FULL):
+            expanded = llm.expand_query(query)
+            terms = expanded.keywords + expanded.synonyms + expanded.english_terms
+            if terms:
+                scores = self._get_bm25().score(" ".join(terms))
+                if not scores:
+                    scores = self._keyword_match(" ".join(terms))
+                if scores:
+                    score_sources.append((scores, 0.7))
+        if mode == SearchMode.FULL:
+            for intent in llm.decompose_intents(query):
+                scores = self._get_bm25().score(intent.to_query())
+                if not scores:
+                    scores = self._keyword_match(intent.to_query())
+                if scores:
+                    score_sources.append((scores, 0.5))
+
+    def _fuse_and_filter(
+        self, score_sources: list[tuple[dict[str, float], float]]
+    ) -> dict[str, float]:
+        """wRRF fusion then filter to TOOL nodes only."""
+        active = [(s, w) for s, w in score_sources if s]
+        fused = self._wrrf_fuse(active) if active else {}
+        final: dict[str, float] = {}
+        for name, score in fused.items():
+            if not self._graph.has_node(name):
+                continue
+            if self._graph.get_node_attrs(name).get("node_type") != NodeType.TOOL:
+                continue
+            final[name] = score
+        return final
+
+    def _boost_name_overlap(self, query: str, scores: dict[str, float]) -> None:
+        """Boost scores for tools whose name tokens overlap with query tokens."""
+        query_tokens = set(re.split(r"[\s_\-/.,;:!?()]+", query.lower()))
+        query_tokens.discard("")
+        for name in scores:
+            name_tokens = set(re.split(r"[\s_\-/.,;:!?()]+", name.lower()))
+            expanded: set[str] = set()
+            for t in name_tokens:
+                parts = re.sub(r"([a-z])([A-Z])", r"\1 \2", t).lower().split()
+                expanded.update(parts)
+            overlap = len(query_tokens & expanded)
+            if overlap > 0:
+                scores[name] *= 1.0 + 0.1 * overlap
+
+    def _boost_method_intent(self, query_intent: Any, scores: dict[str, float]) -> None:
+        """Boost scores based on HTTP method-intent alignment."""
+        if not query_intent or query_intent.is_neutral:
+            return
+        for name in list(scores):
+            tool = self._tools.get(name)
+            if not tool or not tool.metadata:
+                continue
+            method = tool.metadata.get("method", "").upper()
+            if not method:
+                continue
+            if query_intent.write_intent > 0.5 and method == "POST":
+                scores[name] *= 1.15
+            elif query_intent.read_intent > 0.5 and method == "GET":
+                scores[name] *= 1.1
+            elif query_intent.delete_intent > 0.5 and method == "DELETE":
+                scores[name] *= 1.15
+
+    def _boost_embedding_rerank(self, query: str, scores: dict[str, float]) -> None:
+        """Rerank top candidates using embedding description similarity."""
+        if self._embedding_index is None or self._embedding_index._provider is None:
+            return
+        try:
+            top_n = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:10]
+            if not top_n:
+                return
+            descs, desc_names = [], []
+            for name, _ in top_n:
+                tool = self._tools.get(name)
+                if tool and tool.description:
+                    descs.append(tool.description)
+                    desc_names.append(name)
+            if not descs:
+                return
+            all_embs = self._embedding_index._provider.encode_batch([query] + descs)
+            if len(all_embs) != len(descs) + 1:
+                return
+            np = __import__("numpy")
+            q_vec = np.array(all_embs[0], dtype=np.float32)
+            q_norm = np.linalg.norm(q_vec)
+            if q_norm <= 0:
+                return
+            q_vec = q_vec / q_norm
+            for i, name in enumerate(desc_names):
+                d_vec = np.array(all_embs[i + 1], dtype=np.float32)
+                d_norm = np.linalg.norm(d_vec)
+                if d_norm > 0:
+                    sim = float(np.dot(q_vec, d_vec / d_norm))
+                    scores[name] *= 1.0 + 0.2 * max(sim, 0.0)
+        except (ValueError, ImportError):
+            pass
+
+    def _build_candidates(
+        self,
+        final_scores: dict[str, float],
+        keyword_scores: dict[str, float],
+        graph_scores: dict[str, float],
+        embedding_scores: dict[str, float],
+        annotation_scores: dict[str, float],
+        top_k: int,
+    ) -> list[RetrievalResult]:
+        """Build RetrievalResult list from fused scores."""
         ranked = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)
+        pool = top_k * 3 if (self._reranker or self._diversity_lambda) else top_k
+        return [
+            RetrievalResult(
+                tool=self._tools[name],
+                score=score,
+                keyword_score=keyword_scores.get(name, 0.0),
+                graph_score=graph_scores.get(name, 0.0),
+                embedding_score=embedding_scores.get(name, 0.0),
+                annotation_score=annotation_scores.get(name, 0.0),
+            )
+            for name, score in ranked[:pool]
+            if name in self._tools
+        ]
 
-        # Determine how many candidates to pass to post-processing
-        rerank_pool = top_k * 3 if (self._reranker or self._diversity_lambda) else top_k
-        candidates: list[RetrievalResult] = []
-        for name, fused_score in ranked[:rerank_pool]:
-            if name in self._tools:
-                candidates.append(
-                    RetrievalResult(
-                        tool=self._tools[name],
-                        score=fused_score,
-                        keyword_score=keyword_scores.get(name, 0.0),
-                        graph_score=graph_scores.get(name, 0.0),
-                        embedding_score=embedding_scores.get(name, 0.0),
-                        annotation_score=annotation_scores.get(name, 0.0),
-                    )
-                )
-
-        # --- Cross-encoder reranking ---
+    def _post_process(
+        self,
+        candidates: list[RetrievalResult],
+        query: str,
+        final_scores: dict[str, float],
+        top_k: int,
+    ) -> list[RetrievalResult]:
+        """Apply cross-encoder reranking and MMR diversity."""
         if self._reranker is not None and candidates:
             tools_only = [r.tool for r in candidates]
             reranked = self._reranker.rerank(query, tools_only, top_k=top_k * 2)
@@ -359,7 +468,6 @@ class RetrievalEngine:
             name_to_result = {r.tool.name: r for r in candidates}
             candidates = [name_to_result[t.name] for t in reranked if t.name in name_to_result]
 
-        # --- MMR diversity reranking ---
         if self._diversity_lambda is not None and candidates:
             from graph_tool_call.retrieval.diversity import mmr_rerank
 
@@ -375,12 +483,7 @@ class RetrievalEngine:
             name_to_result = {r.tool.name: r for r in candidates}
             candidates = [name_to_result[n] for n in diverse_names if n in name_to_result]
 
-        candidates = candidates[:top_k]
-
-        # --- Enrich with inter-result relations ---
-        self._enrich_relations(candidates)
-
-        return candidates
+        return candidates[:top_k]
 
     def _enrich_relations(self, results: list[RetrievalResult]) -> None:
         """Attach inter-result relations and prerequisites to each result."""
