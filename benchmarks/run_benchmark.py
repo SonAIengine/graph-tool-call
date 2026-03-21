@@ -108,6 +108,10 @@ def run_retrieval_benchmark(
             query_ap = average_precision(retrieved_names, expected)
             query_ndcg = ndcg_at_k(retrieved_names, expected, config.top_k)
 
+            # Multi-K recall
+            recall_3 = recall_at_k(retrieved_names, expected, 3)
+            recall_10 = recall_at_k(retrieved_names, expected, 10)
+
             # Component attribution: average score breakdown of top-1 result
             breakdown: dict[str, float] = {}
             if scored_results:
@@ -117,6 +121,8 @@ def run_retrieval_benchmark(
                     "graph": top1.graph_score,
                     "embedding": top1.embedding_score,
                     "annotation": top1.annotation_score,
+                    "recall_at_3": recall_3,
+                    "recall_at_10": recall_10,
                 }
 
             qr = QueryResult(

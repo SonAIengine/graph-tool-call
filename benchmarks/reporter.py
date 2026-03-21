@@ -62,6 +62,18 @@ class DatasetResult:
     avg_ndcg_at_k: float = 0.0
     avg_latency_ms: float = 0.0
 
+    # Statistical metrics
+    stdev_recall: float = 0.0
+    stdev_mrr: float = 0.0
+    ci_recall: tuple[float, float] = (0.0, 0.0)
+    ci_mrr: tuple[float, float] = (0.0, 0.0)
+    miss_rate: float = 0.0
+    hit_rate: float = 0.0
+
+    # Multi-K recall
+    recall_at_3: float = 0.0
+    recall_at_10: float = 0.0
+
     # Component attribution averages
     avg_keyword_contribution: float = 0.0
     avg_graph_contribution: float = 0.0
@@ -74,6 +86,12 @@ class DatasetResult:
     avg_token_reduction: float = 0.0
     avg_baseline_latency_ms: float = 0.0
     avg_retrieve_latency_ms: float = 0.0
+    token_efficiency_baseline: float = 0.0
+    token_efficiency_retrieve: float = 0.0
+
+    # Statistical significance (baseline vs retrieve)
+    t_statistic: float = 0.0
+    p_value: float = 1.0
 
 
 @dataclass
@@ -89,6 +107,10 @@ class BenchmarkReport:
 
 def compute_dataset_metrics(ds: DatasetResult) -> None:
     """Compute aggregate metrics from individual query results."""
+    from benchmarks.metrics import confidence_interval, paired_t_test, token_efficiency
+    from benchmarks.metrics import miss_rate as _miss_rate
+    from benchmarks.metrics import stdev as _stdev
+
     if not ds.queries:
         return
 
@@ -96,10 +118,32 @@ def compute_dataset_metrics(ds: DatasetResult) -> None:
     ds.query_count = n
 
     # Retrieval metrics
-    ds.avg_recall_at_k = sum(q.recall_at_k for q in ds.queries) / n
-    ds.avg_mrr = sum(q.mrr for q in ds.queries) / n
+    recall_values = [q.recall_at_k for q in ds.queries]
+    mrr_values = [q.mrr for q in ds.queries]
+
+    ds.avg_recall_at_k = sum(recall_values) / n
+    ds.avg_mrr = sum(mrr_values) / n
     ds.avg_map = sum(q.average_precision for q in ds.queries) / n
     ds.avg_ndcg_at_k = sum(q.ndcg_at_k for q in ds.queries) / n
+
+    # Statistical metrics
+    ds.stdev_recall = _stdev(recall_values)
+    ds.stdev_mrr = _stdev(mrr_values)
+    ds.ci_recall = confidence_interval(recall_values)
+    ds.ci_mrr = confidence_interval(mrr_values)
+    ds.miss_rate = _miss_rate(recall_values)
+
+    # Hit rate (at least one relevant in top-K)
+    hit_values = [1.0 if q.recall_at_k > 0 else 0.0 for q in ds.queries]
+    ds.hit_rate = sum(hit_values) / n if n else 0.0
+
+    # Multi-K recall (stored per query in score_breakdown if available)
+    recall_3_values = [q.score_breakdown.get("recall_at_3", 0.0) for q in ds.queries]
+    recall_10_values = [q.score_breakdown.get("recall_at_10", 0.0) for q in ds.queries]
+    if any(v > 0 for v in recall_3_values):
+        ds.recall_at_3 = sum(recall_3_values) / n
+    if any(v > 0 for v in recall_10_values):
+        ds.recall_at_10 = sum(recall_10_values) / n
 
     # Latency
     latencies = [q.latency_ms for q in ds.queries if q.latency_ms > 0]
@@ -138,6 +182,18 @@ def compute_dataset_metrics(ds: DatasetResult) -> None:
         reductions = [(b - r) / b for b, r in token_pairs]
         ds.avg_token_reduction = sum(reductions) / len(reductions)
 
+    # Token efficiency
+    if baseline_results:
+        avg_bl_tokens = sum(q.baseline_input_tokens for q in baseline_results) / len(
+            baseline_results
+        )
+        ds.token_efficiency_baseline = token_efficiency(ds.baseline_accuracy, avg_bl_tokens)
+    if retrieve_results:
+        avg_rt_tokens = sum(q.retrieve_input_tokens for q in retrieve_results) / len(
+            retrieve_results
+        )
+        ds.token_efficiency_retrieve = token_efficiency(ds.retrieve_accuracy, avg_rt_tokens)
+
     # Latency
     baseline_lats = [q.baseline_latency_ms for q in ds.queries if q.baseline_latency_ms > 0]
     retrieve_lats = [q.retrieve_latency_ms for q in ds.queries if q.retrieve_latency_ms > 0]
@@ -145,6 +201,17 @@ def compute_dataset_metrics(ds: DatasetResult) -> None:
         ds.avg_baseline_latency_ms = sum(baseline_lats) / len(baseline_lats)
     if retrieve_lats:
         ds.avg_retrieve_latency_ms = sum(retrieve_lats) / len(retrieve_lats)
+
+    # Statistical significance (paired t-test: baseline vs retrieve accuracy per query)
+    if baseline_results and retrieve_results and len(baseline_results) == len(retrieve_results):
+        bl_scores = [
+            1.0 if q.baseline_correct else 0.0 for q in ds.queries if q.baseline_correct is not None
+        ]
+        rt_scores = [
+            1.0 if q.retrieve_correct else 0.0 for q in ds.queries if q.retrieve_correct is not None
+        ]
+        if len(bl_scores) == len(rt_scores) and len(bl_scores) >= 2:
+            ds.t_statistic, ds.p_value = paired_t_test(rt_scores, bl_scores)
 
 
 def print_retrieval_report(report: BenchmarkReport) -> None:
@@ -157,10 +224,31 @@ def print_retrieval_report(report: BenchmarkReport) -> None:
         print(f"\n  {ds.name}  ({ds.tool_count} tools, {ds.query_count} queries)")
         print(f"  {'─' * 50}")
         k = report.top_k
-        print(f"  {'Recall@' + str(k):<20} {ds.avg_recall_at_k:.1%}")
-        print(f"  {'MRR':<20} {ds.avg_mrr:.3f}")
+
+        # Core metrics with CI
+        lo, hi = ds.ci_recall
+        print(f"  {'Recall@' + str(k):<20} {ds.avg_recall_at_k:.1%}  (95% CI: {lo:.1%}–{hi:.1%})")
+        lo, hi = ds.ci_mrr
+        print(f"  {'MRR':<20} {ds.avg_mrr:.3f}  (95% CI: {lo:.3f}–{hi:.3f})")
         print(f"  {'MAP':<20} {ds.avg_map:.3f}")
         print(f"  {'NDCG@' + str(k):<20} {ds.avg_ndcg_at_k:.3f}")
+
+        # Recall curve
+        if ds.recall_at_3 > 0 or ds.recall_at_10 > 0:
+            parts = []
+            if ds.recall_at_3 > 0:
+                parts.append(f"@3={ds.recall_at_3:.1%}")
+            parts.append(f"@{k}={ds.avg_recall_at_k:.1%}")
+            if ds.recall_at_10 > 0:
+                parts.append(f"@10={ds.recall_at_10:.1%}")
+            print(f"  {'Recall Curve':<20} {', '.join(parts)}")
+
+        # Hit/Miss rates
+        print(f"  {'HitRate@' + str(k):<20} {ds.hit_rate:.1%}")
+        if ds.miss_rate > 0:
+            n_miss = int(ds.miss_rate * ds.query_count)
+            print(f"  {'MissRate':<20} {ds.miss_rate:.1%}  ({n_miss} queries)")
+
         if ds.avg_latency_ms > 0:
             print(f"  {'Avg Latency':<20} {ds.avg_latency_ms:.1f}ms")
 
@@ -228,6 +316,11 @@ def print_llm_report(report: BenchmarkReport) -> None:
         if ds.avg_token_reduction > 0:
             print(f"  {'Token Reduction':<25} {'—':>12} {ds.avg_token_reduction:>11.1%}")
 
+        if ds.token_efficiency_baseline > 0 or ds.token_efficiency_retrieve > 0:
+            bl_eff = f"{ds.token_efficiency_baseline:.2f}"
+            rt_eff = f"{ds.token_efficiency_retrieve:.2f}"
+            print(f"  {'Token Efficiency':<25} {bl_eff:>12} {rt_eff:>12}")
+
         if ds.avg_baseline_latency_ms > 0 and ds.avg_retrieve_latency_ms > 0:
             bl = ds.avg_baseline_latency_ms
             rl = ds.avg_retrieve_latency_ms
@@ -235,6 +328,18 @@ def print_llm_report(report: BenchmarkReport) -> None:
             print(f"  {'Avg Latency':<25} {bl:>10.0f}ms {rl:>10.0f}ms {speedup:>9.1%}")
 
         print(f"  {'Recall@' + str(report.top_k):<25} {'—':>12} {ds.avg_recall_at_k:>11.1%}")
+
+        # Statistical significance
+        if ds.p_value < 1.0:
+            if ds.p_value < 0.001:
+                sig = "***"
+            elif ds.p_value < 0.01:
+                sig = "**"
+            elif ds.p_value < 0.05:
+                sig = "*"
+            else:
+                sig = "ns"
+            print(f"  {'Significance':<25} {'p=' + f'{ds.p_value:.4f}':>12} {sig:>12}")
 
     print(f"\n{'=' * 70}")
 

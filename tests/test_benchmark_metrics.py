@@ -8,10 +8,16 @@ import pytest
 
 from benchmarks.metrics import (
     average_precision,
+    confidence_interval,
+    hit_rate,
+    miss_rate,
     mrr,
     ndcg_at_k,
+    paired_t_test,
     precision_at_k,
     recall_at_k,
+    stdev,
+    token_efficiency,
     workflow_coverage,
 )
 
@@ -140,3 +146,115 @@ class TestWorkflowCoverage:
 
     def test_extra_retrieved(self):
         assert workflow_coverage(["a", "b", "c", "d"], ["a", "c"]) == 1.0
+
+
+class TestHitRate:
+    def test_hit(self):
+        assert hit_rate(["x", "a", "y"], {"a"}, 3) == 1.0
+
+    def test_miss(self):
+        assert hit_rate(["x", "y", "z"], {"a"}, 3) == 0.0
+
+    def test_hit_at_boundary(self):
+        assert hit_rate(["x", "y", "a"], {"a"}, 3) == 1.0
+
+    def test_beyond_k(self):
+        assert hit_rate(["x", "y", "z", "a"], {"a"}, 3) == 0.0
+
+    def test_empty_relevant(self):
+        assert hit_rate(["a"], set(), 3) == 0.0
+
+    def test_k_zero(self):
+        assert hit_rate(["a"], {"a"}, 0) == 0.0
+
+
+class TestMissRate:
+    def test_no_misses(self):
+        assert miss_rate([1.0, 0.5, 0.8]) == 0.0
+
+    def test_all_misses(self):
+        assert miss_rate([0.0, 0.0, 0.0]) == 1.0
+
+    def test_partial_misses(self):
+        assert miss_rate([1.0, 0.0, 0.5, 0.0]) == pytest.approx(0.5)
+
+    def test_empty(self):
+        assert miss_rate([]) == 0.0
+
+
+class TestStdev:
+    def test_uniform(self):
+        assert stdev([5.0, 5.0, 5.0]) == 0.0
+
+    def test_known_values(self):
+        # sample stdev of [2, 4, 4, 4, 5, 5, 7, 9] ≈ 2.138
+        assert stdev([2, 4, 4, 4, 5, 5, 7, 9]) == pytest.approx(2.138, abs=0.01)
+
+    def test_single_value(self):
+        assert stdev([3.0]) == 0.0
+
+    def test_empty(self):
+        assert stdev([]) == 0.0
+
+
+class TestConfidenceInterval:
+    def test_known_range(self):
+        values = [1.0] * 50 + [0.0] * 50
+        lo, hi = confidence_interval(values, confidence=0.95)
+        assert lo < 0.5 < hi  # mean=0.5 should be in the interval
+        assert lo > 0.3
+        assert hi < 0.7
+
+    def test_constant_values(self):
+        lo, hi = confidence_interval([0.9, 0.9, 0.9])
+        assert lo == pytest.approx(0.9)
+        assert hi == pytest.approx(0.9)
+
+    def test_single_value(self):
+        lo, hi = confidence_interval([0.5])
+        assert lo == 0.5
+        assert hi == 0.5
+
+
+class TestPairedTTest:
+    def test_identical(self):
+        t, p = paired_t_test([1.0, 2.0, 3.0], [1.0, 2.0, 3.0])
+        assert t == 0.0
+        assert p == 1.0
+
+    def test_significant_difference(self):
+        # Constant diff=9 → t=inf, p=0
+        a = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0]
+        b = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        t, p = paired_t_test(a, b)
+        assert t > 0  # a > b
+        assert p < 0.01  # highly significant
+
+    def test_variable_difference(self):
+        a = [10.0, 8.0, 12.0, 9.0, 11.0, 13.0]
+        b = [2.0, 3.0, 1.0, 4.0, 2.0, 3.0]
+        t, p = paired_t_test(a, b)
+        assert t > 0
+        assert p < 0.05
+
+    def test_too_few_samples(self):
+        t, p = paired_t_test([1.0], [2.0])
+        assert t == 0.0
+        assert p == 1.0
+
+    def test_different_lengths(self):
+        t, p = paired_t_test([1.0, 2.0], [1.0])
+        assert t == 0.0
+        assert p == 1.0
+
+
+class TestTokenEfficiency:
+    def test_basic(self):
+        # accuracy=0.8, avg_tokens=2000 → 0.8/2.0 = 0.4
+        assert token_efficiency(0.8, 2000) == pytest.approx(0.4)
+
+    def test_zero_tokens(self):
+        assert token_efficiency(0.5, 0) == 0.0
+
+    def test_zero_accuracy(self):
+        assert token_efficiency(0.0, 1000) == 0.0
