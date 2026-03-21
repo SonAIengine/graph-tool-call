@@ -5,8 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from typing import TYPE_CHECKING
 
 from graph_tool_call import __version__
+
+if TYPE_CHECKING:
+    from graph_tool_call import ToolGraph
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -333,50 +337,71 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             print(f"  {category.name}{domain}: {category.tool_count} tools")
 
 
-def cmd_search(args: argparse.Namespace) -> None:
+def _load_source(
+    source: str,
+    *,
+    allow_private_hosts: bool = False,
+    cache_file: str | None = None,
+) -> ToolGraph:
+    """Load a ToolGraph from source (URL, JSON file, or OpenAPI spec).
+
+    Shared by cmd_search and cmd_call to avoid duplication.
+    """
     from graph_tool_call import ToolGraph
 
-    source = args.source
-    cache_file = getattr(args, "cache_file", None)
-
     # Try loading from cache first
-    tg = None
     if cache_file:
         try:
-            tg = ToolGraph.load(cache_file)
+            return ToolGraph.load(cache_file)
         except (FileNotFoundError, KeyError, ValueError):
             pass
 
-    if tg is None:
-        # Detect source type: pre-built graph JSON or OpenAPI spec
-        if source.endswith(".json") and not source.startswith(("http://", "https://")):
-            try:
-                tg = ToolGraph.load(source)
-            except (KeyError, ValueError):
-                tg = ToolGraph()
-                tg.ingest_openapi(source, allow_private_hosts=args.allow_private_hosts)
-        elif source.startswith(("http://", "https://")):
-            tg = ToolGraph.from_url(
-                source,
-                progress=lambda msg: print(f"  {msg}", file=sys.stderr),
-                allow_private_hosts=args.allow_private_hosts,
-            )
-        else:
+    # Detect source type: pre-built graph JSON or OpenAPI spec
+    if source.endswith(".json") and not source.startswith(("http://", "https://")):
+        try:
+            return ToolGraph.load(source)
+        except (KeyError, ValueError):
             tg = ToolGraph()
-            tg.ingest_openapi(source, allow_private_hosts=args.allow_private_hosts)
+            tg.ingest_openapi(source, allow_private_hosts=allow_private_hosts)
+            return tg
+    elif source.startswith(("http://", "https://")):
+        return ToolGraph.from_url(
+            source,
+            progress=lambda msg: print(f"  {msg}", file=sys.stderr),
+            allow_private_hosts=allow_private_hosts,
+        )
+    else:
+        tg = ToolGraph()
+        tg.ingest_openapi(source, allow_private_hosts=allow_private_hosts)
+        return tg
 
-    # Enable embedding if requested
-    embedding_arg = getattr(args, "embedding", None)
-    if embedding_arg:
-        model = None if embedding_arg == "auto" else embedding_arg
-        if model:
-            tg.enable_embedding(model)
-        else:
-            tg.enable_embedding()
 
-        # Save to cache if specified
-        if cache_file:
-            tg.save(cache_file)
+def _apply_embedding(
+    tg: ToolGraph,
+    embedding_arg: str | None,
+    cache_file: str | None = None,
+) -> None:
+    """Enable embedding on a ToolGraph if requested. Shared by cmd_search/cmd_call."""
+    if not embedding_arg:
+        return
+    model = None if embedding_arg == "auto" else embedding_arg
+    if model:
+        tg.enable_embedding(model)
+    else:
+        tg.enable_embedding()
+    if cache_file:
+        tg.save(cache_file)
+
+
+def cmd_search(args: argparse.Namespace) -> None:
+    source = args.source
+    cache_file = getattr(args, "cache_file", None)
+    tg = _load_source(
+        source,
+        allow_private_hosts=args.allow_private_hosts,
+        cache_file=cache_file,
+    )
+    _apply_embedding(tg, getattr(args, "embedding", None), cache_file)
 
     if args.scores:
         results = tg.retrieve_with_scores(args.query, top_k=args.top_k)
@@ -528,32 +553,8 @@ def cmd_proxy(args: argparse.Namespace) -> None:
 
 
 def cmd_call(args: argparse.Namespace) -> None:
-    from graph_tool_call import ToolGraph
-
-    source = args.source
-
-    # Load graph
-    if source.endswith(".json") and not source.startswith(("http://", "https://")):
-        try:
-            tg = ToolGraph.load(source)
-        except (KeyError, ValueError):
-            tg = ToolGraph()
-            tg.ingest_openapi(source, allow_private_hosts=args.allow_private_hosts)
-    elif source.startswith(("http://", "https://")):
-        tg = ToolGraph.from_url(
-            source,
-            progress=lambda msg: print(f"  {msg}", file=sys.stderr),
-            allow_private_hosts=args.allow_private_hosts,
-        )
-    else:
-        tg = ToolGraph()
-        tg.ingest_openapi(source, allow_private_hosts=args.allow_private_hosts)
-
-    # Enable embedding if requested
-    embedding_arg = getattr(args, "embedding", None)
-    if embedding_arg:
-        model = None if embedding_arg == "auto" else embedding_arg
-        tg.enable_embedding(model) if model else tg.enable_embedding()
+    tg = _load_source(args.source, allow_private_hosts=args.allow_private_hosts)
+    _apply_embedding(tg, getattr(args, "embedding", None))
 
     # Find tool: explicit name or search
     tool_name = args.tool

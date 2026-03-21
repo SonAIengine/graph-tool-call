@@ -31,6 +31,7 @@ logger = logging.getLogger("graph-tool-call.mcp")
 
 
 def _check_mcp_installed() -> None:
+    """Raise ImportError if the MCP SDK is not available."""
     try:
         import mcp  # noqa: F401
     except ImportError:

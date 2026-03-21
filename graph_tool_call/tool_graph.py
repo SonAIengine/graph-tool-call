@@ -150,6 +150,7 @@ class ToolGraph:
         self._builder = OntologyBuilder(self._graph)
         self._tools: dict[str, ToolSchema] = {}
         self._retrieval: Any = None
+        self._metadata: dict[str, Any] = {}
 
     @property
     def graph(self) -> GraphEngine:
@@ -190,9 +191,10 @@ class ToolGraph:
         min_confidence:
             Minimum confidence threshold for detected relations.
         """
+        # add_tool() already registers each tool in builder,
+        # so only run category assignment + dependency detection here.
         schemas = [self.add_tool(t) for t in tools]
 
-        # Batch category assignment
         categories_seen: set[str] = set()
         for schema in schemas:
             if schema.domain:
@@ -202,7 +204,6 @@ class ToolGraph:
                     categories_seen.add(schema.domain)
                 self._builder.assign_category(schema.name, schema.domain)
 
-        # Batch dependency detection
         if detect_dependencies and len(schemas) >= 2:
             from graph_tool_call.analyze.dependency import detect_dependencies as _detect
 
@@ -256,31 +257,12 @@ class ToolGraph:
             allow_private_hosts=allow_private_hosts,
             max_response_bytes=max_response_bytes,
         )
-
-        # Register tools
-        for tool in tools:
-            self._tools[tool.name] = tool
-            self._builder.add_tool(tool)
-
-        # Auto-categorize: use tool.domain (set by ingest) as category
-        categories_seen: set[str] = set()
-        for tool in tools:
-            if tool.domain:
-                if tool.domain not in categories_seen:
-                    if not self._graph.has_node(tool.domain):
-                        self._builder.add_category(tool.domain)
-                    categories_seen.add(tool.domain)
-                self._builder.assign_category(tool.name, tool.domain)
-
-        # Auto-detect dependencies
-        if detect_dependencies:
-            from graph_tool_call.analyze.dependency import detect_dependencies as _detect
-
-            relations = _detect(tools, spec=spec.raw, min_confidence=min_confidence)
-            for rel in relations:
-                self._builder.add_relation(rel.source, rel.target, rel.relation_type)
-
-        self._invalidate_retrieval()
+        self._register_tools_batch(
+            tools,
+            detect_dependencies=detect_dependencies,
+            min_confidence=min_confidence,
+            spec=spec.raw,
+        )
         return tools
 
     def ingest_mcp_tools(
@@ -312,27 +294,11 @@ class ToolGraph:
         from graph_tool_call.ingest.mcp import ingest_mcp_tools
 
         schemas = ingest_mcp_tools(tools, server_name=server_name)
-
-        # Register tools and assign categories
-        categories_seen: set[str] = set()
-        for schema in schemas:
-            self._tools[schema.name] = schema
-            self._builder.add_tool(schema)
-            if schema.domain:
-                if schema.domain not in categories_seen:
-                    if not self._graph.has_node(schema.domain):
-                        self._builder.add_category(schema.domain)
-                    categories_seen.add(schema.domain)
-                self._builder.assign_category(schema.name, schema.domain)
-
-        if detect_dependencies and len(schemas) >= 2:
-            from graph_tool_call.analyze.dependency import detect_dependencies as _detect
-
-            relations = _detect(schemas, min_confidence=min_confidence)
-            for rel in relations:
-                self._builder.add_relation(rel.source, rel.target, rel.relation_type)
-
-        self._invalidate_retrieval()
+        self._register_tools_batch(
+            schemas,
+            detect_dependencies=detect_dependencies,
+            min_confidence=min_confidence,
+        )
         return schemas
 
     def ingest_mcp_server(
@@ -392,27 +358,11 @@ class ToolGraph:
         from graph_tool_call.ingest.functions import ingest_functions
 
         tools = ingest_functions(fns)
-
-        # Register tools and assign categories
-        categories_seen: set[str] = set()
-        for tool in tools:
-            self._tools[tool.name] = tool
-            self._builder.add_tool(tool)
-            if tool.domain:
-                if tool.domain not in categories_seen:
-                    if not self._graph.has_node(tool.domain):
-                        self._builder.add_category(tool.domain)
-                    categories_seen.add(tool.domain)
-                self._builder.assign_category(tool.name, tool.domain)
-
-        if detect_dependencies and len(tools) >= 2:
-            from graph_tool_call.analyze.dependency import detect_dependencies as _detect
-
-            relations = _detect(tools, min_confidence=min_confidence)
-            for rel in relations:
-                self._builder.add_relation(rel.source, rel.target, rel.relation_type)
-
-        self._invalidate_retrieval()
+        self._register_tools_batch(
+            tools,
+            detect_dependencies=detect_dependencies,
+            min_confidence=min_confidence,
+        )
         return tools
 
     def ingest_arazzo(
@@ -685,8 +635,7 @@ class ToolGraph:
 
     def _infer_base_url(self) -> str:
         """Infer API base URL from graph metadata."""
-        meta = getattr(self, "_metadata", {})
-        source_url = meta.get("source_url", "")
+        source_url = self._metadata.get("source_url", "")
         if source_url:
             from urllib.parse import urlparse
 
@@ -791,6 +740,41 @@ class ToolGraph:
 
     def _invalidate_retrieval(self) -> None:
         self._retrieval = None
+
+    def _register_tools_batch(
+        self,
+        tools: list[ToolSchema],
+        *,
+        detect_dependencies: bool = True,
+        min_confidence: float = 0.7,
+        spec: dict | None = None,
+    ) -> None:
+        """Register tools, assign categories, and detect dependencies.
+
+        Shared logic for ingest_openapi, ingest_mcp_tools, and ingest_functions.
+        """
+        categories_seen: set[str] = set()
+        for tool in tools:
+            self._tools[tool.name] = tool
+            self._builder.add_tool(tool)
+            if tool.domain:
+                if tool.domain not in categories_seen:
+                    if not self._graph.has_node(tool.domain):
+                        self._builder.add_category(tool.domain)
+                    categories_seen.add(tool.domain)
+                self._builder.assign_category(tool.name, tool.domain)
+
+        if detect_dependencies and len(tools) >= 2:
+            from graph_tool_call.analyze.dependency import detect_dependencies as _detect
+
+            kwargs: dict = {"min_confidence": min_confidence}
+            if spec:
+                kwargs["spec"] = spec
+            relations = _detect(tools, **kwargs)
+            for rel in relations:
+                self._builder.add_relation(rel.source, rel.target, rel.relation_type)
+
+        self._invalidate_retrieval()
 
     # --- from_url ---
 
@@ -984,7 +968,7 @@ class ToolGraph:
     @property
     def metadata(self) -> dict[str, Any]:
         """Build metadata from the last save/load (source_urls, built_at, etc.)."""
-        return getattr(self, "_metadata", {})
+        return self._metadata
 
     # --- conflict detection ---
 
