@@ -198,7 +198,7 @@ class RetrievalEngine:
 
         # --- Score computation ---
         keyword_scores = self._compute_keyword_scores(effective_query, query)
-        seed_tools = self._build_seed_tools(keyword_scores, history)
+        seed_tools = self._build_seed_tools(keyword_scores, history, query=query)
         graph_scores = self._compute_graph_scores(seed_tools, max_graph_depth, top_k)
         embedding_scores = self._compute_embedding_scores(query, top_k)
 
@@ -212,14 +212,24 @@ class RetrievalEngine:
         from graph_tool_call.retrieval.intent import classify_intent
 
         query_intent = classify_intent(query)
+
+        # Re-expand graph with intent-aware weights if intent is clear
+        if query_intent and not query_intent.is_neutral:
+            graph_scores = self._reexpand_with_intent(
+                query_intent, seed_tools, max_graph_depth, top_k, graph_scores
+            )
+
         annotation_scores = compute_annotation_scores(query_intent, self._tools)
+
+        # Dynamic wRRF weights based on corpus size
+        kw, gw, ew, aw = self._get_adaptive_weights()
 
         # Collect all score sources for wRRF
         score_sources: list[tuple[dict[str, float], float]] = [
-            (keyword_scores, self._keyword_weight),
-            (graph_scores, self._graph_weight),
-            (embedding_scores, self._embedding_weight),
-            (annotation_scores, self._annotation_weight),
+            (keyword_scores, kw),
+            (graph_scores, gw),
+            (embedding_scores, ew),
+            (annotation_scores, aw),
         ]
 
         # ENHANCED/FULL: LLM-assisted expansion
@@ -263,11 +273,30 @@ class RetrievalEngine:
         return scores if scores else self._keyword_match(fallback_query)
 
     def _build_seed_tools(
-        self, keyword_scores: dict[str, float], history: list[str] | None
+        self,
+        keyword_scores: dict[str, float],
+        history: list[str] | None,
+        query: str | None = None,
     ) -> list[str]:
-        """Build seed tool list from keyword scores and history."""
+        """Build multi-layer seed list: BM25 + annotation + history."""
+        # Layer 1: BM25 top-10
         sorted_by_score = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
         seeds = [name for name, _ in sorted_by_score[:10]]
+
+        # Layer 2: Annotation-based seeds (intent-matching tools)
+        if query:
+            from graph_tool_call.retrieval.annotation_scorer import compute_annotation_scores
+            from graph_tool_call.retrieval.intent import classify_intent
+
+            intent = classify_intent(query)
+            if not intent.is_neutral:
+                ann_scores = compute_annotation_scores(intent, self._tools)
+                ann_top = sorted(ann_scores.items(), key=lambda x: x[1], reverse=True)
+                for name, score in ann_top[:3]:
+                    if score > 0.7 and name not in seeds:
+                        seeds.append(name)
+
+        # Layer 3: History
         if history:
             for tool_name in history:
                 if tool_name in self._tools and tool_name not in seeds:
@@ -493,6 +522,62 @@ class RetrievalEngine:
             candidates = [name_to_result[n] for n in diverse_names if n in name_to_result]
 
         return candidates[:top_k]
+
+    def _reexpand_with_intent(
+        self,
+        query_intent: Any,
+        seed_tools: list[str],
+        max_depth: int,
+        top_k: int,
+        graph_scores: dict[str, float],
+    ) -> dict[str, float]:
+        """Re-expand graph using intent-aware relation weights."""
+        from graph_tool_call.ontology.schema import INTENT_RELATION_WEIGHTS
+
+        # Determine dominant intent
+        intents = {
+            "read": query_intent.read_intent,
+            "write": query_intent.write_intent,
+            "delete": query_intent.delete_intent,
+        }
+        dominant = max(intents, key=intents.get)
+        if intents[dominant] < 0.6:
+            return graph_scores  # no strong intent → keep defaults
+
+        intent_weights = INTENT_RELATION_WEIGHTS.get(dominant)
+        if not intent_weights:
+            return graph_scores
+
+        # Create a temporary searcher with intent-aware weights
+        intent_searcher = GraphSearcher(self._graph, relation_weights=intent_weights)
+        expanded = intent_searcher.expand_from_seeds(
+            seed_tools, max_depth=max_depth, max_results=top_k * 3
+        )
+        # Merge: take max of default and intent-aware scores
+        merged = dict(graph_scores)
+        for name, score in expanded:
+            if name not in merged or score > merged[name]:
+                merged[name] = score
+        return merged
+
+    def _get_adaptive_weights(
+        self,
+    ) -> tuple[float, float, float, float]:
+        """Return (keyword, graph, embedding, annotation) weights adapted to corpus size."""
+        n = len(self._tools)
+        has_embedding = self._embedding_index is not None and self._embedding_weight > 0
+
+        if not has_embedding:
+            return (self._keyword_weight, self._graph_weight, 0.0, self._annotation_weight)
+
+        # Dynamic adjustment based on corpus size
+        if n <= 30:
+            return (0.35, 0.30, 0.30, 0.05)
+        elif n <= 100:
+            return (0.30, 0.35, 0.25, 0.10)
+        else:
+            # Large corpus: reduce embedding (sparse), boost graph + annotation
+            return (0.25, 0.40, 0.15, 0.20)
 
     def _enrich_relations(self, results: list[RetrievalResult]) -> None:
         """Attach inter-result relations and prerequisites to each result."""

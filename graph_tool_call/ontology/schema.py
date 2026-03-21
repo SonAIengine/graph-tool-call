@@ -33,3 +33,31 @@ DEFAULT_RELATION_WEIGHTS: dict[str, float] = {
     RelationType.BELONGS_TO: 0.5,
     RelationType.PRECEDES: 0.9,
 }
+
+# Intent-specific relation weights: boost relations that align with the query intent.
+INTENT_RELATION_WEIGHTS: dict[str, dict[str, float]] = {
+    "read": {
+        RelationType.SIMILAR_TO: 1.0,  # same resource GET/LIST → very useful
+        RelationType.REQUIRES: 0.8,
+        RelationType.COMPLEMENTARY: 0.4,  # write ops less useful for read queries
+        RelationType.CONFLICTS_WITH: 0.2,
+        RelationType.BELONGS_TO: 0.6,
+        RelationType.PRECEDES: 0.5,
+    },
+    "write": {
+        RelationType.SIMILAR_TO: 0.5,  # GET less useful for write
+        RelationType.REQUIRES: 1.0,  # preconditions matter
+        RelationType.COMPLEMENTARY: 0.95,  # PATCH/PUT often together
+        RelationType.CONFLICTS_WITH: 0.3,
+        RelationType.BELONGS_TO: 0.5,
+        RelationType.PRECEDES: 0.7,
+    },
+    "delete": {
+        RelationType.SIMILAR_TO: 0.4,
+        RelationType.REQUIRES: 0.9,  # need to know what to delete
+        RelationType.COMPLEMENTARY: 0.3,
+        RelationType.CONFLICTS_WITH: 0.5,  # conflicts more relevant for destructive ops
+        RelationType.BELONGS_TO: 0.5,
+        RelationType.PRECEDES: 0.8,
+    },
+}
