@@ -98,7 +98,7 @@ class BM25Scorer:
         tools: dict[str, ToolSchema],
         k1: float = 1.2,
         b: float = 0.75,
-        stopword_df_threshold: float = 0.5,
+        stopword_df_threshold: float = 0.7,
     ) -> None:
         self._k1 = k1
         self._b = b

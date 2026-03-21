@@ -307,7 +307,7 @@ class RetrievalEngine:
         if not embedding_scores:
             return graph_scores
         emb_top = sorted(embedding_scores.items(), key=lambda x: x[1], reverse=True)
-        for name, _ in emb_top[:3]:
+        for name, _ in emb_top[:5]:
             if name not in seed_tools:
                 seed_tools.append(name)
         extra = self._searcher.expand_from_seeds(
@@ -365,15 +365,24 @@ class RetrievalEngine:
         """Boost scores for tools whose name tokens overlap with query tokens."""
         query_tokens = set(re.split(r"[\s_\-/.,;:!?()]+", query.lower()))
         query_tokens.discard("")
+        # Normalized query for exact matching (strip spaces, lowercase)
+        query_norm = re.sub(r"[\s_\-]+", "", query.lower())
         for name in scores:
             name_tokens = set(re.split(r"[\s_\-/.,;:!?()]+", name.lower()))
             expanded: set[str] = set()
             for t in name_tokens:
                 parts = re.sub(r"([a-z])([A-Z])", r"\1 \2", t).lower().split()
                 expanded.update(parts)
+            # Exact name match: "get pod" ↔ "getPod" → 2.0x boost
+            name_norm = re.sub(r"[\s_\-]+", "", name.lower())
+            if name_norm == query_norm or query_norm in name_norm:
+                scores[name] *= 2.0
+                continue
             overlap = len(query_tokens & expanded)
-            if overlap > 0:
-                scores[name] *= 1.0 + 0.1 * overlap
+            if overlap >= 2:
+                scores[name] *= 1.25 + 0.15 * (overlap - 2)
+            elif overlap == 1:
+                scores[name] *= 1.1
 
     def _boost_method_intent(self, query_intent: Any, scores: dict[str, float]) -> None:
         """Boost scores based on HTTP method-intent alignment."""
