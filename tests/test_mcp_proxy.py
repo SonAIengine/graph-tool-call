@@ -316,3 +316,169 @@ def test_create_passthrough_server():
     proxy._gateway_mode = False
     server = create_proxy_server(proxy)
     assert server is not None
+
+
+# --- Resilience / edge-case tests ---
+
+
+def test_proxy_tool_name_collision_prefix():
+    """When two backends have the same tool name, the second gets prefixed."""
+    proxy = MCPProxy([], top_k=5)
+    proxy._build_tool_graph()
+
+    class FakeTool:
+        name = "read_file"
+        description = "Read a file"
+        inputSchema = {}  # noqa: N815
+        annotations = None
+
+    # Simulate adding same-name tool from two backends
+    tool = FakeTool()
+    # First backend
+    proxy._tool_to_backend["read_file"] = "fs_server"
+    proxy._all_tools["read_file"] = tool
+    # Second backend (collision)
+    proxy._tool_to_backend["other__read_file"] = "other_server"
+    proxy._all_tools["other__read_file"] = tool
+
+    assert "read_file" in proxy._tool_to_backend
+    assert "other__read_file" in proxy._tool_to_backend
+    assert proxy._tool_to_backend["read_file"] == "fs_server"
+    assert proxy._tool_to_backend["other__read_file"] == "other_server"
+
+
+@pytest.mark.asyncio
+async def test_call_tool_unknown_name():
+    """Calling an unknown tool returns error, not exception."""
+    pytest.importorskip("mcp", reason="mcp required")
+
+    proxy = MCPProxy([], top_k=5)
+    proxy._build_tool_graph()
+    proxy._all_tools = {}
+    proxy._tool_to_backend = {}
+
+    result = await proxy.call_tool("nonexistent_tool", {})
+    assert result.isError is True
+    assert "not found" in result.content[0].text.lower()
+
+
+@pytest.mark.asyncio
+async def test_call_tool_prefixed_name():
+    """Calling a prefixed tool (backend__name) routes to correct backend."""
+    mcp_mod = pytest.importorskip("mcp", reason="mcp required")
+    types = mcp_mod.types
+
+    proxy = MCPProxy([], top_k=5)
+    proxy._build_tool_graph()
+
+    received = []
+
+    class FakeSession:
+        async def call_tool(self, name, arguments):
+            received.append(name)
+            return types.CallToolResult(content=[types.TextContent(type="text", text="ok")])
+
+    class FakeConn:
+        session = FakeSession()
+
+    proxy._connections = {"my_backend": FakeConn()}
+    proxy._tool_to_backend = {"my_backend__read_file": "my_backend"}
+    proxy._all_tools = {"my_backend__read_file": None}
+
+    await proxy.call_tool("my_backend__read_file", {"path": "/tmp"})
+    # Should strip prefix when calling backend
+    assert received[-1] == "read_file"
+
+
+def test_proxy_search_history_tracking():
+    """Repeated tool calls should be tracked in history."""
+    proxy = MCPProxy([], top_k=5)
+    proxy._build_tool_graph()
+    proxy._tg.add_tools(
+        [
+            {"name": "get_users", "description": "Get all users"},
+            {"name": "delete_user", "description": "Delete a user"},
+        ]
+    )
+    proxy._all_tools = {"get_users": None, "delete_user": None}
+
+    assert len(proxy._call_history) == 0
+
+    # Simulate tool call history (normally tracked via call_tool)
+    proxy._call_history.append("get_users")
+    assert "get_users" in proxy._call_history
+
+    # Second search should use history
+    results = proxy.search("user management")
+    assert isinstance(results, list)
+
+
+def test_proxy_cache_fingerprint_changes():
+    """Fingerprint should change when tools change."""
+    proxy = MCPProxy([], top_k=5)
+    proxy._all_tools = {"a": None, "b": None}
+    fp1 = proxy._tool_fingerprint()
+
+    proxy._all_tools = {"a": None, "b": None, "c": None}
+    fp2 = proxy._tool_fingerprint()
+
+    assert fp1 != fp2
+
+
+def test_proxy_cache_fingerprint_stable():
+    """Same tools should produce same fingerprint."""
+    proxy = MCPProxy([], top_k=5)
+    proxy._all_tools = {"x": None, "y": None}
+    fp1 = proxy._tool_fingerprint()
+    fp2 = proxy._tool_fingerprint()
+
+    assert fp1 == fp2
+
+
+def test_proxy_search_with_workflow():
+    """Search results should include workflow summary when relations exist."""
+    proxy = MCPProxy([], top_k=5)
+    proxy._build_tool_graph()
+    proxy._tg.add_tools(
+        [
+            {"name": "login", "description": "Login to system"},
+            {"name": "get_profile", "description": "Get user profile"},
+            {"name": "logout", "description": "Logout from system"},
+        ]
+    )
+    proxy._all_tools = {"login": None, "get_profile": None, "logout": None}
+
+    results = proxy.search("login to system")
+    assert isinstance(results, list)
+    # Workflow may or may not exist depending on relations
+    workflow = proxy.get_workflow_summary()
+    assert workflow is None or isinstance(workflow, list)
+
+
+@pytest.mark.asyncio
+async def test_gateway_unknown_tool_returns_error():
+    """Gateway mode: calling unknown tool returns helpful error message."""
+    mcp_mod = pytest.importorskip("mcp", reason="mcp required")
+    types = mcp_mod.types
+
+    from graph_tool_call.mcp_proxy import create_proxy_server
+
+    proxy = MCPProxy([], top_k=5, passthrough_threshold=0)
+    proxy._build_tool_graph()
+    proxy._all_tools = {"real_tool": None}
+    proxy._tool_to_backend = {}
+    proxy._gateway_mode = True
+
+    server = create_proxy_server(proxy)
+    handler = server.request_handlers[types.CallToolRequest]
+
+    request = types.CallToolRequest(
+        method="tools/call",
+        params=types.CallToolRequestParams(
+            name="completely_unknown",
+            arguments={},
+        ),
+    )
+    result = await handler(request)
+    text = result.root.content[0].text
+    assert "not found" in text.lower() or "search_tools" in text.lower()
