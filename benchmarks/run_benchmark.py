@@ -95,6 +95,15 @@ def run_retrieval_benchmark(
         for q in gt["queries"]:
             expected = set(q["expected_tools"])
 
+            # Build graded relevance if available (required=3, optional=2, contextual=1)
+            graded: dict[str, int] | None = None
+            if isinstance(q.get("expected_tools"), dict):
+                graded = {}
+                for grade_name, grade_val in [("required", 3), ("optional", 2), ("contextual", 1)]:
+                    for t in q["expected_tools"].get(grade_name, []):
+                        graded[t] = grade_val
+                expected = set(graded.keys())
+
             # Retrieve with scores for component attribution
             start = time.perf_counter()
             scored_results = tg.retrieve_with_scores(q["query"], top_k=config.top_k)
@@ -106,7 +115,8 @@ def run_retrieval_benchmark(
             recall = recall_at_k(retrieved_names, expected, config.top_k)
             query_mrr = mrr(retrieved_names, expected)
             query_ap = average_precision(retrieved_names, expected)
-            query_ndcg = ndcg_at_k(retrieved_names, expected, config.top_k)
+            ndcg_relevant = graded if graded else expected
+            query_ndcg = ndcg_at_k(retrieved_names, ndcg_relevant, config.top_k)
 
             # Multi-K recall
             recall_3 = recall_at_k(retrieved_names, expected, 3)

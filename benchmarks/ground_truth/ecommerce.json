@@ -260,6 +260,28 @@
       "expected_tools": ["requestRefund"],
       "category": "write",
       "difficulty": "hard"
+    },
+    {
+      "query": "Apply coupon and checkout",
+      "expected_tools": ["applyCoupon", "checkout"],
+      "category": "workflow",
+      "difficulty": "hard",
+      "adversarial": true,
+      "note": "Must find both coupon and checkout tools — names differ from query verbs"
+    },
+    {
+      "query": "I need to update my order, not cancel it",
+      "expected_tools": ["updateOrderStatus"],
+      "category": "write",
+      "difficulty": "hard",
+      "adversarial": true,
+      "note": "Negation: 'not cancel' should NOT boost cancelOrder"
+    },
+    {
+      "query": "상품 상세 정보 보기",
+      "expected_tools": ["getProduct"],
+      "category": "read",
+      "difficulty": "medium"
     }
   ]
 }

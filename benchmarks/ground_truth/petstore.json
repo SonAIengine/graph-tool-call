@@ -144,6 +144,30 @@
       "expected_params": [],
       "category": "workflow",
       "difficulty": "hard"
+    },
+    {
+      "query": "Update pet using form data, not JSON body",
+      "expected_tools": ["updatePetWithForm"],
+      "category": "write",
+      "difficulty": "hard",
+      "adversarial": true,
+      "note": "Must distinguish updatePetWithForm from updatePet — both update, but different mechanisms"
+    },
+    {
+      "query": "What pets are in the store?",
+      "expected_tools": ["findPetsByStatus"],
+      "category": "read",
+      "difficulty": "medium",
+      "adversarial": true,
+      "note": "Indirect phrasing — no verb like 'list' or 'find', tests semantic understanding"
+    },
+    {
+      "query": "Remove a pet listing and also delete its order",
+      "expected_tools": ["deletePet", "deleteOrder"],
+      "category": "delete",
+      "difficulty": "hard",
+      "adversarial": true,
+      "note": "Multi-intent: two distinct delete operations in one query"
     }
   ]
 }

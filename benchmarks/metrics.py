@@ -59,17 +59,22 @@ def recall_at_k(retrieved: list[str], relevant: set[str], k: int) -> float:
     return hits / len(relevant)
 
 
-def ndcg_at_k(retrieved: list[str], relevant: set[str], k: int) -> float:
+def ndcg_at_k(
+    retrieved: list[str],
+    relevant: set[str] | dict[str, int],
+    k: int,
+) -> float:
     """Normalized Discounted Cumulative Gain@K.
 
-    Uses binary relevance: 1 if in relevant set, 0 otherwise.
+    Supports both binary relevance (set) and graded relevance (dict).
 
     Parameters
     ----------
     retrieved:
         Ordered list of retrieved tool names.
     relevant:
-        Set of relevant (ground-truth) tool names.
+        Set of relevant tool names (binary: 1 if present), or
+        dict mapping tool name → relevance grade (e.g. 3=required, 2=optional, 1=contextual).
     k:
         Number of top results to consider.
 
@@ -81,17 +86,23 @@ def ndcg_at_k(retrieved: list[str], relevant: set[str], k: int) -> float:
     if not relevant or k <= 0:
         return 0.0
 
+    # Normalize to graded relevance dict
+    if isinstance(relevant, set):
+        grades: dict[str, int] = {name: 1 for name in relevant}
+    else:
+        grades = relevant
+
     top_k = retrieved[:k]
 
     # DCG: sum(rel_i / log2(i + 2)) for i in 0..k-1
     dcg = 0.0
     for i, name in enumerate(top_k):
-        rel = 1.0 if name in relevant else 0.0
+        rel = float(grades.get(name, 0))
         dcg += rel / math.log2(i + 2)
 
-    # Ideal DCG: all relevant items ranked first
-    ideal_count = min(len(relevant), k)
-    idcg = sum(1.0 / math.log2(i + 2) for i in range(ideal_count))
+    # Ideal DCG: sort grades descending, take top-k
+    sorted_grades = sorted(grades.values(), reverse=True)[:k]
+    idcg = sum(float(g) / math.log2(i + 2) for i, g in enumerate(sorted_grades))
 
     if idcg == 0:
         return 0.0

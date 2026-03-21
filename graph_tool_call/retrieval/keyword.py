@@ -50,6 +50,47 @@ _PROTECTED_TERMS = frozenset(
 
 # Suffix-stripping rules applied in order. Each entry: (suffix, min_stem_len).
 # min_stem_len prevents over-stemming (e.g. "us" → "u").
+# Korean → English translation pairs for cross-language retrieval.
+# When a Korean query token matches a key, the English tokens are added.
+# Covers common domain terms in e-commerce, API, and general software.
+_KO_EN_DICT: dict[str, list[str]] = {
+    "장바구니": ["cart", "shopping"],
+    "상품": ["product", "item"],
+    "추가": ["add", "creat"],
+    "삭제": ["delet", "remov"],
+    "수정": ["updat", "modifi", "edit"],
+    "주문": ["order"],
+    "결제": ["payment", "checkout", "pay"],
+    "환불": ["refund"],
+    "취소": ["cancel"],
+    "배송": ["shipping", "deliver"],
+    "배송비": ["shipping", "rate", "calculat"],
+    "후기": ["review"],
+    "작성": ["creat", "submit", "writ"],
+    "검색": ["search", "find", "query"],
+    "조회": ["get", "list", "fetch", "retriev"],
+    "등록": ["register", "creat", "add"],
+    "로그인": ["login", "auth"],
+    "로그아웃": ["logout"],
+    "사용자": ["user"],
+    "회원": ["user", "member"],
+    "프로필": ["profil"],
+    "카테고리": ["categori"],
+    "쿠폰": ["coupon", "discount"],
+    "찜": ["wishlist", "favorit"],
+    "재고": ["inventori", "stock"],
+    "요청": ["request"],
+    "목록": ["list"],
+    "상세": ["detail"],
+    "파일": ["file"],
+    "폴더": ["folder", "directori"],
+    "읽기": ["read"],
+    "쓰기": ["writ"],
+    "업로드": ["upload"],
+    "다운로드": ["download"],
+}
+
+# Suffix-stripping rules applied in order. Each entry: (suffix, min_stem_len).
 _STEM_RULES: list[tuple[str, int]] = [
     ("ies", 2),  # queries → quer, bodies → bodi
     ("ied", 2),  # applied → appl
@@ -335,6 +376,16 @@ class BM25Scorer:
             extra.append("ephemer")
         if re.search(r"\bproxy\b", q):
             extra.append("proxy")
+
+        # Korean → English expansion via dictionary
+        for token in tokens:
+            if token in _KO_EN_DICT:
+                extra.extend(_KO_EN_DICT[token])
+
+        # Also check raw query for multi-char Korean words not split by tokenizer
+        for ko_word, en_tokens in _KO_EN_DICT.items():
+            if ko_word in q and not any(t == ko_word for t in tokens):
+                extra.extend(en_tokens)
 
         if extra:
             return tokens + extra

@@ -84,6 +84,27 @@ class TestNdcgAtK:
     def test_k_zero(self):
         assert ndcg_at_k(["a"], {"a"}, 0) == 0.0
 
+    def test_graded_relevance_perfect(self):
+        """Graded relevance: required items ranked first."""
+        grades = {"a": 3, "b": 2, "c": 1}
+        result = ndcg_at_k(["a", "b", "c"], grades, 3)
+        assert result == pytest.approx(1.0, abs=1e-5)
+
+    def test_graded_relevance_suboptimal(self):
+        """Graded relevance: low-grade item ranked before high-grade."""
+        grades = {"a": 3, "b": 1}
+        # b ranked first (grade 1), a ranked second (grade 3) — suboptimal
+        result = ndcg_at_k(["b", "a"], grades, 2)
+        assert result < 1.0
+        assert result > 0.5
+
+    def test_graded_mixed_with_irrelevant(self):
+        """Graded relevance with irrelevant items mixed in."""
+        grades = {"a": 3, "b": 2}
+        result = ndcg_at_k(["x", "a", "b"], grades, 3)
+        assert result < 1.0
+        assert result > 0.0
+
 
 class TestMRR:
     def test_first_hit(self):
