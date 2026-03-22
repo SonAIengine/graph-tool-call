@@ -3,12 +3,21 @@
 Usage::
 
     # Graph-only (zero-dep, fast)
-    chain = tg.plan_workflow("process a refund")
-    for step in chain.steps:
+    plan = tg.plan_workflow("process a refund")
+    for step in plan.steps:
         print(f"{step.order}. {step.tool.name} — {step.reason}")
 
+    # Manual editing
+    plan.insert_step(0, "getOrder", reason="need order ID first")
+    plan.remove_step("listOrders")
+    plan.reorder(["getOrder", "requestRefund"])
+
+    # Save / Load
+    plan.save("refund_workflow.json")
+    plan = WorkflowPlan.load("refund_workflow.json", tools=tg.tools)
+
     # Graph + LLM (fills cross-resource gaps)
-    chain = tg.plan_workflow("process a refund", llm=my_llm)
+    plan = tg.plan_workflow("process a refund", llm=my_llm)
 """
 
 from __future__ import annotations
@@ -16,12 +25,13 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema
-from graph_tool_call.ontology.schema import NodeType, RelationType
+from graph_tool_call.ontology.schema import NodeType
 
 
 @dataclass
@@ -32,16 +42,23 @@ class WorkflowStep:
     tool: ToolSchema
     reason: str = ""
     params_from: dict[str, str] = field(default_factory=dict)
-    # e.g., {"order_id": "getOrder.response.id"}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "order": self.order,
+            "tool": self.tool.name,
+            "reason": self.reason,
+            "params_from": dict(self.params_from),
+        }
 
 
 @dataclass
 class WorkflowPlan:
-    """A planned multi-step workflow."""
+    """A planned multi-step workflow with manual editing support."""
 
     goal: str
     steps: list[WorkflowStep] = field(default_factory=list)
-    confidence: str = "graph"  # "graph" | "graph+llm"
+    confidence: str = "graph"  # "graph" | "graph+llm" | "manual"
 
     @property
     def tool_names(self) -> list[str]:
@@ -50,6 +67,115 @@ class WorkflowPlan:
     def __repr__(self) -> str:
         steps_str = " → ".join(s.tool.name for s in self.steps)
         return f"WorkflowPlan({self.goal!r}, [{steps_str}])"
+
+    # --- Manual editing ---
+
+    def insert_step(
+        self,
+        position: int,
+        tool: ToolSchema | str,
+        *,
+        reason: str = "manually added",
+        tools: dict[str, ToolSchema] | None = None,
+    ) -> WorkflowPlan:
+        """Insert a step at the given position. Returns self for chaining.
+
+        Args:
+            position: 0-based index. Negative indexes work like list.insert.
+            tool: ToolSchema object or tool name string.
+            reason: Why this step was added.
+            tools: Tool registry (required if tool is a string).
+        """
+        if isinstance(tool, str):
+            if not tools:
+                raise ValueError("tools dict required when tool is a string")
+            tool_obj = tools.get(tool)
+            if not tool_obj:
+                raise KeyError(f"Tool {tool!r} not found")
+            tool = tool_obj
+
+        step = WorkflowStep(order=0, tool=tool, reason=reason)
+        self.steps.insert(position, step)
+        self._renumber()
+        self.confidence = "manual"
+        return self
+
+    def remove_step(self, tool_name: str) -> WorkflowPlan:
+        """Remove a step by tool name. Returns self for chaining."""
+        self.steps = [s for s in self.steps if s.tool.name != tool_name]
+        self._renumber()
+        self.confidence = "manual"
+        return self
+
+    def reorder(self, tool_names: list[str]) -> WorkflowPlan:
+        """Reorder steps to match the given tool name sequence.
+
+        Tools not in the list are dropped. Returns self for chaining.
+        """
+        by_name = {s.tool.name: s for s in self.steps}
+        self.steps = [by_name[n] for n in tool_names if n in by_name]
+        self._renumber()
+        self.confidence = "manual"
+        return self
+
+    def set_param_mapping(
+        self, tool_name: str, param: str, source: str
+    ) -> WorkflowPlan:
+        """Set a parameter mapping for a step.
+
+        Example::
+            plan.set_param_mapping("requestRefund", "order_id", "getOrder.response.id")
+        """
+        for step in self.steps:
+            if step.tool.name == tool_name:
+                step.params_from[param] = source
+                break
+        return self
+
+    def _renumber(self) -> None:
+        for i, step in enumerate(self.steps):
+            step.order = i + 1
+
+    # --- Serialization ---
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "goal": self.goal,
+            "confidence": self.confidence,
+            "steps": [s.to_dict() for s in self.steps],
+        }
+
+    def save(self, path: str | Path) -> None:
+        """Save workflow to JSON file."""
+        Path(path).write_text(
+            json.dumps(self.to_dict(), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    @classmethod
+    def load(
+        cls, path: str | Path, *, tools: dict[str, ToolSchema]
+    ) -> WorkflowPlan:
+        """Load workflow from JSON file."""
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        steps = []
+        for s in data.get("steps", []):
+            tool = tools.get(s["tool"])
+            if not tool:
+                continue
+            steps.append(WorkflowStep(
+                order=s.get("order", 0),
+                tool=tool,
+                reason=s.get("reason", ""),
+                params_from=s.get("params_from", {}),
+            ))
+        plan = cls(
+            goal=data.get("goal", ""),
+            steps=steps,
+            confidence=data.get("confidence", "loaded"),
+        )
+        plan._renumber()
+        return plan
 
 
 class WorkflowPlanner:
@@ -68,15 +194,15 @@ class WorkflowPlanner:
         goal: str,
         *,
         llm: Any = None,
-        max_steps: int = 8,
+        max_steps: int = 6,
         top_k: int = 5,
     ) -> WorkflowPlan:
         """Plan a workflow for the given goal.
 
-        1. Find the target tool(s) via resource-first graph search
-        2. Expand REQUIRES/PRECEDES edges to build the chain
+        1. Find the target tool via resource-first search + name matching
+        2. Find same-category prerequisites (GET methods that provide IDs)
         3. Topological sort for execution order
-        4. If LLM is provided, fill cross-resource gaps and add param mappings
+        4. If LLM provided, fill cross-resource gaps
         """
         from graph_tool_call.retrieval.graph_search import GraphSearcher
         from graph_tool_call.retrieval.intent import classify_intent
@@ -84,57 +210,63 @@ class WorkflowPlanner:
         searcher = GraphSearcher(self._graph)
         intent = classify_intent(goal)
 
-        # Step 1: Find target tools
+        # Step 1: Find target tool
         resource_scores = searcher.resource_first_search(
             goal, intent=intent, max_results=top_k, tools=self._tools
         )
-
         if not resource_scores:
-            # Fallback: BM25-style name matching
             resource_scores = self._name_match(goal)
-
         if not resource_scores:
             return WorkflowPlan(goal=goal)
 
-        # Pick best target: prefer tools whose name matches query keywords
-        query_tokens = set(re.split(r"[\s_\-/.,;:!?()]+", goal.lower()))
-        query_tokens -= {"a", "an", "the", "of", "for", "to", "in", "by", "is", "and", "or", "my"}
-        query_tokens.discard("")
+        primary_tool = self._pick_primary(goal, resource_scores)
 
-        def _name_relevance(name: str) -> float:
-            parts = re.sub(r"([a-z])([A-Z])", r"\1 \2", name)
-            name_tokens = set(re.split(r"[\s_\-/]+", parts.lower()))
-            return len(query_tokens & name_tokens)
+        # Step 2: Build focused chain
+        chain = self._build_chain(primary_tool, max_steps)
 
-        ranked = sorted(
-            resource_scores.items(),
-            key=lambda x: (x[1], _name_relevance(x[0])),
-            reverse=True,
-        )
-        primary_tool = ranked[0][0]
-
-        # Step 2: Build chain via graph traversal
-        chain_tools = self._build_chain(primary_tool, max_steps)
-
-        # Step 3: Topological sort
-        ordered = self._topo_sort(chain_tools)
-
-        # Step 4: Build steps with reasons
+        # Step 3: Topological sort → steps
+        ordered = self._topo_sort(chain)
         steps = []
         for i, tool_name in enumerate(ordered):
             tool = self._tools.get(tool_name)
             if not tool:
                 continue
-            reason = self._infer_reason(tool_name, primary_tool, chain_tools)
+            reason = self._infer_reason(tool_name, primary_tool, chain)
             steps.append(WorkflowStep(order=i + 1, tool=tool, reason=reason))
 
         plan = WorkflowPlan(goal=goal, steps=steps, confidence="graph")
 
-        # Step 5: LLM enhancement (optional)
+        # Step 4: LLM enhancement
         if llm is not None and steps:
             plan = self._enhance_with_llm(plan, llm, max_steps)
 
         return plan
+
+    def _pick_primary(self, goal: str, scores: dict[str, float]) -> str:
+        """Pick the best primary tool by combining graph score + name relevance."""
+        tokens = set(re.split(r"[\s_\-/.,;:!?()]+", goal.lower()))
+        tokens -= {"a", "an", "the", "of", "for", "to", "in", "by", "is",
+                    "and", "or", "my", "all", "this", "that", "with", "from"}
+        tokens.discard("")
+
+        def _relevance(name: str) -> float:
+            parts = re.sub(r"([a-z])([A-Z])", r"\1 \2", name)
+            name_tokens = set(re.split(r"[\s_\-/]+", parts.lower()))
+            overlap = len(tokens & name_tokens)
+            # Also check description
+            tool = self._tools.get(name)
+            desc_hits = 0
+            if tool and tool.description:
+                desc_lower = tool.description.lower()
+                desc_hits = sum(1 for t in tokens if t in desc_lower)
+            return overlap * 2 + desc_hits
+
+        ranked = sorted(
+            scores.items(),
+            key=lambda x: (x[1], _relevance(x[0])),
+            reverse=True,
+        )
+        return ranked[0][0]
 
     def _name_match(self, goal: str) -> dict[str, float]:
         """Simple name-based matching as fallback."""
@@ -143,8 +275,7 @@ class WorkflowPlanner:
         tokens.discard("")
 
         scores: dict[str, float] = {}
-        for name, tool in self._tools.items():
-            # Split camelCase
+        for name in self._tools:
             parts = re.sub(r"([a-z])([A-Z])", r"\1 \2", name)
             name_tokens = set(re.split(r"[\s_\-/]+", parts.lower()))
             overlap = len(tokens & name_tokens)
@@ -155,13 +286,15 @@ class WorkflowPlanner:
     def _build_chain(
         self, target: str, max_steps: int
     ) -> dict[str, set[str]]:
-        """Build a focused chain from the target tool's direct dependencies.
+        """Build a focused prerequisite chain for the target tool.
 
-        Only follows REQUIRES edges backward (prerequisites) and PRECEDES
-        edges forward (next steps) up to max_depth=1 from the target.
-        This prevents chain explosion from transitive dependencies.
+        Rules:
+        1. Only follow direct REQUIRES edges from the target
+        2. Only include prerequisites that are data providers (GET/LIST)
+           in the SAME category as the target
+        3. Hard cap at max_steps
 
-        Returns {tool_name: set of predecessors} for topo sort.
+        This prevents chain explosion from loose cross-resource REQUIRES.
         """
         predecessors: dict[str, set[str]] = defaultdict(set)
         predecessors[target] = set()
@@ -169,19 +302,8 @@ class WorkflowPlanner:
         if not self._graph.has_node(target):
             return dict(predecessors)
 
-        target_tool = self._tools.get(target)
-        if not target_tool:
-            return dict(predecessors)
-
-        # Find prerequisites: tools that produce data this tool consumes
-        # Strategy: look for tools that operate on the same resource
-        # with read/list semantics (GET) when target needs an ID parameter
-        target_params = set()
-        if target_tool.parameters:
-            for p in target_tool.parameters:
-                p_name = p.name if hasattr(p, "name") else str(p)
-                if "id" in p_name.lower() or "token" in p_name.lower():
-                    target_params.add(p_name.lower())
+        # Find target's category
+        target_category = self._get_category(target)
 
         for edge in self._graph.get_edges_from(target, direction="both"):
             src, tgt, attrs = edge
@@ -195,42 +317,37 @@ class WorkflowPlanner:
                 continue
 
             neighbor_tool = self._tools[neighbor]
+            neighbor_category = self._get_category(neighbor)
+            n_method = ""
+            if neighbor_tool.metadata:
+                n_method = neighbor_tool.metadata.get("method", "").upper()
 
-            # Only follow REQUIRES where the prerequisite is a data provider:
-            # - GET/LIST methods that can provide IDs the target needs
-            # - Same resource category (not random cross-resource deps)
+            # REQUIRES: only accept same-category GET/LIST as prerequisite
             if "REQUIRES" in relation and src == target:
-                n_method = ""
-                if neighbor_tool.metadata:
-                    n_method = neighbor_tool.metadata.get("method", "").upper()
-
-                # Prerequisite should be a data-fetching operation
-                is_data_provider = n_method in ("GET", "") or any(
-                    v in neighbor.lower() for v in ("get", "list", "read", "find")
+                same_cat = (
+                    target_category
+                    and neighbor_category
+                    and target_category == neighbor_category
                 )
-                # Or shares a resource parameter with the target
-                shares_resource = False
-                if target_params and neighbor_tool.parameters:
-                    for p in neighbor_tool.parameters:
-                        p_name = p.name if hasattr(p, "name") else str(p)
-                        if "id" in p_name.lower():
-                            shares_resource = True
-                            break
-
-                if is_data_provider or shares_resource:
+                is_getter = n_method == "GET" or any(
+                    v in neighbor.lower() for v in ("get", "list", "read")
+                )
+                if same_cat and is_getter:
                     predecessors[target].add(neighbor)
                     if neighbor not in predecessors:
                         predecessors[neighbor] = set()
 
+            # PRECEDES: something comes before target (only POST/create)
             elif "PRECEDES" in relation and tgt == target:
-                # Only accept if predecessor is a setup/create operation
-                n_method = ""
-                if neighbor_tool.metadata:
-                    n_method = neighbor_tool.metadata.get("method", "").upper()
-                is_setup = n_method in ("POST", "") or any(
-                    v in neighbor.lower() for v in ("create", "add", "setup", "init")
+                same_cat = (
+                    target_category
+                    and neighbor_category
+                    and target_category == neighbor_category
                 )
-                if is_setup:
+                is_creator = n_method == "POST" or any(
+                    v in neighbor.lower() for v in ("create", "add")
+                )
+                if same_cat and is_creator:
                     predecessors[target].add(neighbor)
                     if neighbor not in predecessors:
                         predecessors[neighbor] = set()
@@ -245,12 +362,23 @@ class WorkflowPlanner:
 
         return dict(predecessors)
 
+    def _get_category(self, tool_name: str) -> str | None:
+        """Get the category node this tool belongs to."""
+        if not self._graph.has_node(tool_name):
+            return None
+        for edge in self._graph.get_edges_from(tool_name, direction="out"):
+            _, tgt, attrs = edge
+            if "BELONGS_TO" in str(attrs.get("relation", "")):
+                tgt_attrs = self._graph.get_node_attrs(tgt)
+                if tgt_attrs.get("node_type") == NodeType.CATEGORY:
+                    return tgt
+        return None
+
     def _topo_sort(self, predecessors: dict[str, set[str]]) -> list[str]:
         """Kahn's algorithm for topological sort."""
-        in_degree: dict[str, int] = {n: len(preds) for n, preds in predecessors.items()}
+        in_degree: dict[str, int] = {n: len(p) for n, p in predecessors.items()}
         queue: deque[str] = deque(n for n, d in in_degree.items() if d == 0)
         result: list[str] = []
-
         while queue:
             node = queue.popleft()
             result.append(node)
@@ -259,43 +387,25 @@ class WorkflowPlanner:
                     in_degree[n] -= 1
                     if in_degree[n] == 0:
                         queue.append(n)
-
-        # Append any remaining (cycle) nodes
         for n in predecessors:
             if n not in result:
                 result.append(n)
-
         return result
 
     def _infer_reason(
         self, tool_name: str, primary: str, chain: dict[str, set[str]]
     ) -> str:
-        """Generate a human-readable reason for this step."""
         if tool_name == primary:
             return "primary action"
-
-        preds = chain.get(tool_name, set())
-        # Is this tool a prerequisite for something?
         dependents = [n for n, p in chain.items() if tool_name in p]
-
         if dependents:
             return f"prerequisite for {', '.join(dependents)}"
-        if preds:
-            return f"follows {', '.join(preds)}"
         return "related"
 
     def _enhance_with_llm(
         self, plan: WorkflowPlan, llm: Any, max_steps: int
     ) -> WorkflowPlan:
-        """Use LLM to fill cross-resource gaps and add parameter mappings.
-
-        The LLM receives:
-        - The goal
-        - Current chain (from graph)
-        - All available tools
-        And returns a refined chain with parameter mappings.
-        """
-        # Build tool catalog for LLM
+        """Use LLM to fill cross-resource gaps and add parameter mappings."""
         current_chain = [s.tool.name for s in plan.steps]
         available = []
         for name, tool in self._tools.items():
@@ -309,74 +419,48 @@ class WorkflowPlanner:
             param_str = f" (params: {', '.join(params)})" if params else ""
             available.append(f"- {name}: {desc}{param_str}")
 
-        prompt = f"""Given a user's goal and a partial workflow chain discovered from API structure,
-complete the workflow by filling any missing steps and adding parameter mappings.
+        prompt = f"""Given a user's goal and a partial workflow chain from API structure,
+complete the workflow by filling missing steps and adding parameter mappings.
 
 Goal: {plan.goal}
 
-Current chain (from graph structure):
-{json.dumps(current_chain)}
+Current chain (from graph): {json.dumps(current_chain)}
 
 Available tools:
-{chr(10).join(available[:50])}
+{chr(10).join(available[:60])}
 
-Return a JSON object with:
-{{
-  "steps": [
-    {{
-      "tool": "toolName",
-      "reason": "why this step is needed",
-      "params_from": {{"param_name": "previousStep.response.field"}}
-    }}
-  ]
-}}
+Return JSON:
+{{"steps": [{{"tool": "name", "reason": "why", "params_from": {{"param": "step.response.field"}}}}]}}
 
 Rules:
-- Keep all steps from the current chain unless clearly wrong
-- Add missing steps between existing ones if needed
+- Keep existing chain steps unless clearly wrong
+- Add missing steps if needed
 - Maximum {max_steps} steps
-- params_from maps input parameters to outputs of previous steps
-- Order steps by execution sequence
+- Order by execution sequence
 """
-
         try:
             response = llm.complete(prompt)
-            if hasattr(response, "text"):
-                text = response.text
-            elif isinstance(response, str):
-                text = response
-            else:
-                return plan
-
-            # Parse JSON from response
+            text = response.text if hasattr(response, "text") else str(response)
             json_match = re.search(r"\{[\s\S]*\}", text)
             if not json_match:
                 return plan
-
             data = json.loads(json_match.group())
             llm_steps = data.get("steps", [])
-
             if not llm_steps:
                 return plan
-
             new_steps = []
-            for i, step_data in enumerate(llm_steps[:max_steps]):
-                tool_name = step_data.get("tool", "")
-                tool = self._tools.get(tool_name)
+            for i, s in enumerate(llm_steps[:max_steps]):
+                tool = self._tools.get(s.get("tool", ""))
                 if not tool:
                     continue
                 new_steps.append(WorkflowStep(
-                    order=i + 1,
-                    tool=tool,
-                    reason=step_data.get("reason", ""),
-                    params_from=step_data.get("params_from", {}),
+                    order=i + 1, tool=tool,
+                    reason=s.get("reason", ""),
+                    params_from=s.get("params_from", {}),
                 ))
-
             if new_steps:
                 plan.steps = new_steps
                 plan.confidence = "graph+llm"
-
         except Exception:
-            pass  # LLM enhancement is best-effort
-
+            pass
         return plan
