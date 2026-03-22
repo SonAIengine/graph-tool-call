@@ -94,6 +94,33 @@ Tools:
 
 Output ONLY a JSON object: {{"tool_name": ["query1", "query2"]}}"""
 
+_VERIFY_RELATIONS_PROMPT = """\
+Review these API relationships. Reply "keep" or "reject" for each.
+
+Example:
+- addToCart REQUIRES getProduct → keep (needs product ID)
+- listUsers REQUIRES createUser → reject (listing works without creation)
+
+Relations:
+{relations_list}
+
+Output ONLY JSON: [{{"source":"toolA","target":"toolB","verdict":"keep"}}]"""
+
+_SUGGEST_MISSING_PROMPT = """\
+Given these API tools and their existing relationships, suggest important \
+MISSING relationships. Focus on workflow dependencies: which tool must \
+run before which other tool?
+
+Tools:
+{tools_list}
+
+Existing relationships:
+{existing_relations}
+
+Suggest 3-5 missing relationships that are clearly needed for common workflows.
+Output ONLY a JSON array:
+[{{"source":"toolA","target":"toolB","relation":"PRECEDES","confidence":0.9,"reason":"..."}}]"""
+
 
 def _format_tools_list(tools: list[ToolSummary]) -> str:
     lines = []
@@ -243,6 +270,101 @@ class OntologyLLM(ABC):
             pass
 
         return {}
+
+    def verify_relations(
+        self,
+        relations: list[InferredRelation],
+        tools: list[ToolSummary],
+        batch_size: int = 10,
+    ) -> tuple[list[InferredRelation], list[InferredRelation]]:
+        """Verify auto-detected relations using the LLM.
+
+        Returns (kept, rejected) — two lists of relations.
+        The LLM reviews each relation and decides keep/reject/fix.
+        """
+        kept: list[InferredRelation] = []
+        rejected: list[InferredRelation] = []
+
+        for i in range(0, len(relations), batch_size):
+            batch = relations[i : i + batch_size]
+            rels_text = "\n".join(
+                f"- {r.source} {r.relation_type.name} {r.target} ({r.reason[:60]})"
+                for r in batch
+            )
+            prompt = _VERIFY_RELATIONS_PROMPT.format(
+                relations_list=rels_text,
+            )
+            response = self.generate(prompt)
+
+            try:
+                parsed = _extract_json(response)
+                if not isinstance(parsed, list):
+                    # If parsing fails, keep all (conservative)
+                    kept.extend(batch)
+                    continue
+
+                verdict_map = {
+                    (item.get("source", ""), item.get("target", "")): item.get("verdict", "keep")
+                    for item in parsed
+                    if isinstance(item, dict)
+                }
+
+                for rel in batch:
+                    verdict = verdict_map.get((rel.source, rel.target), "keep")
+                    if verdict == "reject":
+                        rejected.append(rel)
+                    else:
+                        kept.append(rel)
+
+            except (json.JSONDecodeError, KeyError, TypeError):
+                # On parse failure, keep all (conservative)
+                kept.extend(batch)
+
+        return kept, rejected
+
+    def suggest_missing(
+        self,
+        tools: list[ToolSummary],
+        existing_relations: list[InferredRelation],
+    ) -> list[InferredRelation]:
+        """Suggest missing relations that the heuristic missed.
+
+        The LLM sees the current tools and relations, then suggests
+        important workflow dependencies that are absent.
+        """
+        tools_text = _format_tools_list(tools[:30])
+        existing_text = "\n".join(
+            f"- {r.source} {r.relation_type.name} {r.target}"
+            for r in existing_relations[:30]
+        )
+        prompt = _SUGGEST_MISSING_PROMPT.format(
+            tools_list=tools_text,
+            existing_relations=existing_text or "(none)",
+        )
+        response = self.generate(prompt)
+
+        suggestions: list[InferredRelation] = []
+        try:
+            parsed = _extract_json(response)
+            if not isinstance(parsed, list):
+                return suggestions
+            for item in parsed:
+                rel_type = _parse_relation_type(item.get("relation", ""))
+                if rel_type is None:
+                    continue
+                suggestions.append(
+                    InferredRelation(
+                        source=item["source"],
+                        target=item["target"],
+                        relation_type=rel_type,
+                        confidence=float(item.get("confidence", 0.8)),
+                        reason=item.get("reason", "LLM suggested"),
+                    )
+                )
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass
+
+        return suggestions
 
     def enrich_keywords(
         self,
