@@ -198,14 +198,7 @@ class RetrievalEngine:
 
         # --- Score computation ---
         keyword_scores = self._compute_keyword_scores(effective_query, query)
-        seed_tools = self._build_seed_tools(keyword_scores, history, query=query)
-        graph_scores = self._compute_graph_scores(seed_tools, max_graph_depth, top_k)
         embedding_scores = self._compute_embedding_scores(query, top_k)
-
-        # Re-expand graph with embedding seeds
-        graph_scores = self._augment_graph_with_embedding_seeds(
-            embedding_scores, seed_tools, graph_scores, max_graph_depth, top_k
-        )
 
         # Annotation-aware scoring
         from graph_tool_call.retrieval.annotation_scorer import compute_annotation_scores
@@ -213,11 +206,19 @@ class RetrievalEngine:
 
         query_intent = classify_intent(query)
 
-        # Re-expand graph with intent-aware weights if intent is clear
-        if query_intent and not query_intent.is_neutral:
-            graph_scores = self._reexpand_with_intent(
-                query_intent, seed_tools, max_graph_depth, top_k, graph_scores
-            )
+        # Resource-first graph search: independent of BM25.
+        # Graph scores are injected as candidates that BM25 might miss,
+        # rather than competing with BM25 in wRRF fusion.
+        resource_scores = self._searcher.resource_first_search(
+            query, intent=query_intent, max_results=top_k * 3, tools=self._tools
+        )
+
+        # Graph scores: merge resource-first with BFS expansion
+        seed_tools = self._build_seed_tools(keyword_scores, history, query=query)
+        bfs_scores = self._compute_graph_scores(seed_tools, max_graph_depth, top_k)
+        graph_scores = dict(bfs_scores)
+        for name, score in resource_scores.items():
+            graph_scores[name] = max(graph_scores.get(name, 0), score)
 
         annotation_scores = compute_annotation_scores(query_intent, self._tools)
 
@@ -569,7 +570,14 @@ class RetrievalEngine:
         has_embedding = self._embedding_index is not None and self._embedding_weight > 0
 
         if not has_embedding:
-            return (self._keyword_weight, self._graph_weight, 0.0, self._annotation_weight)
+            # Graph is a supplementary signal: contributes unique candidates
+            # from resource-first search without overriding BM25 precision.
+            if n <= 30:
+                return (0.55, 0.30, 0.0, 0.15)
+            elif n <= 100:
+                return (0.50, 0.30, 0.0, 0.20)
+            else:
+                return (0.45, 0.30, 0.0, 0.25)
 
         # Dynamic adjustment based on corpus size
         if n <= 30:
