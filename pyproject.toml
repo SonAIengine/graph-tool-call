@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "graph-tool-call"
-version = "0.13.1"
+version = "0.14.0"
 description = "Graph-structured tool retrieval for LLM agents — zero-dependency, ontology-aware hybrid search"
 authors = ["SonAIengine"]
 license = "MIT"
@@ -70,6 +70,7 @@ all = ["networkx", "pyyaml", "numpy", "sentence-transformers", "rapidfuzz", "lan
 pytest = "^8.0"
 pytest-asyncio = "^0.23"
 ruff = ">=0.11"
+langgraph-bigtool = "^0.0.3"
 
 [tool.ruff]
 target-version = "py310"
