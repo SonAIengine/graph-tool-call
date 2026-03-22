@@ -10,6 +10,7 @@
 | **2.5** | MCP Annotation | MCP ingest, intent classifier, annotation-aware retrieval | ✅ 완료 | - |
 | **3** | Production | CLI, 시각화, conflict detection, commerce preset | ✅ 완료 | - |
 | **4** | Community | LangChain 등록, interactive dashboard, 블로그, 최적화 | 🟨 진행 중 | 2주 |
+| **4.5** | Workflow + Scale | plan_workflow API, 시각화 편집, SSE transport, 1068 tool 검증 | ✅ 완료 | - |
 
 ## WBS 전체 트리
 
@@ -129,16 +130,40 @@ graph-tool-call
 │   ├── 3-8. GitHub Actions CI ✅
 │   └── 3-9. PyPI 배포 ⬜ Phase 4로 이월
 │
-└── Phase 4: Community + Dashboard 🟨
-    ├── 4-1. Interactive Dashboard (Dash Cytoscape) ← NEW
-    │   ├── 4-1a. 그래프 탐색 UI
-    │   ├── 4-1b. 수동 편집 (관계 추가/삭제)
-    │   ├── 4-1c. 검색 테스트 UI
-    │   └── 4-1d. 관계 검증 (confirm/reject)
-    ├── 4-2. LangChain community package 등록
-    ├── 4-3. 블로그: "Why Graph > Vector for Tool Retrieval"
-    ├── 4-4. (선택) LAPIS 포맷 출력
-    └── 4-5. (선택) Rust(PyO3+petgraph) 최적화
+├── Phase 4: Community + Dashboard 🟨
+│   ├── 4-1. Interactive Dashboard (Dash Cytoscape)
+│   │   ├── 4-1a. 그래프 탐색 UI ✅
+│   │   ├── 4-1b. 수동 편집 (관계 추가/삭제) ✅ (Workflow Editor로 대체)
+│   │   ├── 4-1c. 검색 테스트 UI ✅
+│   │   └── 4-1d. 관계 검증 (confirm/reject) ⬜
+│   ├── 4-2. LangChain community package 등록 ⬜
+│   ├── 4-3. 블로그: "Why Graph > Vector for Tool Retrieval" ⬜
+│   ├── 4-4. (선택) LAPIS 포맷 출력 ⬜
+│   └── 4-5. (선택) Rust(PyO3+petgraph) 최적화 ⬜
+│
+└── Phase 4.5: Workflow + Scale ✅
+    ├── 4.5-1. plan_workflow() API ✅
+    │   ├── 4.5-1a. WorkflowPlanner (resource-first → chain → topo sort) ✅
+    │   ├── 4.5-1b. 수동 편집 (insert/remove/reorder/set_param_mapping) ✅
+    │   ├── 4.5-1c. JSON save/load ✅
+    │   └── 4.5-1d. LLM-assisted 체인 보강 ✅
+    ├── 4.5-2. Workflow 시각화 편집 툴 ✅
+    │   ├── 4.5-2a. 브라우저 기반 드래그앤드롭 에디터 (zero-dep HTML) ✅
+    │   └── 4.5-2b. plan.open_editor() Python API 연동 ✅
+    ├── 4.5-3. SSE/Streamable-HTTP transport ✅
+    │   ├── 4.5-3a. serve --transport sse/streamable-http ✅
+    │   └── 4.5-3b. proxy --transport sse/streamable-http ✅
+    ├── 4.5-4. Graph 아키텍처 전환 ✅
+    │   ├── 4.5-4a. Graph → candidate injection (wRRF에서 분리) ✅
+    │   ├── 4.5-4b. set_weights() 버그 수정 ✅
+    │   └── 4.5-4c. Resource-first search 범용화 (GitHub alias 제거) ✅
+    ├── 4.5-5. 경쟁 벤치마크 ✅
+    │   ├── 4.5-5a. 6개 retrieval 전략 공정 비교 ✅
+    │   └── 4.5-5b. 1068 tool 스트레스 테스트 (GitHub full API) ✅
+    └── 4.5-6. Retrieval 개선 ✅
+        ├── 4.5-6a. Intent 사전 확장 (+16 동사) ✅
+        ├── 4.5-6b. 한영 사전 35→114개 확장 ✅
+        └── 4.5-6c. Confidence-aware wRRF ✅
 ```
 
 ## 피드백 반영 요약 (v2)
