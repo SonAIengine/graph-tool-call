@@ -175,6 +175,63 @@ class ToolGraph:
         self._invalidate_retrieval()
         return schema
 
+    def add_tool_simple(
+        self,
+        name: str,
+        description: str = "",
+        parameters: dict[str, Any] | None = None,
+    ) -> ToolSchema:
+        """Add a tool using raw name/description/parameters — no format conversion needed.
+
+        Parameters
+        ----------
+        name:
+            Tool name (e.g. "get_user").
+        description:
+            Human-readable description of what the tool does.
+        parameters:
+            JSON Schema for the tool's parameters (the ``properties`` /
+            ``required`` dict).  If *None*, the tool is registered with no
+            parameters.
+
+        Example::
+
+            tg.add_tool_simple(
+                "get_user",
+                "Fetch a user by ID",
+                {
+                    "type": "object",
+                    "properties": {
+                        "user_id": {"type": "string", "description": "The user ID"}
+                    },
+                    "required": ["user_id"],
+                },
+            )
+        """
+        from graph_tool_call.core.tool import ToolParameter
+
+        params: list[ToolParameter] = []
+        if parameters:
+            props = parameters.get("properties", {})
+            required_set = set(parameters.get("required", []))
+            for pname, pschema in props.items():
+                params.append(
+                    ToolParameter(
+                        name=pname,
+                        type=pschema.get("type", "string"),
+                        description=pschema.get("description", ""),
+                        required=pname in required_set,
+                        enum=pschema.get("enum"),
+                    )
+                )
+
+        schema = ToolSchema(name=name, description=description, parameters=params)
+        normalize_tool(schema)
+        self._tools[schema.name] = schema
+        self._builder.add_tool(schema)
+        self._invalidate_retrieval()
+        return schema
+
     def add_tools(
         self,
         tools: list[Any],
@@ -729,6 +786,64 @@ class ToolGraph:
             mode=mode,
             llm=llm,
             history=history,
+        )
+
+    async def aretrieve(
+        self,
+        query: str,
+        top_k: int = 10,
+        max_graph_depth: int = 2,
+        mode: str = "basic",
+        llm: Any = None,
+        history: list[str] | None = None,
+    ) -> list[ToolSchema]:
+        """Async version of :meth:`retrieve`.
+
+        Runs the retrieval pipeline in a thread executor so it does not block
+        the event loop — useful for async codebases handling many tools.
+        """
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.retrieve(
+                query,
+                top_k=top_k,
+                max_graph_depth=max_graph_depth,
+                mode=mode,
+                llm=llm,
+                history=history,
+            ),
+        )
+
+    async def aretrieve_with_scores(
+        self,
+        query: str,
+        top_k: int = 10,
+        max_graph_depth: int = 2,
+        mode: str = "basic",
+        llm: Any = None,
+        history: list[str] | None = None,
+    ) -> list:
+        """Async version of :meth:`retrieve_with_scores`.
+
+        Runs the retrieval pipeline in a thread executor so it does not block
+        the event loop.
+        """
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.retrieve_with_scores(
+                query,
+                top_k=top_k,
+                max_graph_depth=max_graph_depth,
+                mode=mode,
+                llm=llm,
+                history=history,
+            ),
         )
 
     def plan_workflow(

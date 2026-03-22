@@ -793,6 +793,48 @@ class RetrievalEngine:
             query, top_k=top_k, max_graph_depth=max_graph_depth, mode=mode, llm=llm, history=history
         )
 
+    async def aretrieve(
+        self,
+        query: str,
+        top_k: int = 10,
+        max_graph_depth: int = 2,
+        mode: str | SearchMode = SearchMode.BASIC,
+        llm: Any = None,
+        history: list[str] | None = None,
+    ) -> list[ToolSchema]:
+        """Async version of :meth:`retrieve`."""
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.retrieve(
+                query, top_k=top_k, max_graph_depth=max_graph_depth,
+                mode=mode, llm=llm, history=history,
+            ),
+        )
+
+    async def aretrieve_with_scores(
+        self,
+        query: str,
+        top_k: int = 10,
+        max_graph_depth: int = 2,
+        mode: str | SearchMode = SearchMode.BASIC,
+        llm: Any = None,
+        history: list[str] | None = None,
+    ) -> list[RetrievalResult]:
+        """Async version of :meth:`retrieve_with_scores`."""
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.retrieve_with_scores(
+                query, top_k=top_k, max_graph_depth=max_graph_depth,
+                mode=mode, llm=llm, history=history,
+            ),
+        )
+
     @staticmethod
     def _rrf_fuse(
         *score_dicts: dict[str, float],
