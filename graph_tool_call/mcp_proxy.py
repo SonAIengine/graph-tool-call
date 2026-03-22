@@ -668,10 +668,11 @@ async def _run_proxy_async(
     embedding: bool | str = False,
     passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
     cache_path: str | None = None,
+    transport: str = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8000,
 ) -> None:
     """Run the proxy server (async entry point)."""
-    import mcp.server.stdio
-
     proxy = MCPProxy(
         backends,
         top_k=top_k,
@@ -684,14 +685,105 @@ async def _run_proxy_async(
         await proxy.connect_backends()
         server = create_proxy_server(proxy)
 
-        async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+        if transport == "stdio":
+            import mcp.server.stdio
+
+            async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+                await server.run(
+                    read_stream,
+                    write_stream,
+                    server.create_initialization_options(),
+                )
+        elif transport == "sse":
+            await _run_proxy_sse(server, host, port)
+        elif transport == "streamable-http":
+            await _run_proxy_streamable_http(server, host, port)
+        else:
+            raise ValueError(f"Unknown transport: {transport}")
+    finally:
+        await proxy.shutdown()
+
+
+async def _run_proxy_sse(server: Any, host: str, port: int) -> None:
+    """Run proxy with SSE transport."""
+    import uvicorn
+    from mcp.server.sse import SseServerTransport
+    from starlette.applications import Starlette
+    from starlette.routing import Mount, Route
+
+    sse_transport = SseServerTransport("/messages/")
+
+    async def handle_sse(request: Any) -> Any:
+        async with sse_transport.connect_sse(
+            request.scope, request.receive, request._send
+        ) as (read_stream, write_stream):
             await server.run(
                 read_stream,
                 write_stream,
                 server.create_initialization_options(),
             )
-    finally:
-        await proxy.shutdown()
+
+    app = Starlette(
+        routes=[
+            Route("/sse", endpoint=handle_sse),
+            Mount("/messages/", app=sse_transport.handle_post_message),
+        ],
+    )
+
+    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    uv_server = uvicorn.Server(config)
+    await uv_server.serve()
+
+
+async def _run_proxy_streamable_http(server: Any, host: str, port: int) -> None:
+    """Run proxy with Streamable-HTTP transport."""
+    import uvicorn
+    from mcp.server.streamable_http import StreamableHTTPServerTransport
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+
+    transport = StreamableHTTPServerTransport(mcp_session_id=None)
+
+    async def handle_request(scope: Any, receive: Any, send: Any) -> None:
+        await transport.handle_request(scope, receive, send)
+
+    async def app_lifespan(app: Any) -> Any:  # type: ignore[override]
+        async with transport.connect() as (read_stream, write_stream):
+            task = anyio.create_task_group()
+            async with task:
+                task.start_soon(
+                    server.run,
+                    read_stream,
+                    write_stream,
+                    server.create_initialization_options(),
+                )
+                yield
+                task.cancel_scope.cancel()
+
+    import anyio
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app: Any) -> Any:  # type: ignore[override]
+        async with transport.connect() as (read_stream, write_stream):
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(
+                    server.run,
+                    read_stream,
+                    write_stream,
+                    server.create_initialization_options(),
+                )
+                yield
+                tg.cancel_scope.cancel()
+
+    app = Starlette(
+        lifespan=lifespan,
+        routes=[Mount("/mcp", app=transport.handle_request)],
+    )
+
+    config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    uv_server = uvicorn.Server(config)
+    await uv_server.serve()
 
 
 def run_proxy(
@@ -701,8 +793,21 @@ def run_proxy(
     embedding: bool | str = False,
     passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
     cache_path: str | None = None,
+    transport: str = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8000,
 ) -> None:
-    """Run the MCP proxy (blocking entry point)."""
+    """Run the MCP proxy (blocking entry point).
+
+    Parameters
+    ----------
+    transport:
+        "stdio" (default), "sse", or "streamable-http".
+    host:
+        Bind address for SSE/Streamable-HTTP (default: 127.0.0.1).
+    port:
+        Port for SSE/Streamable-HTTP (default: 8000).
+    """
     try:
         _check_mcp_installed()
     except ImportError as e:
@@ -718,5 +823,8 @@ def run_proxy(
             embedding=embedding,
             passthrough_threshold=passthrough_threshold,
             cache_path=cache_path,
+            transport=transport,
+            host=host,
+            port=port,
         )
     )

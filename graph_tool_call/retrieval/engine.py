@@ -431,6 +431,7 @@ class RetrievalEngine:
             elif query_intent.delete_intent > 0.5 and method == "DELETE":
                 scores[name] *= 1.15
 
+
     def _boost_embedding_rerank(self, query: str, scores: dict[str, float]) -> None:
         """Rerank top candidates using embedding description similarity."""
         if self._embedding_index is None or self._embedding_index._provider is None:
@@ -572,12 +573,11 @@ class RetrievalEngine:
 
         # Dynamic adjustment based on corpus size
         if n <= 30:
-            return (0.35, 0.30, 0.30, 0.05)
+            return (0.25, 0.20, 0.45, 0.10)
         elif n <= 100:
-            return (0.30, 0.35, 0.25, 0.10)
+            return (0.25, 0.25, 0.35, 0.15)
         else:
-            # Large corpus: reduce embedding (sparse), boost graph + annotation
-            return (0.25, 0.40, 0.15, 0.20)
+            return (0.20, 0.25, 0.35, 0.20)
 
     def _enrich_relations(self, results: list[RetrievalResult]) -> None:
         """Attach inter-result relations and prerequisites to each result."""
@@ -729,16 +729,33 @@ class RetrievalEngine:
         weighted_sources: list[tuple[dict[str, float], float]],
         k: int = 60,
     ) -> dict[str, float]:
-        """Weighted Reciprocal Rank Fusion.
+        """Confidence-aware Weighted Reciprocal Rank Fusion.
 
-        Each source has an associated weight.
-        wRRF_score(d) = sum(weight_i / (k + rank_i(d)))
+        wRRF_score(d) = sum(effective_weight_i / (k + rank_i(d)))
+
+        When a source's top-1 score is significantly higher than top-2,
+        that source is "confident" and gets a weight boost (up to 1.5x).
+        This lets a high-confidence source (e.g., exact keyword match)
+        override an uncertain source (e.g., ambiguous embeddings).
         """
         fused: dict[str, float] = {}
         for scores, weight in weighted_sources:
             ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            if not ranked:
+                continue
+
+            # Confidence: how much top-1 dominates top-2
+            effective_weight = weight
+            if len(ranked) >= 2:
+                top1_score = ranked[0][1]
+                top2_score = ranked[1][1]
+                if top1_score > 0:
+                    gap = (top1_score - top2_score) / top1_score
+                    # gap ∈ [0, 1] → boost ∈ [1.0, 1.5]
+                    effective_weight = weight * (1.0 + 0.5 * gap)
+
             for rank, (name, _) in enumerate(ranked, start=1):
-                fused[name] = fused.get(name, 0.0) + weight / (k + rank)
+                fused[name] = fused.get(name, 0.0) + effective_weight / (k + rank)
         return fused
 
     def _keyword_match(self, query: str) -> dict[str, float]:

@@ -149,6 +149,23 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="cache_path",
         help="Cache path for ToolGraph (skip embedding rebuild on restart)",
     )
+    p_proxy.add_argument(
+        "--transport",
+        default="stdio",
+        choices=["stdio", "sse", "streamable-http"],
+        help="MCP transport (default: stdio)",
+    )
+    p_proxy.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind address for SSE/Streamable-HTTP (default: 127.0.0.1)",
+    )
+    p_proxy.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for SSE/Streamable-HTTP (default: 8000)",
+    )
 
     # --- call (search + execute) ---
     p_call = sub.add_parser("call", help="Search + execute an API tool via HTTP")
@@ -192,8 +209,19 @@ def _build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument(
         "--transport",
         default="stdio",
-        choices=["stdio", "sse"],
+        choices=["stdio", "sse", "streamable-http"],
         help="MCP transport (default: stdio)",
+    )
+    p_serve.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind address for SSE/Streamable-HTTP (default: 127.0.0.1)",
+    )
+    p_serve.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for SSE/Streamable-HTTP (default: 8000)",
     )
 
     return parser
@@ -549,6 +577,9 @@ def cmd_proxy(args: argparse.Namespace) -> None:
             args.passthrough_threshold or options.get("passthrough_threshold", 30)
         ),
         cache_path=args.cache_path or options.get("cache_path"),
+        transport=args.transport,
+        host=args.host,
+        port=args.port,
     )
 
 
@@ -596,6 +627,8 @@ def cmd_serve(args: argparse.Namespace) -> None:
         graph_file=args.graph_file,
         allow_private_hosts=args.allow_private_hosts,
         transport=args.transport,
+        host=args.host,
+        port=args.port,
     )
 
 

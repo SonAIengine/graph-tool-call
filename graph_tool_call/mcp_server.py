@@ -44,6 +44,8 @@ def create_mcp_server(
     *,
     graph_file: str | None = None,
     allow_private_hosts: bool = False,
+    host: str = "127.0.0.1",
+    port: int = 8000,
 ) -> Any:
     """Create an MCP server backed by a ToolGraph.
 
@@ -65,6 +67,8 @@ def create_mcp_server(
 
     mcp_app = FastMCP(
         "graph-tool-call",
+        host=host,
+        port=port,
         instructions=(
             "Tool search engine for LLM agents. "
             "Use search_tools() to find relevant tools by natural language query "
@@ -332,13 +336,27 @@ def run_server(
     graph_file: str | None = None,
     allow_private_hosts: bool = False,
     transport: str = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8000,
 ) -> None:
-    """Create and run the MCP server."""
+    """Create and run the MCP server.
+
+    Parameters
+    ----------
+    transport:
+        "stdio" (default), "sse", or "streamable-http".
+    host:
+        Bind address for SSE/Streamable-HTTP (default: 127.0.0.1).
+    port:
+        Port for SSE/Streamable-HTTP (default: 8000).
+    """
     try:
         mcp_app = create_mcp_server(
             sources,
             graph_file=graph_file,
             allow_private_hosts=allow_private_hosts,
+            host=host,
+            port=port,
         )
     except ImportError as e:
         print(str(e), file=sys.stderr)
