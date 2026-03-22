@@ -36,20 +36,23 @@ class InferredRelation:
 # ---------------------------------------------------------------------------
 
 _RELATION_PROMPT = """\
-You are an API relationship analyzer. Given a list of API tools, \
-identify relationships between them.
+Find relationships between these API tools.
+
+Example:
+Tools: createUser, getUserProfile, deleteUser
+Answer: [
+  {{"source":"getUserProfile","target":"createUser","relation":"REQUIRES","confidence":0.9,"reason":"need user to exist"}},
+  {{"source":"createUser","target":"deleteUser","relation":"PRECEDES","confidence":0.8,"reason":"create before delete"}}
+]
+
+Relation types:
+- REQUIRES: A needs B to run first (B provides data A needs)
+- PRECEDES: A should run before B in a workflow
 
 Tools:
 {tools_list}
 
-For each pair with a relationship, output a JSON array:
-[
-  {{"source": "toolA", "target": "toolB",
-    "relation": "REQUIRES", "confidence": 0.9, "reason": "..."}}
-]
-
-Relation types: REQUIRES, PRECEDES, COMPLEMENTARY, SIMILAR_TO, CONFLICTS_WITH
-Only output the JSON array, nothing else."""
+Output ONLY a JSON array. No explanation."""
 
 _CATEGORY_PROMPT = """\
 Group these API tools into logical categories. Each tool should belong to exactly one category.
@@ -67,36 +70,29 @@ Output a JSON object:
 Only output the JSON object, nothing else."""
 
 _KEYWORD_ENRICHMENT_PROMPT = """\
-For each API tool below, generate 3-5 **distinctive** English search keywords \
-that uniquely identify THIS tool and distinguish it from other tools in the list. \
-Do NOT use generic words like "create", "get", "list", "update", "delete", "user", \
-"data", "info", "manage", "item". Instead use domain-specific synonyms, \
-alternative phrasings, and terms a user would search for.
+Generate 3 search keywords for each tool. Use domain-specific synonyms a user would search for.
+Do NOT use generic words (create, get, list, update, delete, user, data).
+
+Example:
+Tool: addToCart - Add a product to the shopping cart
+Keywords: ["shopping basket", "reserve item", "cart insertion"]
 
 Tools:
 {tools_list}
 
-Output a JSON object:
-{{
-  "tool_name": ["distinctive_keyword1", "distinctive_keyword2"],
-  ...
-}}
-Only output the JSON object, nothing else."""
+Output ONLY a JSON object: {{"tool_name": ["keyword1", "keyword2", "keyword3"]}}"""
 
 _EXAMPLE_QUERIES_PROMPT = """\
-For each API tool below, write 2-3 short natural language queries that a user \
-would type when they need this tool. Focus on how a user would phrase the request, \
-not the API name. Use varied phrasing.
+Write 2 natural language queries a user would type to find each tool.
+
+Example:
+Tool: requestRefund - Request a refund for an order
+Queries: ["I want my money back", "process a return"]
 
 Tools:
 {tools_list}
 
-Output a JSON object:
-{{
-  "tool_name": ["query1", "query2"],
-  ...
-}}
-Only output the JSON object, nothing else."""
+Output ONLY a JSON object: {{"tool_name": ["query1", "query2"]}}"""
 
 
 def _format_tools_list(tools: list[ToolSummary]) -> str:
@@ -119,14 +115,57 @@ def _parse_relation_type(s: str) -> RelationType | None:
 
 
 def _extract_json(text: str) -> Any:
-    """Extract JSON from LLM response text, handling markdown code blocks."""
+    """Extract JSON from LLM response, with aggressive recovery for small models.
+
+    Handles:
+    - Markdown code blocks (```json ... ```)
+    - Thinking tags (<think>...</think>)
+    - Trailing text after JSON
+    - Truncated JSON (attempts to close brackets)
+    """
     text = text.strip()
-    if text.startswith("```"):
+
+    # Remove <think>...</think> blocks (qwen3 thinking mode)
+    import re as _re
+    text = _re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+
+    # Remove markdown code blocks
+    if "```" in text:
         lines = text.split("\n")
-        # Remove first and last lines (```json and ```)
         lines = [line for line in lines if not line.strip().startswith("```")]
         text = "\n".join(lines).strip()
-    return json.loads(text)
+
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Find JSON array or object in the text
+    for start_char, end_char in [("[", "]"), ("{", "}")]:
+        start = text.find(start_char)
+        if start == -1:
+            continue
+        # Find matching end bracket
+        end = text.rfind(end_char)
+        if end > start:
+            try:
+                return json.loads(text[start : end + 1])
+            except json.JSONDecodeError:
+                pass
+
+        # Try to fix truncated JSON by closing brackets
+        fragment = text[start:]
+        open_brackets = fragment.count(start_char) - fragment.count(end_char)
+        if open_brackets > 0:
+            fragment += end_char * open_brackets
+            try:
+                return json.loads(fragment)
+            except json.JSONDecodeError:
+                pass
+
+    # Last resort: try to find any valid JSON substring
+    raise json.JSONDecodeError("No valid JSON found", text, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +183,7 @@ class OntologyLLM(ABC):
     def infer_relations(
         self,
         tools: list[ToolSummary],
-        batch_size: int = 50,
+        batch_size: int = 15,
     ) -> list[InferredRelation]:
         """Infer relations between tools using the LLM."""
         all_relations: list[InferredRelation] = []
@@ -208,7 +247,7 @@ class OntologyLLM(ABC):
     def enrich_keywords(
         self,
         tools: list[ToolSummary],
-        batch_size: int = 50,
+        batch_size: int = 15,
     ) -> dict[str, list[str]]:
         """Generate English search keywords for tools to improve BM25 retrieval.
 
@@ -235,7 +274,7 @@ class OntologyLLM(ABC):
     def generate_example_queries(
         self,
         tools: list[ToolSummary],
-        batch_size: int = 50,
+        batch_size: int = 15,
     ) -> dict[str, list[str]]:
         """Generate natural language example queries for each tool.
 
@@ -296,7 +335,7 @@ class OllamaOntologyLLM(OntologyLLM):
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=120) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=300) as resp:  # noqa: S310
             result = json.loads(resp.read().decode())
             return result.get("response", "")
 
