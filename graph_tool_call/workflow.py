@@ -152,6 +152,61 @@ class WorkflowPlan:
             encoding="utf-8",
         )
 
+    def open_editor(self, tools: dict[str, ToolSchema] | None = None) -> None:
+        """Open the visual workflow editor in the default browser.
+
+        Passes the current workflow + available tools to the editor.
+
+        Example::
+            plan = tg.plan_workflow("process a refund")
+            plan.open_editor(tools=tg.tools)
+        """
+        import tempfile
+        import urllib.parse
+        import webbrowser
+
+        # Build editor data: workflow + tool catalog
+        tool_catalog = {}
+        if tools:
+            for name, tool in tools.items():
+                meta = tool.metadata or {}
+                tool_catalog[name] = {
+                    "description": tool.description or "",
+                    "method": meta.get("method", ""),
+                }
+
+        data = {
+            "goal": self.goal,
+            "confidence": self.confidence,
+            "steps": [s.to_dict() for s in self.steps],
+            "tools": tool_catalog,
+        }
+
+        # Copy editor HTML and inject data
+        editor_path = Path(__file__).parent / "static" / "workflow_editor.html"
+        if not editor_path.exists():
+            raise FileNotFoundError(f"Editor not found: {editor_path}")
+
+        html = editor_path.read_text(encoding="utf-8")
+        # Inject data via script tag before </body>
+        inject = f"""<script>
+try {{
+  const _initData = {json.dumps(data, ensure_ascii=False)};
+  if (_initData.goal) document.getElementById('goalInput').value = _initData.goal;
+  if (_initData.steps) steps = _initData.steps;
+  if (_initData.tools) {{ allTools = _initData.tools; renderToolList(); }}
+  render();
+}} catch(e) {{ console.error('Init error:', e); }}
+</script>"""
+        html = html.replace("</body>", inject + "\n</body>")
+
+        # Write to temp file and open
+        with tempfile.NamedTemporaryFile(
+            suffix=".html", delete=False, mode="w", encoding="utf-8"
+        ) as f:
+            f.write(html)
+            webbrowser.open(f"file://{f.name}")
+
     @classmethod
     def load(
         cls, path: str | Path, *, tools: dict[str, ToolSchema]
