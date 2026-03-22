@@ -131,6 +131,7 @@ class RetrievalEngine:
         self._bm25: BM25Scorer | None = None
         self._reranker: Any = None
         self._diversity_lambda: float | None = None
+        self._weights_manual: bool = False
 
     def _get_bm25(self) -> BM25Scorer:
         """Lazy-initialize BM25 scorer."""
@@ -157,7 +158,11 @@ class RetrievalEngine:
         embedding: float | None = None,
         annotation: float | None = None,
     ) -> None:
-        """Manually set wRRF fusion weights."""
+        """Manually set wRRF fusion weights.
+
+        Once called, disables adaptive weight selection — the exact values
+        provided here will be used for all subsequent retrievals.
+        """
         if keyword is not None:
             self._keyword_weight = keyword
         if graph is not None:
@@ -166,6 +171,7 @@ class RetrievalEngine:
             self._embedding_weight = embedding
         if annotation is not None:
             self._annotation_weight = annotation
+        self._weights_manual = True
 
     def set_reranker(self, reranker: Any) -> None:
         """Attach a CrossEncoderReranker for second-stage reranking."""
@@ -190,45 +196,51 @@ class RetrievalEngine:
         llm: Any = None,
         history: list[str] | None = None,
     ) -> list[RetrievalResult]:
-        """Core retrieval pipeline. Returns results with full score breakdown."""
+        """Core retrieval pipeline. Returns results with full score breakdown.
+
+        Architecture:
+        1. Scoring channels (BM25, embedding, annotation) → wRRF fusion → ranked list
+        2. Graph acts as an independent retrieval channel:
+           - Resource-first search finds tools by category matching (independent of BM25)
+           - Chain expansion adds prerequisites/next-steps
+           - Graph candidates are INJECTED into results, not fused via wRRF
+           This prevents Graph noise from degrading BM25/embedding precision
+           while allowing Graph to contribute unique candidates.
+        """
         if isinstance(mode, str):
             mode = SearchMode(mode)
 
         effective_query = self._augment_query(query, history)
 
-        # --- Score computation ---
-        keyword_scores = self._compute_keyword_scores(effective_query, query)
-        embedding_scores = self._compute_embedding_scores(query, top_k)
+        # Dynamic wRRF weights based on corpus size
+        kw, gw, ew, aw = self._get_adaptive_weights()
+
+        # --- Score computation (skip channels with weight=0) ---
+        keyword_scores = self._compute_keyword_scores(effective_query, query) if kw > 0 else {}
+        embedding_scores = self._compute_embedding_scores(query, top_k) if ew > 0 else {}
 
         # Annotation-aware scoring
         from graph_tool_call.retrieval.annotation_scorer import compute_annotation_scores
         from graph_tool_call.retrieval.intent import classify_intent
 
         query_intent = classify_intent(query)
+        annotation_scores = compute_annotation_scores(query_intent, self._tools) if aw > 0 else {}
 
-        # Resource-first graph search: independent of BM25.
-        # Graph scores are injected as candidates that BM25 might miss,
-        # rather than competing with BM25 in wRRF fusion.
-        resource_scores = self._searcher.resource_first_search(
-            query, intent=query_intent, max_results=top_k * 3, tools=self._tools
-        )
+        # Graph: independent retrieval channel (resource-first + BFS)
+        graph_scores: dict[str, float] = {}
+        if gw > 0:
+            resource_scores = self._searcher.resource_first_search(
+                query, intent=query_intent, max_results=top_k * 3, tools=self._tools
+            )
+            seed_tools = self._build_seed_tools(keyword_scores, history, query=query)
+            bfs_scores = self._compute_graph_scores(seed_tools, max_graph_depth, top_k)
+            graph_scores = dict(bfs_scores)
+            for name, score in resource_scores.items():
+                graph_scores[name] = max(graph_scores.get(name, 0), score)
 
-        # Graph scores: merge resource-first with BFS expansion
-        seed_tools = self._build_seed_tools(keyword_scores, history, query=query)
-        bfs_scores = self._compute_graph_scores(seed_tools, max_graph_depth, top_k)
-        graph_scores = dict(bfs_scores)
-        for name, score in resource_scores.items():
-            graph_scores[name] = max(graph_scores.get(name, 0), score)
-
-        annotation_scores = compute_annotation_scores(query_intent, self._tools)
-
-        # Dynamic wRRF weights based on corpus size
-        kw, gw, ew, aw = self._get_adaptive_weights()
-
-        # Collect all score sources for wRRF
+        # wRRF fusion — Graph is NOT included here; it acts as candidate injection
         score_sources: list[tuple[dict[str, float], float]] = [
             (keyword_scores, kw),
-            (graph_scores, gw),
             (embedding_scores, ew),
             (annotation_scores, aw),
         ]
@@ -238,6 +250,12 @@ class RetrievalEngine:
 
         # wRRF fusion → filter to TOOL nodes
         final_scores = self._fuse_and_filter(score_sources)
+
+        # Graph candidate injection: add high-confidence graph candidates
+        # that the primary channels missed. This gives Graph its own
+        # independent value without polluting the primary ranking.
+        if graph_scores and gw > 0:
+            self._inject_graph_candidates(final_scores, graph_scores, gw, top_k)
 
         # Post-fusion boosts
         self._boost_name_overlap(query, final_scores)
@@ -380,7 +398,7 @@ class RetrievalEngine:
         self, score_sources: list[tuple[dict[str, float], float]]
     ) -> dict[str, float]:
         """wRRF fusion then filter to TOOL nodes only."""
-        active = [(s, w) for s, w in score_sources if s]
+        active = [(s, w) for s, w in score_sources if s and w > 0]
         fused = self._wrrf_fuse(active) if active else {}
         final: dict[str, float] = {}
         for name, score in fused.items():
@@ -413,6 +431,53 @@ class RetrievalEngine:
                 scores[name] *= 1.25 + 0.15 * (overlap - 2)
             elif overlap == 1:
                 scores[name] *= 1.1
+
+    def _inject_graph_candidates(
+        self,
+        final_scores: dict[str, float],
+        graph_scores: dict[str, float],
+        graph_weight: float,
+        top_k: int,
+    ) -> None:
+        """Inject graph candidates into results, adapting strength to BM25 confidence.
+
+        Graph acts as an independent retrieval channel. Instead of competing
+        with BM25 in wRRF fusion (which degrades precision), Graph injects
+        candidates that the primary channels missed.
+
+        Adaptive injection:
+        - High BM25 confidence (top-1 >> top-2): gentle tail injection only
+        - Low BM25 confidence (flat scores): aggressive injection into mid-ranks
+        This way Graph helps most when BM25 is uncertain.
+        """
+        if not graph_scores or not final_scores:
+            return
+
+        # Only consider graph candidates not already found by primary channels
+        new_candidates = {
+            name: score for name, score in graph_scores.items()
+            if name not in final_scores and name in self._tools
+        }
+        if not new_candidates:
+            return
+
+        # Filter to high-confidence: top graph candidates only
+        g_ranked = sorted(new_candidates.items(), key=lambda x: x[1], reverse=True)
+        top_g_score = g_ranked[0][1] if g_ranked else 0
+        if top_g_score <= 0:
+            return
+        # Only take candidates with score >= 50% of top graph score
+        high_conf = [(n, s) for n, s in g_ranked if s >= top_g_score * 0.5]
+
+        # SAFE injection: always below the lowest primary score
+        # This guarantees Graph NEVER displaces any BM25 result
+        min_primary = min(final_scores.values()) if final_scores else 0
+        injection_base = min_primary * 0.8
+
+        max_inject = max(2, top_k // 3)
+        for name, g_score in high_conf[:max_inject]:
+            norm_score = g_score / max(top_g_score, 1e-9)
+            final_scores[name] = injection_base * norm_score
 
     def _boost_method_intent(self, query_intent: Any, scores: dict[str, float]) -> None:
         """Boost scores based on HTTP method-intent alignment."""
@@ -565,27 +630,40 @@ class RetrievalEngine:
     def _get_adaptive_weights(
         self,
     ) -> tuple[float, float, float, float]:
-        """Return (keyword, graph, embedding, annotation) weights adapted to corpus size."""
+        """Return (keyword, graph, embedding, annotation) weights adapted to corpus size.
+
+        If set_weights() was called, returns the manually set values instead.
+        """
+        if self._weights_manual:
+            return (
+                self._keyword_weight,
+                self._graph_weight,
+                self._embedding_weight,
+                self._annotation_weight,
+            )
         n = len(self._tools)
         has_embedding = self._embedding_index is not None and self._embedding_weight > 0
 
         if not has_embedding:
-            # Graph is a supplementary signal: contributes unique candidates
-            # from resource-first search without overriding BM25 precision.
+            # Graph is NOT in wRRF fusion — it injects candidates separately.
+            # Graph weight > 0 enables candidate injection; the value controls
+            # injection aggressiveness but does NOT enter wRRF scoring.
+            # Annotation weight kept low to avoid overwhelming precise keyword matches
+            # at large corpus sizes (where many tools share the same HTTP method).
             if n <= 30:
-                return (0.55, 0.30, 0.0, 0.15)
+                return (0.85, 0.15, 0.0, 0.0)
             elif n <= 100:
-                return (0.50, 0.30, 0.0, 0.20)
+                return (0.85, 0.15, 0.0, 0.0)
             else:
-                return (0.45, 0.30, 0.0, 0.25)
+                return (0.85, 0.15, 0.0, 0.0)
 
-        # Dynamic adjustment based on corpus size
+        # With embedding: Graph still injects separately
         if n <= 30:
-            return (0.25, 0.20, 0.45, 0.10)
+            return (0.25, 0.15, 0.55, 0.05)
         elif n <= 100:
-            return (0.25, 0.25, 0.35, 0.15)
+            return (0.25, 0.15, 0.50, 0.10)
         else:
-            return (0.20, 0.25, 0.35, 0.20)
+            return (0.20, 0.20, 0.50, 0.10)
 
     def _enrich_relations(self, results: list[RetrievalResult]) -> None:
         """Attach inter-result relations and prerequisites to each result."""

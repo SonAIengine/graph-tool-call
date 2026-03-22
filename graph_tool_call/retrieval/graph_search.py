@@ -38,8 +38,9 @@ class GraphSearcher:
     def _get_category_index(self) -> dict[str, str]:
         """Build token → category_node mapping for resource-first search.
 
-        Maps both original and stemmed forms so that "pets" matches category "pet"
-        and "issues" matches category "issue".
+        Dynamically indexes all CATEGORY nodes in the graph, mapping their
+        name tokens, stemmed forms, and description keywords. This is fully
+        generic — works with any OpenAPI/MCP schema, not just specific APIs.
         """
         if self._category_index is not None:
             return self._category_index
@@ -63,6 +64,37 @@ class GraphSearcher:
                         index[t + "s"] = node
             # Also map the full name
             index[node.lower()] = node
+
+            # Index description keywords for broader matching
+            desc = attrs.get("description", "")
+            if desc:
+                desc_tokens = re.split(r"[\s_\-/.,;:!?()]+", desc.lower())
+                for t in desc_tokens:
+                    if t and len(t) >= 3 and t not in index:
+                        index[t] = node
+
+            # Reverse-index: tool name + description tokens → their parent category
+            # e.g., "refund" from requestRefund → orders category
+            #        "starred" from listStargazers desc → activity category
+            for neighbor in self._graph.get_neighbors(node, direction="in"):
+                n_attrs = self._graph.get_node_attrs(neighbor)
+                if n_attrs.get("node_type") != NodeType.TOOL:
+                    continue
+                # Split camelCase and snake_case tool names
+                name_parts = re.sub(r"([a-z])([A-Z])", r"\1 \2", neighbor)
+                name_tokens = re.split(r"[\s_\-/]+", name_parts.lower())
+                for t in name_tokens:
+                    t = self._stem_simple(t)
+                    if t and len(t) >= 3 and t not in index:
+                        index[t] = node
+                # Also index distinctive description keywords
+                tool_desc = n_attrs.get("description", "")
+                if tool_desc:
+                    desc_toks = re.split(r"[\s_\-/.,;:!?()]+", tool_desc.lower())
+                    for t in desc_toks:
+                        t = self._stem_simple(t)
+                        if t and len(t) >= 4 and t not in index:
+                            index[t] = node
 
         self._category_index = index
         return index
@@ -96,61 +128,26 @@ class GraphSearcher:
         if not query_tokens:
             return {}
 
-        # Step 1: Find matching categories (try both original and stemmed tokens)
+        # Step 1: Find matching categories (try multiple token variants)
         matched_categories: dict[str, float] = {}
         for token in query_tokens:
-            for variant in (token, self._stem_simple(token)):
+            # Try: original, stemmed, and common suffixes stripped
+            variants = [token, self._stem_simple(token)]
+            # Handle -ed, -ing, -er suffixes more aggressively
+            if token.endswith("ed") and len(token) > 4:
+                variants.append(token[:-2])  # starred → starr
+                variants.append(token[:-1])  # starred → starre
+                variants.append(token[:-2] + token[-3])  # doubled consonant
+            if token.endswith("ing") and len(token) > 5:
+                variants.append(token[:-3])
+            if token.endswith("er") and len(token) > 4:
+                variants.append(token[:-2])
+                variants.append(token[:-1])
+            for variant in variants:
                 if variant in cat_index:
                     cat_node = cat_index[variant]
                     matched_categories[cat_node] = matched_categories.get(cat_node, 0) + 1.0
                     break
-
-        # Also check multi-word matches ("pull request" → "pulls")
-        _RESOURCE_ALIASES: dict[str, str] = {
-            "pull request": "pulls",
-            "pr": "pulls",
-            "issue": "issues",
-            "repo": "repos",
-            "repository": "repos",
-            "workflow": "actions",
-            "action": "actions",
-            "gist": "gists",
-            "user": "users",
-            "team": "teams",
-            "org": "orgs",
-            "organization": "orgs",
-            "package": "packages",
-            "project": "projects",
-            "release": "repos",
-            "branch": "repos",
-            "commit": "repos",
-            "webhook": "repos",
-            "codespace": "codespaces",
-            "copilot": "copilot",
-            "dependabot": "dependabot",
-            "secret": "actions",
-            "runner": "actions",
-            "deploy": "repos",
-            "migration": "migrations",
-            "ssh key": "users",
-            "gpg key": "users",
-            "label": "issues",
-            "milestone": "issues",
-            "comment": "issues",
-            "review": "pulls",
-            "check": "checks",
-            "star": "activity",
-            "watch": "activity",
-            "fork": "repos",
-            "tag": "repos",
-            "scan": "code-scanning",
-            "alert": "dependabot",
-            "billing": "billing",
-        }
-        for alias, cat_name in _RESOURCE_ALIASES.items():
-            if alias in query_lower:
-                if self._graph.has_node(cat_name):
-                    matched_categories[cat_name] = matched_categories.get(cat_name, 0) + 1.5
 
         if not matched_categories:
             return {}
@@ -173,52 +170,141 @@ class GraphSearcher:
                 name_boost = 1.0 + 0.5 * name_overlap
 
                 # Intent alignment: check HTTP method from tool metadata
-                intent_boost = 1.0
-                if intent and not intent.is_neutral and tools:
-                    tool_obj = tools.get(tool_node)
-                    if tool_obj and tool_obj.metadata:
-                        method = tool_obj.metadata.get("method", "").upper()
-                        # Also check tool name for action verbs
-                        name_lower = tool_node.lower()
-                        if intent.write_intent > 0.5:
-                            if method in ("POST", "PUT", "PATCH"):
-                                intent_boost = 1.8
-                            # Specific verb matching in tool name
-                            for verb in ("create", "add", "set", "update", "enable",
-                                         "register", "upload", "submit", "request",
-                                         "fork", "star", "follow", "lock", "merge",
-                                         "close", "open", "transfer", "approve"):
-                                if verb in name_lower:
-                                    intent_boost = max(intent_boost, 1.5)
-                        elif intent.read_intent > 0.5:
-                            if method == "GET":
-                                intent_boost = 1.5
-                            for verb in ("get", "list", "check", "download", "search"):
-                                if verb in name_lower:
-                                    intent_boost = max(intent_boost, 1.3)
-                        elif intent.delete_intent > 0.5:
-                            if method == "DELETE":
-                                intent_boost = 1.8
-                            for verb in ("delete", "remove", "revoke", "cancel"):
-                                if verb in name_lower:
-                                    intent_boost = max(intent_boost, 1.5)
+                intent_boost = self._compute_intent_boost(intent, tool_node, tools)
 
-                # Description keyword boost: check if query keywords appear in description
-                desc_boost = 1.0
-                if tools:
-                    tool_obj = tools.get(tool_node)
-                    if tool_obj and tool_obj.description:
-                        desc_lower = tool_obj.description.lower()
-                        desc_hits = sum(1 for t in query_tokens if t in desc_lower)
-                        if desc_hits >= 2:
-                            desc_boost = 1.0 + 0.3 * desc_hits
+                # Description keyword boost
+                desc_boost = self._compute_desc_boost(query_tokens, tool_node, tools)
 
                 score = base * name_boost * intent_boost * desc_boost
                 scores[tool_node] = max(scores.get(tool_node, 0), score)
 
+        # Step 3: Chain expansion — follow REQUIRES/PRECEDES for top-scored tools
+        chain_additions = self._expand_chains(scores, max_chain_depth=2)
+        for name, score in chain_additions.items():
+            scores[name] = max(scores.get(name, 0), score)
+
         # Sort and limit
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         return dict(ranked[:max_results])
+
+    @staticmethod
+    def _compute_intent_boost(
+        intent: Any | None, tool_node: str, tools: dict | None
+    ) -> float:
+        """Score boost based on query intent vs tool's HTTP method/name."""
+        if not intent or intent.is_neutral or not tools:
+            return 1.0
+
+        tool_obj = tools.get(tool_node)
+        method = ""
+        if tool_obj and tool_obj.metadata:
+            method = tool_obj.metadata.get("method", "").upper()
+
+        name_lower = tool_node.lower()
+        boost = 1.0
+
+        if intent.write_intent > 0.5:
+            if method in ("POST", "PUT", "PATCH"):
+                boost = 1.8
+            for verb in ("create", "add", "set", "update", "enable",
+                         "register", "upload", "submit", "request",
+                         "fork", "star", "follow", "lock", "merge",
+                         "close", "open", "transfer", "approve",
+                         "checkout", "cancel", "clear"):
+                if verb in name_lower:
+                    boost = max(boost, 1.5)
+        elif intent.read_intent > 0.5:
+            if method == "GET":
+                boost = 1.5
+            for verb in ("get", "list", "check", "download", "search",
+                         "validate", "calculate"):
+                if verb in name_lower:
+                    boost = max(boost, 1.3)
+        elif intent.delete_intent > 0.5:
+            if method == "DELETE":
+                boost = 1.8
+            for verb in ("delete", "remove", "revoke", "cancel"):
+                if verb in name_lower:
+                    boost = max(boost, 1.5)
+
+        return boost
+
+    @staticmethod
+    def _compute_desc_boost(
+        query_tokens: set[str], tool_node: str, tools: dict | None
+    ) -> float:
+        """Boost tools whose description contains query keywords."""
+        if not tools:
+            return 1.0
+        tool_obj = tools.get(tool_node)
+        if not tool_obj or not tool_obj.description:
+            return 1.0
+        desc_lower = tool_obj.description.lower()
+        desc_hits = sum(1 for t in query_tokens if t in desc_lower)
+        if desc_hits >= 2:
+            return 1.0 + 0.3 * desc_hits
+        return 1.0
+
+    def _expand_chains(
+        self,
+        scores: dict[str, float],
+        max_chain_depth: int = 2,
+    ) -> dict[str, float]:
+        """Follow REQUIRES/PRECEDES edges from top-scored tools to find chain members.
+
+        When a user queries "process a refund", we find requestRefund via category
+        matching. This method then follows REQUIRES edges to discover getOrder
+        (prerequisite) and PRECEDES edges to discover getPayment (next step).
+
+        Chain tools get a decayed score so they rank below the primary match
+        but above unrelated tools.
+        """
+        if not scores:
+            return {}
+
+        # Only expand from top-scored tools to avoid noise
+        top_tools = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:5]
+        chain_scores: dict[str, float] = {}
+
+        for tool_name, base_score in top_tools:
+            if not self._graph.has_node(tool_name):
+                continue
+
+            # BFS through REQUIRES/PRECEDES only
+            visited: set[str] = {tool_name}
+            queue: deque[tuple[str, int]] = deque([(tool_name, 0)])
+
+            while queue:
+                node, depth = queue.popleft()
+                if depth >= max_chain_depth:
+                    continue
+
+                for edge in self._graph.get_edges_from(node, direction="both"):
+                    src, tgt, attrs = edge
+                    neighbor = tgt if src == node else src
+                    relation = str(attrs.get("relation", ""))
+
+                    # Only follow workflow edges
+                    if "REQUIRES" not in relation and "PRECEDES" not in relation:
+                        continue
+
+                    if neighbor in visited:
+                        continue
+                    visited.add(neighbor)
+
+                    n_attrs = self._graph.get_node_attrs(neighbor)
+                    if n_attrs.get("node_type") != NodeType.TOOL:
+                        continue
+
+                    # Decayed score: prerequisites get 60% at depth 1, 36% at depth 2
+                    decay = 0.6 ** (depth + 1)
+                    chain_score = base_score * decay
+                    chain_scores[neighbor] = max(
+                        chain_scores.get(neighbor, 0), chain_score
+                    )
+                    queue.append((neighbor, depth + 1))
+
+        return chain_scores
 
     def expand_from_seeds(
         self,
