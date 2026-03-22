@@ -341,15 +341,14 @@ class WorkflowPlanner:
     def _build_chain(
         self, target: str, max_steps: int
     ) -> dict[str, set[str]]:
-        """Build a focused prerequisite chain for the target tool.
+        """Build a prerequisite chain for the target tool.
 
-        Rules:
-        1. Only follow direct REQUIRES edges from the target
-        2. Only include prerequisites that are data providers (GET/LIST)
-           in the SAME category as the target
-        3. Hard cap at max_steps
+        Follows REQUIRES edges to find data providers:
+        - Same-category GET: e.g., getOrder → requestRefund (same resource)
+        - Cross-resource GET single: e.g., getProduct → addToCart (parameter dependency)
+        - Same-category POST→DELETE: lifecycle PRECEDES
 
-        This prevents chain explosion from loose cross-resource REQUIRES.
+        Limits depth to 2 hops to prevent chain explosion.
         """
         predecessors: dict[str, set[str]] = defaultdict(set)
         predecessors[target] = set()
@@ -357,62 +356,76 @@ class WorkflowPlanner:
         if not self._graph.has_node(target):
             return dict(predecessors)
 
-        # Find target's category
         target_category = self._get_category(target)
 
-        for edge in self._graph.get_edges_from(target, direction="both"):
-            src, tgt, attrs = edge
-            relation = str(attrs.get("relation", ""))
-            neighbor = tgt if src == target else src
+        # BFS with max depth 2 — follow REQUIRES to find prerequisites
+        visited: set[str] = {target}
+        queue: deque[tuple[str, int]] = deque([(target, 0)])
 
-            n_attrs = self._graph.get_node_attrs(neighbor)
-            if n_attrs.get("node_type") != NodeType.TOOL:
-                continue
-            if neighbor not in self._tools:
+        while queue and len(predecessors) < max_steps:
+            node, depth = queue.popleft()
+            if depth >= 2:
                 continue
 
-            neighbor_tool = self._tools[neighbor]
-            neighbor_category = self._get_category(neighbor)
-            n_method = ""
-            if neighbor_tool.metadata:
-                n_method = neighbor_tool.metadata.get("method", "").upper()
+            if not self._graph.has_node(node):
+                continue
 
-            # REQUIRES: only accept same-category GET/LIST as prerequisite
-            if "REQUIRES" in relation and src == target:
-                same_cat = (
-                    target_category
-                    and neighbor_category
-                    and target_category == neighbor_category
-                )
-                is_getter = n_method == "GET" or any(
-                    v in neighbor.lower() for v in ("get", "list", "read")
-                )
-                if same_cat and is_getter:
-                    predecessors[target].add(neighbor)
+            for edge in self._graph.get_edges_from(node, direction="both"):
+                src, tgt, attrs = edge
+                relation = str(attrs.get("relation", ""))
+                neighbor = tgt if src == node else src
+
+                if neighbor in visited:
+                    continue
+
+                n_attrs = self._graph.get_node_attrs(neighbor)
+                if n_attrs.get("node_type") != NodeType.TOOL:
+                    continue
+                if neighbor not in self._tools:
+                    continue
+
+                neighbor_tool = self._tools[neighbor]
+                n_method = ""
+                if neighbor_tool.metadata:
+                    n_method = neighbor_tool.metadata.get("method", "").upper()
+
+                accepted = False
+
+                if "REQUIRES" in relation and src == node:
+                    # Accept GET as data provider (same or cross-resource)
+                    if n_method == "GET" or any(
+                        v in neighbor.lower() for v in ("get", "list")
+                    ):
+                        accepted = True
+
+                elif "PRECEDES" in relation and tgt == node:
+                    # Accept same-category POST/create as setup step
+                    neighbor_category = self._get_category(neighbor)
+                    node_category = self._get_category(node)
+                    same_cat = (
+                        node_category and neighbor_category
+                        and node_category == neighbor_category
+                    )
+                    is_creator = n_method == "POST" or any(
+                        v in neighbor.lower() for v in ("create", "add")
+                    )
+                    if same_cat and is_creator:
+                        accepted = True
+
+                if accepted:
+                    visited.add(neighbor)
+                    predecessors[node].add(neighbor)
                     if neighbor not in predecessors:
                         predecessors[neighbor] = set()
-
-            # PRECEDES: something comes before target (only POST/create)
-            elif "PRECEDES" in relation and tgt == target:
-                same_cat = (
-                    target_category
-                    and neighbor_category
-                    and target_category == neighbor_category
-                )
-                is_creator = n_method == "POST" or any(
-                    v in neighbor.lower() for v in ("create", "add")
-                )
-                if same_cat and is_creator:
-                    predecessors[target].add(neighbor)
-                    if neighbor not in predecessors:
-                        predecessors[neighbor] = set()
+                    queue.append((neighbor, depth + 1))
 
         # Trim to max_steps
         if len(predecessors) > max_steps:
+            # Keep target + closest prerequisites
             direct_preds = list(predecessors[target])[:max_steps - 1]
             trimmed: dict[str, set[str]] = {target: set(direct_preds)}
             for p in direct_preds:
-                trimmed[p] = set()
+                trimmed[p] = predecessors.get(p, set()) & set(direct_preds)
             return trimmed
 
         return dict(predecessors)

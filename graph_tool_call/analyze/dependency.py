@@ -78,6 +78,7 @@ def detect_dependencies(
     relations: list[DetectedRelation] = []
     relations.extend(_detect_structural(tools, spec))
     relations.extend(_detect_name_based(tools))
+    relations.extend(_detect_cross_resource(tools))
     relations = _deduplicate(relations)
     relations = [r for r in relations if r.confidence >= min_confidence]
     relations.sort(key=lambda r: r.confidence, reverse=True)
@@ -497,6 +498,113 @@ def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
                             f"resource: {', '.join(sorted(shared))}"
                         ),
                         layer=2,
+                    )
+                )
+
+    return relations
+
+
+# ---------------------------------------------------------------------------
+# Layer 3: Cross-resource parameter dependency
+# ---------------------------------------------------------------------------
+
+
+def _detect_cross_resource(tools: list[ToolSchema]) -> list[DetectedRelation]:
+    """Detect cross-resource dependencies from parameter names.
+
+    When tool B has a parameter like ``orderId``, it needs data from the
+    ``orders`` resource. This creates a REQUIRES relation to a GET tool
+    that can provide that ID.
+
+    Example: ``checkout(shippingAddressId)`` → REQUIRES ``addUserAddress``
+             ``addToCart(productId)`` → REQUIRES ``getProduct``
+    """
+    relations: list[DetectedRelation] = []
+
+    # Build resource → GET/POST provider index
+    # e.g., "order" → getOrder, "product" → getProduct, "user" → getUser
+    resource_providers: dict[str, list[ToolSchema]] = {}
+    for tool in tools:
+        method = (tool.metadata.get("method") or "").upper()
+        if method not in ("GET", "POST"):
+            continue
+        # Extract resource name from tool name
+        name_tokens = _normalize_name(tool.name)
+        # Remove verb prefix
+        resource_tokens = [
+            t for t in name_tokens
+            if t not in ("get", "list", "create", "add", "post", "read", "find")
+        ]
+        for tok in resource_tokens:
+            resource_providers.setdefault(tok, []).append(tool)
+
+    # For each tool, check if its parameters reference other resources
+    for tool in tools:
+        if not tool.parameters:
+            continue
+        for param in tool.parameters:
+            p_name = param.name if hasattr(param, "name") else str(param)
+            p_lower = p_name.lower()
+
+            # Match patterns like "orderId", "product_id", "userId"
+            # Extract the resource name from the parameter
+            resource_name = None
+            if p_lower.endswith("id") and len(p_lower) > 2:
+                # "orderId" → "order", "productId" → "product"
+                raw = p_lower[:-2]  # strip "id"
+                if raw.endswith("_"):
+                    raw = raw[:-1]  # strip trailing underscore
+                if len(raw) >= 3:
+                    resource_name = raw
+            elif "_id" in p_lower:
+                # "user_id" → "user"
+                parts = p_lower.split("_id")
+                if parts[0] and len(parts[0]) >= 3:
+                    resource_name = parts[0]
+
+            if not resource_name:
+                continue
+
+            # Find providers for this resource
+            providers = resource_providers.get(resource_name, [])
+            for provider in providers:
+                if provider.name == tool.name:
+                    continue
+
+                # Prefer GET single over GET list/POST
+                provider_method = (provider.metadata.get("method") or "").upper()
+                provider_path = provider.metadata.get("path", "")
+                is_get_single = (
+                    provider_method == "GET"
+                    and _is_single_resource_path(provider_path)
+                )
+
+                # Only create cross-resource link if provider is from
+                # a DIFFERENT resource category than the consumer
+                consumer_resource = _extract_resource(
+                    tool.metadata.get("path", "")
+                )
+                provider_resource = _extract_resource(provider_path)
+                if consumer_resource == provider_resource:
+                    continue  # same resource — handled by structural detection
+
+                # Only accept GET single as cross-resource provider
+                # GET list and POST are too noisy as providers
+                if not is_get_single:
+                    continue
+
+                conf = 0.85
+                relations.append(
+                    DetectedRelation(
+                        source=tool.name,
+                        target=provider.name,
+                        relation_type=RelationType.REQUIRES,
+                        confidence=conf,
+                        evidence=(
+                            f"{tool.name} has param '{p_name}' referencing "
+                            f"{provider.name}'s resource '{resource_name}'"
+                        ),
+                        layer=3,
                     )
                 )
 
