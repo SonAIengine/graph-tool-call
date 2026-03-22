@@ -11,8 +11,9 @@ Vector search finds *similar* tools, but misses the *workflow* they belong to.<b
 | | Baseline (all tools) | graph-tool-call |
 |---|:---:|:---:|
 | **248 tools (K8s API)** | 12% accuracy | **82% accuracy** |
+| **1068 tools (GitHub full API)** | impossible (context overflow) | **78% Recall@5** |
 | **Token usage** | 8,192 tokens | 1,699 tokens (**79% reduction**) |
-| **50 tools (GitHub API)** | 100% accuracy | 90% accuracy, **88% fewer tokens** |
+| **Latency (no embedding)** | — | **2.7ms avg** |
 
 <sub>Measured with qwen3:4b (4-bit) — <a href="#benchmark">full benchmark below</a></sub>
 
@@ -202,6 +203,34 @@ result = tg.execute(
 )
 ```
 
+### Workflow Planning
+
+Unlike vector search which returns individual tools, `plan_workflow()` returns ordered execution chains with prerequisites — reducing LLM agent round-trips from 3-4 to 1.
+
+```python
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph.from_url("https://api.example.com/openapi.json")
+
+# Auto-generate a multi-step workflow
+plan = tg.plan_workflow("process a refund")
+for step in plan.steps:
+    print(f"{step.order}. {step.tool.name} — {step.reason}")
+# 1. getOrder — prerequisite for requestRefund
+# 2. requestRefund — primary action
+
+# Edit the workflow
+plan.remove_step("listOrders")
+plan.insert_step(0, "getOrder", tools=tg.tools, reason="need order ID")
+plan.set_param_mapping("requestRefund", "order_id", "getOrder.response.id")
+
+# Visual editor (opens in browser)
+plan.open_editor(tools=tg.tools)
+
+# Save / Load
+plan.save("refund_workflow.json")
+```
+
 ### MCP Server (Claude Code, Cursor, Windsurf, etc.)
 
 Run as an MCP server — any MCP-compatible agent can use tool search with just a config entry:
@@ -214,6 +243,28 @@ Run as an MCP server — any MCP-compatible agent can use tool search with just 
       "command": "uvx",
       "args": ["graph-tool-call[mcp]", "serve",
                "--source", "https://api.example.com/openapi.json"]
+    }
+  }
+}
+```
+
+The MCP server also supports remote deployment via SSE and Streamable HTTP transports:
+
+```bash
+# Remote deployment (SSE transport)
+graph-tool-call serve --source api.json --transport sse --host 0.0.0.0 --port 8000
+
+# Streamable HTTP
+graph-tool-call serve --source api.json --transport streamable-http --port 8000
+```
+
+Client configuration for remote MCP servers:
+
+```json
+{
+  "mcpServers": {
+    "tool-search": {
+      "url": "http://tool-search.internal:8000/sse"
     }
   }
 }
@@ -288,6 +339,12 @@ claude mcp remove my-api -s user
 claude mcp list
 # tool-proxy: ... - ✓ Connected
 # (individual servers should be gone)
+```
+
+The proxy also supports remote transport:
+
+```bash
+graph-tool-call proxy --config backends.json --transport sse --port 8000
 ```
 
 That's it. The proxy exposes `search_tools`, `get_tool_schema`, and `call_backend_tool`. After searching, matched tools are **dynamically injected** for 1-hop direct calling.
@@ -562,6 +619,27 @@ On the largest dataset, **Kubernetes core/v1 (248 tools)**, we compared adding e
 - **Embedding** compensates for **semantic similarity** that BM25 misses.
 - **Ontology** **expands the searchable representation itself** when tool descriptions are short or non-standard.
 - Using both together may show limited additional gains in end-to-end accuracy, but **the ability to include correct tools in the candidate set becomes strongest**.
+
+### Competitive Benchmark (retrieval strategies)
+
+Compared 6 retrieval strategies across 9 datasets (19–1068 tools):
+
+| Strategy | Recall@5 | MRR | Latency |
+|---|:---:|:---:|:---:|
+| Vector Only (≈bigtool) | 96.8% | 0.897 | 176ms |
+| BM25 Only | 91.6% | 0.819 | 1.5ms |
+| BM25 + Graph (default) | 91.6% | 0.819 | 14ms |
+| Full Pipeline (with embedding) | 96.8% | 0.897 | 172ms |
+
+**Key finding**: Without embedding, BM25+Graph achieves 91.6% Recall — competitive with vector search at 65x faster speed. With embedding enabled, performance matches pure vector search.
+
+### Scale Test: 1068 tools (GitHub full API)
+
+| Strategy | Recall@5 | MRR | Miss% |
+|---|:---:|:---:|:---:|
+| Vector Only | 88.0% | 0.761 | 12.0% |
+| BM25 + Graph | 78.0% | 0.643 | 22.0% |
+| Full Pipeline | 88.0% | 0.761 | 12.0% |
 
 ### Reproduce it
 
