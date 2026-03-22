@@ -177,44 +177,62 @@ def _detect_structural(
 
 
 def _detect_path_hierarchy(tools: list[ToolSchema]) -> list[DetectedRelation]:
-    """Nested paths imply REQUIRES (child requires parent)."""
+    """Nested paths imply REQUIRES — but only direct parent-child, not grandparent.
+
+    /orders/{id}/refund REQUIRES /orders/{id} (direct parent)
+    /orders/{id}/refund does NOT require /orders (grandparent — too loose)
+
+    Additionally, the parent must be a data-providing operation (GET/POST)
+    to avoid false positives like refund REQUIRES listOrders.
+    """
     relations: list[DetectedRelation] = []
-    for i, a in enumerate(tools):
-        for b in tools[i + 1 :]:
-            if a.name == b.name:
-                continue
-            path_a = _strip_path_params(a.metadata["path"])
-            path_b = _strip_path_params(b.metadata["path"])
-            if path_a == path_b:
-                continue
-            if path_b.startswith(path_a + "/"):
-                # b is nested under a → b REQUIRES a
+
+    # Build (stripped_path, original_path) → tool index
+    path_tools: dict[str, list[ToolSchema]] = {}
+    for tool in tools:
+        stripped = _strip_path_params(tool.metadata["path"])
+        path_tools.setdefault(stripped, []).append(tool)
+
+    for tool in tools:
+        path = tool.metadata["path"]
+        # Find the closest parent by walking up the original path segments
+        # /orders/{orderId}/refund → try /orders/{orderId} first, then /orders
+        segments = [s for s in path.split("/") if s]
+        if len(segments) < 2:
+            continue
+
+        # Try progressively shorter paths, stop at first match
+        found_parent = False
+        for depth in range(len(segments) - 1, 0, -1):
+            parent_path_raw = "/" + "/".join(segments[:depth])
+            parent_stripped = _strip_path_params(parent_path_raw)
+            parent_tools_list = path_tools.get(parent_stripped, [])
+            for parent in parent_tools_list:
+                if parent.name == tool.name:
+                    continue
+                # Only GET as data provider (not POST/list — too loose)
+                parent_method = parent.metadata.get("method", "").upper()
+                if parent_method != "GET":
+                    continue
+                # Must be a single-resource GET (with {id} param)
+                if not _is_single_resource_path(parent.metadata["path"]):
+                    continue
                 relations.append(
                     DetectedRelation(
-                        source=b.name,
-                        target=a.name,
+                        source=tool.name,
+                        target=parent.name,
                         relation_type=RelationType.REQUIRES,
-                        confidence=0.95,
+                        confidence=0.9,
                         evidence=(
-                            f"Path {b.metadata['path']} is nested under {a.metadata['path']}"
+                            f"{tool.name} ({path}) requires data from "
+                            f"{parent.name} ({parent.metadata['path']})"
                         ),
                         layer=1,
                     )
                 )
-            elif path_a.startswith(path_b + "/"):
-                # a is nested under b → a REQUIRES b
-                relations.append(
-                    DetectedRelation(
-                        source=a.name,
-                        target=b.name,
-                        relation_type=RelationType.REQUIRES,
-                        confidence=0.95,
-                        evidence=(
-                            f"Path {a.metadata['path']} is nested under {b.metadata['path']}"
-                        ),
-                        layer=1,
-                    )
-                )
+                found_parent = True
+            if found_parent:
+                break  # stop at closest parent
     return relations
 
 
@@ -240,39 +258,33 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
 
     updates = puts + patches
 
-    # POST → GET/{id}: REQUIRES (creating before retrieving specific)
+    # --- Focused CRUD relations ---
+    # Only create relations that represent real data dependencies,
+    # not every possible CRUD combination.
+
+    # POST → GET/{id}: the resource must be created before it can be read
+    # This is the strongest CRUD dependency.
     for post in posts:
         for get_s in gets_single:
             if post.name == get_s.name:
+                continue
+            # Only if they share the same resource path
+            post_resource = _extract_resource(post.metadata["path"])
+            get_resource = _extract_resource(get_s.metadata["path"])
+            if post_resource != get_resource:
                 continue
             relations.append(
                 DetectedRelation(
                     source=get_s.name,
                     target=post.name,
                     relation_type=RelationType.REQUIRES,
-                    confidence=0.95,
-                    evidence=f"{get_s.name} (GET single) requires {post.name} (POST) to exist",
-                    layer=1,
-                )
-            )
-
-    # POST → PUT: COMPLEMENTARY
-    for post in posts:
-        for upd in updates:
-            if post.name == upd.name:
-                continue
-            relations.append(
-                DetectedRelation(
-                    source=post.name,
-                    target=upd.name,
-                    relation_type=RelationType.COMPLEMENTARY,
                     confidence=0.9,
-                    evidence=f"{post.name} (POST) and {upd.name} (PUT/PATCH) are complementary",
+                    evidence=f"{get_s.name} (GET single) requires {post.name} (POST) — same resource '{post_resource}'",
                     layer=1,
                 )
             )
 
-    # GET (single) ↔ GET (list): SIMILAR_TO
+    # GET (single) ↔ GET (list): SIMILAR_TO (these are alternative views)
     for get_c in gets_collection:
         for get_s in gets_single:
             if get_c.name == get_s.name:
@@ -291,82 +303,24 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
                 )
             )
 
-    # PUT ↔ DELETE: CONFLICTS_WITH
-    for upd in updates:
-        for dele in deletes:
-            if upd.name == dele.name:
-                continue
-            relations.append(
-                DetectedRelation(
-                    source=upd.name,
-                    target=dele.name,
-                    relation_type=RelationType.CONFLICTS_WITH,
-                    confidence=0.8,
-                    evidence=(
-                        f"{upd.name} (PUT/PATCH) and {dele.name} (DELETE) "
-                        "are conflicting state changes"
-                    ),
-                    layer=1,
-                )
-            )
-
-    # CRUD ordering: POST → GET/PUT/PATCH/DELETE = PRECEDES
-    # Only create PRECEDES between different CRUD stages (not within same stage)
-    # POST(create) → GET(read), PUT/PATCH(update), DELETE(delete)
-    # GET(read) → PUT/PATCH(update) — need to read before updating
-    # POST is prerequisite for single-resource operations
+    # POST → DELETE: create before delete (lifecycle endpoints only)
     for post in posts:
-        for target in gets_single + updates + deletes:
-            if post.name == target.name:
+        for dele in deletes:
+            if post.name == dele.name:
+                continue
+            post_resource = _extract_resource(post.metadata["path"])
+            del_resource = _extract_resource(dele.metadata["path"])
+            if post_resource != del_resource:
                 continue
             relations.append(
                 DetectedRelation(
                     source=post.name,
-                    target=target.name,
-                    relation_type=RelationType.PRECEDES,
-                    confidence=0.9,
-                    evidence=(
-                        f"{post.name} (POST/create) precedes "
-                        f"{target.name} ({target.metadata['method'].upper()}) — "
-                        "resource must exist first"
-                    ),
-                    layer=1,
-                )
-            )
-
-    # GET(single) → PUT/PATCH/DELETE: read before modify/delete
-    for get_s in gets_single:
-        for target in updates + deletes:
-            if get_s.name == target.name:
-                continue
-            relations.append(
-                DetectedRelation(
-                    source=get_s.name,
-                    target=target.name,
-                    relation_type=RelationType.PRECEDES,
-                    confidence=0.8,
-                    evidence=(
-                        f"{get_s.name} (GET) precedes {target.name} "
-                        f"({target.metadata['method'].upper()}) — read before modify"
-                    ),
-                    layer=1,
-                )
-            )
-
-    # PUT/PATCH → DELETE: update before delete (optional, lower confidence)
-    for upd in updates:
-        for dele in deletes:
-            if upd.name == dele.name:
-                continue
-            relations.append(
-                DetectedRelation(
-                    source=upd.name,
                     target=dele.name,
                     relation_type=RelationType.PRECEDES,
-                    confidence=0.7,
+                    confidence=0.85,
                     evidence=(
-                        f"{upd.name} ({upd.metadata['method'].upper()}) precedes "
-                        f"{dele.name} (DELETE) in CRUD lifecycle"
+                        f"{post.name} (create) precedes {dele.name} (delete) "
+                        f"— same resource '{post_resource}'"
                     ),
                     layer=1,
                 )
@@ -506,9 +460,10 @@ def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
                     param_tokens.add(tok)
         tool_param_tokens[tool.name] = param_tokens
 
-    # Match: tool A is a creator (POST) and tool B's params reference A's resource
-    # → tool B depends on tool A (tool B REQUIRES tool A)
-    # Only POST/creator tools can be dependency targets to avoid noisy relations.
+    # Match: tool B has a parameter like "{resource}_id" and tool A is
+    # a creator (POST) for that resource → tool B REQUIRES tool A.
+    # Filter: require at least 2 shared tokens OR the shared token must
+    # be a specific resource name (not a generic verb).
     creators = {
         t.name: tool_tokens[t.name] for t in tools if t.metadata.get("method", "").lower() == "post"
     }
@@ -520,7 +475,16 @@ def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
                 continue
             params_b = tool_param_tokens[tool_b.name]
             shared = resource_tokens & params_b
-            if shared:
+            if not shared:
+                continue
+            # Require strong evidence: 2+ shared tokens, or the token
+            # appears in a parameter ending with "id" (e.g., "orderId")
+            has_id_param = any(
+                tok in p.name.lower() for p in tool_b.parameters
+                for tok in shared
+                if "id" in p.name.lower()
+            )
+            if len(shared) >= 2 or has_id_param:
                 conf = 0.85 if len(shared) >= 2 else 0.8
                 relations.append(
                     DetectedRelation(

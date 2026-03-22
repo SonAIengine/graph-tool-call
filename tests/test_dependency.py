@@ -71,13 +71,12 @@ def test_crud_requires():
 
 
 def test_crud_complementary():
-    """POST → PUT should produce COMPLEMENTARY."""
+    """POST and PUT are no longer marked COMPLEMENTARY (removed to reduce noise)."""
     tools = _pet_tools()
     relations = detect_dependencies(tools)
     rel = _find_relation(relations, "createPet", "updatePet", RelationType.COMPLEMENTARY)
-    assert rel is not None, "POST and PUT should be COMPLEMENTARY"
-    assert rel.confidence >= 0.85
-    assert rel.layer == 1
+    # COMPLEMENTARY was removed in v0.15.1 to reduce false positives
+    assert rel is None, "COMPLEMENTARY removed — POST/PUT no longer auto-linked"
 
 
 def test_crud_similar():
@@ -91,33 +90,36 @@ def test_crud_similar():
 
 
 def test_crud_conflicts():
-    """PUT and DELETE should produce CONFLICTS_WITH."""
+    """PUT and DELETE are no longer marked CONFLICTS_WITH (removed to reduce noise)."""
     tools = _pet_tools()
     relations = detect_dependencies(tools)
     rel = _find_relation(relations, "updatePet", "deletePet", RelationType.CONFLICTS_WITH)
-    assert rel is not None, "PUT and DELETE should CONFLICT"
-    assert rel.confidence >= 0.75
-    assert rel.layer == 1
+    # CONFLICTS_WITH was removed in v0.15.1 to reduce false positives
+    assert rel is None, "CONFLICTS_WITH removed — PUT/DELETE no longer auto-linked"
 
 
-def test_crud_precedes():
-    """POST → GET ordering should produce PRECEDES."""
+def test_crud_requires():
+    """GET single should REQUIRE POST (resource must exist to be retrieved)."""
     tools = _pet_tools()
     relations = detect_dependencies(tools)
-    rel = _find_relation(relations, "createPet", "getPet", RelationType.PRECEDES)
-    assert rel is not None, "POST should PRECEDE GET in CRUD lifecycle"
-    assert rel.relation_type == RelationType.PRECEDES
-    assert rel.confidence >= 0.8
+    rel = _find_relation(relations, "getPet", "createPet", RelationType.REQUIRES)
+    assert rel is not None, "GET single should REQUIRE POST (same resource)"
+    assert rel.confidence >= 0.85
     assert rel.layer == 1
 
 
 def test_path_hierarchy():
-    """Nested paths should produce REQUIRES."""
+    """Nested paths should REQUIRE the closest single-resource GET parent."""
     tools = [
         ToolSchema(
             name="listUsers",
             description="List users",
             metadata={"method": "get", "path": "/users"},
+        ),
+        ToolSchema(
+            name="getUser",
+            description="Get user by ID",
+            metadata={"method": "get", "path": "/users/{userId}"},
         ),
         ToolSchema(
             name="listUserOrders",
@@ -126,10 +128,13 @@ def test_path_hierarchy():
         ),
     ]
     relations = detect_dependencies(tools)
-    rel = _find_relation(relations, "listUserOrders", "listUsers", RelationType.REQUIRES)
-    assert rel is not None, "Nested path tool should REQUIRE parent path tool"
+    # listUserOrders should require getUser (closest single-resource GET parent)
+    rel = _find_relation(relations, "listUserOrders", "getUser", RelationType.REQUIRES)
+    assert rel is not None, "Nested path should REQUIRE closest GET single parent"
     assert rel.confidence >= 0.9
-    assert rel.layer == 1
+    # Should NOT require listUsers (collection GET is too loose)
+    rel_list = _find_relation(relations, "listUserOrders", "listUsers", RelationType.REQUIRES)
+    assert rel_list is None, "Should not REQUIRE collection GET (too loose)"
 
 
 def test_name_based_detection():
