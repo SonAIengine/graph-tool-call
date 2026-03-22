@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>graph-tool-call Playground</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--panel:#161b22;--border:#30363d;--text:#c9d1d9;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--orange:#d29922;--red:#f85149;--hover:#1c2128;--active:#1f2937;--badge:#21262d;--mono:'SF Mono','Fira Code','Cascadia Code',monospace}
+body{font-family:'Segoe UI',-apple-system,sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+input,button,textarea{font-family:inherit}
+
+/* Top bar */
+#topbar{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0}
+#topbar h1{font-size:15px;color:var(--accent);white-space:nowrap}
+#topbar h1 span{color:var(--muted);font-weight:400;font-size:12px;margin-left:6px}
+.server-group{display:flex;gap:6px;margin-left:auto}
+#server-url{width:280px;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px}
+#server-url:focus{border-color:var(--accent);outline:none}
+#server-url::placeholder{color:#484f58}
+.btn{padding:6px 14px;border:1px solid var(--border);border-radius:6px;background:var(--badge);color:var(--text);font-size:12px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--hover)}
+.btn-primary{background:#238636;border-color:#2ea043;color:#fff}
+.btn-primary:hover{background:#2ea043}
+#status{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px}
+#status .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
+#status .dot.off{background:var(--muted)}
+
+/* Main layout */
+#main{display:flex;flex:1;overflow:hidden}
+
+/* Left panel */
+#left{width:240px;min-width:200px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column}
+#left-header{padding:12px;border-bottom:1px solid var(--border)}
+#left-header h2{font-size:13px;color:var(--accent);margin-bottom:8px}
+#tool-filter{width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px}
+#tool-filter:focus{border-color:var(--accent);outline:none}
+#tool-filter::placeholder{color:#484f58}
+#tool-list{flex:1;overflow-y:auto}
+.tl-item{padding:8px 12px;cursor:pointer;border-bottom:1px solid #21262d;font-size:12px}
+.tl-item:hover{background:var(--hover)}
+.tl-item.active{background:var(--active);border-left:3px solid var(--accent)}
+.tl-item .name{font-family:var(--mono);font-weight:600;color:#e6edf3}
+.tl-item .desc{color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-item .tags{margin-top:3px}
+.tl-item .tags span{font-size:10px;background:var(--badge);color:var(--muted);padding:1px 6px;border-radius:8px;margin-right:3px}
+
+/* Center panel */
+#center{flex:1;display:flex;flex-direction:column;min-width:0}
+#search-bar{padding:12px;border-bottom:1px solid var(--border);display:flex;gap:8px}
+#search-input{flex:1;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px}
+#search-input:focus{border-color:var(--accent);outline:none}
+#search-input::placeholder{color:#484f58}
+#results{flex:1;overflow-y:auto;padding:8px 12px}
+.result{padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer}
+.result:hover{border-color:var(--accent)}
+.result .r-head{display:flex;justify-content:space-between;align-items:center}
+.result .r-name{font-family:var(--mono);font-weight:600;font-size:13px;color:#e6edf3}
+.result .r-score{font-size:11px;padding:2px 8px;border-radius:10px}
+.r-score.high{background:#238636;color:#fff}
+.r-score.medium{background:#9e6a03;color:#fff}
+.r-score.low{background:var(--badge);color:var(--muted)}
+.result .r-desc{font-size:12px;color:var(--muted);margin-top:4px}
+.result .r-breakdown{font-size:11px;color:#484f58;margin-top:4px;font-family:var(--mono)}
+.empty-state{text-align:center;color:#484f58;margin-top:60px;font-size:14px}
+
+/* Workflow bar */
+#workflow-bar{padding:8px 12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
+#workflow-bar .chain{display:flex;align-items:center;gap:4px;flex:1;overflow-x:auto;font-size:12px}
+.chain-step{padding:4px 10px;background:var(--badge);border-radius:6px;white-space:nowrap;font-family:var(--mono);font-size:11px}
+.chain-arrow{color:var(--accent);font-weight:bold}
+
+/* Right panel */
+#right{width:320px;min-width:280px;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
+#detail{padding:16px}
+#detail h2{font-size:14px;color:var(--accent);font-family:var(--mono);margin-bottom:8px}
+#detail .section{margin-bottom:14px}
+#detail .section h3{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+#detail .desc-text{font-size:13px;line-height:1.5}
+.param-table{width:100%;font-size:12px;border-collapse:collapse}
+.param-table th{text-align:left;color:var(--muted);padding:4px 8px;border-bottom:1px solid var(--border);font-weight:500}
+.param-table td{padding:4px 8px;border-bottom:1px solid #21262d;font-family:var(--mono);font-size:11px}
+.param-table .req{color:var(--red);font-size:10px}
+.rel-item{padding:6px 0;border-bottom:1px solid #21262d;font-size:12px}
+.rel-item .rel-type{font-size:10px;padding:1px 6px;border-radius:4px;background:var(--badge);color:var(--muted);margin-right:6px}
+.annotations span{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;margin:2px;background:var(--badge);color:var(--muted)}
+.annotations span.on{color:var(--green);background:#0d2818}
+
+/* Responsive */
+@media(max-width:900px){#left,#right{display:none}#center{width:100%}}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>graph-tool-call <span>Playground</span></h1>
+  <div class="server-group">
+    <input id="server-url" placeholder="Server URL (e.g. http://localhost:8000)" />
+    <button class="btn" onclick="connectServer()">Connect</button>
+    <button class="btn btn-primary" onclick="loadDemo()">Demo</button>
+  </div>
+  <div id="status"><span class="dot off"></span><span id="status-text">Demo mode</span></div>
+</div>
+
+<div id="main">
+  <div id="left">
+    <div id="left-header">
+      <h2>Tools <span id="tool-count"></span></h2>
+      <input id="tool-filter" placeholder="Filter tools..." oninput="filterTools()" />
+    </div>
+    <div id="tool-list"></div>
+  </div>
+
+  <div id="center">
+    <div id="search-bar">
+      <input id="search-input" placeholder="Search tools... (e.g. 'create a new product')" />
+      <button class="btn" onclick="planWorkflow()">Plan Workflow</button>
+    </div>
+    <div id="results"><div class="empty-state">Type a query above or click Demo to explore</div></div>
+    <div id="workflow-bar" style="display:none"><div class="chain" id="chain"></div></div>
+  </div>
+
+  <div id="right">
+    <div id="detail"><div class="empty-state" style="margin-top:40px">Select a tool to view details</div></div>
+  </div>
+</div>
+
+<script>
+// ── Demo Data: simplified e-commerce API (10 tools) ──
+const DEMO_TOOLS = [
+  { id:"listProducts", description:"List all products with optional filtering by category, price range, and availability.", tags:["product","catalog"], domain:"catalog",
+    parameters:{category:{type:"string",required:false},minPrice:{type:"number",required:false},maxPrice:{type:"number",required:false},page:{type:"integer",required:false}},
+    annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true}},
+  { id:"getProduct", description:"Get detailed information about a specific product by its ID.", tags:["product","catalog"], domain:"catalog",
+    parameters:{productId:{type:"string",required:true}},
+    annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true}},
+  { id:"createProduct", description:"Create a new product listing in the catalog.", tags:["product","catalog","admin"], domain:"catalog",
+    parameters:{name:{type:"string",required:true},price:{type:"number",required:true},category:{type:"string",required:true},description:{type:"string",required:false}},
+    annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false}},
+  { id:"createOrder", description:"Place a new order with one or more products.", tags:["order","checkout"], domain:"order",
+    parameters:{items:{type:"array",required:true},shippingAddress:{type:"object",required:true},paymentMethod:{type:"string",required:true}},
+    annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false}},
+  { id:"getOrder", description:"Retrieve order details including status and tracking info.", tags:["order"], domain:"order",
+    parameters:{orderId:{type:"string",required:true}},
+    annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true}},
+  { id:"cancelOrder", description:"Cancel an existing order if it has not been shipped yet.", tags:["order"], domain:"order",
+    parameters:{orderId:{type:"string",required:true},reason:{type:"string",required:false}},
+    annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true}},
+  { id:"addToCart", description:"Add a product to the shopping cart.", tags:["cart","checkout"], domain:"cart",
+    parameters:{productId:{type:"string",required:true},quantity:{type:"integer",required:true}},
+    annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false}},
+  { id:"getCart", description:"View the current shopping cart contents and totals.", tags:["cart"], domain:"cart",
+    parameters:{},
+    annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true}},
+  { id:"processPayment", description:"Process payment for an order using the specified payment method.", tags:["payment","checkout"], domain:"payment",
+    parameters:{orderId:{type:"string",required:true},amount:{type:"number",required:true},method:{type:"string",required:true}},
+    annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false}},
+  { id:"getCustomer", description:"Get customer profile information including order history.", tags:["customer","account"], domain:"customer",
+    parameters:{customerId:{type:"string",required:true}},
+    annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true}}
+];
+
+const DEMO_EDGES = [
+  {source:"listProducts",target:"getProduct",relation:"precedes"},
+  {source:"getProduct",target:"addToCart",relation:"precedes"},
+  {source:"addToCart",target:"getCart",relation:"precedes"},
+  {source:"getCart",target:"createOrder",relation:"precedes"},
+  {source:"createOrder",target:"processPayment",relation:"precedes"},
+  {source:"createOrder",target:"getOrder",relation:"precedes"},
+  {source:"getOrder",target:"cancelOrder",relation:"precedes"},
+  {source:"createProduct",target:"listProducts",relation:"precedes"},
+  {source:"getCustomer",target:"createOrder",relation:"complementary"},
+  {source:"processPayment",target:"getOrder",relation:"precedes"},
+];
+
+// ── State ──
+let tools = [];
+let edges = [];
+let serverUrl = null;
+
+// ── Init ──
+document.getElementById("search-input").addEventListener("keydown", e => { if(e.key==="Enter") doSearch(); });
+loadDemo();
+
+// ── Load Demo ──
+function loadDemo() {
+  tools = DEMO_TOOLS;
+  edges = DEMO_EDGES;
+  serverUrl = null;
+  setStatus(false, "Demo mode (10 e-commerce tools)");
+  renderToolList();
+  document.getElementById("results").innerHTML = '<div class="empty-state">Type a query to search demo tools</div>';
+  document.getElementById("workflow-bar").style.display = "none";
+  document.getElementById("detail").innerHTML = '<div class="empty-state" style="margin-top:40px">Select a tool to view details</div>';
+}
+
+// ── Connect to Server ──
+async function connectServer() {
+  const url = document.getElementById("server-url").value.trim();
+  if (!url) return;
+  serverUrl = url.replace(/\/+$/, "");
+  setStatus(false, "Connecting...");
+  try {
+    const r = await fetch(serverUrl + "/tools/list", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
+    const data = await r.json();
+    if (data.tools) {
+      tools = data.tools.map(t => ({
+        id: t.name,
+        description: t.description || "",
+        tags: t.annotations?.tags || [],
+        domain: t.annotations?.domain || "default",
+        parameters: paramSchemaToSimple(t.inputSchema),
+        annotations: t.annotations || {}
+      }));
+      edges = [];
+      setStatus(true, `Connected (${tools.length} tools)`);
+      renderToolList();
+    }
+  } catch(e) {
+    setStatus(false, "Connection failed");
+    console.error(e);
+  }
+}
+
+function paramSchemaToSimple(schema) {
+  if (!schema || !schema.properties) return {};
+  const out = {};
+  const req = new Set(schema.required || []);
+  for (const [k,v] of Object.entries(schema.properties)) {
+    out[k] = { type: v.type || "string", required: req.has(k) };
+  }
+  return out;
+}
+
+// ── Status ──
+function setStatus(connected, text) {
+  const dot = document.querySelector("#status .dot");
+  dot.className = "dot" + (connected ? "" : " off");
+  document.getElementById("status-text").textContent = text;
+}
+
+// ── Tool List ──
+function renderToolList(filter) {
+  const list = document.getElementById("tool-list");
+  const f = (filter || "").toLowerCase();
+  const filtered = tools.filter(t => !f || t.id.toLowerCase().includes(f) || t.description.toLowerCase().includes(f) || t.tags.some(x => x.includes(f)));
+  document.getElementById("tool-count").textContent = `(${filtered.length})`;
+  list.innerHTML = filtered.map(t => `
+    <div class="tl-item" data-id="${t.id}" onclick="selectTool('${t.id}')">
+      <div class="name">${t.id}</div>
+      <div class="desc">${t.description}</div>
+      <div class="tags">${t.tags.map(x => `<span>${x}</span>`).join("")}</div>
+    </div>`).join("");
+}
+
+function filterTools() {
+  renderToolList(document.getElementById("tool-filter").value);
+}
+
+// ── Search (client-side BM25-like) ──
+function doSearch() {
+  const query = document.getElementById("search-input").value.trim().toLowerCase();
+  if (!query) return;
+  const terms = query.split(/\s+/).filter(Boolean);
+  const results = tools.map(t => {
+    let kw = 0, graph = 0;
+    const text = (t.id + " " + t.description + " " + t.tags.join(" ")).toLowerCase();
+    for (const term of terms) {
+      if (text.includes(term)) kw += 1;
+      if (t.id.toLowerCase().includes(term)) kw += 2;
+    }
+    kw = kw / (terms.length * 3);
+    // graph: boost if has edges to/from other matching tools
+    const neighbors = edges.filter(e => e.source === t.id || e.target === t.id);
+    graph = Math.min(neighbors.length * 0.05, 0.2);
+    const score = kw * 0.8 + graph * 0.2;
+    const rels = getRelations(t.id);
+    return { tool: t, score, keyword_score: kw, graph_score: graph, relations: rels };
+  }).filter(r => r.score > 0).sort((a,b) => b.score - a.score).slice(0, 8);
+  renderResults(results);
+}
+
+function getRelations(toolId) {
+  return edges.filter(e => e.source === toolId || e.target === toolId).map(e => ({
+    target: e.source === toolId ? e.target : e.source,
+    type: e.relation,
+    direction: e.source === toolId ? "outgoing" : "incoming"
+  }));
+}
+
+function renderResults(results) {
+  const el = document.getElementById("results");
+  if (!results.length) { el.innerHTML = '<div class="empty-state">No matching tools found</div>'; return; }
+  el.innerHTML = results.map(r => {
+    const conf = r.score >= 0.5 ? "high" : r.score >= 0.2 ? "medium" : "low";
+    return `<div class="result" onclick="selectTool('${r.tool.id}')">
+      <div class="r-head">
+        <span class="r-name">${r.tool.id}</span>
+        <span class="r-score ${conf}">${(r.score*100).toFixed(0)}%</span>
+      </div>
+      <div class="r-desc">${r.tool.description}</div>
+      <div class="r-breakdown">kw:${r.keyword_score.toFixed(2)} graph:${r.graph_score.toFixed(2)}</div>
+    </div>`;
+  }).join("");
+}
+
+// ── Tool Detail ──
+function selectTool(id) {
+  document.querySelectorAll(".tl-item").forEach(el => el.classList.toggle("active", el.dataset.id === id));
+  const t = tools.find(x => x.id === id);
+  if (!t) return;
+  const rels = getRelations(id);
+  const params = Object.entries(t.parameters || {});
+  const ann = t.annotations || {};
+  document.getElementById("detail").innerHTML = `
+    <h2>${t.id}</h2>
+    <div class="section"><h3>Description</h3><div class="desc-text">${t.description}</div></div>
+    <div class="section"><h3>Domain</h3><div class="desc-text" style="font-size:12px">${t.domain}</div></div>
+    ${params.length ? `<div class="section"><h3>Parameters</h3>
+      <table class="param-table"><tr><th>Name</th><th>Type</th><th></th></tr>
+      ${params.map(([k,v]) => `<tr><td>${k}</td><td>${v.type}</td><td>${v.required ? '<span class="req">required</span>' : ''}</td></tr>`).join("")}
+      </table></div>` : ""}
+    <div class="section"><h3>Annotations</h3><div class="annotations">
+      <span class="${ann.readOnlyHint ? 'on' : ''}">readOnly: ${ann.readOnlyHint ? 'yes' : 'no'}</span>
+      <span class="${ann.destructiveHint ? 'on' : ''}">destructive: ${ann.destructiveHint ? 'yes' : 'no'}</span>
+      <span class="${ann.idempotentHint ? 'on' : ''}">idempotent: ${ann.idempotentHint ? 'yes' : 'no'}</span>
+    </div></div>
+    ${rels.length ? `<div class="section"><h3>Relations</h3>
+      ${rels.map(r => `<div class="rel-item"><span class="rel-type">${r.type}</span>${r.direction === 'outgoing' ? '&rarr;' : '&larr;'} <strong>${r.target}</strong></div>`).join("")}
+    </div>` : ""}
+    <div class="section" style="margin-top:16px">
+      <button class="btn btn-primary" onclick="planWorkflowFrom('${t.id}')">Plan workflow from here</button>
+    </div>`;
+}
+
+// ── Workflow Planning ──
+function planWorkflow() {
+  const query = document.getElementById("search-input").value.trim().toLowerCase();
+  if (!query) return;
+  // Find best starting tool
+  const terms = query.split(/\s+/);
+  let best = null, bestScore = -1;
+  tools.forEach(t => {
+    const text = (t.id + " " + t.description).toLowerCase();
+    let s = 0;
+    terms.forEach(term => { if (text.includes(term)) s++; });
+    if (s > bestScore) { bestScore = s; best = t.id; }
+  });
+  if (best) planWorkflowFrom(best);
+}
+
+function planWorkflowFrom(startId) {
+  const chain = [startId];
+  const visited = new Set([startId]);
+  let current = startId;
+  for (let i = 0; i < 5; i++) {
+    const next = edges.filter(e => e.source === current && e.relation === "precedes" && !visited.has(e.target));
+    if (!next.length) break;
+    current = next[0].target;
+    visited.add(current);
+    chain.push(current);
+  }
+  const bar = document.getElementById("workflow-bar");
+  bar.style.display = "flex";
+  document.getElementById("chain").innerHTML = chain.map((s, i) =>
+    (i > 0 ? '<span class="chain-arrow">&rarr;</span>' : '') + `<span class="chain-step">${s}</span>`
+  ).join("");
+}
+
+// ── Search input enter ──
+document.getElementById("search-input").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+</script>
+</body>
+</html>
