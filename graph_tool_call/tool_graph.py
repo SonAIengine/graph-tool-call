@@ -731,6 +731,44 @@ class ToolGraph:
             history=history,
         )
 
+    def plan_workflow(
+        self,
+        goal: str,
+        *,
+        llm: Any = None,
+        max_steps: int = 8,
+    ) -> Any:
+        """Plan a multi-step workflow to achieve a goal.
+
+        Uses graph structure (REQUIRES/PRECEDES edges) to build an ordered
+        chain of tools. Optionally uses an LLM to fill cross-resource gaps
+        and infer parameter mappings.
+
+        Args:
+            goal: Natural language description of what to achieve.
+            llm: Optional LLM for enhanced planning (fills gaps, adds params).
+            max_steps: Maximum number of steps in the workflow.
+
+        Returns:
+            WorkflowPlan with ordered steps, reasons, and parameter mappings.
+
+        Example::
+
+            # Graph-only (fast, zero-dep)
+            plan = tg.plan_workflow("process a refund")
+            for step in plan.steps:
+                print(f"{step.order}. {step.tool.name} — {step.reason}")
+            # 1. getOrder — prerequisite for requestRefund
+            # 2. requestRefund — primary action
+
+            # With LLM (fills gaps)
+            plan = tg.plan_workflow("process a refund", llm=my_llm)
+        """
+        from graph_tool_call.workflow import WorkflowPlanner
+
+        planner = WorkflowPlanner(self._graph, self._tools)
+        return planner.plan(goal, llm=llm, max_steps=max_steps)
+
     def _get_retrieval_engine(self) -> Any:
         if self._retrieval is None:
             from graph_tool_call.retrieval.engine import RetrievalEngine
