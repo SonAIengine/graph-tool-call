@@ -167,6 +167,27 @@ PIPELINE_PRESETS: dict[str, PipelineConfig] = {
         top_k=5,
         weights={"keyword": 0.7, "graph": 0.0, "embedding": 0.0, "annotation": 0.3},
     ),
+    # --- Competitive benchmark presets (local Ollama embedding) ---
+    "vector-only": PipelineConfig(
+        name="vector-only",
+        use_retrieval=True,
+        top_k=5,
+        embedding="ollama/qwen3-embedding:0.6b",
+        weights={"keyword": 0.0, "graph": 0.0, "embedding": 1.0, "annotation": 0.0},
+    ),
+    "vector-bm25": PipelineConfig(
+        name="vector-bm25",
+        use_retrieval=True,
+        top_k=5,
+        embedding="ollama/qwen3-embedding:0.6b",
+        weights={"keyword": 0.5, "graph": 0.0, "embedding": 0.5, "annotation": 0.0},
+    ),
+    "full-local": PipelineConfig(
+        name="full-local",
+        use_retrieval=True,
+        top_k=5,
+        embedding="ollama/qwen3-embedding:0.6b",
+    ),
 }
 
 DEFAULT_PIPELINES = ["baseline", "retrieve-k5"]
