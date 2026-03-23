@@ -518,13 +518,30 @@ tools_b = toolkit.get_tools("check the weather")
 toolkit.graph.enable_embedding("ollama/qwen3-embedding:0.6b")
 ```
 
-### LangChain Integration
+### LangChain / LangGraph Agent
 
 ```bash
-pip install graph-tool-call[langchain]
+pip install graph-tool-call[langchain] langgraph
 ```
 
-`filter_tools` / `GraphToolkit` work directly with LangChain agents:
+**Drop-in agent** — pass all your tools, graph-tool-call **automatically filters per turn**:
+
+```python
+from graph_tool_call.langchain import create_agent
+
+# 200 tools go in — LLM sees only ~5 relevant ones each turn
+agent = create_agent(llm, tools=all_200_tools, top_k=5)
+
+result = agent.invoke({"messages": [("user", "cancel my order")]})
+# Turn 1: LLM sees [cancel_order, get_order, process_refund, ...]
+# Turn 2: LLM sees [next relevant tools based on conversation]
+```
+
+Each turn, the latest user message is used to retrieve relevant tools via ToolGraph,
+and only those are bound to the model — **saving tokens automatically**.
+
+<details>
+<summary>Manual filtering (more control)</summary>
 
 ```python
 from graph_tool_call import filter_tools
@@ -532,6 +549,8 @@ from graph_tool_call import filter_tools
 filtered = filter_tools(langchain_tools, "cancel order", top_k=5)
 agent = create_react_agent(llm, filtered)
 ```
+
+</details>
 
 <details>
 <summary>LangChain Retriever (returns Documents instead of tools)</summary>
