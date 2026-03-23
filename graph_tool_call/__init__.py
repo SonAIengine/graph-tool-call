@@ -9,6 +9,7 @@ __all__ = [
     "DuplicatePair",
     "GraphAnalysisReport",
     "GraphToolkit",
+    "create_gateway_tools",
     "MCPAnnotations",
     "MergeStrategy",
     "NodeType",
@@ -38,6 +39,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "ToolCallPolicy": ("graph_tool_call.assist.policy", "ToolCallPolicy"),
     "RetrievalResult": ("graph_tool_call.retrieval.engine", "RetrievalResult"),
     "SearchMode": ("graph_tool_call.retrieval.engine", "SearchMode"),
+    "create_gateway_tools": ("graph_tool_call.langchain.gateway", "create_gateway_tools"),
     "filter_tools": ("graph_tool_call.toolkit", "filter_tools"),
     "GraphToolkit": ("graph_tool_call.toolkit", "GraphToolkit"),
 }
