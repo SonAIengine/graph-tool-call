@@ -489,37 +489,28 @@ from graph_tool_call.middleware import patch_anthropic
 patch_anthropic(client, graph=tg, top_k=5)
 ```
 
-### LangChain Integration
+### Wrap Existing Tools (any format)
 
-```bash
-pip install graph-tool-call[langchain]
-```
-
-**Wrap existing tools** — filter any tool list down to relevant ones:
+Already have a tool list? Wrap it with `filter_tools` — **no extra dependencies**, works with any format:
 
 ```python
-from graph_tool_call.langchain import filter_tools
+from graph_tool_call import filter_tools
 
-# Works with any tool format:
-# - LangChain BaseTool (@tool, StructuredTool, etc.)
-# - OpenAI function dicts ({"type": "function", "function": {...}})
-# - MCP tool dicts ({"name": ..., "inputSchema": ...})
-# - Python functions with type hints
+# Accepts any tool format:
+#   LangChain BaseTool, OpenAI function dicts, MCP tool dicts,
+#   Anthropic tool dicts, or plain Python functions
 
 filtered = filter_tools(all_tools, "send an email to John", top_k=5)
-
-agent = create_react_agent(llm, filtered)
-agent.invoke({"input": "send an email to John"})
+# → only the 5 most relevant tools, original objects preserved
 ```
 
 **Reusable toolkit** — build the graph once, filter per query:
 
 ```python
-from graph_tool_call.langchain import GraphToolkit
+from graph_tool_call import GraphToolkit
 
 toolkit = GraphToolkit(tools=all_tools, top_k=5)
 
-# Each call returns only relevant tools — original objects preserved
 tools_a = toolkit.get_tools("cancel my order")
 tools_b = toolkit.get_tools("check the weather")
 
@@ -527,8 +518,23 @@ tools_b = toolkit.get_tools("check the weather")
 toolkit.graph.enable_embedding("ollama/qwen3-embedding:0.6b")
 ```
 
+### LangChain Integration
+
+```bash
+pip install graph-tool-call[langchain]
+```
+
+`filter_tools` / `GraphToolkit` work directly with LangChain agents:
+
+```python
+from graph_tool_call import filter_tools
+
+filtered = filter_tools(langchain_tools, "cancel order", top_k=5)
+agent = create_react_agent(llm, filtered)
+```
+
 <details>
-<summary>Retriever (returns Documents instead of tools)</summary>
+<summary>LangChain Retriever (returns Documents instead of tools)</summary>
 
 ```python
 from graph_tool_call import ToolGraph
@@ -536,7 +542,6 @@ from graph_tool_call.langchain import GraphToolRetriever
 
 tg = ToolGraph.from_url("https://api.example.com/openapi.json")
 
-# Use as a LangChain retriever — compatible with any chain/agent
 retriever = GraphToolRetriever(tool_graph=tg, top_k=5)
 docs = retriever.invoke("cancel an order")
 

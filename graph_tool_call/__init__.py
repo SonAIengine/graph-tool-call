@@ -8,6 +8,7 @@ __all__ = [
     "CategorySummary",
     "DuplicatePair",
     "GraphAnalysisReport",
+    "GraphToolkit",
     "MCPAnnotations",
     "MergeStrategy",
     "NodeType",
@@ -20,6 +21,7 @@ __all__ = [
     "ToolCallPolicy",
     "ToolGraph",
     "ToolSchema",
+    "filter_tools",
     "parse_tool",
 ]
 
@@ -36,6 +38,8 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "ToolCallPolicy": ("graph_tool_call.assist.policy", "ToolCallPolicy"),
     "RetrievalResult": ("graph_tool_call.retrieval.engine", "RetrievalResult"),
     "SearchMode": ("graph_tool_call.retrieval.engine", "SearchMode"),
+    "filter_tools": ("graph_tool_call.toolkit", "filter_tools"),
+    "GraphToolkit": ("graph_tool_call.toolkit", "GraphToolkit"),
 }
 
 

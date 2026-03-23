@@ -37,7 +37,7 @@ def _make_tools(n: int = 10) -> list[FakeTool]:
 
 
 def test_filter_tools_returns_subset():
-    from graph_tool_call.langchain.toolkit import filter_tools
+    from graph_tool_call import filter_tools
 
     tools = _make_tools()
     filtered = filter_tools(tools, "cancel my order", top_k=3)
@@ -50,7 +50,7 @@ def test_filter_tools_returns_subset():
 
 
 def test_filter_tools_preserves_original_objects():
-    from graph_tool_call.langchain.toolkit import filter_tools
+    from graph_tool_call import filter_tools
 
     tools = _make_tools()
     filtered = filter_tools(tools, "send email", top_k=3)
@@ -62,7 +62,7 @@ def test_filter_tools_preserves_original_objects():
 
 def test_filter_tools_with_prebuilt_graph():
     from graph_tool_call import ToolGraph
-    from graph_tool_call.langchain.toolkit import filter_tools
+    from graph_tool_call import filter_tools
 
     tools = _make_tools()
     tg = ToolGraph()
@@ -74,7 +74,7 @@ def test_filter_tools_with_prebuilt_graph():
 
 
 def test_filter_tools_returns_all_on_no_match():
-    from graph_tool_call.langchain.toolkit import filter_tools
+    from graph_tool_call import filter_tools
 
     tools = _make_tools(2)
     # With only 2 tools, retrieval should still return something
@@ -83,7 +83,7 @@ def test_filter_tools_returns_all_on_no_match():
 
 
 def test_toolkit_get_tools():
-    from graph_tool_call.langchain.toolkit import GraphToolkit
+    from graph_tool_call import GraphToolkit
 
     tools = _make_tools()
     toolkit = GraphToolkit(tools=tools, top_k=3)
@@ -95,7 +95,7 @@ def test_toolkit_get_tools():
 
 
 def test_toolkit_get_tools_override_top_k():
-    from graph_tool_call.langchain.toolkit import GraphToolkit
+    from graph_tool_call import GraphToolkit
 
     tools = _make_tools()
     toolkit = GraphToolkit(tools=tools, top_k=2)
@@ -105,7 +105,7 @@ def test_toolkit_get_tools_override_top_k():
 
 
 def test_toolkit_all_tools():
-    from graph_tool_call.langchain.toolkit import GraphToolkit
+    from graph_tool_call import GraphToolkit
 
     tools = _make_tools(5)
     toolkit = GraphToolkit(tools=tools)
@@ -115,7 +115,7 @@ def test_toolkit_all_tools():
 
 def test_toolkit_graph_accessible():
     from graph_tool_call import ToolGraph
-    from graph_tool_call.langchain.toolkit import GraphToolkit
+    from graph_tool_call import GraphToolkit
 
     tools = _make_tools()
     toolkit = GraphToolkit(tools=tools)
@@ -126,7 +126,7 @@ def test_toolkit_graph_accessible():
 
 def test_toolkit_with_prebuilt_graph():
     from graph_tool_call import ToolGraph
-    from graph_tool_call.langchain.toolkit import GraphToolkit
+    from graph_tool_call import GraphToolkit
 
     tg = ToolGraph()
     tools = _make_tools(5)
@@ -138,7 +138,7 @@ def test_toolkit_with_prebuilt_graph():
 
 def test_filter_openai_function_dicts():
     """OpenAI function-calling format dicts should work."""
-    from graph_tool_call.langchain.toolkit import filter_tools
+    from graph_tool_call import filter_tools
 
     tools = [
         {
@@ -185,7 +185,7 @@ def test_filter_openai_function_dicts():
 
 def test_filter_mcp_tool_dicts():
     """MCP tool format dicts should work."""
-    from graph_tool_call.langchain.toolkit import filter_tools
+    from graph_tool_call import filter_tools
 
     tools = [
         {
@@ -221,7 +221,7 @@ def test_filter_mcp_tool_dicts():
 
 def test_filter_python_callables():
     """Plain Python functions should work."""
-    from graph_tool_call.langchain.toolkit import filter_tools
+    from graph_tool_call import filter_tools
 
     def get_weather(city: str) -> str:
         """Get current weather for a city."""
@@ -244,7 +244,7 @@ def test_filter_python_callables():
 
 def test_toolkit_with_openai_dicts():
     """GraphToolkit should accept OpenAI dicts."""
-    from graph_tool_call.langchain.toolkit import GraphToolkit
+    from graph_tool_call import GraphToolkit
 
     tools = [
         {
@@ -275,8 +275,16 @@ def test_toolkit_with_openai_dicts():
     assert len(filtered) >= 1
 
 
-def test_lazy_import():
-    """filter_tools and GraphToolkit should be importable from langchain package."""
+def test_top_level_import():
+    """filter_tools and GraphToolkit should be importable from top-level package."""
+    from graph_tool_call import GraphToolkit, filter_tools
+
+    assert callable(filter_tools)
+    assert callable(GraphToolkit)
+
+
+def test_langchain_compat_import():
+    """Backward compat: still importable from graph_tool_call.langchain."""
     from graph_tool_call.langchain import GraphToolkit, filter_tools
 
     assert callable(filter_tools)

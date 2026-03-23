@@ -10,8 +10,8 @@ __all__ = [
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "GraphToolRetriever": ("graph_tool_call.langchain.retriever", "GraphToolRetriever"),
-    "GraphToolkit": ("graph_tool_call.langchain.toolkit", "GraphToolkit"),
-    "filter_tools": ("graph_tool_call.langchain.toolkit", "filter_tools"),
+    "GraphToolkit": ("graph_tool_call.toolkit", "GraphToolkit"),
+    "filter_tools": ("graph_tool_call.toolkit", "filter_tools"),
     "langchain_tools_to_schemas": ("graph_tool_call.langchain.tools", "langchain_tools_to_schemas"),
     "tool_schema_to_openai_function": (
         "graph_tool_call.langchain.tools",
