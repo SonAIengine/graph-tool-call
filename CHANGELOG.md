@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-03-23
+
+### Added
+- **`create_agent()` query_mode="llm"** — LLM 기반 검색 쿼리 생성 모드 추가
+  - 대화 컨텍스트 전체를 분석해 tool 검색 쿼리 자동 생성
+  - 멀티턴 대화에서 "그거 취소해줘" 같은 대명사/맥락 의존 표현 해결
+  - `query_model` 파라미터로 쿼리 생성 전용 경량 모델 지정 가능 (비용 절감)
+  - 기본값 `query_mode="message"`는 기존과 동일 (추가 LLM 호출 없음)
+
+### Changed
+- `create_agent()` 시그니처 확장: `query_mode`, `query_model` 파라미터 추가
+
 ## [0.13.0] - 2026-03-15
 
 ### Added

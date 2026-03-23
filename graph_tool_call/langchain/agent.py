@@ -3,28 +3,52 @@
 Wraps ``create_react_agent`` so the LLM only sees relevant tools each turn,
 cutting token usage dramatically on large tool sets.
 
+Two query modes:
+
+- ``query_mode="message"`` (default): uses the latest user message as-is
+  for retrieval. Fast, no extra LLM call.
+- ``query_mode="llm"``: asks the LLM to generate a search query from the
+  full conversation context. Better for multi-turn ("그거 취소해줘") and
+  ambiguous queries, at the cost of one extra LLM call per turn.
+
 Usage::
 
     from graph_tool_call.langchain import create_agent
 
+    # Fast mode (default)
     agent = create_agent(llm, tools=all_200_tools, top_k=5)
-    result = agent.invoke({"messages": [("user", "cancel my order")]})
-    # LLM saw only ~5 tools instead of 200
 
-This works by passing a dynamic model factory to ``create_react_agent``:
-each turn, the latest user message is used to retrieve relevant tools
-via ``ToolGraph``, and only those are bound to the model.
+    # LLM query mode (better for multi-turn conversations)
+    agent = create_agent(llm, tools=all_200_tools, top_k=5, query_mode="llm")
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger("graph-tool-call.langchain")
+
+_QUERY_GEN_SYSTEM = """\
+You are a tool search query generator. Given a conversation, write a short \
+English search query (3-8 words) that describes what tools the user needs.
+
+Rules:
+- Output ONLY the search query, nothing else.
+- Use English keywords even if the conversation is in another language.
+- Focus on the action (cancel, create, send, delete, get, list, etc.).
+- Resolve pronouns from context ("that order" → "cancel order #123").
+- If the user's intent is unclear, describe the most likely action.
+
+Examples:
+- Conversation: "아까 그 주문 취소해줘" → "cancel order"
+- Conversation: "Send it to John" (after discussing emails) → "send email"
+- Conversation: "How's the weather?" → "get weather"
+- Conversation: "Refund that and notify the customer" → "process refund send notification"\
+"""
 
 
 def _extract_query_from_langchain_messages(messages: list[Any]) -> str | None:
@@ -54,19 +78,82 @@ def _extract_query_from_langchain_messages(messages: list[Any]) -> str | None:
     return None
 
 
+def _build_conversation_summary(messages: list[Any], max_turns: int = 6) -> str:
+    """Build a compact conversation summary for the query-gen LLM."""
+    lines = []
+    count = 0
+    for msg in reversed(messages):
+        if count >= max_turns:
+            break
+        role = None
+        content = None
+
+        if hasattr(msg, "type") and hasattr(msg, "content"):
+            role = msg.type
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        elif isinstance(msg, (list, tuple)) and len(msg) >= 2:
+            role = str(msg[0])
+            content = str(msg[1])
+
+        if role and content:
+            lines.append(f"{role}: {content[:200]}")
+            count += 1
+
+    lines.reverse()
+    return "\n".join(lines)
+
+
+def _generate_query_with_llm(
+    model: Any,
+    messages: list[Any],
+    tool_names: list[str],
+) -> str | None:
+    """Ask the LLM to generate a tool search query from conversation context."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    conversation = _build_conversation_summary(messages)
+    if not conversation:
+        return None
+
+    # Include a sample of tool names to help the LLM understand the domain
+    sample_tools = ", ".join(tool_names[:20])
+    user_prompt = (
+        f"Available tools include: {sample_tools}\n\n"
+        f"Conversation:\n{conversation}\n\n"
+        f"Search query:"
+    )
+
+    try:
+        # Use the model without tools bound (raw LLM call)
+        base_model = model
+        if hasattr(model, "bound_tools"):
+            # If model has tools bound, get the underlying model
+            base_model = model
+        response = base_model.invoke([
+            SystemMessage(content=_QUERY_GEN_SYSTEM),
+            HumanMessage(content=user_prompt),
+        ])
+        query = response.content.strip().strip('"').strip("'")
+        if query:
+            logger.debug("LLM-generated query: %s", query)
+            return query
+    except Exception as e:
+        logger.warning("Query generation failed, falling back to message: %s", e)
+
+    return None
+
+
 def create_agent(
     model: Any,
     tools: list[Any],
     *,
     top_k: int = 5,
     graph: Any | None = None,
+    query_mode: Literal["message", "llm"] = "message",
+    query_model: Any | None = None,
     **kwargs: Any,
 ) -> Any:
     """Create a ReAct agent with automatic per-turn tool filtering.
-
-    Each LLM turn, the latest user message is used to retrieve the ``top_k``
-    most relevant tools via ``ToolGraph``. The model only sees (and pays tokens
-    for) those tools — not the full list.
 
     Parameters
     ----------
@@ -78,6 +165,15 @@ def create_agent(
         Number of tools to show the LLM each turn (default: 5).
     graph:
         Optional pre-built ``ToolGraph``. If *None*, one is built from *tools*.
+    query_mode:
+        - ``"message"`` (default): use latest user message as search query.
+          Fast, no extra LLM call.
+        - ``"llm"``: ask the LLM to generate a search query from conversation
+          context. Better for multi-turn and ambiguous queries.
+    query_model:
+        Optional separate model for query generation (only used when
+        ``query_mode="llm"``). Use a small/fast model to save cost.
+        If *None*, uses the same *model*.
     **kwargs:
         Passed through to ``create_react_agent`` (prompt, checkpointer, etc.).
 
@@ -112,10 +208,20 @@ def create_agent(
     if not existing.intersection(tool_map.keys()):
         _ingest_tools(graph, tools)
 
+    tool_names = list(tool_map.keys())
+    _query_model = query_model or model
+
     # Dynamic model factory: called each turn with (state, runtime)
     def model_factory(state: dict[str, Any], runtime: Any) -> Any:
         messages = state.get("messages", [])
-        query = _extract_query_from_langchain_messages(messages)
+
+        query = None
+        if query_mode == "llm":
+            query = _generate_query_with_llm(_query_model, messages, tool_names)
+
+        # Fallback to raw user message
+        if not query:
+            query = _extract_query_from_langchain_messages(messages)
 
         if query:
             results = graph.retrieve(query, top_k=top_k)
