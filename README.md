@@ -349,6 +349,31 @@ graph-tool-call proxy --config backends.json --transport sse --port 8000
 
 That's it. The proxy exposes `search_tools`, `get_tool_schema`, and `call_backend_tool`. After searching, matched tools are **dynamically injected** for 1-hop direct calling.
 
+#### Passthrough mode (few tools)
+
+When total tools across all backends ≤ 30, the proxy **skips the graph layer entirely** and exposes every backend tool directly — zero overhead, no meta-tools. The LLM sees the original tool names and schemas as-is.
+
+This is useful when you want a **single MCP entry point** for several small servers without paying the search/meta-tool tax.
+
+```bash
+# Explicitly set the threshold (default: 30)
+graph-tool-call proxy --config backends.json --passthrough-threshold 50
+```
+
+Or in `backends.json`:
+
+```jsonc
+{
+  "backends": { ... },
+  "passthrough_threshold": 50   // tools ≤ 50 → passthrough, > 50 → gateway
+}
+```
+
+| Mode | When | Exposed tools |
+|------|------|---------------|
+| **gateway** (default) | total tools > threshold | `search_tools` + `get_tool_schema` + `call_backend_tool` |
+| **passthrough** | total tools ≤ threshold | All backend tools directly (original names/schemas) |
+
 <details>
 <summary>Alternative: .mcp.json config</summary>
 
@@ -470,6 +495,41 @@ patch_anthropic(client, graph=tg, top_k=5)
 pip install graph-tool-call[langchain]
 ```
 
+**Wrap existing tools** — filter any tool list down to relevant ones:
+
+```python
+from graph_tool_call.langchain import filter_tools
+
+# Works with any tool format:
+# - LangChain BaseTool (@tool, StructuredTool, etc.)
+# - OpenAI function dicts ({"type": "function", "function": {...}})
+# - MCP tool dicts ({"name": ..., "inputSchema": ...})
+# - Python functions with type hints
+
+filtered = filter_tools(all_tools, "send an email to John", top_k=5)
+
+agent = create_react_agent(llm, filtered)
+agent.invoke({"input": "send an email to John"})
+```
+
+**Reusable toolkit** — build the graph once, filter per query:
+
+```python
+from graph_tool_call.langchain import GraphToolkit
+
+toolkit = GraphToolkit(tools=all_tools, top_k=5)
+
+# Each call returns only relevant tools — original objects preserved
+tools_a = toolkit.get_tools("cancel my order")
+tools_b = toolkit.get_tools("check the weather")
+
+# Access the underlying ToolGraph for advanced config
+toolkit.graph.enable_embedding("ollama/qwen3-embedding:0.6b")
+```
+
+<details>
+<summary>Retriever (returns Documents instead of tools)</summary>
+
 ```python
 from graph_tool_call import ToolGraph
 from graph_tool_call.langchain import GraphToolRetriever
@@ -484,6 +544,8 @@ for doc in docs:
     print(doc.page_content)       # "cancelOrder: Cancel an existing order"
     print(doc.metadata["tags"])   # ["order"]
 ```
+
+</details>
 
 ---
 

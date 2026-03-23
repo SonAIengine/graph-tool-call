@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "graph-tool-call"
-version = "0.16.0"
+version = "0.17.0"
 description = "Graph-structured tool retrieval for LLM agents — zero-dependency, ontology-aware hybrid search"
 authors = ["SonAIengine"]
 license = "MIT"
