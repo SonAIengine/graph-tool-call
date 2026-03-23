@@ -373,11 +373,43 @@ from graph_tool_call.middleware import patch_anthropic
 patch_anthropic(client, graph=tg, top_k=5)
 ```
 
-### LangChain統合
+### LangChain / LangGraph統合
 
 ```bash
-pip install graph-tool-call[langchain]
+pip install graph-tool-call[langchain] langgraph
 ```
+
+#### Gateway Tools（大規模ツールセット推奨）
+
+50~500+個のツールを**2個のmeta-tool**（`search_tools` + `call_tool`）に変換：
+
+```python
+from graph_tool_call.langchain import create_gateway_tools
+
+# 62個のツールを2個のgateway meta-toolに変換
+gateway = create_gateway_tools(all_tools, top_k=10)
+
+# 2個のツールだけagentに渡す
+agent = create_react_agent(model=llm, tools=gateway)
+```
+
+| | 全ツールバインド | Gateway（2個） |
+|---|:---:|:---:|
+| **62 tools** | ~6,090 tokens/turn | ~475 tokens/turn |
+| **トークン削減** | — | **92%** |
+
+#### 自動フィルタリングAgent
+
+毎ターン自動的に関連ツールのみLLMにバインド：
+
+```python
+from graph_tool_call.langchain import create_agent
+
+agent = create_agent(llm, tools=all_200_tools, top_k=5)
+```
+
+<details>
+<summary>LangChain Retriever（Document返却）</summary>
 
 ```python
 from graph_tool_call import ToolGraph
@@ -392,6 +424,8 @@ for doc in docs:
     print(doc.page_content)       # "cancelOrder: Cancel an existing order"
     print(doc.metadata["tags"])   # ["order"]
 ```
+
+</details>
 
 ---
 

@@ -53,6 +53,7 @@ LLM agents need tools. But as tool count grows, two things break:
 | **Zero dependencies** | Core runs on Python stdlib only — add extras as needed |
 | **Any tool source** | Auto-ingest from OpenAPI / Swagger / MCP / Python functions |
 | **History-aware** | Previously called tools are demoted; next-step tools are boosted |
+| **LangChain Gateway** | 62 tools → 2 meta-tools, **92% token reduction** per turn |
 | **MCP Proxy** | 172 tools across servers → 3 meta-tools, saving ~1,200 tokens/turn |
 
 ---
@@ -524,7 +525,53 @@ toolkit.graph.enable_embedding("ollama/qwen3-embedding:0.6b")
 pip install graph-tool-call[langchain] langgraph
 ```
 
-**Drop-in agent** — pass all your tools, graph-tool-call **automatically filters per turn**:
+Three integration patterns — pick the one that fits your architecture:
+
+#### Gateway Tools (recommended for large tool sets)
+
+Convert 50~500+ tools into **2 meta-tools** (`search_tools` + `call_tool`).
+The LLM searches first, then calls — no tool definitions bloat in context.
+
+```python
+from graph_tool_call.langchain import create_gateway_tools
+
+# 62 tools from Slack, GitHub, Jira, MS365, custom APIs...
+all_tools = slack_tools + github_tools + jira_tools + ms365_tools + api_tools
+
+# Convert to 2 gateway meta-tools
+gateway = create_gateway_tools(all_tools, top_k=10)
+# → [search_tools, call_tool]
+
+# Use with any LangChain agent — only 2 tools in context
+agent = create_react_agent(model=llm, tools=gateway)
+result = agent.invoke({"messages": [("user", "PROJ-123 이슈를 Done으로 변경해줘")]})
+```
+
+**How it works** — the LLM drives the search:
+
+```text
+User: "Cancel order #500"
+  ↓
+LLM calls search_tools(query="cancel order")
+  → returns: cancel_order, get_order, process_refund (with parameter info)
+  ↓
+LLM calls call_tool(tool_name="cancel_order", arguments={"order_id": 500})
+  → returns: {"order_id": 500, "status": "cancelled"}
+  ↓
+LLM: "Order #500 has been cancelled."
+```
+
+| | All tools bound | Gateway (2 tools) |
+|---|:---:|:---:|
+| **62 tools** | ~6,090 tokens/turn | ~475 tokens/turn |
+| **Token reduction** | — | **92%** |
+| **Accuracy** (qwen3.5:4b) | — | 70% (100% with GPT-4o) |
+
+> Works with **any existing LangChain agent setup**. Just replace `tools=all_tools` with `tools=create_gateway_tools(all_tools)`.
+
+#### Auto-filtering Agent (transparent per-turn filtering)
+
+The agent automatically filters tools each turn — the LLM never sees the full list:
 
 ```python
 from graph_tool_call.langchain import create_agent
@@ -537,11 +584,16 @@ result = agent.invoke({"messages": [("user", "cancel my order")]})
 # Turn 2: LLM sees [next relevant tools based on conversation]
 ```
 
-Each turn, the latest user message is used to retrieve relevant tools via ToolGraph,
-and only those are bound to the model — **saving tokens automatically**.
+#### Which to use?
+
+| Pattern | Best for | How it works |
+|---------|----------|--------------|
+| **Gateway** | 50+ tools, existing agents | LLM explicitly searches → calls |
+| **Auto-filter** | New agents, simple setup | Transparent per-turn tool swap |
+| **Manual** | Full control | You call `filter_tools()` yourself |
 
 <details>
-<summary>Manual filtering (more control)</summary>
+<summary>Manual filtering</summary>
 
 ```python
 from graph_tool_call import filter_tools

@@ -468,11 +468,45 @@ from graph_tool_call.middleware import patch_anthropic
 patch_anthropic(client, graph=tg, top_k=5)
 ```
 
-### LangChain 연동
+### LangChain / LangGraph 연동
 
 ```bash
-pip install graph-tool-call[langchain]
+pip install graph-tool-call[langchain] langgraph
 ```
+
+#### Gateway Tools (대규모 tool set 추천)
+
+50~500+ tool을 **2개 meta-tool**로 변환. LLM이 검색 → 실행하는 구조:
+
+```python
+from graph_tool_call.langchain import create_gateway_tools
+
+# Slack, GitHub, Jira, MS365 등 다양한 소스의 tool 62개
+gateway = create_gateway_tools(all_tools, top_k=10)
+# → [search_tools, call_tool] 2개만 agent에 전달
+
+agent = create_react_agent(model=llm, tools=gateway)
+result = agent.invoke({"messages": [("user", "PROJ-123 이슈를 Done으로 변경해줘")]})
+```
+
+| | 전체 tool 바인딩 | Gateway (2개) |
+|---|:---:|:---:|
+| **62 tools** | ~6,090 tokens/turn | ~475 tokens/turn |
+| **토큰 절감** | — | **92%** |
+
+#### 자동 필터링 Agent
+
+매 턴 자동으로 관련 tool만 LLM에 바인딩:
+
+```python
+from graph_tool_call.langchain import create_agent
+
+agent = create_agent(llm, tools=all_200_tools, top_k=5)
+# 매 턴 유저 메시지 기반으로 ~5개 tool만 노출
+```
+
+<details>
+<summary>LangChain Retriever (Document 반환)</summary>
 
 ```python
 from graph_tool_call import ToolGraph
@@ -480,7 +514,6 @@ from graph_tool_call.langchain import GraphToolRetriever
 
 tg = ToolGraph.from_url("https://api.example.com/openapi.json")
 
-# LangChain retriever — 모든 chain/agent와 호환
 retriever = GraphToolRetriever(tool_graph=tg, top_k=5)
 docs = retriever.invoke("cancel an order")
 
@@ -488,6 +521,8 @@ for doc in docs:
     print(doc.page_content)       # "cancelOrder: Cancel an existing order"
     print(doc.metadata["tags"])   # ["order"]
 ```
+
+</details>
 
 ---
 
