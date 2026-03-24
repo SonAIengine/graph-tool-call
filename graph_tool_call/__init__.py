@@ -26,7 +26,7 @@ __all__ = [
     "parse_tool",
 ]
 
-__version__ = "0.18.0"
+__version__ = "0.19.0"
 
 # Lazy imports for analyze/assist symbols — avoid loading heavy submodules at import time
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {

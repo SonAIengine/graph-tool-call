@@ -151,6 +151,8 @@ class ToolGraph:
         self._tools: dict[str, ToolSchema] = {}
         self._retrieval: Any = None
         self._metadata: dict[str, Any] = {}
+        self._gateway_tools: list[Any] | None = None
+        self._gateway_top_k: int = 10
 
     @property
     def graph(self) -> GraphEngine:
@@ -1315,6 +1317,174 @@ class ToolGraph:
         from graph_tool_call.dashboard.app import launch_dashboard
 
         return launch_dashboard(self, host=host, port=port, debug=debug)
+
+    # --- LangChain gateway integration ---
+
+    def as_tools(self, *, top_k: int = 10) -> list[Any]:
+        """Create two LangChain gateway meta-tools backed by this ToolGraph.
+
+        Returns ``[search_tools, call_tool]`` that can be passed directly to
+        any LangChain or LangGraph agent's ``tools`` parameter.
+
+        The returned tools act like an MCP router:
+
+        1. ``search_tools(query)`` — discover relevant tools via graph retrieval
+        2. ``call_tool(tool_name, arguments)`` — execute a registered tool
+
+        Parameters
+        ----------
+        top_k:
+            Default number of search results (default: 10).
+
+        Returns
+        -------
+        list
+            Two LangChain tools: ``[search_tools, call_tool]``.
+
+        Example::
+
+            from langchain_core.tools import tool
+            from graph_tool_call import ToolGraph
+
+            @tool
+            def add(a: int, b: int) -> int:
+                \"\"\"Add two numbers.\"\"\"
+                return a + b
+
+            tg = ToolGraph()
+            tg.add_tool(add)
+
+            # Use with any LangChain/LangGraph agent
+            agent = create_react_agent(model=llm, tools=tg.as_tools())
+        """
+        return self._create_gateway_tools(top_k=top_k)
+
+    def _create_gateway_tools(self, *, top_k: int) -> list[Any]:
+        """Internal: create LangChain gateway meta-tools."""
+        try:
+            from langchain_core.tools import tool as langchain_tool
+        except ImportError:
+            raise ImportError(
+                "langchain-core is required for as_tools() / LangChain integration. "
+                "Install with: pip install langchain-core"
+            )
+
+        graph_ref = self
+        default_top_k = top_k
+
+        @langchain_tool
+        def search_tools(query: str, top_k: int | None = None) -> str:
+            """Search available tools by natural language query.
+
+            Use this FIRST to find which tools are available for the task.
+            Returns tool names, descriptions, and required parameters.
+
+            Args:
+                query: Natural language search query (e.g. "add numbers", "get weather")
+                top_k: Max number of results (optional)
+            """
+            k = top_k if top_k is not None else default_top_k
+            results = graph_ref.retrieve(query, top_k=k)
+
+            matched = []
+            for schema in results:
+                entry: dict[str, Any] = {
+                    "name": schema.name,
+                    "description": (schema.description or "")[:200],
+                }
+                if schema.parameters:
+                    entry["parameters"] = [
+                        {
+                            "name": p.name,
+                            "type": p.type,
+                            "required": p.required,
+                            **({"description": p.description} if p.description else {}),
+                        }
+                        for p in schema.parameters
+                    ]
+                matched.append(entry)
+
+            output = {
+                "query": query,
+                "matched": len(matched),
+                "total_tools": len(graph_ref._tools),
+                "tools": matched,
+                "hint": (
+                    "Use call_tool to execute a tool. "
+                    "Pass tool_name and arguments as a dict matching the parameters above."
+                ),
+            }
+            return json.dumps(output, ensure_ascii=False, indent=2)
+
+        @langchain_tool
+        def call_tool(tool_name: str, arguments: dict[str, Any] | None = None) -> str:
+            """Execute a tool by name with arguments.
+
+            Use after search_tools to call a specific tool.
+
+            Args:
+                tool_name: Exact tool name from search_tools results
+                arguments: Tool arguments as a dict (e.g. {"a": 1, "b": 2})
+            """
+            schema = graph_ref._tools.get(tool_name)
+            if schema is None:
+                return json.dumps({
+                    "error": f"Tool '{tool_name}' not found.",
+                    "hint": "Use search_tools to find the correct tool name.",
+                })
+
+            callable_ = schema.get_callable()
+            if callable_ is None:
+                return json.dumps({
+                    "error": f"Tool '{tool_name}' is not callable.",
+                    "hint": "This tool was registered without a callable implementation.",
+                })
+
+            args: dict[str, Any] = {}
+            if arguments is not None:
+                if isinstance(arguments, dict):
+                    args = arguments
+                elif isinstance(arguments, str):
+                    try:
+                        args = json.loads(arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+
+            try:
+                if hasattr(callable_, "invoke"):
+                    result = callable_.invoke(args)
+                elif callable(callable_):
+                    result = callable_(**args)
+                else:
+                    return json.dumps({"error": f"Tool '{tool_name}' is not executable."})
+
+                if isinstance(result, str):
+                    return result
+                return json.dumps(result, ensure_ascii=False, default=str)
+            except Exception as e:
+                return json.dumps({
+                    "error": str(e),
+                    "tool_name": tool_name,
+                })
+
+        return [search_tools, call_tool]
+
+    def __iter__(self):
+        """Iterate over gateway meta-tools for LangChain compatibility.
+
+        Yields ``search_tools`` and ``call_tool``, enabling direct use as::
+
+            tg = ToolGraph()
+            tg.add_tool(my_tool)
+            agent = create_react_agent(model=llm, tools=tg)
+        """
+        if self._gateway_tools is None:
+            self._gateway_tools = self._create_gateway_tools(top_k=self._gateway_top_k)
+        return iter(self._gateway_tools)
+
+    def __len__(self) -> int:
+        """Return 2 (search_tools + call_tool) for Sequence protocol compatibility."""
+        return 2
 
     # --- info ---
 

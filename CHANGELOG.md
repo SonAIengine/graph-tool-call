@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-03-24
+
+### Added
+- **`ToolGraph.as_tools()`** — LangChain/LangGraph 완벽 호환 gateway 메서드
+  - `search_tools` + `call_tool` 2개 메타툴 생성 (MCP 라우터 패턴)
+  - 그래프 기반 BM25+관계 검색으로 관련 도구 탐색
+  - 등록된 도구의 원본 callable 직접 실행
+  - `as_tools()` 이후 추가된 도구도 라이브 참조로 즉시 반영
+- **`ToolGraph.__iter__()` / `__len__()`** — Sequence 프로토콜 지원
+  - `tools=tg` 구문으로 LangChain agent에 직접 전달 가능
+  - `create_react_agent(model=llm, tools=tg)` 패턴 지원
+
 ## [0.18.0] - 2026-03-23
 
 ### Added
