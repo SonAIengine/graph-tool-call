@@ -779,6 +779,31 @@ Compared 6 retrieval strategies across 9 datasets (19–1068 tools):
 | BM25 + Graph | 78.0% | 0.643 | 22.0% |
 | Full Pipeline | 88.0% | 0.761 | 12.0% |
 
+### LangChain Agent Benchmark (200 tools)
+
+End-to-end accuracy when 200 simple tools are registered and invoked through a **LangChain** agent.
+
+* **Direct (D)**: all 200 tool definitions passed to the LLM at once
+* **Graph (G)**: tools managed via graph-tool-call gateway (search → call, 2 turns)
+
+| Model | D-Acc | G-Acc | D-Turns | G-Turns | D-Min% | G-Min% | D-Tokens | G-Tokens | Savings | D-Time | G-Time | D-Tool | G-Tool | D-LLM | G-LLM |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| gpt-4.1 | 60.0% | 80.0% | 1.0 | 2.0 | 100% | 100% | 52,587 | 6,639 | 87.4% | 15.5s | 17.6s | 0.00s | 0.04s | 15.50s | 17.55s |
+| gpt-5.2 | 60.0% | **100.0%** | 1.0 | 2.0 | 100% | 100% | 53,645 | 10,508 | 80.4% | 20.5s | 17.1s | 0.00s | 0.03s | 20.48s | 17.06s |
+| gpt-5.4 | 60.0% | **100.0%** | 1.0 | 2.0 | 100% | 100% | 60,035 | 14,049 | 76.6% | 18.2s | 17.0s | 0.00s | 0.06s | 18.23s | 16.96s |
+| claude-sonnet-4-20250514 | 100.0% | 100.0% | 1.0 | 2.0 | 100% | 100% | 196,183 | 17,349 | 91.2% | 58.2s | 49.4s | 0.00s | 0.03s | 58.23s | 49.35s |
+| claude-sonnet-4-6 | 100.0% | 100.0% | 1.0 | 2.0 | 100% | 100% | 198,665 | 20,074 | 89.9% | 67.0s | 69.4s | 0.00s | 0.03s | 67.02s | 69.33s |
+| claude-haiku-4-5 | 100.0% | 100.0% | 1.0 | 2.0 | 100% | 100% | 197,845 | 19,714 | 90.0% | 23.7s | 22.8s | 0.00s | 0.03s | 23.73s | 22.73s |
+
+> **Column legend**: Acc = Accuracy, Turns = average agent turns, Min% = minimum tool-call success rate, Tokens = total tokens consumed, Savings = token reduction (D→G), Time = wall-clock time, Tool = tool execution time, LLM = LLM inference time
+
+**Key findings**
+
+- GPT-series models drop to **60% accuracy** when all 200 tools are passed directly; graph-tool-call recovers to **80–100%**.
+- Claude-series models maintain 100% accuracy either way, but graph-tool-call delivers **89–91% token savings**.
+- Graph mode adds 1 extra turn (search → call) but total latency stays comparable or even decreases thanks to smaller context.
+- Across all models, token reduction ranges from **76.6% to 91.2%**.
+
 ### Reproduce it
 
 ```bash
