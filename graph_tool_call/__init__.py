@@ -6,9 +6,11 @@ from graph_tool_call.tool_graph import ToolGraph
 
 __all__ = [
     "CategorySummary",
+    "CompressConfig",
     "DuplicatePair",
     "GraphAnalysisReport",
     "GraphToolkit",
+    "compress_tool_result",
     "create_gateway_tools",
     "MCPAnnotations",
     "MergeStrategy",
@@ -42,6 +44,8 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "create_gateway_tools": ("graph_tool_call.langchain.gateway", "create_gateway_tools"),
     "filter_tools": ("graph_tool_call.toolkit", "filter_tools"),
     "GraphToolkit": ("graph_tool_call.toolkit", "GraphToolkit"),
+    "compress_tool_result": ("graph_tool_call.compressor", "compress_tool_result"),
+    "CompressConfig": ("graph_tool_call.compressor", "CompressConfig"),
 }
 
 

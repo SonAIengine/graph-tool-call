@@ -71,6 +71,8 @@ def create_gateway_tools(
     *,
     top_k: int = 10,
     graph: Any | None = None,
+    compress_results: bool = False,
+    compress_max_chars: int = 4000,
 ) -> list[Any]:
     """Create 2 gateway meta-tools from a list of LangChain tools.
 
@@ -82,6 +84,10 @@ def create_gateway_tools(
         Default number of results for ``search_tools`` (default: 10).
     graph:
         Optional pre-built ``ToolGraph``. If *None*, one is built from *tools*.
+    compress_results:
+        When True, compress large ``call_tool`` responses to save context tokens.
+    compress_max_chars:
+        Maximum characters for compressed output (default: 4000).
 
     Returns
     -------
@@ -162,10 +168,12 @@ def create_gateway_tools(
         """
         target = tool_map.get(tool_name)
         if target is None:
-            return json.dumps({
-                "error": f"Tool '{tool_name}' not found.",
-                "hint": "Use search_tools to find the correct tool name.",
-            })
+            return json.dumps(
+                {
+                    "error": f"Tool '{tool_name}' not found.",
+                    "hint": "Use search_tools to find the correct tool name.",
+                }
+            )
 
         # Normalize arguments
         args: dict[str, Any] = {}
@@ -192,13 +200,23 @@ def create_gateway_tools(
                 return json.dumps({"error": f"Tool '{tool_name}' is not callable."})
 
             if isinstance(result, str):
-                return result
-            return json.dumps(result, ensure_ascii=False, default=str)
+                result_str = result
+            else:
+                result_str = json.dumps(result, ensure_ascii=False, default=str)
+
+            if compress_results and len(result_str) > compress_max_chars:
+                from graph_tool_call.compressor import CompressConfig, compress_tool_result
+
+                cfg = CompressConfig(max_chars=compress_max_chars)
+                return compress_tool_result(result_str, config=cfg)
+            return result_str
         except Exception as e:
             logger.warning("call_tool(%s) failed: %s", tool_name, e)
-            return json.dumps({
-                "error": str(e),
-                "tool_name": tool_name,
-            })
+            return json.dumps(
+                {
+                    "error": str(e),
+                    "tool_name": tool_name,
+                }
+            )
 
     return [search_tools, call_tool]

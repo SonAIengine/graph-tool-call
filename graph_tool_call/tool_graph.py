@@ -6,8 +6,11 @@ import json
 import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urljoin
+
+if TYPE_CHECKING:
+    from graph_tool_call.compressor.base import CompressConfig
 
 from graph_tool_call.core.dict_graph import DictGraph
 from graph_tool_call.core.protocol import GraphEngine
@@ -632,6 +635,8 @@ class ToolGraph:
         headers: dict[str, Any] | None = None,
         auth_token: str | None = None,
         timeout: int = 30,
+        compress_result: bool = False,
+        compress_config: CompressConfig | None = None,
     ) -> dict[str, Any]:
         """Execute an OpenAPI tool via HTTP.
 
@@ -649,6 +654,10 @@ class ToolGraph:
             Bearer token (shorthand for ``Authorization: Bearer <token>``).
         timeout:
             Request timeout in seconds (default: 30).
+        compress_result:
+            When True, compress large responses to save LLM context tokens.
+        compress_config:
+            Optional :class:`CompressConfig` for fine-tuning compression.
         """
         from graph_tool_call.execute.http_executor import HttpExecutor
 
@@ -663,7 +672,18 @@ class ToolGraph:
             auth_token=auth_token,
             timeout=timeout,
         )
-        return executor.execute(tool, arguments)
+        result = executor.execute(tool, arguments)
+
+        if compress_result:
+            from graph_tool_call.compressor import compress_tool_result
+            from graph_tool_call.compressor.base import CompressConfig as CompressCfg
+
+            cfg = compress_config if isinstance(compress_config, CompressCfg) else CompressCfg()
+            raw = json.dumps(result, ensure_ascii=False, default=str)
+            if len(raw) > cfg.max_chars:
+                return {"_compressed": True, "content": compress_tool_result(result, config=cfg)}
+
+        return result
 
     def dry_run(
         self,

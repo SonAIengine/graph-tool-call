@@ -46,6 +46,8 @@ def create_mcp_server(
     allow_private_hosts: bool = False,
     host: str = "127.0.0.1",
     port: int = 8000,
+    compress_results: bool = False,
+    compress_max_chars: int = 4000,
 ) -> Any:
     """Create an MCP server backed by a ToolGraph.
 
@@ -57,6 +59,10 @@ def create_mcp_server(
         Pre-built graph JSON file to load instead of ingesting sources.
     allow_private_hosts:
         Allow localhost/private IP URLs for spec loading.
+    compress_results:
+        When True, compress large ``execute_tool`` responses.
+    compress_max_chars:
+        Maximum characters for compressed output (default: 4000).
     """
     _check_mcp_installed()
 
@@ -288,7 +294,13 @@ def create_mcp_server(
             # Track call history for future searches
             if tool_name not in _call_history:
                 _call_history.append(tool_name)
-            return json.dumps(result, indent=2, ensure_ascii=False)
+            result_json = json.dumps(result, indent=2, ensure_ascii=False)
+            if compress_results and len(result_json) > compress_max_chars:
+                from graph_tool_call.compressor import CompressConfig, compress_tool_result
+
+                cfg = CompressConfig(max_chars=compress_max_chars)
+                return compress_tool_result(result_json, config=cfg)
+            return result_json
         except Exception as e:
             return json.dumps({"error": str(e)})
 

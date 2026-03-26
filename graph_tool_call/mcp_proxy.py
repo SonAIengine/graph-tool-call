@@ -117,6 +117,8 @@ class MCPProxy:
         embedding: bool | str = False,
         passthrough_threshold: int = DEFAULT_PASSTHROUGH_THRESHOLD,
         cache_path: str | None = None,
+        compress_results: bool = False,
+        compress_max_chars: int = 4000,
     ):
         self._backends_config = backends
         self._connections: dict[str, BackendConnection] = {}
@@ -135,6 +137,9 @@ class MCPProxy:
         self._call_history: list[str] = []
         # Last workflow summary from search
         self._last_workflow: list[str] | None = None
+        # Compression settings
+        self._compress_results = compress_results
+        self._compress_max_chars = compress_max_chars
 
     @property
     def tool_graph(self) -> Any:
@@ -463,6 +468,26 @@ def create_proxy_server(
     return _create_passthrough_server(server, proxy)
 
 
+def _maybe_compress_content(content: list[Any], proxy: MCPProxy) -> list[Any]:
+    """Compress TextContent items if compression is enabled on the proxy."""
+    if not proxy._compress_results:
+        return content
+
+    import mcp.types as types
+
+    from graph_tool_call.compressor import CompressConfig, compress_tool_result
+
+    cfg = CompressConfig(max_chars=proxy._compress_max_chars)
+    result = []
+    for item in content:
+        if hasattr(item, "text") and len(item.text) > cfg.max_chars:
+            compressed = compress_tool_result(item.text, config=cfg)
+            result.append(types.TextContent(type="text", text=compressed))
+        else:
+            result.append(item)
+    return result
+
+
 def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
     """Gateway mode: search + get_schema + dynamic tool injection.
 
@@ -617,12 +642,12 @@ def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
                 except (json.JSONDecodeError, TypeError):
                     tool_args = {}
             result = await proxy.call_tool(tool_name, tool_args)
-            return result.content
+            return _maybe_compress_content(result.content, proxy)
 
         # --- Direct backend tool routing ---
         if name in proxy._tool_to_backend:
             result = await proxy.call_tool(name, arguments)
-            return result.content
+            return _maybe_compress_content(result.content, proxy)
 
         return [
             types.TextContent(
@@ -656,7 +681,7 @@ def _create_passthrough_server(server: Any, proxy: MCPProxy) -> Any:
         name: str, arguments: dict[str, Any]
     ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
         result = await proxy.call_tool(name, arguments)
-        return result.content
+        return _maybe_compress_content(result.content, proxy)
 
     return server
 
@@ -714,9 +739,10 @@ async def _run_proxy_sse(server: Any, host: str, port: int) -> None:
     sse_transport = SseServerTransport("/messages/")
 
     async def handle_sse(request: Any) -> Any:
-        async with sse_transport.connect_sse(
-            request.scope, request.receive, request._send
-        ) as (read_stream, write_stream):
+        async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (
+            read_stream,
+            write_stream,
+        ):
             await server.run(
                 read_stream,
                 write_stream,
