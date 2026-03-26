@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 
 from langchain_core.tools import tool
-from langchain_ollama import ChatOllama
+pytest = __import__("pytest")
+ChatOllama = pytest.importorskip("langchain_ollama").ChatOllama
 
 from graph_tool_call.langchain.gateway import create_gateway_tools
 
