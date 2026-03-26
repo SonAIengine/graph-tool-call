@@ -1,0 +1,19 @@
+{
+  "status": 422,
+  "error": "Unprocessable Entity",
+  "body": {
+    "detail": [
+      {
+        "type": "missing",
+        "loc": [
+          "body",
+          "workflow_id"
+        ],
+        "msg": "Field required",
+        "input": {
+          "workflow_name": "x2bee 에이전트"
+        }
+      }
+    ]
+  }
+}

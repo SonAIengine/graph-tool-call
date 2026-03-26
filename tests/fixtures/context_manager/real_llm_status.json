@@ -1,0 +1,54 @@
+{
+  "status": 200,
+  "headers": {
+    "Date": "Thu, 26 Mar 2026 14:50:38 GMT",
+    "Content-Type": "application/json",
+    "Content-Length": "403",
+    "Connection": "close",
+    "server": "istio-envoy",
+    "x-envoy-upstream-service-time": "4",
+    "x-user-id": "5",
+    "x-user-name": "%EC%86%90%EC%84%B1%EC%A4%80",
+    "x-user-admin": "true",
+    "x-request-id": "fd142cf8-a3fe-4eb9-aca1-cfceed05c147",
+    "vary": "origin, access-control-request-method, access-control-request-headers",
+    "access-control-allow-origin": "*"
+  },
+  "body": {
+    "current_provider": "gemini",
+    "available_providers": [
+      "openai",
+      "vllm",
+      "sgl",
+      "gemini",
+      "anthropic"
+    ],
+    "providers": {
+      "openai": {
+        "configured": true,
+        "available": true,
+        "error": null
+      },
+      "vllm": {
+        "configured": true,
+        "available": true,
+        "error": null
+      },
+      "sgl": {
+        "configured": true,
+        "available": true,
+        "error": null
+      },
+      "gemini": {
+        "configured": true,
+        "available": true,
+        "error": null
+      },
+      "anthropic": {
+        "configured": true,
+        "available": true,
+        "error": null
+      }
+    }
+  }
+}

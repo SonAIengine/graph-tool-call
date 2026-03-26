@@ -1,0 +1,95 @@
+{
+  "status": 200,
+  "headers": {
+    "Date": "Thu, 26 Mar 2026 14:50:40 GMT",
+    "Content-Type": "application/json",
+    "Content-Length": "1161",
+    "Connection": "close",
+    "server": "istio-envoy",
+    "x-envoy-upstream-service-time": "1015",
+    "x-user-id": "5",
+    "x-user-name": "%EC%86%90%EC%84%B1%EC%A4%80",
+    "x-user-admin": "true",
+    "x-request-id": "7afe0007-3808-4fd7-827b-faa4721a7a98",
+    "vary": "origin, access-control-request-method, access-control-request-headers",
+    "access-control-allow-origin": "*"
+  },
+  "body": {
+    "cpu": {
+      "usage_percent": 5.7,
+      "core_count": 128,
+      "frequency_current": 1849.2407421875,
+      "frequency_max": 5367.0,
+      "load_average": [
+        5.81396484375,
+        5.412109375,
+        5.2939453125
+      ]
+    },
+    "memory": {
+      "total": 540265603072,
+      "available": 419536941056,
+      "percent": 22.3,
+      "used": 116541009920,
+      "free": 253020561408
+    },
+    "gpu": [],
+    "network": [
+      {
+        "interface": "lo",
+        "is_up": true,
+        "bytes_sent": 3037363184,
+        "bytes_recv": 3037363184,
+        "packets_sent": 751897,
+        "packets_recv": 751897
+      },
+      {
+        "interface": "eth0",
+        "is_up": true,
+        "bytes_sent": 1333458041,
+        "bytes_recv": 651465304,
+        "packets_sent": 423740,
+        "packets_recv": 401873
+      }
+    ],
+    "disk": [
+      {
+        "device": "/dev/sdb",
+        "mountpoint": "/etc/hosts",
+        "fstype": "ext4",
+        "total": 3936820731904,
+        "used": 742938685440,
+        "free": 2993825918976,
+        "percent": 19.9
+      },
+      {
+        "device": "/dev/sdb",
+        "mountpoint": "/dev/termination-log",
+        "fstype": "ext4",
+        "total": 3936820731904,
+        "used": 742938685440,
+        "free": 2993825918976,
+        "percent": 19.9
+      },
+      {
+        "device": "/dev/sdb",
+        "mountpoint": "/etc/hostname",
+        "fstype": "ext4",
+        "total": 3936820731904,
+        "used": 742938685440,
+        "free": 2993825918976,
+        "percent": 19.9
+      },
+      {
+        "device": "/dev/sdb",
+        "mountpoint": "/etc/resolv.conf",
+        "fstype": "ext4",
+        "total": 3936820731904,
+        "used": 742938685440,
+        "free": 2993825918976,
+        "percent": 19.9
+      }
+    ],
+    "uptime": 1774327778.0
+  }
+}

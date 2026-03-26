@@ -1,0 +1,65 @@
+{
+  "status": 200,
+  "headers": {
+    "Date": "Thu, 26 Mar 2026 14:50:37 GMT",
+    "Content-Type": "application/json",
+    "Content-Length": "1208",
+    "Connection": "close",
+    "server": "istio-envoy",
+    "x-envoy-upstream-service-time": "22",
+    "x-user-id": "5",
+    "x-user-name": "%EC%86%90%EC%84%B1%EC%A4%80",
+    "x-user-admin": "true",
+    "x-request-id": "fc43482a-22b5-4682-b304-095d17eabc96",
+    "vary": "origin, access-control-request-method, access-control-request-headers",
+    "access-control-allow-origin": "*"
+  },
+  "body": {
+    "workflows": [
+      {
+        "workflow_name": "HR Routing Template",
+        "workflow_id": "workflow_019d1870de7ee22cb897739381096f488bb449a5"
+      },
+      {
+        "workflow_name": "Workflow",
+        "workflow_id": "workflow_019d0483a9458aaceb9c1fd18ea461a22d67ea9b"
+      },
+      {
+        "workflow_name": "Multi-Agent Tool Template",
+        "workflow_id": "workflow_019cb6b08ee9eae92963bac655dece6242025f06"
+      },
+      {
+        "workflow_name": "업무자동화_copy",
+        "workflow_id": "workflow_019cb698bb7b2531a5faa4af3b92a5eebc2896fe"
+      },
+      {
+        "workflow_name": "업무자동화",
+        "workflow_id": "workflow_019cb660e7f78575bf76c0ba5ef604816b6b123e"
+      },
+      {
+        "workflow_name": "인증프로필테스트",
+        "workflow_id": "workflow_019c48477c0d09e217f28e822342759683e0954d"
+      },
+      {
+        "workflow_name": "브라우저컨트롤에이전트",
+        "workflow_id": "workflow_019c3c1a5eec819b0c3bfe04de7a59c1d10a5182"
+      },
+      {
+        "workflow_name": "x2bee 에이전트",
+        "workflow_id": "workflow_019c35fac73b3a332c2d03a9055cf057c5b150d7"
+      },
+      {
+        "workflow_name": "아틀라시안",
+        "workflow_id": "workflow_019c1f081c204978841057a75e0bee669b6792d9"
+      },
+      {
+        "workflow_name": "라우터워크플로우",
+        "workflow_id": "workflow_019c0c8805998edd1cc23eff6219d4e80dba9f63"
+      },
+      {
+        "workflow_name": "연구소 컨플런스 에이전트",
+        "workflow_id": "workflow_019b9fe988be8c9582c7e504fe7ff533153f5053"
+      }
+    ]
+  }
+}
