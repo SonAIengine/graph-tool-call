@@ -1,0 +1,20 @@
+{
+  "status": 422,
+  "error": "Unprocessable Entity",
+  "body": {
+    "detail": [
+      {
+        "type": "missing",
+        "loc": [
+          "body",
+          "workflow_name"
+        ],
+        "msg": "Field required",
+        "input": {
+          "input_data": "안녕",
+          "workflow_id": "workflow_019c35fac73b3a332c2d03a9055cf057c5b150d7"
+        }
+      }
+    ]
+  }
+}

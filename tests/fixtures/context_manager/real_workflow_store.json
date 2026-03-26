@@ -1,0 +1,4559 @@
+{
+  "status": 200,
+  "headers": {
+    "Date": "Thu, 26 Mar 2026 14:59:52 GMT",
+    "Content-Type": "application/json",
+    "Content-Length": "82382",
+    "Connection": "close",
+    "server": "istio-envoy",
+    "x-envoy-upstream-service-time": "27",
+    "x-user-id": "5",
+    "x-user-name": "%EC%86%90%EC%84%B1%EC%A4%80",
+    "x-user-admin": "true",
+    "x-request-id": "c098f86b-269a-46e3-bf90-75846a86f769",
+    "vary": "origin, access-control-request-method, access-control-request-headers",
+    "access-control-allow-origin": "*"
+  },
+  "body": {
+    "workflows": [
+      {
+        "id": 5,
+        "created_at": "2025-11-13T15:57:41.845038+09:00",
+        "updated_at": "2025-11-13T15:57:41.845038+09:00",
+        "user_id": null,
+        "workflow_id": "workflow_schema_template________1760490489317",
+        "workflow_name": "Schema Provider Template",
+        "workflow_upload_name": "Schema Provider Template",
+        "node_count": 5,
+        "edge_count": 4,
+        "has_startnode": true,
+        "has_endnode": true,
+        "is_completed": true,
+        "metadata": null,
+        "current_version": 1.0,
+        "latest_version": 1.0,
+        "is_template": true,
+        "description": "Schema Provider를 사용하는 템플릿입니다. 마케팅 문구 생성 예시가 포함되어 있습니다.",
+        "tags": null,
+        "rating_count": 2,
+        "rating_sum": 7,
+        "workflow_data": {
+          "workflow_name": "Schema Provider Template",
+          "workflow_id": "workflow_schema_template________1760490489317",
+          "description": "Schema Provider를 사용하는 템플릿입니다. 마케팅 문구 생성 예시가 포함되어 있습니다.",
+          "view": {
+            "x": -35994.28184020805,
+            "y": -17055.275110245104,
+            "scale": 0.6945749999999999
+          },
+          "nodes": [
+            {
+              "id": "agents/vllm_stream-1754898484788",
+              "data": {
+                "functionId": "agents",
+                "id": "agents/vllm_stream",
+                "nodeName": "Agent VLLM Stream",
+                "description": "RAG 컨텍스트를 사용하여 채팅 응답을 스트리밍으로 생성하는 Agent 노드",
+                "tags": [
+                  "agent",
+                  "chat",
+                  "rag",
+                  "vllm",
+                  "stream"
+                ],
+                "inputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR",
+                    "multi": false,
+                    "required": true
+                  },
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL",
+                    "multi": true,
+                    "required": false,
+                    "value": []
+                  },
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "rag_context",
+                    "name": "RAG Context",
+                    "type": "DocsContext",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "stream",
+                    "name": "Stream",
+                    "type": "STREAM STR",
+                    "stream": true
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "model",
+                    "name": "Model",
+                    "type": "STR",
+                    "value": "x2bee/Polar-14B",
+                    "is_api": true,
+                    "api_name": "api_vllm_model_name",
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "temperature",
+                    "name": "Temperature",
+                    "type": "FLOAT",
+                    "value": 0,
+                    "required": false,
+                    "optional": true,
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.1
+                  },
+                  {
+                    "id": "max_tokens",
+                    "name": "Max Tokens",
+                    "type": "INT",
+                    "value": 8192,
+                    "required": false,
+                    "optional": true,
+                    "min": 1,
+                    "max": 65536,
+                    "step": 1
+                  },
+                  {
+                    "id": "n_messages",
+                    "name": "Max Memory",
+                    "type": "INT",
+                    "value": 3,
+                    "min": 1,
+                    "max": 10,
+                    "step": 1,
+                    "optional": true
+                  },
+                  {
+                    "id": "base_url",
+                    "name": "Base URL",
+                    "type": "STR",
+                    "value": "",
+                    "is_api": true,
+                    "api_name": "api_vllm_api_base_url",
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "default_prompt",
+                    "name": "Default Prompt",
+                    "type": "STR",
+                    "value": "상품관련 정보를 활용한 마케팅문구 생성용 에이전트임.",
+                    "required": false,
+                    "optional": true,
+                    "expandable": true,
+                    "description": "기본 프롬프트로 AI가 따르는 System 지침을 의미합니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 53289.834718374885,
+                "y": 24993.43197895656
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "tools/print_any_stream-1754898840056",
+              "data": {
+                "functionId": "endnode",
+                "id": "tools/print_any_stream",
+                "nodeName": "Print Any (Stream)",
+                "description": "임의의 스트리밍 데이터를 입력받아 그대로 반환하는 스트리밍 출력 노드입니다. 워크플로우의 스트리밍 결과를 확인하는데 사용됩니다.",
+                "tags": [
+                  "output",
+                  "print",
+                  "display",
+                  "debug",
+                  "end_node",
+                  "utility",
+                  "stream",
+                  "any_type"
+                ],
+                "inputs": [
+                  {
+                    "id": "stream",
+                    "name": "Stream",
+                    "type": "STREAM STR",
+                    "multi": false,
+                    "required": true,
+                    "stream": true
+                  }
+                ],
+                "outputs": [],
+                "parameters": []
+              },
+              "position": {
+                "x": 53948.00311261254,
+                "y": 25314.72819926312
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "input_schema_provider-1754905935949",
+              "data": {
+                "functionId": "tools",
+                "id": "input_schema_provider",
+                "nodeName": "Schema Provider(Input)",
+                "description": "사용자 입력에 따라 동적으로 Pydantic 모델을 생성하는 노드입니다.",
+                "tags": [
+                  "input",
+                  "json",
+                  "dict",
+                  "parameter",
+                  "source",
+                  "user_input",
+                  "key_value"
+                ],
+                "inputs": [],
+                "outputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "InputSchema"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "good_no",
+                    "name": "good_no",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "good_no_description",
+                    "name": "good_no_description",
+                    "type": "STR",
+                    "value": "상품코드",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  },
+                  {
+                    "id": "good_name",
+                    "name": "good_name",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "good_name_description",
+                    "name": "good_name_description",
+                    "type": "STR",
+                    "value": "상품명",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  },
+                  {
+                    "id": "good_desc",
+                    "name": "good_desc",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "good_desc_description",
+                    "name": "good_desc_description",
+                    "type": "STR",
+                    "value": "상품설명",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  }
+                ]
+              },
+              "position": {
+                "x": 52132.15146166013,
+                "y": 24950.131964403983
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "input_string-1754906094840",
+              "data": {
+                "functionId": "startnode",
+                "id": "input_string",
+                "nodeName": "Input String",
+                "description": "사용자가 설정한 문자열 값을 출력하는 입력 노드입니다. 워크플로우에서 텍스트 데이터의 시작점으로 사용됩니다. ArgsSchema가 제공되면 입력값들을 스키마에 따라 검증합니다.",
+                "tags": [
+                  "input",
+                  "string",
+                  "text",
+                  "parameter",
+                  "source",
+                  "start_node",
+                  "user_input"
+                ],
+                "inputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "InputSchema",
+                    "required": false
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "input_str",
+                    "name": "INPUT",
+                    "type": "STR",
+                    "value": "입력정보를 기반으로 마케팅 문구 생성해줘",
+                    "required": false
+                  },
+                  {
+                    "id": "good_no",
+                    "name": "good_no",
+                    "type": "STR",
+                    "value": "TM2F8NPC924W_BD",
+                    "handle_id": true,
+                    "is_added": true
+                  },
+                  {
+                    "id": "good_name",
+                    "name": "good_name",
+                    "type": "STR",
+                    "value": "버클 스트랩 데님 와이드 팬츠",
+                    "handle_id": true,
+                    "is_added": true
+                  },
+                  {
+                    "id": "good_desc",
+                    "name": "good_desc",
+                    "type": "STR",
+                    "value": "신축성 있는 면과 스판 혼방 소재를 사용하여 편안한 착용감을 전해주는 데님 팬츠입니다. 밑단까지 여유롭게 떨어지는 와이드 실루엣이며, 허리 라인 뒷면에 버튼 스트랩 장식을 더해 포인트 주었습니다. 군더더기 없는 디자인으로 높은 활용도를 자랑하며, 다양한 상의와 매치하여 감각적인 스타일링이 가능합니다.    . 추가정보 : 상품추가정보     1) 면과 스판 혼방 소재     2) 앞면에 버튼과 지퍼 클로징     3) 5포켓 디자인     4) 허리 라인 뒷면에 버클 스트랩 장식",
+                    "handle_id": true,
+                    "is_added": true
+                  }
+                ]
+              },
+              "position": {
+                "x": 52712.95749799075,
+                "y": 24958.244002996726
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "output_schema_provider-1754906335435",
+              "data": {
+                "functionId": "tools",
+                "id": "output_schema_provider",
+                "nodeName": "Schema Provider(Output)",
+                "description": "BaseModel을 사용하여 handle_id가 true인 파라미터들의 id를 키로, 입력된 값을 값으로 하는 JSON 딕셔너리를 출력하는 노드입니다. 이 노드는 출력 스키마를 생성합니다.",
+                "tags": [
+                  "input",
+                  "json",
+                  "dict",
+                  "parameter",
+                  "source",
+                  "user_input",
+                  "key_value"
+                ],
+                "inputs": [],
+                "outputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "sentence1",
+                    "name": "sentence1",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "sentence1_description",
+                    "name": "sentence1_description",
+                    "type": "STR",
+                    "value": "상품을 강조한 마케팅 문구",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  },
+                  {
+                    "id": "sentence2",
+                    "name": "sentence2",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "sentence2_description",
+                    "name": "sentence2_description",
+                    "type": "STR",
+                    "value": "기능을 강조한 마케팅 문구",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  }
+                ]
+              },
+              "position": {
+                "x": 52712.34385840421,
+                "y": 25366.401787798422
+              },
+              "isExpanded": true
+            }
+          ],
+          "edges": [
+            {
+              "id": "edge-agents/vllm_stream-1754898484788:stream-tools/print_any_stream-1754898840056:stream-1754898842858",
+              "source": {
+                "nodeId": "agents/vllm_stream-1754898484788",
+                "portId": "stream",
+                "portType": "output",
+                "type": "STREAM STR"
+              },
+              "target": {
+                "nodeId": "tools/print_any_stream-1754898840056",
+                "portId": "stream",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-input_schema_provider-1754905935949:args_schema-input_string-1754906094840:args_schema-1754906097620",
+              "source": {
+                "nodeId": "input_schema_provider-1754905935949",
+                "portId": "args_schema",
+                "portType": "output",
+                "type": "InputSchema"
+              },
+              "target": {
+                "nodeId": "input_string-1754906094840",
+                "portId": "args_schema",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-input_string-1754906094840:text-agents/vllm_stream-1754898484788:text-1754906148235",
+              "source": {
+                "nodeId": "input_string-1754906094840",
+                "portId": "text",
+                "portType": "output",
+                "type": "STR"
+              },
+              "target": {
+                "nodeId": "agents/vllm_stream-1754898484788",
+                "portId": "text",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-output_schema_provider-1754906335435:args_schema-agents/vllm_stream-1754898484788:args_schema-1754906335435",
+              "source": {
+                "nodeId": "output_schema_provider-1754906335435",
+                "portId": "args_schema",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "agents/vllm_stream-1754898484788",
+                "portId": "args_schema",
+                "portType": "input"
+              }
+            }
+          ],
+          "interaction_id": "default"
+        }
+      },
+      {
+        "id": 4,
+        "created_at": "2025-11-13T15:57:41.840498+09:00",
+        "updated_at": "2025-11-13T15:57:41.840498+09:00",
+        "user_id": null,
+        "workflow_id": "workflow_hr_teams_bot_test_routing_template_1760490469956",
+        "workflow_name": "HR Routing Template",
+        "workflow_upload_name": "HR Routing Template",
+        "node_count": 10,
+        "edge_count": 11,
+        "has_startnode": true,
+        "has_endnode": true,
+        "is_completed": true,
+        "metadata": null,
+        "current_version": 1.0,
+        "latest_version": 1.0,
+        "is_template": true,
+        "description": "HR 챗봇과 라우팅 기능을 이용한 템플릿입니다.",
+        "tags": null,
+        "rating_count": 1,
+        "rating_sum": 4,
+        "workflow_data": {
+          "workflow_name": "HR Routing Template",
+          "workflow_id": "workflow_hr_teams_bot_test_routing_template_1760490469956",
+          "description": "HR 챗봇과 라우팅 기능을 이용한 템플릿입니다.",
+          "view": {
+            "x": -27462.988882449612,
+            "y": -14547.878896450648,
+            "scale": 0.6264973750845706
+          },
+          "nodes": [
+            {
+              "id": "tools/print_any-1758186624522",
+              "data": {
+                "functionId": "endnode",
+                "id": "tools/print_any",
+                "nodeName": "Print Any",
+                "description": "임의의 타입의 데이터를 입력받아 그대로 반환하는 출력 노드입니다. 워크플로우의 최종 결과를 확인하는데 사용됩니다.",
+                "tags": [
+                  "output",
+                  "print",
+                  "display",
+                  "debug",
+                  "end_node",
+                  "utility",
+                  "any_type"
+                ],
+                "inputs": [
+                  {
+                    "id": "input_print",
+                    "name": "Print",
+                    "type": "ANY",
+                    "multi": false,
+                    "required": true
+                  }
+                ],
+                "outputs": [],
+                "parameters": []
+              },
+              "position": {
+                "x": 46687.75897102338,
+                "y": 23847.079152604252
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "input_string-1758186631128",
+              "data": {
+                "functionId": "startnode",
+                "id": "input_string",
+                "nodeName": "Input String",
+                "description": "사용자가 설정한 문자열 값을 출력하는 입력 노드입니다. 워크플로우에서 텍스트 데이터의 시작점으로 사용됩니다. ArgsSchema가 제공되면 입력값들을 스키마에 따라 검증합니다.",
+                "tags": [
+                  "input",
+                  "string",
+                  "text",
+                  "parameter",
+                  "source",
+                  "start_node",
+                  "user_input"
+                ],
+                "inputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "InputSchema",
+                    "required": false
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "input_str",
+                    "name": "INPUT",
+                    "type": "STR",
+                    "value": "안녕 오늘 점심 뭐야?",
+                    "required": false
+                  },
+                  {
+                    "id": "use_stt",
+                    "name": "Use STT",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  }
+                ]
+              },
+              "position": {
+                "x": 44058.966152298555,
+                "y": 23702.800968251715
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "document_loaders/Qdrant-1758241778201",
+              "data": {
+                "functionId": "document_loaders",
+                "id": "document_loaders/Qdrant",
+                "nodeName": "Qdrant Search",
+                "description": "RAG 서비스와 검색 파라미터를 설정하여 다음 노드로 전달하는 노드",
+                "tags": [
+                  "document_loader",
+                  "qdrant",
+                  "vector_db",
+                  "rag",
+                  "setup"
+                ],
+                "inputs": [],
+                "outputs": [
+                  {
+                    "id": "rag_context",
+                    "name": "RAG Context",
+                    "type": "DocsContext"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "collection_name",
+                    "name": "Collection Name",
+                    "type": "STR",
+                    "value": "HR챗봇_16f90e06-f8ea-4c91-b439-18fae47c8212",
+                    "required": true,
+                    "is_api": true,
+                    "api_name": "api_collection",
+                    "options": []
+                  },
+                  {
+                    "id": "use_model_prompt",
+                    "name": "Use Model Prompt",
+                    "type": "BOOL",
+                    "value": true,
+                    "optional": true,
+                    "description": "임베딩 벡터 변환시 모델이 요구하는 프롬프트를 사용할지를 결정합니다."
+                  },
+                  {
+                    "id": "top_k",
+                    "name": "Top K Results",
+                    "type": "INT",
+                    "value": 10,
+                    "required": false,
+                    "optional": true,
+                    "min": 1,
+                    "max": 10,
+                    "step": 1
+                  },
+                  {
+                    "id": "score_threshold",
+                    "name": "Score Threshold",
+                    "type": "FLOAT",
+                    "value": 0.3,
+                    "required": false,
+                    "optional": true,
+                    "min": 0,
+                    "max": 1,
+                    "step": 0.1
+                  },
+                  {
+                    "id": "rerank",
+                    "name": "Enable Rerank",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "rerank_top_k",
+                    "name": "Rerank Top K",
+                    "type": "INT",
+                    "value": 5,
+                    "required": false,
+                    "optional": true,
+                    "min": 1,
+                    "max": 100,
+                    "step": 1
+                  },
+                  {
+                    "id": "enhance_prompt",
+                    "name": "Enhance Prompt",
+                    "type": "STR",
+                    "value": "",
+                    "required": false,
+                    "optional": true,
+                    "expandable": true,
+                    "description": "RAG 컨텍스트를 사용하여 응답을 향상시키기 위한 프롬프트입니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 45318.99974485918,
+                "y": 24046.353880493953
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "agents/openai-1758250616915",
+              "data": {
+                "functionId": "agents",
+                "id": "agents/openai",
+                "nodeName": "Agent OpenAI",
+                "description": "RAG 컨텍스트를 사용하여 채팅 응답을 생성하는 Agent 노드",
+                "tags": [
+                  "agent",
+                  "chat",
+                  "rag",
+                  "openai"
+                ],
+                "inputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR",
+                    "multi": false,
+                    "required": true
+                  },
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL",
+                    "multi": true,
+                    "required": false,
+                    "value": []
+                  },
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "rag_context",
+                    "name": "RAG Context",
+                    "type": "DocsContext",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "Result",
+                    "type": "STR"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "model",
+                    "name": "Model",
+                    "type": "STR",
+                    "value": "gpt-5-mini",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "gpt-oss-20b",
+                        "label": "GPT-OSS-20B"
+                      },
+                      {
+                        "value": "gpt-oss-120b",
+                        "label": "GPT-OSS-120B"
+                      },
+                      {
+                        "value": "gpt-3.5-turbo",
+                        "label": "GPT-3.5 Turbo"
+                      },
+                      {
+                        "value": "gpt-4",
+                        "label": "GPT-4"
+                      },
+                      {
+                        "value": "gpt-4o",
+                        "label": "GPT-4o"
+                      },
+                      {
+                        "value": "gpt-5",
+                        "label": "GPT-5"
+                      },
+                      {
+                        "value": "gpt-5-mini",
+                        "label": "GPT-5 Mini"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "temperature",
+                    "name": "Temperature",
+                    "type": "FLOAT",
+                    "value": 1,
+                    "required": false,
+                    "optional": true,
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.1
+                  },
+                  {
+                    "id": "max_tokens",
+                    "name": "Max Tokens",
+                    "type": "INT",
+                    "value": 12000,
+                    "required": false,
+                    "optional": true,
+                    "min": 1,
+                    "max": 65536,
+                    "step": 1
+                  },
+                  {
+                    "id": "base_url",
+                    "name": "Base URL",
+                    "type": "STR",
+                    "value": "https://api.openai.com/v1",
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "strict_citation",
+                    "name": "Strict Citation",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "return_intermediate_steps",
+                    "name": "Return Intermediate Steps",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "Tool 사용시 해당 과정을 출력할지 여부를 결정합니다."
+                  },
+                  {
+                    "id": "default_prompt",
+                    "name": "Default Prompt",
+                    "type": "STR",
+                    "value": "## 역할\n당신은 (주)플래티어 직원들을 위한 HR 정책 안내 챗봇입니다.  \n회사 내부 규정을 기반으로 근무시간, 휴가, 휴직, 근로시간 단축, 출산 및 육아 관련 제도 등 다양한 인사 제도에 대해 정확하고 쉽게 설명하는 것이 목적입니다.  \n\n## 답변 시 유의사항\n0. 질문에 대한 답변은 검색된 문서를 기반으로 답변하며, 문서에서 확인된 내용임을 표시합니다.\n1. 질문의 내용이 문서와 관련이 없는 경우 일반적인 답변을 제공하되, 반드시 \"일반적인 답변이며, 담당 부서의 확인이 필요하다\"는 안내를 포함합니다.\n2. 문서 기반의 답변과 일반적인 답변을 **명확히 구분**해서 표현합니다.\n3. **회사 규정에 따른 처리 방식과 신청 방법**을 우선적으로 안내합니다.  \n4. 규정이나 조건이 복잡할 경우 **항목별·단계별로 나누어 보기 쉽게 정리**합니다.  \n5. **친절하고 공손한 말투**로 설명합니다.  \n6. 상황에 따라 고객사 지침, 팀장 승인 등 **예외사항이 있을 수 있음을 명시**합니다.  \n7. **법령 해석이 필요한 민감한 사안**은 HR실 문의를 권장합니다.  \n8. **답변은 반드시 질문에 대한 응답으로만 종료해야 하며, 불필요한 연결 멘트를 포함하지 않습니다.**  \n   - 금지 예시:  \n     - “추가로 도와드리겠습니다.”  \n     - “문구를 대신 작성해드리겠습니다.”  \n     - “혹시 더 궁금하신 점 있으신가요?”\n\n## 답변 예외 대상\n1. **규정에 포함되어 있지 않은 내용**  \n   → *“해당 내용은 현재 회사 규정에 명시되어 있지 않아 문서 기반으로 정확한 답변을 드리기 어렵습니다. 일반적인 정보로 참고하실 수 있으나, 반드시 담당 부서를 통해 최종 확인하시기 바랍니다.”*  \n2. **근태·근로시간, 휴가·휴직, 모성보호 규정 외의 질문**  \n   → *“말씀하신 주제는 현재 챗봇에서 제공되는 문서 기반 답변 범위에 포함되어 있지 않습니다. 일반적인 정보로 참고 가능하지만, 정확한 안내를 위해 담당 부서를 통해 최종 확인하시기 바랍니다.”*  \n3. **법령 해석이 직접적으로 필요한 민감한 사안**  \n   → *“말씀하신 부분은 법령 해석이 필요한 사항으로, 회사 내부에서 확정적인 답변을 드리기 어렵습니다. 관련 부서(HR실)에 문의해 주시면 정확한 안내를 받으실 수 있습니다.”*\n4. **HR 정책과 무관한 일반적·기술적·모델 관련 질문(예: AI 모델 종류, 시스템 구조, 개발 환경 등)**\n   → “말씀하신 질문은 HR 정책과 관련되지 않아 본 챗봇에서는 안내드리기 어렵습니다. 관련 부서나 공식 지원 채널을 통해 확인해 주시기 바랍니다.” ",
+                    "required": false,
+                    "optional": true,
+                    "expandable": true,
+                    "description": "기본 프롬프트로 AI가 따르는 System 지침을 의미합니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 46000.34433303115,
+                "y": 23689.51276989144
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "memory/db_memory_v2-1759110850065",
+              "data": {
+                "functionId": "memory",
+                "id": "memory/db_memory_v2",
+                "nodeName": "DB Memory V2",
+                "description": "DB에서 대화 기록을 로드하여 ConversationBufferMemory로 반환하는 노드입니다.",
+                "tags": [
+                  "memory",
+                  "database",
+                  "chat_history",
+                  "xgen"
+                ],
+                "inputs": [
+                  {
+                    "id": "current_input",
+                    "name": "Current Input",
+                    "type": "STR",
+                    "multi": false,
+                    "required": false
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "interaction_id",
+                    "name": "Interaction ID",
+                    "type": "STR",
+                    "value": ""
+                  },
+                  {
+                    "id": "include_thinking",
+                    "name": "Include Thinking",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "top_n_messages",
+                    "name": "Top N Messages",
+                    "type": "INT",
+                    "value": 3,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "min_tokens_for_similarity",
+                    "name": "Min Tokens For Similarity",
+                    "type": "INT",
+                    "value": 0,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "enable_similarity_filter",
+                    "name": "Enable Similarity Filter",
+                    "type": "BOOL",
+                    "value": true,
+                    "required": false,
+                    "optional": true
+                  }
+                ],
+                "disable": false
+              },
+              "position": {
+                "x": 44714.569715037775,
+                "y": 24190.851505322662
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "agents/openai-1760417472782",
+              "data": {
+                "functionId": "agents",
+                "id": "agents/openai",
+                "nodeName": "Agent OpenAI",
+                "description": "RAG 컨텍스트를 사용하여 채팅 응답을 생성하는 Agent 노드",
+                "tags": [
+                  "agent",
+                  "chat",
+                  "rag",
+                  "openai"
+                ],
+                "inputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR",
+                    "multi": false,
+                    "required": true
+                  },
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL",
+                    "multi": true,
+                    "required": false,
+                    "value": []
+                  },
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "rag_context",
+                    "name": "RAG Context",
+                    "type": "DocsContext",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "Result",
+                    "type": "STR"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "model",
+                    "name": "Model",
+                    "type": "STR",
+                    "value": "gpt-4o",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "gpt-oss-20b",
+                        "label": "GPT-OSS-20B"
+                      },
+                      {
+                        "value": "gpt-oss-120b",
+                        "label": "GPT-OSS-120B"
+                      },
+                      {
+                        "value": "gpt-3.5-turbo",
+                        "label": "GPT-3.5 Turbo"
+                      },
+                      {
+                        "value": "gpt-4",
+                        "label": "GPT-4"
+                      },
+                      {
+                        "value": "gpt-4o",
+                        "label": "GPT-4o"
+                      },
+                      {
+                        "value": "gpt-5",
+                        "label": "GPT-5"
+                      },
+                      {
+                        "value": "gpt-5-mini",
+                        "label": "GPT-5 Mini"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "temperature",
+                    "name": "Temperature",
+                    "type": "FLOAT",
+                    "value": 1,
+                    "required": false,
+                    "optional": true,
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.1
+                  },
+                  {
+                    "id": "max_tokens",
+                    "name": "Max Tokens",
+                    "type": "INT",
+                    "value": 5000,
+                    "required": false,
+                    "optional": true,
+                    "min": 1,
+                    "max": 65536,
+                    "step": 1
+                  },
+                  {
+                    "id": "base_url",
+                    "name": "Base URL",
+                    "type": "STR",
+                    "value": "https://api.openai.com/v1",
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "strict_citation",
+                    "name": "Strict Citation",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "return_intermediate_steps",
+                    "name": "Return Intermediate Steps",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "Tool 사용시 해당 과정을 출력할지 여부를 결정합니다."
+                  },
+                  {
+                    "id": "default_prompt",
+                    "name": "Default Prompt",
+                    "type": "STR",
+                    "value": "당신은 사용자의 요청을 정확하게 구분하는 역할을 수행합니다.\n\n사용자의 요청이 (주)플래티어 직원들을 위한 HR 정책 안내에 관련한 것인지 판단하시오.\n만약 요청이 회사 내부 규정을 기반으로 근무시간, 휴가, 휴직, 근로시간 단축, 출산 및 육아 관련 제도 등 다양한 인사 제도에 대해 묻고 있다면, hr_analysis를 True로, 아니면 False를 반환하시오.",
+                    "required": false,
+                    "optional": true,
+                    "expandable": true,
+                    "description": "기본 프롬프트로 AI가 따르는 System 지침을 의미합니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 44662.91104675148,
+                "y": 23769.080844971
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "output_schema_provider-1760417539681",
+              "data": {
+                "functionId": "tools",
+                "id": "output_schema_provider",
+                "nodeName": "Schema Provider(Output)",
+                "description": "BaseModel을 사용하여 handle_id가 true인 파라미터들의 id를 키로, 입력된 값을 값으로 하는 JSON 딕셔너리를 출력하는 노드입니다. 이 노드는 출력 스키마를 생성합니다.",
+                "tags": [
+                  "input",
+                  "json",
+                  "dict",
+                  "parameter",
+                  "source",
+                  "user_input",
+                  "key_value"
+                ],
+                "inputs": [],
+                "outputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "user_input",
+                    "name": "user_input",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "user_input_description",
+                    "name": "user_input_description",
+                    "type": "STR",
+                    "value": "사용자의 입력을 그대로 반환합니다.",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  },
+                  {
+                    "id": "hr_analysis",
+                    "name": "hr_analysis",
+                    "type": "STR",
+                    "value": "bool",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "hr_analysis_description",
+                    "name": "hr_analysis_description",
+                    "type": "STR",
+                    "value": "사용자의 요청이 (주)플래티어 직원들을 위한 HR 정책 안내에 관련한 것인지 판단하시오.\n만약 요청이 회사 내부 규정을 기반으로 근무시간, 휴가, 휴직, 근로시간 단축, 출산 및 육아 관련 제도 등 다양한 인사 제도에 대해 묻고 있다면 True를, 아니면 False를 반환하시오.",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  }
+                ],
+                "disable": false
+              },
+              "position": {
+                "x": 44063.21630723049,
+                "y": 24063.936288722514
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "router/Router-1760417682852",
+              "data": {
+                "functionId": "router",
+                "id": "router/Router",
+                "nodeName": "Router",
+                "description": "주어진 Dict 입력에서 routing_criteria에 해당하는 키의 값에 따라 다양한 경로로 라우팅하는 노드입니다. 해당 값과 일치하는 output id로만 데이터를 전달합니다.",
+                "tags": [
+                  "router",
+                  "conditional",
+                  "branching",
+                  "flow-control"
+                ],
+                "inputs": [
+                  {
+                    "id": "agent_output",
+                    "name": "Input Data",
+                    "type": "ANY",
+                    "multi": false,
+                    "required": true
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "True",
+                    "name": "True",
+                    "type": "ANY",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "False",
+                    "name": "False",
+                    "type": "ANY",
+                    "multi": false,
+                    "required": false
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "routing_criteria",
+                    "name": "Routing Criteria",
+                    "type": "STR",
+                    "value": "hr_analysis",
+                    "required": true,
+                    "description": "라우팅 기준이 되는 Dict의 키 이름을 설정합니다. 예: 'is_human'"
+                  }
+                ],
+                "disable": false
+              },
+              "position": {
+                "x": 45319.40816008526,
+                "y": 23696.56785949534
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "agents/openai-1760417755185",
+              "data": {
+                "functionId": "agents",
+                "id": "agents/openai",
+                "nodeName": "Agent OpenAI",
+                "description": "RAG 컨텍스트를 사용하여 채팅 응답을 생성하는 Agent 노드",
+                "tags": [
+                  "agent",
+                  "chat",
+                  "rag",
+                  "openai"
+                ],
+                "inputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR",
+                    "multi": false,
+                    "required": true
+                  },
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL",
+                    "multi": true,
+                    "required": false,
+                    "value": []
+                  },
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "rag_context",
+                    "name": "RAG Context",
+                    "type": "DocsContext",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "result",
+                    "name": "Result",
+                    "type": "STR"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "model",
+                    "name": "Model",
+                    "type": "STR",
+                    "value": "gpt-5-mini",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "gpt-oss-20b",
+                        "label": "GPT-OSS-20B"
+                      },
+                      {
+                        "value": "gpt-oss-120b",
+                        "label": "GPT-OSS-120B"
+                      },
+                      {
+                        "value": "gpt-3.5-turbo",
+                        "label": "GPT-3.5 Turbo"
+                      },
+                      {
+                        "value": "gpt-4",
+                        "label": "GPT-4"
+                      },
+                      {
+                        "value": "gpt-4o",
+                        "label": "GPT-4o"
+                      },
+                      {
+                        "value": "gpt-5",
+                        "label": "GPT-5"
+                      },
+                      {
+                        "value": "gpt-5-mini",
+                        "label": "GPT-5 Mini"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "temperature",
+                    "name": "Temperature",
+                    "type": "FLOAT",
+                    "value": 1,
+                    "required": false,
+                    "optional": true,
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.1
+                  },
+                  {
+                    "id": "max_tokens",
+                    "name": "Max Tokens",
+                    "type": "INT",
+                    "value": 12000,
+                    "required": false,
+                    "optional": true,
+                    "min": 1,
+                    "max": 65536,
+                    "step": 1
+                  },
+                  {
+                    "id": "base_url",
+                    "name": "Base URL",
+                    "type": "STR",
+                    "value": "https://api.openai.com/v1",
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "strict_citation",
+                    "name": "Strict Citation",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "return_intermediate_steps",
+                    "name": "Return Intermediate Steps",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "Tool 사용시 해당 과정을 출력할지 여부를 결정합니다."
+                  },
+                  {
+                    "id": "default_prompt",
+                    "name": "Default Prompt",
+                    "type": "STR",
+                    "value": "## 현재 사용자 요청은 (주)플래티어의 HR 정책과 관련이 없는 요청으로 판단되었습니다.\n## 아래의 규정을 준수하여 일반적인 답변을 수행하십시오.\n\n## 답변 시 유의사항\n1. 요청에 대한 대답이 아닌, 명확한 정보를 생성하는 경우, 그것이 일반적일 수 있음을 알리십시오.\n2. **친절하고 공손한 말투**로 설명합니다.\n3. **답변은 반드시 질문에 대한 응답으로만 종료해야 하며, 불필요한 연결 멘트를 포함하지 않습니다.**\n   - 금지 예시:\n     - “추가로 도와드리겠습니다.”\n     - “문구를 대신 작성해드리겠습니다.”\n     - “혹시 더 궁금하신 점 있으신가요?”",
+                    "required": false,
+                    "optional": true,
+                    "expandable": true,
+                    "description": "기본 프롬프트로 AI가 따르는 System 지침을 의미합니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 45291.9486070702,
+                "y": 24236.903317040596
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "tools/print_any-1760417777110",
+              "data": {
+                "functionId": "endnode",
+                "id": "tools/print_any",
+                "nodeName": "Print Any",
+                "description": "임의의 타입의 데이터를 입력받아 적절한 형태로 변환하여 반환하는 출력 노드입니다. 객체는 JSON 문자열로, 스트림은 자동으로 스트리밍 형태로 변환됩니다.",
+                "tags": [
+                  "output",
+                  "print",
+                  "display",
+                  "debug",
+                  "end_node",
+                  "utility",
+                  "any_type",
+                  "stream_compatible"
+                ],
+                "inputs": [
+                  {
+                    "id": "input_print",
+                    "name": "Print",
+                    "type": "ANY",
+                    "multi": false,
+                    "required": true
+                  }
+                ],
+                "outputs": [],
+                "parameters": [],
+                "disable": false
+              },
+              "position": {
+                "x": 46690.59549978607,
+                "y": 24071.105949695564
+              },
+              "isExpanded": true
+            }
+          ],
+          "edges": [
+            {
+              "id": "edge-document_loaders/Qdrant-1758241778201:rag_context-agents/openai-1758250616915:rag_context-1758250620380",
+              "source": {
+                "nodeId": "document_loaders/Qdrant-1758241778201",
+                "portId": "rag_context",
+                "portType": "output",
+                "type": "DocsContext"
+              },
+              "target": {
+                "nodeId": "agents/openai-1758250616915",
+                "portId": "rag_context",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-agents/openai-1758250616915:result-tools/print_any-1758186624522:input_print-1758250632148",
+              "source": {
+                "nodeId": "agents/openai-1758250616915",
+                "portId": "result",
+                "portType": "output",
+                "type": "STR"
+              },
+              "target": {
+                "nodeId": "tools/print_any-1758186624522",
+                "portId": "input_print",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-memory/db_memory_v2-1759110850065:memory-agents/openai-1758250616915:memory-1759110852256",
+              "source": {
+                "nodeId": "memory/db_memory_v2-1759110850065",
+                "portId": "memory",
+                "portType": "output",
+                "type": "OBJECT"
+              },
+              "target": {
+                "nodeId": "agents/openai-1758250616915",
+                "portId": "memory",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-input_string-1758186631128:text-memory/db_memory_v2-1759110850065:current_input-1760417455911",
+              "source": {
+                "nodeId": "input_string-1758186631128",
+                "portId": "text",
+                "portType": "output",
+                "type": "STR"
+              },
+              "target": {
+                "nodeId": "memory/db_memory_v2-1759110850065",
+                "portId": "current_input",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-input_string-1758186631128:text-agents/openai-1760417472782:text-1760417479273",
+              "source": {
+                "nodeId": "input_string-1758186631128",
+                "portId": "text",
+                "portType": "output",
+                "type": "STR"
+              },
+              "target": {
+                "nodeId": "agents/openai-1760417472782",
+                "portId": "text",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-output_schema_provider-1760417539681:args_schema-agents/openai-1760417472782:args_schema-1760417539681",
+              "source": {
+                "nodeId": "output_schema_provider-1760417539681",
+                "portId": "args_schema",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "agents/openai-1760417472782",
+                "portId": "args_schema",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-agents/openai-1760417472782:result-router/Router-1760417682852:agent_output-1760417682852",
+              "source": {
+                "nodeId": "agents/openai-1760417472782",
+                "portId": "result",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "router/Router-1760417682852",
+                "portId": "agent_output",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-router/Router-1760417682852:True-agents/openai-1758250616915:text-1760417736877",
+              "source": {
+                "nodeId": "router/Router-1760417682852",
+                "portId": "True",
+                "portType": "output",
+                "type": "ANY"
+              },
+              "target": {
+                "nodeId": "agents/openai-1758250616915",
+                "portId": "text",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-router/Router-1760417682852:False-agents/openai-1760417755185:text-1760417760257",
+              "source": {
+                "nodeId": "router/Router-1760417682852",
+                "portId": "False",
+                "portType": "output",
+                "type": "ANY"
+              },
+              "target": {
+                "nodeId": "agents/openai-1760417755185",
+                "portId": "text",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-memory/db_memory_v2-1759110850065:memory-agents/openai-1760417755185:memory-1760417763744",
+              "source": {
+                "nodeId": "memory/db_memory_v2-1759110850065",
+                "portId": "memory",
+                "portType": "output",
+                "type": "OBJECT"
+              },
+              "target": {
+                "nodeId": "agents/openai-1760417755185",
+                "portId": "memory",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-agents/openai-1760417755185:result-tools/print_any-1760417777110:input_print-1760417777110",
+              "source": {
+                "nodeId": "agents/openai-1760417755185",
+                "portId": "result",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "tools/print_any-1760417777110",
+                "portId": "input_print",
+                "portType": "input"
+              }
+            }
+          ],
+          "interaction_id": "default"
+        }
+      },
+      {
+        "id": 2,
+        "created_at": "2025-11-13T15:57:41.830739+09:00",
+        "updated_at": "2025-11-13T15:57:41.830739+09:00",
+        "user_id": null,
+        "workflow_id": "workflow____workflow_1760490475393",
+        "workflow_name": "Multi-Agent Tool Template",
+        "workflow_upload_name": "Multi-Agent Tool Template",
+        "node_count": 22,
+        "edge_count": 21,
+        "has_startnode": true,
+        "has_endnode": true,
+        "is_completed": true,
+        "metadata": null,
+        "current_version": 1.0,
+        "latest_version": 1.0,
+        "is_template": true,
+        "description": "복잡한 Multi-Agent와 다양한 Tool을 활용한 템플릿입니다.",
+        "tags": null,
+        "rating_count": 1,
+        "rating_sum": 4,
+        "workflow_data": {
+          "workflow_name": "Multi-Agent Tool Template",
+          "workflow_id": "workflow____workflow_1760490475393",
+          "description": "복잡한 Multi-Agent와 다양한 Tool을 활용한 템플릿입니다.",
+          "view": {
+            "x": -18736.926748958464,
+            "y": -8847.112543524221,
+            "scale": 0.43093078777224736
+          },
+          "nodes": [
+            {
+              "id": "input_string-1758608211153",
+              "data": {
+                "functionId": "startnode",
+                "id": "input_string",
+                "nodeName": "Input String",
+                "description": "사용자가 설정한 문자열 값을 출력하는 입력 노드입니다. 워크플로우에서 텍스트 데이터의 시작점으로 사용됩니다. ArgsSchema가 제공되면 입력값들을 스키마에 따라 검증합니다.",
+                "tags": [
+                  "input",
+                  "string",
+                  "text",
+                  "parameter",
+                  "source",
+                  "start_node",
+                  "user_input"
+                ],
+                "inputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "InputSchema",
+                    "required": false
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "input_str",
+                    "name": "INPUT",
+                    "type": "STR",
+                    "value": "안녕",
+                    "required": false
+                  },
+                  {
+                    "id": "use_stt",
+                    "name": "Use STT",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  }
+                ]
+              },
+              "position": {
+                "x": 43792.96442815512,
+                "y": 21410.521392031354
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "api_loader/APICallingTool-1758612091756",
+              "data": {
+                "functionId": "api_loader",
+                "id": "api_loader/APICallingTool",
+                "nodeName": "API Calling Tool",
+                "description": "API 호출을 위한 Tool을 전달",
+                "tags": [
+                  "api",
+                  "rag",
+                  "setup"
+                ],
+                "inputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "InputSchema"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "tool_name",
+                    "name": "Tool Name",
+                    "type": "STR",
+                    "value": "cj_tool",
+                    "required": true
+                  },
+                  {
+                    "id": "description",
+                    "name": "Description",
+                    "type": "STR",
+                    "value": "CJ (CJ온스타일)에서 상위 검색 키워드를 찾고자 할 때 사용하는 도구입니다.",
+                    "required": true,
+                    "description": "이 도구를 언제 사용하여야 하는지 설명합니다. AI는 해당 설명을 통해, 해당 도구를 언제 호출해야할지 결정할 수 있습니다."
+                  },
+                  {
+                    "id": "api_endpoint",
+                    "name": "API Endpoint",
+                    "type": "STR",
+                    "value": "https://search.cjonstyle.com/extnsearch-api/search/searchbox/keywords.json",
+                    "required": true,
+                    "description": "해당 도구의 실행으로 호출할 API의 엔드포인트 URL입니다."
+                  },
+                  {
+                    "id": "method",
+                    "name": "HTTP Method",
+                    "type": "STR",
+                    "value": "GET",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "GET",
+                        "label": "GET"
+                      },
+                      {
+                        "value": "POST",
+                        "label": "POST"
+                      },
+                      {
+                        "value": "PUT",
+                        "label": "PUT"
+                      },
+                      {
+                        "value": "DELETE",
+                        "label": "DELETE"
+                      },
+                      {
+                        "value": "PATCH",
+                        "label": "PATCH"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "timeout",
+                    "name": "Timeout (seconds)",
+                    "type": "INT",
+                    "value": 30,
+                    "min": 1,
+                    "max": 300
+                  },
+                  {
+                    "id": "enable_response_filtering",
+                    "name": "Enable Response Filtering",
+                    "type": "BOOL",
+                    "value": false,
+                    "description": "JSON 응답에서 특정 데이터만 추출하여 반환할지 여부를 설정합니다."
+                  },
+                  {
+                    "id": "response_filter_path",
+                    "name": "Response Filter Path",
+                    "type": "STR",
+                    "value": "result.topKeyword",
+                    "description": "JSON 응답에서 추출할 데이터의 경로를 설정합니다. (예: 'payload.searchDataList')"
+                  },
+                  {
+                    "id": "response_filter_fields",
+                    "name": "Response Filter Fields",
+                    "type": "STR",
+                    "value": "",
+                    "description": "각 객체에서 추출할 필드들을 콤마로 구분하여 입력합니다. (예: 'goodsNm,salePrc')"
+                  }
+                ]
+              },
+              "position": {
+                "x": 44305.273332883604,
+                "y": 20534.881181066165
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "api_loader/APICallingTool-1758612269818",
+              "data": {
+                "functionId": "api_loader",
+                "id": "api_loader/APICallingTool",
+                "nodeName": "API Calling Tool",
+                "description": "API 호출을 위한 Tool을 전달",
+                "tags": [
+                  "api",
+                  "rag",
+                  "setup"
+                ],
+                "inputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "InputSchema"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "tool_name",
+                    "name": "Tool Name",
+                    "type": "STR",
+                    "value": "gs_tool",
+                    "required": true
+                  },
+                  {
+                    "id": "description",
+                    "name": "Description",
+                    "type": "STR",
+                    "value": "GS샵 (GS Shop)에서 상위 검색 키워드를 찾고자 할 때 사용하는 도구입니다.",
+                    "required": true,
+                    "description": "이 도구를 언제 사용하여야 하는지 설명합니다. AI는 해당 설명을 통해, 해당 도구를 언제 호출해야할지 결정할 수 있습니다."
+                  },
+                  {
+                    "id": "api_endpoint",
+                    "name": "API Endpoint",
+                    "type": "STR",
+                    "value": "https://m.gsshop.com/search/hotKeyword?rownum=20",
+                    "required": true,
+                    "description": "해당 도구의 실행으로 호출할 API의 엔드포인트 URL입니다."
+                  },
+                  {
+                    "id": "method",
+                    "name": "HTTP Method",
+                    "type": "STR",
+                    "value": "GET",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "GET",
+                        "label": "GET"
+                      },
+                      {
+                        "value": "POST",
+                        "label": "POST"
+                      },
+                      {
+                        "value": "PUT",
+                        "label": "PUT"
+                      },
+                      {
+                        "value": "DELETE",
+                        "label": "DELETE"
+                      },
+                      {
+                        "value": "PATCH",
+                        "label": "PATCH"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "timeout",
+                    "name": "Timeout (seconds)",
+                    "type": "INT",
+                    "value": 30,
+                    "min": 1,
+                    "max": 300
+                  },
+                  {
+                    "id": "enable_response_filtering",
+                    "name": "Enable Response Filtering",
+                    "type": "BOOL",
+                    "value": false,
+                    "description": "JSON 응답에서 특정 데이터만 추출하여 반환할지 여부를 설정합니다."
+                  },
+                  {
+                    "id": "response_filter_path",
+                    "name": "Response Filter Path",
+                    "type": "STR",
+                    "value": "list",
+                    "description": "JSON 응답에서 추출할 데이터의 경로를 설정합니다. (예: 'payload.searchDataList')"
+                  },
+                  {
+                    "id": "response_filter_fields",
+                    "name": "Response Filter Fields",
+                    "type": "STR",
+                    "value": "",
+                    "description": "각 객체에서 추출할 필드들을 콤마로 구분하여 입력합니다. (예: 'goodsNm,salePrc')"
+                  }
+                ]
+              },
+              "position": {
+                "x": 44320.936542443145,
+                "y": 20651.413267116808
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "api_loader/APICallingTool-1758612433371",
+              "data": {
+                "functionId": "api_loader",
+                "id": "api_loader/APICallingTool",
+                "nodeName": "API Calling Tool",
+                "description": "API 호출을 위한 Tool을 전달",
+                "tags": [
+                  "api",
+                  "rag",
+                  "setup"
+                ],
+                "inputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "InputSchema"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "tool_name",
+                    "name": "Tool Name",
+                    "type": "STR",
+                    "value": "hs_tool",
+                    "required": true
+                  },
+                  {
+                    "id": "description",
+                    "name": "Description",
+                    "type": "STR",
+                    "value": "'현대홈쇼핑'에서 상위 검색 키워드를 찾고자 할 때 사용하는 도구입니다.",
+                    "required": true,
+                    "description": "이 도구를 언제 사용하여야 하는지 설명합니다. AI는 해당 설명을 통해, 해당 도구를 언제 호출해야할지 결정할 수 있습니다."
+                  },
+                  {
+                    "id": "api_endpoint",
+                    "name": "API Endpoint",
+                    "type": "STR",
+                    "value": "https://image.hmall.com/h2o/gen/js/searchRltmKeyWordList.js",
+                    "required": true,
+                    "description": "해당 도구의 실행으로 호출할 API의 엔드포인트 URL입니다."
+                  },
+                  {
+                    "id": "method",
+                    "name": "HTTP Method",
+                    "type": "STR",
+                    "value": "GET",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "GET",
+                        "label": "GET"
+                      },
+                      {
+                        "value": "POST",
+                        "label": "POST"
+                      },
+                      {
+                        "value": "PUT",
+                        "label": "PUT"
+                      },
+                      {
+                        "value": "DELETE",
+                        "label": "DELETE"
+                      },
+                      {
+                        "value": "PATCH",
+                        "label": "PATCH"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "timeout",
+                    "name": "Timeout (seconds)",
+                    "type": "INT",
+                    "value": 30,
+                    "min": 1,
+                    "max": 300
+                  },
+                  {
+                    "id": "enable_response_filtering",
+                    "name": "Enable Response Filtering",
+                    "type": "BOOL",
+                    "value": false,
+                    "description": "JSON 응답에서 특정 데이터만 추출하여 반환할지 여부를 설정합니다."
+                  },
+                  {
+                    "id": "response_filter_path",
+                    "name": "Response Filter Path",
+                    "type": "STR",
+                    "value": "",
+                    "description": "JSON 응답에서 추출할 데이터의 경로를 설정합니다. (예: 'payload.searchDataList')"
+                  },
+                  {
+                    "id": "response_filter_fields",
+                    "name": "Response Filter Fields",
+                    "type": "STR",
+                    "value": "",
+                    "description": "각 객체에서 추출할 필드들을 콤마로 구분하여 입력합니다. (예: 'goodsNm,salePrc')"
+                  }
+                ]
+              },
+              "position": {
+                "x": 44330.461353024664,
+                "y": 20776.770330132553
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "api_loader/APICallingTool-1758612562749",
+              "data": {
+                "functionId": "api_loader",
+                "id": "api_loader/APICallingTool",
+                "nodeName": "API Calling Tool",
+                "description": "API 호출을 위한 Tool을 전달",
+                "tags": [
+                  "api",
+                  "rag",
+                  "setup"
+                ],
+                "inputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "InputSchema"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "tool_name",
+                    "name": "Tool Name",
+                    "type": "STR",
+                    "value": "lotte_tool",
+                    "required": true
+                  },
+                  {
+                    "id": "description",
+                    "name": "Description",
+                    "type": "STR",
+                    "value": "'롯데홈쇼핑'에서 상위 검색 키워드를 찾고자 할 때 사용하는 도구입니다.",
+                    "required": true,
+                    "description": "이 도구를 언제 사용하여야 하는지 설명합니다. AI는 해당 설명을 통해, 해당 도구를 언제 호출해야할지 결정할 수 있습니다."
+                  },
+                  {
+                    "id": "api_endpoint",
+                    "name": "API Endpoint",
+                    "type": "STR",
+                    "value": "https://m.lotteimall.com/search/searchRealTimePopularityAjax.lotte?headerQuery=",
+                    "required": true,
+                    "description": "해당 도구의 실행으로 호출할 API의 엔드포인트 URL입니다."
+                  },
+                  {
+                    "id": "method",
+                    "name": "HTTP Method",
+                    "type": "STR",
+                    "value": "GET",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "GET",
+                        "label": "GET"
+                      },
+                      {
+                        "value": "POST",
+                        "label": "POST"
+                      },
+                      {
+                        "value": "PUT",
+                        "label": "PUT"
+                      },
+                      {
+                        "value": "DELETE",
+                        "label": "DELETE"
+                      },
+                      {
+                        "value": "PATCH",
+                        "label": "PATCH"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "timeout",
+                    "name": "Timeout (seconds)",
+                    "type": "INT",
+                    "value": 30,
+                    "min": 1,
+                    "max": 300
+                  },
+                  {
+                    "id": "enable_response_filtering",
+                    "name": "Enable Response Filtering",
+                    "type": "BOOL",
+                    "value": false,
+                    "description": "JSON 응답에서 특정 데이터만 추출하여 반환할지 여부를 설정합니다."
+                  },
+                  {
+                    "id": "response_filter_path",
+                    "name": "Response Filter Path",
+                    "type": "STR",
+                    "value": "",
+                    "description": "JSON 응답에서 추출할 데이터의 경로를 설정합니다. (예: 'payload.searchDataList')"
+                  },
+                  {
+                    "id": "response_filter_fields",
+                    "name": "Response Filter Fields",
+                    "type": "STR",
+                    "value": "",
+                    "description": "각 객체에서 추출할 필드들을 콤마로 구분하여 입력합니다. (예: 'goodsNm,salePrc')"
+                  }
+                ]
+              },
+              "position": {
+                "x": 44324.103678363725,
+                "y": 20906.74606698541
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "api_loader/APICallingTool-1758612693094",
+              "data": {
+                "functionId": "api_loader",
+                "id": "api_loader/APICallingTool",
+                "nodeName": "API Calling Tool",
+                "description": "API 호출을 위한 Tool을 전달",
+                "tags": [
+                  "api",
+                  "rag",
+                  "setup"
+                ],
+                "inputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "InputSchema"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "tool_name",
+                    "name": "Tool Name",
+                    "type": "STR",
+                    "value": "naver_tool",
+                    "required": true
+                  },
+                  {
+                    "id": "description",
+                    "name": "Description",
+                    "type": "STR",
+                    "value": "'네이버(Naver) 스토어'에서 상위 검색 키워드를 찾고자 할 때 사용하는 도구입니다.",
+                    "required": true,
+                    "description": "이 도구를 언제 사용하여야 하는지 설명합니다. AI는 해당 설명을 통해, 해당 도구를 언제 호출해야할지 결정할 수 있습니다."
+                  },
+                  {
+                    "id": "api_endpoint",
+                    "name": "API Endpoint",
+                    "type": "STR",
+                    "value": "https://snxbest.naver.com/api/v1/snxbest/keyword/rank?ageType=MEN_20&categoryId=A&sortType=KEYWORD_ISSUE&periodType=WEEKLY",
+                    "required": true,
+                    "description": "해당 도구의 실행으로 호출할 API의 엔드포인트 URL입니다."
+                  },
+                  {
+                    "id": "method",
+                    "name": "HTTP Method",
+                    "type": "STR",
+                    "value": "GET",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "GET",
+                        "label": "GET"
+                      },
+                      {
+                        "value": "POST",
+                        "label": "POST"
+                      },
+                      {
+                        "value": "PUT",
+                        "label": "PUT"
+                      },
+                      {
+                        "value": "DELETE",
+                        "label": "DELETE"
+                      },
+                      {
+                        "value": "PATCH",
+                        "label": "PATCH"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "timeout",
+                    "name": "Timeout (seconds)",
+                    "type": "INT",
+                    "value": 30,
+                    "min": 1,
+                    "max": 300
+                  },
+                  {
+                    "id": "enable_response_filtering",
+                    "name": "Enable Response Filtering",
+                    "type": "BOOL",
+                    "value": false,
+                    "description": "JSON 응답에서 특정 데이터만 추출하여 반환할지 여부를 설정합니다."
+                  },
+                  {
+                    "id": "response_filter_path",
+                    "name": "Response Filter Path",
+                    "type": "STR",
+                    "value": "list",
+                    "description": "JSON 응답에서 추출할 데이터의 경로를 설정합니다. (예: 'payload.searchDataList')"
+                  },
+                  {
+                    "id": "response_filter_fields",
+                    "name": "Response Filter Fields",
+                    "type": "STR",
+                    "value": "",
+                    "description": "각 객체에서 추출할 필드들을 콤마로 구분하여 입력합니다. (예: 'goodsNm,salePrc')"
+                  }
+                ]
+              },
+              "position": {
+                "x": 44317.009989261955,
+                "y": 21022.517986351428
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "tools/agent_planner-1758680479472",
+              "data": {
+                "functionId": "tools",
+                "id": "tools/agent_planner",
+                "nodeName": "Agent Planner",
+                "description": "에이전트의 도구 사용 계획을 수립하는 노드입니다.",
+                "tags": [],
+                "inputs": [
+                  {
+                    "id": "plan",
+                    "name": "Plan",
+                    "type": "PLAN",
+                    "required": false
+                  },
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL",
+                    "required": false,
+                    "multi": true
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "plan",
+                    "name": "Plan",
+                    "type": "PLAN",
+                    "required": false
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "plan_description",
+                    "name": "Plan Description",
+                    "type": "STR",
+                    "value": "도구를 사용하여 다양한 커머스 사이트로부터 정보를 수집합니다.\n이 때 롯데홈쇼핑은 반드시 수집하여야 합니다.\n\n수집된 정보로부터 최근 공통되게 나타나는 핵심적인 키워드들을 찾고\n이것을 롯데홈쇼핑과 비교하여 롯데홈쇼핑에 있는 키워드 / 없는 키워드를 찾아내야합니다.",
+                    "required": false,
+                    "expandable": true,
+                    "description": "Agent가 수행하는 작업 계획을 제시합니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 44925.23289575545,
+                "y": 20790.324354467743
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "memory/db_memory_v2-1758681047458",
+              "data": {
+                "functionId": "memory",
+                "id": "memory/db_memory_v2",
+                "nodeName": "DB Memory V2",
+                "description": "DB에서 대화 기록을 로드하여 ConversationBufferMemory로 반환하는 노드입니다.",
+                "tags": [
+                  "memory",
+                  "database",
+                  "chat_history",
+                  "xgen"
+                ],
+                "inputs": [],
+                "outputs": [
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "interaction_id",
+                    "name": "Interaction ID",
+                    "type": "STR",
+                    "value": ""
+                  },
+                  {
+                    "id": "include_thinking",
+                    "name": "Include Thinking",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "top_n_messages",
+                    "name": "Top N Messages",
+                    "type": "INT",
+                    "value": 10,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "min_tokens_for_similarity",
+                    "name": "Min Tokens For Similarity",
+                    "type": "INT",
+                    "value": 0,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "enable_similarity_filter",
+                    "name": "Enable Similarity Filter",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  }
+                ]
+              },
+              "position": {
+                "x": 43786.84478577138,
+                "y": 22042.482465630274
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "agents/openai_stream-1758949286592",
+              "data": {
+                "functionId": "agents",
+                "id": "agents/openai_stream",
+                "nodeName": "Agent OpenAI Stream",
+                "description": "RAG 컨텍스트를 사용하여 채팅 응답을 스트리밍으로 생성하는 Agent 노드",
+                "tags": [
+                  "agent",
+                  "chat",
+                  "rag",
+                  "openai",
+                  "stream"
+                ],
+                "inputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR",
+                    "multi": false,
+                    "required": true
+                  },
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL",
+                    "multi": true,
+                    "required": false,
+                    "value": []
+                  },
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "rag_context",
+                    "name": "RAG Context",
+                    "type": "DocsContext",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  },
+                  {
+                    "id": "plan",
+                    "name": "Plan",
+                    "type": "PLAN",
+                    "required": false
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "stream",
+                    "name": "Stream",
+                    "type": "STREAM STR",
+                    "stream": true
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "model",
+                    "name": "Model",
+                    "type": "STR",
+                    "value": "gpt-4o",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "gpt-oss-20b",
+                        "label": "GPT-OSS-20B"
+                      },
+                      {
+                        "value": "gpt-oss-120b",
+                        "label": "GPT-OSS-120B"
+                      },
+                      {
+                        "value": "gpt-3.5-turbo",
+                        "label": "GPT-3.5 Turbo"
+                      },
+                      {
+                        "value": "gpt-4",
+                        "label": "GPT-4"
+                      },
+                      {
+                        "value": "gpt-4o",
+                        "label": "GPT-4o"
+                      },
+                      {
+                        "value": "gpt-5",
+                        "label": "GPT-5"
+                      },
+                      {
+                        "value": "gpt-5-mini",
+                        "label": "GPT-5 Mini"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "temperature",
+                    "name": "Temperature",
+                    "type": "FLOAT",
+                    "value": 1,
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.1
+                  },
+                  {
+                    "id": "max_tokens",
+                    "name": "Max Tokens",
+                    "type": "INT",
+                    "value": 8192,
+                    "min": 1,
+                    "max": 65536,
+                    "step": 1
+                  },
+                  {
+                    "id": "base_url",
+                    "name": "Base URL",
+                    "type": "STR",
+                    "value": "https://api.openai.com/v1",
+                    "optional": true
+                  },
+                  {
+                    "id": "strict_citation",
+                    "name": "Strict Citation",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "default_prompt",
+                    "name": "Default Prompt",
+                    "type": "STR",
+                    "value": "You are a helpful AI assistant.",
+                    "required": false,
+                    "optional": true,
+                    "expandable": true,
+                    "description": "기본 프롬프트로 AI가 따르는 System 지침을 의미합니다."
+                  },
+                  {
+                    "id": "return_intermediate_steps",
+                    "name": "Return Intermediate Steps",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "중간 단계를 반환할지 여부입니다."
+                  },
+                  {
+                    "id": "use_guarder",
+                    "name": "Use Guarder Service",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "Guarder 서비스를 사용할지 여부입니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 44371.82627019466,
+                "y": 21678.56618556686
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "router/Router-1758949291502",
+              "data": {
+                "functionId": "router",
+                "id": "router/Router",
+                "nodeName": "Router",
+                "description": "주어진 Dict 입력에서 routing_criteria에 해당하는 키의 값에 따라 다양한 경로로 라우팅하는 노드입니다. 해당 값과 일치하는 output id로만 데이터를 전달합니다.",
+                "tags": [
+                  "router",
+                  "conditional",
+                  "branching",
+                  "flow-control"
+                ],
+                "inputs": [
+                  {
+                    "id": "agent_output",
+                    "name": "Input Data",
+                    "type": "ANY",
+                    "multi": false,
+                    "required": true
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "True",
+                    "name": "True",
+                    "type": "ANY",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "False",
+                    "name": "False",
+                    "type": "ANY",
+                    "multi": false,
+                    "required": false
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "routing_criteria",
+                    "name": "Routing Criteria",
+                    "type": "STR",
+                    "value": "is_analysis_request",
+                    "required": true,
+                    "description": "라우팅 기준이 되는 Dict의 키 이름을 설정합니다. 예: 'is_human'"
+                  }
+                ]
+              },
+              "position": {
+                "x": 44972.654382706125,
+                "y": 21732.515012484928
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "output_schema_provider-1758949299539",
+              "data": {
+                "functionId": "tools",
+                "id": "output_schema_provider",
+                "nodeName": "Schema Provider(Output)",
+                "description": "BaseModel을 사용하여 handle_id가 true인 파라미터들의 id를 키로, 입력된 값을 값으로 하는 JSON 딕셔너리를 출력하는 노드입니다. 이 노드는 출력 스키마를 생성합니다.",
+                "tags": [
+                  "input",
+                  "json",
+                  "dict",
+                  "parameter",
+                  "source",
+                  "user_input",
+                  "key_value"
+                ],
+                "inputs": [],
+                "outputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "user_text",
+                    "name": "user_text",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "user_text_description",
+                    "name": "user_text_description",
+                    "type": "STR",
+                    "value": "사용자가 요청한 내용을 그대로 반환하세요.",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  },
+                  {
+                    "id": "is_analysis_request",
+                    "name": "is_analysis_request",
+                    "type": "STR",
+                    "value": "bool",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "is_analysis_request_description",
+                    "name": "is_analysis_request_description",
+                    "type": "STR",
+                    "value": "사용자 요청이 분석에 관련한 것인지 파악하여, True 혹은 False로 반환하세요.",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  }
+                ]
+              },
+              "position": {
+                "x": 43774.61894942324,
+                "y": 21734.327411507413
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "agents/openai_stream-1758949430234",
+              "data": {
+                "functionId": "agents",
+                "id": "agents/openai_stream",
+                "nodeName": "Agent OpenAI Stream",
+                "description": "RAG 컨텍스트를 사용하여 채팅 응답을 스트리밍으로 생성하는 Agent 노드",
+                "tags": [
+                  "agent",
+                  "chat",
+                  "rag",
+                  "openai",
+                  "stream"
+                ],
+                "inputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR",
+                    "multi": false,
+                    "required": true
+                  },
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL",
+                    "multi": true,
+                    "required": false,
+                    "value": []
+                  },
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "rag_context",
+                    "name": "RAG Context",
+                    "type": "DocsContext",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  },
+                  {
+                    "id": "plan",
+                    "name": "Plan",
+                    "type": "PLAN",
+                    "required": false
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "stream",
+                    "name": "Stream",
+                    "type": "STREAM STR",
+                    "stream": true
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "model",
+                    "name": "Model",
+                    "type": "STR",
+                    "value": "gpt-5",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "gpt-oss-20b",
+                        "label": "GPT-OSS-20B"
+                      },
+                      {
+                        "value": "gpt-oss-120b",
+                        "label": "GPT-OSS-120B"
+                      },
+                      {
+                        "value": "gpt-3.5-turbo",
+                        "label": "GPT-3.5 Turbo"
+                      },
+                      {
+                        "value": "gpt-4",
+                        "label": "GPT-4"
+                      },
+                      {
+                        "value": "gpt-4o",
+                        "label": "GPT-4o"
+                      },
+                      {
+                        "value": "gpt-5",
+                        "label": "GPT-5"
+                      },
+                      {
+                        "value": "gpt-5-mini",
+                        "label": "GPT-5 Mini"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "temperature",
+                    "name": "Temperature",
+                    "type": "FLOAT",
+                    "value": 1,
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.1
+                  },
+                  {
+                    "id": "max_tokens",
+                    "name": "Max Tokens",
+                    "type": "INT",
+                    "value": 16384,
+                    "min": 1,
+                    "max": 65536,
+                    "step": 1
+                  },
+                  {
+                    "id": "base_url",
+                    "name": "Base URL",
+                    "type": "STR",
+                    "value": "https://api.openai.com/v1",
+                    "optional": true
+                  },
+                  {
+                    "id": "strict_citation",
+                    "name": "Strict Citation",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "default_prompt",
+                    "name": "Default Prompt",
+                    "type": "STR",
+                    "value": "당신은 Tool을 사용하는 유능한 Agent입니다.\n사용자 요청에 따라 최고의 답변을 생성하십시오.\n사용자의 요청 사항을 반드시 준수하며, 사용자가 요청한 범위를 초과하는 답변을 생성하지는 마십시오.",
+                    "required": false,
+                    "optional": true,
+                    "expandable": true,
+                    "description": "기본 프롬프트로 AI가 따르는 System 지침을 의미합니다."
+                  },
+                  {
+                    "id": "return_intermediate_steps",
+                    "name": "Return Intermediate Steps",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "중간 단계를 반환할지 여부입니다."
+                  },
+                  {
+                    "id": "use_guarder",
+                    "name": "Use Guarder Service",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "Guarder 서비스를 사용할지 여부입니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 45644.161760211886,
+                "y": 21084.931431152723
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "agents/openai_stream-1758949506561",
+              "data": {
+                "functionId": "agents",
+                "id": "agents/openai_stream",
+                "nodeName": "Agent OpenAI Stream",
+                "description": "RAG 컨텍스트를 사용하여 채팅 응답을 스트리밍으로 생성하는 Agent 노드",
+                "tags": [
+                  "agent",
+                  "chat",
+                  "rag",
+                  "openai",
+                  "stream"
+                ],
+                "inputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR",
+                    "multi": false,
+                    "required": true
+                  },
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL",
+                    "multi": true,
+                    "required": false,
+                    "value": []
+                  },
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "rag_context",
+                    "name": "RAG Context",
+                    "type": "DocsContext",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  },
+                  {
+                    "id": "plan",
+                    "name": "Plan",
+                    "type": "PLAN",
+                    "required": false
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "stream",
+                    "name": "Stream",
+                    "type": "STREAM STR",
+                    "stream": true
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "model",
+                    "name": "Model",
+                    "type": "STR",
+                    "value": "gpt-4o",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "gpt-oss-20b",
+                        "label": "GPT-OSS-20B"
+                      },
+                      {
+                        "value": "gpt-oss-120b",
+                        "label": "GPT-OSS-120B"
+                      },
+                      {
+                        "value": "gpt-3.5-turbo",
+                        "label": "GPT-3.5 Turbo"
+                      },
+                      {
+                        "value": "gpt-4",
+                        "label": "GPT-4"
+                      },
+                      {
+                        "value": "gpt-4o",
+                        "label": "GPT-4o"
+                      },
+                      {
+                        "value": "gpt-5",
+                        "label": "GPT-5"
+                      },
+                      {
+                        "value": "gpt-5-mini",
+                        "label": "GPT-5 Mini"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "temperature",
+                    "name": "Temperature",
+                    "type": "FLOAT",
+                    "value": 1,
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.1
+                  },
+                  {
+                    "id": "max_tokens",
+                    "name": "Max Tokens",
+                    "type": "INT",
+                    "value": 8192,
+                    "min": 1,
+                    "max": 65536,
+                    "step": 1
+                  },
+                  {
+                    "id": "base_url",
+                    "name": "Base URL",
+                    "type": "STR",
+                    "value": "https://api.openai.com/v1",
+                    "optional": true
+                  },
+                  {
+                    "id": "strict_citation",
+                    "name": "Strict Citation",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "default_prompt",
+                    "name": "Default Prompt",
+                    "type": "STR",
+                    "value": "사용자의 Text를 보고 적절한 답변을 생성하십시오.",
+                    "required": false,
+                    "optional": true,
+                    "expandable": true,
+                    "description": "기본 프롬프트로 AI가 따르는 System 지침을 의미합니다."
+                  },
+                  {
+                    "id": "return_intermediate_steps",
+                    "name": "Return Intermediate Steps",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "중간 단계를 반환할지 여부입니다."
+                  },
+                  {
+                    "id": "use_guarder",
+                    "name": "Use Guarder Service",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "Guarder 서비스를 사용할지 여부입니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 45585.09037214235,
+                "y": 22084.11774291003
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "tools/print_any_stream-1758949515001",
+              "data": {
+                "functionId": "endnode",
+                "id": "tools/print_any_stream",
+                "nodeName": "Print Any (Stream)",
+                "description": "임의의 스트리밍 데이터를 입력받아 그대로 반환하는 스트리밍 출력 노드입니다. 워크플로우의 스트리밍 결과를 확인하는데 사용됩니다.",
+                "tags": [
+                  "output",
+                  "print",
+                  "display",
+                  "debug",
+                  "end_node",
+                  "utility",
+                  "stream",
+                  "any_type"
+                ],
+                "inputs": [
+                  {
+                    "id": "stream",
+                    "name": "Stream",
+                    "type": "STREAM STR",
+                    "multi": false,
+                    "required": true,
+                    "stream": true
+                  }
+                ],
+                "outputs": [],
+                "parameters": []
+              },
+              "position": {
+                "x": 46178.5811961418,
+                "y": 22164.706055506573
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "output_schema_provider-1758949846947",
+              "data": {
+                "functionId": "tools",
+                "id": "output_schema_provider",
+                "nodeName": "Schema Provider(Output)",
+                "description": "BaseModel을 사용하여 handle_id가 true인 파라미터들의 id를 키로, 입력된 값을 값으로 하는 JSON 딕셔너리를 출력하는 노드입니다. 이 노드는 출력 스키마를 생성합니다.",
+                "tags": [
+                  "input",
+                  "json",
+                  "dict",
+                  "parameter",
+                  "source",
+                  "user_input",
+                  "key_value"
+                ],
+                "inputs": [],
+                "outputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "user_text",
+                    "name": "user_text",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "user_text_description",
+                    "name": "user_text_description",
+                    "type": "STR",
+                    "value": "사용자가 요청한 내용을 그대로 반환하세요.",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  },
+                  {
+                    "id": "trending_keyword",
+                    "name": "trending_keyword",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "trending_keyword_description",
+                    "name": "trending_keyword_description",
+                    "type": "STR",
+                    "value": "공통되게 나타나는 아주 핵심적인 키워드들을 반환하시오.",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  },
+                  {
+                    "id": "trending_keyword_reason",
+                    "name": "trending_keyword_reason",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "trending_keyword_reason_description",
+                    "name": "trending_keyword_reason_description",
+                    "type": "STR",
+                    "value": "핵심 키워드들을 추출한 이유에 대해서 반환하시오.",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  },
+                  {
+                    "id": "total_keyword_table",
+                    "name": "total_keyword_table",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "total_keyword_table_description",
+                    "name": "total_keyword_table_description",
+                    "type": "STR",
+                    "value": "다양한 사이트에서 수집한 전체 키워드들을 Markdown Table 형태로 반환하세요.\nrow는 개별 커머스 키워드 순위 column은 각 커머스 사이트이며  value는 keyword가 들어가야 합니다.",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  },
+                  {
+                    "id": "lotte_analysis",
+                    "name": "lotte_analysis",
+                    "type": "STR",
+                    "value": "str",
+                    "handle_id": true,
+                    "is_added": true,
+                    "options": [
+                      {
+                        "value": "str",
+                        "label": "STRING"
+                      },
+                      {
+                        "value": "int",
+                        "label": "INTEGER"
+                      },
+                      {
+                        "value": "float",
+                        "label": "FLOAT"
+                      },
+                      {
+                        "value": "bool",
+                        "label": "BOOLEAN"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "lotte_analysis_description",
+                    "name": "lotte_analysis_description",
+                    "type": "STR",
+                    "value": "롯데홈쇼핑과 비교한 리포트를 작성하여 반환하세요.\n핵심키워드 중 롯데홈쇼핑에서 동시에 존재하는 것, 그리고 존재하지 않는 것 위주의 리포트만 작성하십시오.",
+                    "handle_id": false,
+                    "is_added": true,
+                    "expandable": true
+                  }
+                ]
+              },
+              "position": {
+                "x": 44928.54806659979,
+                "y": 21119.28317138611
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "router/Router-1758951812806",
+              "data": {
+                "functionId": "router",
+                "id": "router/Router",
+                "nodeName": "Router",
+                "description": "주어진 Dict 입력에서 routing_criteria에 해당하는 키의 값에 따라 다양한 경로로 라우팅하는 노드입니다. 해당 값과 일치하는 output id로만 데이터를 전달합니다.",
+                "tags": [
+                  "router",
+                  "conditional",
+                  "branching",
+                  "flow-control"
+                ],
+                "inputs": [
+                  {
+                    "id": "agent_output",
+                    "name": "Input Data",
+                    "type": "ANY",
+                    "multi": false,
+                    "required": true
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "default",
+                    "name": "default",
+                    "type": "ANY",
+                    "multi": false,
+                    "required": false
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "routing_criteria",
+                    "name": "Routing Criteria",
+                    "type": "STR",
+                    "value": "",
+                    "required": true,
+                    "description": "라우팅 기준이 되는 Dict의 키 이름을 설정합니다. 예: 'is_human'"
+                  }
+                ]
+              },
+              "position": {
+                "x": 46285.00519556929,
+                "y": 21078.324290614826
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "agents/openai_stream-1758951823912",
+              "data": {
+                "functionId": "agents",
+                "id": "agents/openai_stream",
+                "nodeName": "Agent OpenAI Stream",
+                "description": "RAG 컨텍스트를 사용하여 채팅 응답을 스트리밍으로 생성하는 Agent 노드",
+                "tags": [
+                  "agent",
+                  "chat",
+                  "rag",
+                  "openai",
+                  "stream"
+                ],
+                "inputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR",
+                    "multi": false,
+                    "required": true
+                  },
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL",
+                    "multi": true,
+                    "required": false,
+                    "value": []
+                  },
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "rag_context",
+                    "name": "RAG Context",
+                    "type": "DocsContext",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  },
+                  {
+                    "id": "plan",
+                    "name": "Plan",
+                    "type": "PLAN",
+                    "required": false
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "stream",
+                    "name": "Stream",
+                    "type": "STREAM STR",
+                    "stream": true
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "model",
+                    "name": "Model",
+                    "type": "STR",
+                    "value": "gpt-5",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "gpt-oss-20b",
+                        "label": "GPT-OSS-20B"
+                      },
+                      {
+                        "value": "gpt-oss-120b",
+                        "label": "GPT-OSS-120B"
+                      },
+                      {
+                        "value": "gpt-3.5-turbo",
+                        "label": "GPT-3.5 Turbo"
+                      },
+                      {
+                        "value": "gpt-4",
+                        "label": "GPT-4"
+                      },
+                      {
+                        "value": "gpt-4o",
+                        "label": "GPT-4o"
+                      },
+                      {
+                        "value": "gpt-5",
+                        "label": "GPT-5"
+                      },
+                      {
+                        "value": "gpt-5-mini",
+                        "label": "GPT-5 Mini"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "temperature",
+                    "name": "Temperature",
+                    "type": "FLOAT",
+                    "value": 1,
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.1
+                  },
+                  {
+                    "id": "max_tokens",
+                    "name": "Max Tokens",
+                    "type": "INT",
+                    "value": 16384,
+                    "min": 1,
+                    "max": 65536,
+                    "step": 1
+                  },
+                  {
+                    "id": "base_url",
+                    "name": "Base URL",
+                    "type": "STR",
+                    "value": "https://api.openai.com/v1",
+                    "optional": true
+                  },
+                  {
+                    "id": "strict_citation",
+                    "name": "Strict Citation",
+                    "type": "BOOL",
+                    "value": true,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "default_prompt",
+                    "name": "Default Prompt",
+                    "type": "STR",
+                    "value": "당신은 Lotte의 최고 분석 전문가입니다. 주어진 자료를 종합적으로 활용하여 최고의 분석 보고서를 작성해야 합니다.\n\n보고서에는 아래의 내용을 반드시 포함하여 Markdown으로 작성하십시오. 출력은 보고서 내용만 포함하십시오. 출처 및 인용을 표시할 수 있다면 반드시 표시하십시오.\n1. 키워드 추출 결과를 표로 정리하십시오.\n2. 공통 키워드들을 추출하고, 핵심 Trend 키워드를 정리하여 제시하십시오.\n3. 핵심되는 Trend 키워드들의 검색 및 분석 결과를 반드시 제시하십시오.\n4. 롯데홈쇼핑과 비교하여 어떤 롯데 홈쇼핑에서 어떤 것이 부족한지 제시하십시오. 부족하지 않다면, 그 이유를 상세하게 설명하십시오.\n5. 롯데홈쇼핑에서 판매 대응 보고서를 작성하십시오. 만약 부족한 것이 없다면 5번 Section은 필요하지 않습니다.\n\n전체 내용을 아우르는 최고의 보고서를 작성하십시오.",
+                    "required": false,
+                    "optional": true,
+                    "expandable": true,
+                    "description": "기본 프롬프트로 AI가 따르는 System 지침을 의미합니다."
+                  },
+                  {
+                    "id": "return_intermediate_steps",
+                    "name": "Return Intermediate Steps",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "중간 단계를 반환할지 여부입니다."
+                  },
+                  {
+                    "id": "use_guarder",
+                    "name": "Use Guarder Service",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "Guarder 서비스를 사용할지 여부입니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 46984.62783135555,
+                "y": 20688.26201105423
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "tools/agent_planner-1758951949053",
+              "data": {
+                "functionId": "tools",
+                "id": "tools/agent_planner",
+                "nodeName": "Agent Planner",
+                "description": "에이전트의 도구 사용 계획을 수립하는 노드입니다.",
+                "tags": [],
+                "inputs": [
+                  {
+                    "id": "plan",
+                    "name": "Plan",
+                    "type": "PLAN",
+                    "required": false
+                  },
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL",
+                    "required": false,
+                    "multi": true
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "plan",
+                    "name": "Plan",
+                    "type": "PLAN",
+                    "required": false
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "plan_description",
+                    "name": "Plan Description",
+                    "type": "STR",
+                    "value": "당신은 도구를 사용하여\n사용자가 제시한 lotte_analysis를 보강한 최고의 분석 보고서를 생성해야 합니다.\n1. 최근 Trend 키워드를 보고, 해당 상품들의 정보를 수집합니다.\n2. 최근 Trend 키워드들의 원인을 검색 및 뉴스를 조사하여 심층적으로 그 이유를 파악합니다.\n3. 이를 바탕으로 핵심 키워드들의 정보를 파악하고, 롯데홈쇼핑(Lotte)와 비교하여 분석 보고서를 작성해야합니다.\n보고서는 롯데홈쇼핑에서 판매하지 않는 핵심 상품들을 파악하고, 그것에 대한 판매 대응을 수집하는 것에 관합니다.",
+                    "required": false,
+                    "expandable": true,
+                    "description": "Agent가 수행하는 작업 계획을 제시합니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 46295.20418328278,
+                "y": 20651.924928630753
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "mcp/product_search_mcp-1758951955637",
+              "data": {
+                "functionId": "mcp",
+                "id": "mcp/product_search_mcp",
+                "nodeName": "Product Search MCP",
+                "description": "주어진 Product에 대한 정보를 검색하는 도구입니다.",
+                "tags": [
+                  "mcp",
+                  "data-lab",
+                  "rag",
+                  "setup"
+                ],
+                "inputs": [],
+                "outputs": [
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "description",
+                    "name": "Description",
+                    "type": "STR",
+                    "value": "해당 도구는 특정 상품에 대한 판매 정보를 검색하는 도구입니다.",
+                    "required": true,
+                    "expandable": true,
+                    "description": "이 도구를 언제 사용하여야 하는지 설명합니다. AI는 해당 설명을 통해, 해당 도구를 언제 호출해야할지 결정할 수 있습니다."
+                  },
+                  {
+                    "id": "select_type",
+                    "name": "Select Type",
+                    "type": "STR",
+                    "value": "",
+                    "required": false,
+                    "optional": true,
+                    "description": "검색 유형을 선택합니다. 'popular'는 인기 상품, 'future'는 예정된 판매 방송, 'past'는 지난 판매 방송, 'sales'는 현재 판매 중 상품을 의미합니다. 지정하지 않는 경우 AI가 상황에 맞게 결정합니다."
+                  },
+                  {
+                    "id": "limit",
+                    "name": "Limit",
+                    "type": "INT",
+                    "value": 10,
+                    "required": false,
+                    "optional": true,
+                    "description": "검색 결과 개수 제한. 기본값은 10입니다."
+                  },
+                  {
+                    "id": "include_image",
+                    "name": "Include Image",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true,
+                    "description": "검색 결과에 이미지 정보를 포함할지 여부. 기본값은 False입니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 45639.15464430237,
+                "y": 20544.434827376444
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "mcp/naver_news_mcp-1758952031530",
+              "data": {
+                "functionId": "mcp",
+                "id": "mcp/naver_news_mcp",
+                "nodeName": "Naver News MCP",
+                "description": "Naver News를 위한 MCP 노드",
+                "tags": [
+                  "mcp",
+                  "search",
+                  "rag",
+                  "setup"
+                ],
+                "inputs": [],
+                "outputs": [
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "description",
+                    "name": "Description",
+                    "type": "STR",
+                    "value": "해당 도구는 뉴스 검색 도구입니다. 사용자가 트렌드, 이슈, 뉴스 등 풍부한 정보를 요청하는 경우, 해당 도구를 사용하여 관련된 정보를 수집하도록 합니다.",
+                    "required": true,
+                    "expandable": true,
+                    "description": "이 도구를 언제 사용하여야 하는지 설명합니다. AI는 해당 설명을 통해, 해당 도구를 언제 호출해야할지 결정할 수 있습니다."
+                  },
+                  {
+                    "id": "naver_client_id",
+                    "name": "Naver Client ID",
+                    "type": "STR",
+                    "value": "IcgP39OkFCXXtSKH0KrT",
+                    "required": true,
+                    "description": "네이버 애플리케이션 등록 시 발급받은 클라이언트 ID입니다."
+                  },
+                  {
+                    "id": "naver_client_secret",
+                    "name": "Naver Client Secret",
+                    "type": "STR",
+                    "value": "mBsDoympEk",
+                    "required": true,
+                    "description": "네이버 애플리케이션 등록 시 발급받은 클라이언트 시크릿입니다."
+                  },
+                  {
+                    "id": "sort",
+                    "name": "Sort",
+                    "type": "STR",
+                    "value": "sim",
+                    "required": false,
+                    "optional": true,
+                    "description": "검색 결과 정렬 방법 ('sim': 정확도순, 'date': 날짜순)"
+                  }
+                ]
+              },
+              "position": {
+                "x": 45643.818119844946,
+                "y": 20666.385349958487
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "mcp/tavily_search_mcp-1758952037377",
+              "data": {
+                "functionId": "mcp",
+                "id": "mcp/tavily_search_mcp",
+                "nodeName": "Tavily Search MCP",
+                "description": "Tavily Search를 위한 MCP 노드",
+                "tags": [
+                  "mcp",
+                  "search",
+                  "rag",
+                  "setup"
+                ],
+                "inputs": [],
+                "outputs": [
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "tavily_api_key",
+                    "name": "Tavily API Key",
+                    "type": "STR",
+                    "value": "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",
+                    "required": true,
+                    "description": "Tavily API를 호출하기 위한 API 키입니다."
+                  },
+                  {
+                    "id": "max_results",
+                    "name": "Max Results",
+                    "type": "INT",
+                    "value": 5,
+                    "required": false,
+                    "optional": true,
+                    "description": "Tavily API에서 반환할 최대 결과 수입니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 45643.87793049495,
+                "y": 20789.05350422985
+              },
+              "isExpanded": false
+            },
+            {
+              "id": "tools/print_any_stream-1758952384017",
+              "data": {
+                "functionId": "endnode",
+                "id": "tools/print_any_stream",
+                "nodeName": "Print Any (Stream)",
+                "description": "임의의 스트리밍 데이터를 입력받아 그대로 반환하는 스트리밍 출력 노드입니다. 워크플로우의 스트리밍 결과를 확인하는데 사용됩니다.",
+                "tags": [
+                  "output",
+                  "print",
+                  "display",
+                  "debug",
+                  "end_node",
+                  "utility",
+                  "stream",
+                  "any_type"
+                ],
+                "inputs": [
+                  {
+                    "id": "stream",
+                    "name": "Stream",
+                    "type": "STREAM STR",
+                    "multi": false,
+                    "required": true,
+                    "stream": true
+                  }
+                ],
+                "outputs": [],
+                "parameters": []
+              },
+              "position": {
+                "x": 47707.413287273586,
+                "y": 20859.686659121802
+              },
+              "isExpanded": true
+            }
+          ],
+          "edges": [
+            {
+              "id": "edge-api_loader/APICallingTool-1758612091756:tools-tools/agent_planner-1758680479472:tools-1758680508019",
+              "source": {
+                "nodeId": "api_loader/APICallingTool-1758612091756",
+                "portId": "tools",
+                "portType": "output",
+                "type": "TOOL"
+              },
+              "target": {
+                "nodeId": "tools/agent_planner-1758680479472",
+                "portId": "tools",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-api_loader/APICallingTool-1758612269818:tools-tools/agent_planner-1758680479472:tools-1758680516846",
+              "source": {
+                "nodeId": "api_loader/APICallingTool-1758612269818",
+                "portId": "tools",
+                "portType": "output",
+                "type": "TOOL"
+              },
+              "target": {
+                "nodeId": "tools/agent_planner-1758680479472",
+                "portId": "tools",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-api_loader/APICallingTool-1758612433371:tools-tools/agent_planner-1758680479472:tools-1758680518925",
+              "source": {
+                "nodeId": "api_loader/APICallingTool-1758612433371",
+                "portId": "tools",
+                "portType": "output",
+                "type": "TOOL"
+              },
+              "target": {
+                "nodeId": "tools/agent_planner-1758680479472",
+                "portId": "tools",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-api_loader/APICallingTool-1758612562749:tools-tools/agent_planner-1758680479472:tools-1758680521009",
+              "source": {
+                "nodeId": "api_loader/APICallingTool-1758612562749",
+                "portId": "tools",
+                "portType": "output",
+                "type": "TOOL"
+              },
+              "target": {
+                "nodeId": "tools/agent_planner-1758680479472",
+                "portId": "tools",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-api_loader/APICallingTool-1758612693094:tools-tools/agent_planner-1758680479472:tools-1758680523296",
+              "source": {
+                "nodeId": "api_loader/APICallingTool-1758612693094",
+                "portId": "tools",
+                "portType": "output",
+                "type": "TOOL"
+              },
+              "target": {
+                "nodeId": "tools/agent_planner-1758680479472",
+                "portId": "tools",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-input_string-1758608211153:text-agents/openai_stream-1758949286592:text-1758949288793",
+              "source": {
+                "nodeId": "input_string-1758608211153",
+                "portId": "text",
+                "portType": "output",
+                "type": "STR"
+              },
+              "target": {
+                "nodeId": "agents/openai_stream-1758949286592",
+                "portId": "text",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-agents/openai_stream-1758949286592:stream-router/Router-1758949291502:agent_output-1758949291502",
+              "source": {
+                "nodeId": "agents/openai_stream-1758949286592",
+                "portId": "stream",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "router/Router-1758949291502",
+                "portId": "agent_output",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-output_schema_provider-1758949299539:args_schema-agents/openai_stream-1758949286592:args_schema-1758949299539",
+              "source": {
+                "nodeId": "output_schema_provider-1758949299539",
+                "portId": "args_schema",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "agents/openai_stream-1758949286592",
+                "portId": "args_schema",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-router/Router-1758949291502:True-agents/openai_stream-1758949430234:text-1758949452474",
+              "source": {
+                "nodeId": "router/Router-1758949291502",
+                "portId": "True",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "agents/openai_stream-1758949430234",
+                "portId": "text",
+                "portType": "input",
+                "type": "STR"
+              }
+            },
+            {
+              "id": "edge-router/Router-1758949291502:False-agents/openai_stream-1758949506561:text-1758949509261",
+              "source": {
+                "nodeId": "router/Router-1758949291502",
+                "portId": "False",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "agents/openai_stream-1758949506561",
+                "portId": "text",
+                "portType": "input",
+                "type": "STR"
+              }
+            },
+            {
+              "id": "edge-agents/openai_stream-1758949506561:stream-tools/print_any_stream-1758949515001:stream-1758949515001",
+              "source": {
+                "nodeId": "agents/openai_stream-1758949506561",
+                "portId": "stream",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "tools/print_any_stream-1758949515001",
+                "portId": "stream",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-output_schema_provider-1758949846947:args_schema-agents/openai_stream-1758949430234:args_schema-1758949846947",
+              "source": {
+                "nodeId": "output_schema_provider-1758949846947",
+                "portId": "args_schema",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "agents/openai_stream-1758949430234",
+                "portId": "args_schema",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-tools/agent_planner-1758680479472:plan-agents/openai_stream-1758949430234:plan-1758950010245",
+              "source": {
+                "nodeId": "tools/agent_planner-1758680479472",
+                "portId": "plan",
+                "portType": "output",
+                "type": "PLAN"
+              },
+              "target": {
+                "nodeId": "agents/openai_stream-1758949430234",
+                "portId": "plan",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-agents/openai_stream-1758949430234:stream-router/Router-1758951812806:agent_output-1758951812806",
+              "source": {
+                "nodeId": "agents/openai_stream-1758949430234",
+                "portId": "stream",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "router/Router-1758951812806",
+                "portId": "agent_output",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-router/Router-1758951812806:default-agents/openai_stream-1758951823912:text-1758951828115",
+              "source": {
+                "nodeId": "router/Router-1758951812806",
+                "portId": "default",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "agents/openai_stream-1758951823912",
+                "portId": "text",
+                "portType": "input",
+                "type": "STR"
+              }
+            },
+            {
+              "id": "edge-tools/agent_planner-1758951949053:plan-agents/openai_stream-1758951823912:plan-1758951949053",
+              "source": {
+                "nodeId": "tools/agent_planner-1758951949053",
+                "portId": "plan",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "agents/openai_stream-1758951823912",
+                "portId": "plan",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-mcp/tavily_search_mcp-1758952037377:tools-tools/agent_planner-1758951949053:tools-1758952037377",
+              "source": {
+                "nodeId": "mcp/tavily_search_mcp-1758952037377",
+                "portId": "tools",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "tools/agent_planner-1758951949053",
+                "portId": "tools",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-mcp/naver_news_mcp-1758952031530:tools-tools/agent_planner-1758951949053:tools-1758952042134",
+              "source": {
+                "nodeId": "mcp/naver_news_mcp-1758952031530",
+                "portId": "tools",
+                "portType": "output",
+                "type": "TOOL"
+              },
+              "target": {
+                "nodeId": "tools/agent_planner-1758951949053",
+                "portId": "tools",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-mcp/product_search_mcp-1758951955637:tools-tools/agent_planner-1758951949053:tools-1758952044057",
+              "source": {
+                "nodeId": "mcp/product_search_mcp-1758951955637",
+                "portId": "tools",
+                "portType": "output",
+                "type": "TOOL"
+              },
+              "target": {
+                "nodeId": "tools/agent_planner-1758951949053",
+                "portId": "tools",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-agents/openai_stream-1758951823912:stream-tools/print_any_stream-1758952384017:stream-1758952384017",
+              "source": {
+                "nodeId": "agents/openai_stream-1758951823912",
+                "portId": "stream",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "tools/print_any_stream-1758952384017",
+                "portId": "stream",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-memory/db_memory_v2-1758681047458:memory-agents/openai_stream-1758949286592:memory-1758960633051",
+              "source": {
+                "nodeId": "memory/db_memory_v2-1758681047458",
+                "portId": "memory",
+                "portType": "output",
+                "type": "OBJECT"
+              },
+              "target": {
+                "nodeId": "agents/openai_stream-1758949286592",
+                "portId": "memory",
+                "portType": "input"
+              }
+            }
+          ],
+          "interaction_id": "default"
+        }
+      },
+      {
+        "id": 1,
+        "created_at": "2025-11-13T15:57:41.824232+09:00",
+        "updated_at": "2025-11-13T15:57:41.824232+09:00",
+        "user_id": null,
+        "workflow_id": "workflow____memory_template_1760490482894",
+        "workflow_name": "Memory Chat Template",
+        "workflow_upload_name": "Memory Chat Template",
+        "node_count": 4,
+        "edge_count": 3,
+        "has_startnode": true,
+        "has_endnode": true,
+        "is_completed": true,
+        "metadata": null,
+        "current_version": 1.0,
+        "latest_version": 1.0,
+        "is_template": true,
+        "description": "기본적인 Memory 기능을 이용한 템플릿입니다.",
+        "tags": null,
+        "rating_count": 1,
+        "rating_sum": 1,
+        "workflow_data": {
+          "workflow_name": "Memory Chat Template",
+          "workflow_id": "workflow____memory_template_1760490482894",
+          "description": "기본적인 Memory 기능을 이용한 템플릿입니다.",
+          "view": {
+            "x": -36473.19489365627,
+            "y": -15565.773457345173,
+            "scale": 0.7293037499999999
+          },
+          "nodes": [
+            {
+              "id": "input_string-1754982285348",
+              "data": {
+                "functionId": "startnode",
+                "id": "input_string",
+                "nodeName": "Input String",
+                "description": "사용자가 설정한 문자열 값을 출력하는 입력 노드입니다. 워크플로우에서 텍스트 데이터의 시작점으로 사용됩니다. ArgsSchema가 제공되면 입력값들을 스키마에 따라 검증합니다.",
+                "tags": [
+                  "input",
+                  "string",
+                  "text",
+                  "parameter",
+                  "source",
+                  "start_node",
+                  "user_input"
+                ],
+                "inputs": [
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "InputSchema",
+                    "required": false
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "input_str",
+                    "name": "INPUT",
+                    "type": "STR",
+                    "value": "ㅎㅇㅎㅇ",
+                    "required": false
+                  }
+                ]
+              },
+              "position": {
+                "x": 50481.13057303802,
+                "y": 21789.474277480644
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "agents/openai_stream-1754982308143",
+              "data": {
+                "functionId": "agents",
+                "id": "agents/openai_stream",
+                "nodeName": "Agent OpenAI Stream",
+                "description": "RAG 컨텍스트를 사용하여 채팅 응답을 스트리밍으로 생성하는 Agent 노드",
+                "tags": [
+                  "agent",
+                  "chat",
+                  "rag",
+                  "openai",
+                  "stream"
+                ],
+                "inputs": [
+                  {
+                    "id": "text",
+                    "name": "Text",
+                    "type": "STR",
+                    "multi": false,
+                    "required": true
+                  },
+                  {
+                    "id": "tools",
+                    "name": "Tools",
+                    "type": "TOOL",
+                    "multi": true,
+                    "required": false,
+                    "value": []
+                  },
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "rag_context",
+                    "name": "RAG Context",
+                    "type": "DocsContext",
+                    "multi": false,
+                    "required": false
+                  },
+                  {
+                    "id": "args_schema",
+                    "name": "ArgsSchema",
+                    "type": "OutputSchema"
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "stream",
+                    "name": "Stream",
+                    "type": "STREAM STR",
+                    "stream": true
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "model",
+                    "name": "Model",
+                    "type": "STR",
+                    "value": "gpt-4o",
+                    "required": true,
+                    "options": [
+                      {
+                        "value": "gpt-3.5-turbo",
+                        "label": "GPT-3.5 Turbo"
+                      },
+                      {
+                        "value": "gpt-4",
+                        "label": "GPT-4"
+                      },
+                      {
+                        "value": "gpt-4o",
+                        "label": "GPT-4o"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "temperature",
+                    "name": "Temperature",
+                    "type": "FLOAT",
+                    "value": 0.7,
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.1
+                  },
+                  {
+                    "id": "max_tokens",
+                    "name": "Max Tokens",
+                    "type": "INT",
+                    "value": 8192,
+                    "min": 1,
+                    "max": 65536,
+                    "step": 1
+                  },
+                  {
+                    "id": "n_messages",
+                    "name": "Max Memory",
+                    "type": "INT",
+                    "value": 3,
+                    "min": 1,
+                    "max": 10,
+                    "step": 1,
+                    "optional": true
+                  },
+                  {
+                    "id": "base_url",
+                    "name": "Base URL",
+                    "type": "STR",
+                    "value": "https://api.openai.com/v1",
+                    "optional": true
+                  },
+                  {
+                    "id": "default_prompt",
+                    "name": "Default Prompt",
+                    "type": "STR",
+                    "value": "You are a helpful AI assistant.",
+                    "required": false,
+                    "optional": true,
+                    "expandable": true,
+                    "description": "기본 프롬프트로 AI가 따르는 System 지침을 의미합니다."
+                  }
+                ]
+              },
+              "position": {
+                "x": 51114.199184710444,
+                "y": 21789.98413876958
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "tools/print_any_stream-1754982314022",
+              "data": {
+                "functionId": "endnode",
+                "id": "tools/print_any_stream",
+                "nodeName": "Print Any (Stream)",
+                "description": "임의의 스트리밍 데이터를 입력받아 그대로 반환하는 스트리밍 출력 노드입니다. 워크플로우의 스트리밍 결과를 확인하는데 사용됩니다.",
+                "tags": [
+                  "output",
+                  "print",
+                  "display",
+                  "debug",
+                  "end_node",
+                  "utility",
+                  "stream",
+                  "any_type"
+                ],
+                "inputs": [
+                  {
+                    "id": "stream",
+                    "name": "Stream",
+                    "type": "STREAM STR",
+                    "multi": false,
+                    "required": true,
+                    "stream": true
+                  }
+                ],
+                "outputs": [],
+                "parameters": []
+              },
+              "position": {
+                "x": 51775.103506126594,
+                "y": 21809.531978061503
+              },
+              "isExpanded": true
+            },
+            {
+              "id": "memory/db_memory_v2-1760489237842",
+              "data": {
+                "functionId": "memory",
+                "id": "memory/db_memory_v2",
+                "nodeName": "DB Memory V2",
+                "description": "DB에서 대화 기록을 로드하여 ConversationBufferMemory로 반환하는 노드입니다.",
+                "tags": [
+                  "memory",
+                  "database",
+                  "chat_history",
+                  "xgen"
+                ],
+                "inputs": [
+                  {
+                    "id": "current_input",
+                    "name": "Current Input",
+                    "type": "STR",
+                    "multi": false,
+                    "required": false
+                  }
+                ],
+                "outputs": [
+                  {
+                    "id": "memory",
+                    "name": "Memory",
+                    "type": "OBJECT"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "id": "interaction_id",
+                    "name": "Interaction ID",
+                    "type": "STR",
+                    "value": ""
+                  },
+                  {
+                    "id": "include_thinking",
+                    "name": "Include Thinking",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "top_n_messages",
+                    "name": "Top N Messages",
+                    "type": "INT",
+                    "value": 10,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "min_tokens_for_similarity",
+                    "name": "Min Tokens For Similarity",
+                    "type": "INT",
+                    "value": 0,
+                    "required": false,
+                    "optional": true
+                  },
+                  {
+                    "id": "enable_similarity_filter",
+                    "name": "Enable Similarity Filter",
+                    "type": "BOOL",
+                    "value": false,
+                    "required": false,
+                    "optional": true
+                  }
+                ],
+                "disable": false
+              },
+              "position": {
+                "x": 50489.35759778594,
+                "y": 22084.2759976144
+              },
+              "isExpanded": true
+            }
+          ],
+          "edges": [
+            {
+              "id": "edge-input_string-1754982285348:text-agents/openai_stream-1754982308143:text-1754982308144",
+              "source": {
+                "nodeId": "input_string-1754982285348",
+                "portId": "text",
+                "portType": "output",
+                "type": "STR"
+              },
+              "target": {
+                "nodeId": "agents/openai_stream-1754982308143",
+                "portId": "text",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-agents/openai_stream-1754982308143:stream-tools/print_any_stream-1754982314022:stream-1754982314023",
+              "source": {
+                "nodeId": "agents/openai_stream-1754982308143",
+                "portId": "stream",
+                "portType": "output",
+                "type": "STREAM STR"
+              },
+              "target": {
+                "nodeId": "tools/print_any_stream-1754982314022",
+                "portId": "stream",
+                "portType": "input"
+              }
+            },
+            {
+              "id": "edge-memory/db_memory_v2-1760489237842:memory-agents/openai_stream-1754982308143:memory-1760489237842",
+              "source": {
+                "nodeId": "memory/db_memory_v2-1760489237842",
+                "portId": "memory",
+                "portType": "output"
+              },
+              "target": {
+                "nodeId": "agents/openai_stream-1754982308143",
+                "portId": "memory",
+                "portType": "input"
+              }
+            }
+          ],
+          "interaction_id": "default"
+        }
+      }
+    ]
+  }
+}

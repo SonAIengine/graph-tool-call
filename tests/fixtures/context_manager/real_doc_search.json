@@ -1,0 +1,19 @@
+{
+  "status": 422,
+  "error": "Unprocessable Entity",
+  "body": {
+    "detail": [
+      {
+        "type": "missing",
+        "loc": [
+          "body",
+          "query_text"
+        ],
+        "msg": "Field required",
+        "input": {
+          "collection_name": "검색테스트"
+        }
+      }
+    ]
+  }
+}
