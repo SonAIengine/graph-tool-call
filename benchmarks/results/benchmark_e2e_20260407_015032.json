@@ -1,0 +1,947 @@
+{
+  "timestamp": "2026-04-07T01:48:15.598411+00:00",
+  "model": "Bonsai-8B.gguf",
+  "mode": "e2e",
+  "top_k": 5,
+  "datasets": [
+    {
+      "name": "Mixed MCP Servers",
+      "tool_count": 38,
+      "query_count": 30,
+      "queries": [
+        {
+          "query": "Read the contents of config.yaml",
+          "category": "read",
+          "difficulty": "easy",
+          "expected_tools": [
+            "read_file"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "read_file",
+            "read_multiple_files",
+            "get_file_contents",
+            "write_file",
+            "create_or_update_file"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "read_file",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 3737.8421670291573,
+          "retrieve_input_tokens": 656,
+          "error": null
+        },
+        {
+          "query": "Write a new configuration file",
+          "category": "write",
+          "difficulty": "easy",
+          "expected_tools": [
+            "write_file"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "write_file",
+            "edit_file",
+            "read_file",
+            "get_file_info",
+            "create_or_update_file"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "write_file",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 4167.178874951787,
+          "retrieve_input_tokens": 667,
+          "error": null
+        },
+        {
+          "query": "List all files in the src directory",
+          "category": "read",
+          "difficulty": "easy",
+          "expected_tools": [
+            "list_directory"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "list_directory",
+            "get_pull_request_files",
+            "directory_tree",
+            "push_files",
+            "read_multiple_files"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "list_directory",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 3458.496374893002,
+          "retrieve_input_tokens": 604,
+          "error": null
+        },
+        {
+          "query": "Create the output directory",
+          "category": "write",
+          "difficulty": "easy",
+          "expected_tools": [
+            "create_directory"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "create_directory",
+            "create_repository",
+            "create_branch",
+            "list_directory",
+            "directory_tree"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "create_directory",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 3271.133041009307,
+          "retrieve_input_tokens": 589,
+          "error": null
+        },
+        {
+          "query": "Find all Python files in the project",
+          "category": "read",
+          "difficulty": "easy",
+          "expected_tools": [
+            "search_files"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "push_files",
+            "read_multiple_files",
+            "search_files",
+            "get_pull_request_files",
+            "list_directory"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "search_files",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 3595.6752080237493,
+          "retrieve_input_tokens": 622,
+          "error": null
+        },
+        {
+          "query": "Move the old log file to archive",
+          "category": "write",
+          "difficulty": "easy",
+          "expected_tools": [
+            "move_file"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "move_file",
+            "edit_file",
+            "read_file",
+            "write_file",
+            "get_file_info"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "move_file",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 3558.0179590033367,
+          "retrieve_input_tokens": 582,
+          "error": null
+        },
+        {
+          "query": "Check the file size and permissions",
+          "category": "read",
+          "difficulty": "easy",
+          "expected_tools": [
+            "get_file_info"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "get_file_info",
+            "read_file",
+            "write_file",
+            "create_or_update_file",
+            "get_file_contents"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "get_file_info",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 3864.9533330462873,
+          "retrieve_input_tokens": 663,
+          "error": null
+        },
+        {
+          "query": "Show the directory tree structure",
+          "category": "read",
+          "difficulty": "easy",
+          "expected_tools": [
+            "directory_tree"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "directory_tree",
+            "create_directory",
+            "list_directory",
+            "get_file_info",
+            "get_file_contents"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "directory_tree",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 3439.5341670606285,
+          "retrieve_input_tokens": 565,
+          "error": null
+        },
+        {
+          "query": "Edit the import statement in main.py",
+          "category": "write",
+          "difficulty": "medium",
+          "expected_tools": [
+            "edit_file"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "edit_file",
+            "update_issue",
+            "list_pull_requests",
+            "list_issues",
+            "write_file"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "edit_file",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 6146.625166991726,
+          "retrieve_input_tokens": 972,
+          "error": null
+        },
+        {
+          "query": "Read multiple config files at once",
+          "category": "read",
+          "difficulty": "medium",
+          "expected_tools": [
+            "read_multiple_files"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "read_multiple_files",
+            "push_files",
+            "search_files",
+            "get_pull_request_files",
+            "read_file"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "read_multiple_files",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 3947.7652920177206,
+          "retrieve_input_tokens": 619,
+          "error": null
+        },
+        {
+          "query": "Create a new issue for the bug I found",
+          "category": "write",
+          "difficulty": "easy",
+          "expected_tools": [
+            "create_issue"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "create_issue",
+            "create_repository",
+            "create_branch",
+            "create_directory",
+            "create_pull_request"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": null,
+          "retrieve_correct": false,
+          "retrieve_latency_ms": 8379.22374997288,
+          "retrieve_input_tokens": 760,
+          "error": null
+        },
+        {
+          "query": "Open a pull request for my changes",
+          "category": "write",
+          "difficulty": "medium",
+          "expected_tools": [
+            "create_pull_request"
+          ],
+          "recall_at_k": 0.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "update_pull_request_branch",
+            "get_pull_request_files",
+            "get_pull_request",
+            "merge_pull_request",
+            "get_pull_request_reviews"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": null,
+          "retrieve_correct": false,
+          "retrieve_latency_ms": 4580.256165936589,
+          "retrieve_input_tokens": 709,
+          "error": null
+        },
+        {
+          "query": "Search for repositories about machine learning",
+          "category": "read",
+          "difficulty": "easy",
+          "expected_tools": [
+            "search_repositories"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "search_repositories",
+            "search_code",
+            "search_users",
+            "search_files",
+            "search_issues"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "search_repositories",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 4150.481750024483,
+          "retrieve_input_tokens": 651,
+          "error": null
+        },
+        {
+          "query": "Fork the upstream repository",
+          "category": "write",
+          "difficulty": "medium",
+          "expected_tools": [
+            "fork_repository"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "fork_repository",
+            "create_repository",
+            "search_repositories",
+            "create_branch",
+            "list_branches"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": null,
+          "retrieve_correct": false,
+          "retrieve_latency_ms": 3917.6195840118453,
+          "retrieve_input_tokens": 638,
+          "error": null
+        },
+        {
+          "query": "List all open issues with bug label",
+          "category": "read",
+          "difficulty": "easy",
+          "expected_tools": [
+            "list_issues"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "list_issues",
+            "search_issues",
+            "list_directory",
+            "list_branches",
+            "list_commits"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "list_issues",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 5854.736082954332,
+          "retrieve_input_tokens": 770,
+          "error": null
+        },
+        {
+          "query": "Get the README from the GitHub repo",
+          "category": "read",
+          "difficulty": "medium",
+          "expected_tools": [
+            "get_file_contents"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "get_file_contents",
+            "get_issue",
+            "get_pull_request",
+            "get_pull_request_reviews",
+            "get_pull_request_comments"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "get_file_contents",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 4693.792750011198,
+          "retrieve_input_tokens": 647,
+          "error": null
+        },
+        {
+          "query": "Merge the feature branch PR",
+          "category": "write",
+          "difficulty": "medium",
+          "expected_tools": [
+            "merge_pull_request"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "merge_pull_request",
+            "create_branch",
+            "update_pull_request_branch",
+            "list_branches",
+            "list_commits"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": null,
+          "retrieve_correct": false,
+          "retrieve_latency_ms": 4134.696291992441,
+          "retrieve_input_tokens": 750,
+          "error": null
+        },
+        {
+          "query": "Comment on the pull request with review feedback",
+          "category": "write",
+          "difficulty": "medium",
+          "expected_tools": [
+            "add_issue_comment"
+          ],
+          "recall_at_k": 0.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "create_pull_request_review",
+            "get_pull_request_comments",
+            "get_pull_request_reviews",
+            "update_pull_request_branch",
+            "get_pull_request"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": null,
+          "retrieve_correct": false,
+          "retrieve_latency_ms": 4508.81649996154,
+          "retrieve_input_tokens": 717,
+          "error": null
+        },
+        {
+          "query": "Create a new branch for the feature",
+          "category": "write",
+          "difficulty": "easy",
+          "expected_tools": [
+            "create_branch"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "create_branch",
+            "create_repository",
+            "create_directory",
+            "create_issue",
+            "create_or_update_file"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "create_branch",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 5065.368999959901,
+          "retrieve_input_tokens": 750,
+          "error": null
+        },
+        {
+          "query": "Push the updated files to GitHub",
+          "category": "write",
+          "difficulty": "medium",
+          "expected_tools": [
+            "push_files"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "push_files",
+            "read_multiple_files",
+            "search_files",
+            "get_pull_request_files",
+            "move_file"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": null,
+          "retrieve_correct": false,
+          "retrieve_latency_ms": 3782.872375100851,
+          "retrieve_input_tokens": 629,
+          "error": null
+        },
+        {
+          "query": "Search code for the function definition",
+          "category": "read",
+          "difficulty": "medium",
+          "expected_tools": [
+            "search_code"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "search_code",
+            "search_repositories",
+            "search_users",
+            "search_files",
+            "search_issues"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "search_code",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 4113.567291060463,
+          "retrieve_input_tokens": 651,
+          "error": null
+        },
+        {
+          "query": "Which directories can the file server access?",
+          "category": "read",
+          "difficulty": "hard",
+          "expected_tools": [
+            "list_allowed_directories"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "list_allowed_directories",
+            "move_file",
+            "read_file",
+            "write_file",
+            "search_files"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "list_allowed_directories",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 3236.2780830590054,
+          "retrieve_input_tokens": 549,
+          "error": null
+        },
+        {
+          "query": "Check details of PR number 55",
+          "category": "read",
+          "difficulty": "easy",
+          "expected_tools": [
+            "get_pull_request"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "get_pull_request",
+            "get_issue",
+            "get_pull_request_status",
+            "merge_pull_request",
+            "get_pull_request_reviews"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "get_pull_request",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 4608.008833019994,
+          "retrieve_input_tokens": 690,
+          "error": null
+        },
+        {
+          "query": "Approve the pull request after review",
+          "category": "write",
+          "difficulty": "medium",
+          "expected_tools": [
+            "create_pull_request_review"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "create_pull_request_review",
+            "get_pull_request_reviews",
+            "get_pull_request_comments",
+            "get_pull_request",
+            "merge_pull_request"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": null,
+          "retrieve_correct": false,
+          "retrieve_latency_ms": 3880.9942500665784,
+          "retrieve_input_tokens": 749,
+          "error": null
+        },
+        {
+          "query": "View the commit history",
+          "category": "read",
+          "difficulty": "easy",
+          "expected_tools": [
+            "list_commits"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "list_commits",
+            "merge_pull_request",
+            "directory_tree",
+            "push_files",
+            "read_file"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "list_commits",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 5402.960458071902,
+          "retrieve_input_tokens": 707,
+          "error": null
+        },
+        {
+          "query": "Create a new GitHub repo and initialize it",
+          "category": "write",
+          "difficulty": "easy",
+          "expected_tools": [
+            "create_repository"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "create_branch",
+            "create_issue",
+            "create_repository",
+            "create_pull_request",
+            "create_or_update_file"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "create_repository",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 6041.763041983359,
+          "retrieve_input_tokens": 852,
+          "error": null
+        },
+        {
+          "query": "Update the issue title and close it",
+          "category": "write",
+          "difficulty": "medium",
+          "expected_tools": [
+            "update_issue"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "update_issue",
+            "create_issue",
+            "create_or_update_file",
+            "update_pull_request_branch",
+            "get_issue"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "update_issue",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 6064.246875001118,
+          "retrieve_input_tokens": 872,
+          "error": null
+        },
+        {
+          "query": "See what files were changed in pull request 10",
+          "category": "read",
+          "difficulty": "easy",
+          "expected_tools": [
+            "get_pull_request_files"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "get_pull_request_files",
+            "update_pull_request_branch",
+            "get_pull_request",
+            "merge_pull_request",
+            "get_pull_request_reviews"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "get_pull_request_files",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 4493.489707936533,
+          "retrieve_input_tokens": 713,
+          "error": null
+        },
+        {
+          "query": "Find all TypeScript files matching *.test.ts",
+          "category": "read",
+          "difficulty": "easy",
+          "expected_tools": [
+            "search_files"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "search_files",
+            "push_files",
+            "read_multiple_files",
+            "get_pull_request_files",
+            "list_directory"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "search_files",
+          "retrieve_correct": true,
+          "retrieve_latency_ms": 3920.63737497665,
+          "retrieve_input_tokens": 623,
+          "error": null
+        },
+        {
+          "query": "Create a file on GitHub with the deployment config",
+          "category": "write",
+          "difficulty": "medium",
+          "expected_tools": [
+            "create_or_update_file"
+          ],
+          "recall_at_k": 1.0,
+          "mrr": 0.0,
+          "average_precision": 0.0,
+          "ndcg_at_k": 0.0,
+          "latency_ms": 0.0,
+          "retrieved_tools": [
+            "create_or_update_file",
+            "write_file",
+            "create_pull_request_review",
+            "create_repository",
+            "create_branch"
+          ],
+          "score_breakdown": {},
+          "baseline_tool": null,
+          "baseline_correct": false,
+          "baseline_latency_ms": 0.0,
+          "baseline_input_tokens": 0,
+          "retrieve_tool": "create_repository",
+          "retrieve_correct": false,
+          "retrieve_latency_ms": 5247.74162506219,
+          "retrieve_input_tokens": 782,
+          "error": null
+        }
+      ],
+      "avg_recall_at_k": 0.9333333333333333,
+      "avg_mrr": 0.0,
+      "avg_map": 0.0,
+      "avg_ndcg_at_k": 0.0,
+      "avg_latency_ms": 0.0,
+      "stdev_recall": 0.2537081317024624,
+      "stdev_mrr": 0.0,
+      "ci_recall": [
+        0.8333333333333334,
+        1.0
+      ],
+      "ci_mrr": [
+        0.0,
+        0.0
+      ],
+      "miss_rate": 0.06666666666666667,
+      "hit_rate": 0.9333333333333333,
+      "recall_at_3": 0.0,
+      "recall_at_10": 0.0,
+      "avg_keyword_contribution": 0.0,
+      "avg_graph_contribution": 0.0,
+      "avg_embedding_contribution": 0.0,
+      "avg_annotation_contribution": 0.0,
+      "baseline_accuracy": 0.0,
+      "retrieve_accuracy": 0.7333333333333333,
+      "avg_token_reduction": 0.0,
+      "avg_baseline_latency_ms": 0.0,
+      "avg_retrieve_latency_ms": 4508.825779139685,
+      "token_efficiency_baseline": 0.0,
+      "token_efficiency_retrieve": 1.0603431656063234,
+      "t_statistic": 8.930285549745875,
+      "p_value": 8.378144844556346e-10
+    }
+  ]
+}
