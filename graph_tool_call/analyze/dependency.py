@@ -79,6 +79,7 @@ def detect_dependencies(
     relations.extend(_detect_structural(tools, spec))
     relations.extend(_detect_name_based(tools))
     relations.extend(_detect_cross_resource(tools))
+    relations.extend(_detect_rpc_patterns(tools))
     relations = _deduplicate(relations)
     relations = [r for r in relations if r.confidence >= min_confidence]
     relations.sort(key=lambda r: r.confidence, reverse=True)
@@ -131,17 +132,59 @@ def _is_single_resource_path(path: str) -> bool:
 def _group_by_resource(tools: list[ToolSchema]) -> dict[str, list[ToolSchema]]:
     """Group tools that have ``method`` and ``path`` metadata by their base resource.
 
-    The base resource is the first non-param path segment (e.g. ``/pets``).
+    The base resource is the first *meaningful* non-param path segment.
+    A segment is considered a non-meaningful prefix when it groups more than
+    ``_PREFIX_THRESHOLD`` percent of all tools — this handles version prefixes
+    (``/v1``, ``/v2``), routing prefixes (``/api``, ``/rest``), etc. without
+    requiring a hardcoded list.
     """
+    _PREFIX_THRESHOLD = 0.4  # if a segment covers >40% of tools, it's a prefix
+
+    api_tools = [
+        t for t in tools
+        if t.metadata.get("path") and t.metadata.get("method")
+    ]
+    if not api_tools:
+        return {}
+
+    total = len(api_tools)
+
+    # Collect static segments per tool
+    tool_segments: list[tuple[ToolSchema, list[str]]] = []
+    for tool in api_tools:
+        segs = [s for s in tool.metadata["path"].split("/") if s and not s.startswith("{")]
+        tool_segments.append((tool, segs))
+
+    # Determine max depth to scan for prefixes (usually 1-2 levels)
+    max_depth = max((len(segs) for _, segs in tool_segments), default=1)
+
+    # Find how many prefix levels to skip:
+    # walk from depth 0 and keep skipping while the segment at that depth
+    # covers >threshold of all tools
+    skip_depth = 0
+    for depth in range(min(max_depth, 4)):  # cap at 4 to avoid pathological cases
+        counter: dict[str, int] = {}
+        for _, segs in tool_segments:
+            if depth < len(segs):
+                counter.setdefault(segs[depth], 0)
+                counter[segs[depth]] += 1
+        if not counter:
+            break
+        most_common_count = max(counter.values())
+        if most_common_count / total > _PREFIX_THRESHOLD:
+            skip_depth = depth + 1
+        else:
+            break
+
+    # Group by the segment at skip_depth
     groups: dict[str, list[ToolSchema]] = {}
-    for tool in tools:
-        path = tool.metadata.get("path")
-        method = tool.metadata.get("method")
-        if not path or not method:
-            continue
-        # base resource = first static segment of the path
-        segments = [s for s in path.split("/") if s and not s.startswith("{")]
-        base = "/" + segments[0] if segments else "/"
+    for tool, segs in tool_segments:
+        if skip_depth < len(segs):
+            base = "/" + segs[skip_depth]
+        elif segs:
+            base = "/" + segs[-1]
+        else:
+            base = "/"
         groups.setdefault(base, []).append(tool)
     return groups
 
@@ -607,6 +650,202 @@ def _detect_cross_resource(tools: list[ToolSchema]) -> list[DetectedRelation]:
                         layer=3,
                     )
                 )
+
+    return relations
+
+
+# ---------------------------------------------------------------------------
+# Layer 4: RPC-style method name & DTO pattern detection
+# ---------------------------------------------------------------------------
+
+# Maps leading verb in an RPC method name to a CRUD intent category.
+_VERB_TO_INTENT: dict[str, str] = {
+    # read
+    "get": "read", "find": "read", "fetch": "read", "list": "read",
+    "search": "read", "select": "read", "load": "read", "read": "read",
+    "download": "read",
+    # write (create)
+    "save": "write", "create": "write", "add": "write", "insert": "write",
+    "register": "write", "regist": "write",
+    # update
+    "modify": "update", "update": "update", "edit": "update",
+    "change": "update", "patch": "update",
+    # delete
+    "delete": "delete", "remove": "delete", "cancel": "delete",
+    "withdraw": "delete",
+    # action (side-effect operations)
+    "process": "action", "execute": "action", "apply": "action",
+    "approve": "action", "reject": "action", "confirm": "action",
+    "accept": "action", "send": "action", "upload": "action",
+    "export": "action",
+}
+
+# Trailing tokens in method names that describe the *view*, not the resource.
+_NAME_SUFFIXES: frozenset[str] = frozenset({
+    "list", "detail", "details", "info", "count", "excel", "popup",
+    "summary", "check", "data", "total", "all", "page", "download",
+})
+
+# Common DTO class-name suffixes that are not part of the resource identity.
+_DTO_SUFFIXES: frozenset[str] = frozenset({
+    "request", "response", "dto", "entity", "info", "base",
+    "api", "vo", "model", "form", "param", "result", "ml",
+})
+
+# CRUD workflow rules: (source_intent, target_intent, relation, same_ctrl_conf, cross_ctrl_conf)
+# ``None`` for cross_ctrl_conf means the rule is skipped across controllers.
+_WORKFLOW_RULES: list[tuple[str, str, RelationType, float, float | None]] = [
+    ("read",   "write",  RelationType.REQUIRES, 0.9,  0.8),
+    ("update", "read",   RelationType.REQUIRES, 0.85, 0.75),
+    ("delete", "read",   RelationType.REQUIRES, 0.85, 0.75),
+    ("action", "read",   RelationType.REQUIRES, 0.75, None),
+]
+
+
+def _same_controller(a: ToolSchema, b: ToolSchema) -> bool:
+    """Return True if both tools belong to the same (non-empty) controller."""
+    ctrl_a = a.metadata.get("controller") or ""
+    ctrl_b = b.metadata.get("controller") or ""
+    return ctrl_a == ctrl_b != ""
+
+
+def _extract_verb_and_resource(name: str) -> tuple[str, str]:
+    """Extract (verb, resource) from an RPC-style method name.
+
+    ``getGoodsList`` → ``("get", "goods")``
+    ``saveOptionCategoryList`` → ``("save", "optioncategory")``
+    """
+    tokens = _normalize_name(name)
+    if not tokens:
+        return "", ""
+
+    verb = ""
+    resource_start = 0
+    for i, tok in enumerate(tokens):
+        if tok in _VERB_TO_INTENT:
+            verb = tok
+            resource_start = i + 1
+            break
+
+    resource = "".join(t for t in tokens[resource_start:] if t not in _NAME_SUFFIXES)
+    return verb, resource
+
+
+def _extract_dto_resource(type_name: str | None) -> str:
+    """Extract the resource root from a DTO class name.
+
+    ``GoodsMgmtApiResponse`` → ``goodsmgmt``
+    ``ClaimTargetRequest``   → ``claimtarget``
+    """
+    if not type_name:
+        return ""
+    tokens = _normalize_name(type_name)
+    return "".join(t for t in tokens if t not in _DTO_SUFFIXES)
+
+
+def _detect_rpc_patterns(tools: list[ToolSchema]) -> list[DetectedRelation]:
+    """Detect relations for RPC-style APIs (Layer 4).
+
+    Handles non-RESTful endpoints (e.g. ``/v1/goods/goodsMgmtApi/getGoodsList``)
+    where structural path analysis is ineffective.
+
+    Two strategies:
+      1. **Verb-resource grouping** — methods sharing the same resource token
+         form CRUD workflows with controller-scoped confidence.
+      2. **DTO type matching** — methods sharing a request/response type across
+         controllers are marked COMPLEMENTARY.
+    """
+    relations: list[DetectedRelation] = []
+    relations.extend(_detect_rpc_crud_workflows(tools))
+    relations.extend(_detect_rpc_dto_links(tools))
+    return relations
+
+
+def _detect_rpc_crud_workflows(tools: list[ToolSchema]) -> list[DetectedRelation]:
+    """Build CRUD workflow relations from verb-resource analysis."""
+    relations: list[DetectedRelation] = []
+
+    # Group tools by extracted resource token.
+    resource_groups: dict[str, list[tuple[str, ToolSchema]]] = {}
+    for tool in tools:
+        verb, resource = _extract_verb_and_resource(tool.name)
+        if verb and resource:
+            resource_groups.setdefault(resource, []).append((verb, tool))
+
+    for resource, members in resource_groups.items():
+        if len(members) < 2:
+            continue
+
+        # Classify members by CRUD intent.
+        by_intent: dict[str, list[ToolSchema]] = {}
+        for verb, tool in members:
+            intent = _VERB_TO_INTENT.get(verb, "other")
+            by_intent.setdefault(intent, []).append(tool)
+
+        # Apply workflow rules.
+        for src_intent, tgt_intent, rel_type, same_conf, cross_conf in _WORKFLOW_RULES:
+            for src in by_intent.get(src_intent, []):
+                for tgt in by_intent.get(tgt_intent, []):
+                    if src.name == tgt.name:
+                        continue
+                    same = _same_controller(src, tgt)
+                    if not same and cross_conf is None:
+                        continue
+                    relations.append(DetectedRelation(
+                        source=src.name,
+                        target=tgt.name,
+                        relation_type=rel_type,
+                        confidence=same_conf if same else cross_conf,  # type: ignore[arg-type]
+                        evidence=(
+                            f"{src.name} ({src_intent}) → {tgt.name} ({tgt_intent})"
+                            f" — resource '{resource}'"
+                        ),
+                        layer=4,
+                    ))
+
+        # Readers within same controller are SIMILAR_TO.
+        readers = by_intent.get("read", [])
+        for i, r1 in enumerate(readers):
+            for r2 in readers[i + 1:]:
+                if r1.name != r2.name and _same_controller(r1, r2):
+                    relations.append(DetectedRelation(
+                        source=r1.name,
+                        target=r2.name,
+                        relation_type=RelationType.SIMILAR_TO,
+                        confidence=0.8,
+                        evidence=f"{r1.name} ↔ {r2.name} — similar reads for '{resource}'",
+                        layer=4,
+                    ))
+
+    return relations
+
+
+def _detect_rpc_dto_links(tools: list[ToolSchema]) -> list[DetectedRelation]:
+    """Link tools that share a DTO type across controllers (COMPLEMENTARY)."""
+    relations: list[DetectedRelation] = []
+
+    # Group tools by normalised DTO resource name.
+    dto_groups: dict[str, list[ToolSchema]] = {}
+    for tool in tools:
+        for type_name in (tool.metadata.get("request_type"), tool.metadata.get("response_type")):
+            dto_res = _extract_dto_resource(type_name)
+            if len(dto_res) >= 4:
+                dto_groups.setdefault(dto_res, []).append(tool)
+
+    for dto_res, members in dto_groups.items():
+        if not 2 <= len(members) <= 20:
+            continue
+        for i, a in enumerate(members):
+            for b in members[i + 1:]:
+                if a.name != b.name and not _same_controller(a, b):
+                    relations.append(DetectedRelation(
+                        source=a.name,
+                        target=b.name,
+                        relation_type=RelationType.COMPLEMENTARY,
+                        confidence=0.75,
+                        evidence=f"{a.name} ↔ {b.name} — shared DTO '{dto_res}'",
+                        layer=4,
+                    ))
 
     return relations
 
