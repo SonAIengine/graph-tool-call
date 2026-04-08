@@ -786,8 +786,9 @@ async def _run_proxy_streamable_http(server: Any, host: str, port: int) -> None:
                 yield
                 task.cancel_scope.cancel()
 
-    import anyio
     from contextlib import asynccontextmanager
+
+    import anyio
 
     @asynccontextmanager
     async def lifespan(app: Any) -> Any:  # type: ignore[override]

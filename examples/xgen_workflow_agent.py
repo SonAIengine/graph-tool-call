@@ -101,12 +101,19 @@ def pattern_a_filter_tools():
     @tool
     def query_database(sql: str) -> str:
         """Execute a SQL query on the analytics database."""
-        return f"Query result: 42 rows"
+        return "Query result: 42 rows"
 
     all_tools = [
-        search_products, get_order_detail, cancel_order, create_refund,
-        send_notification, get_user_profile, update_inventory,
-        generate_report, upload_file, query_database,
+        search_products,
+        get_order_detail,
+        cancel_order,
+        create_refund,
+        send_notification,
+        get_user_profile,
+        update_inventory,
+        generate_report,
+        upload_file,
+        query_database,
     ]
 
     # -- 핵심: filter_tools 적용 (2줄) --
@@ -199,11 +206,10 @@ def pattern_b_create_agent():
         """Send push notification to a user."""
         return f"Sent to {user_id}"
 
-    all_tools = [search_products, get_order_detail, cancel_order,
-                 create_refund, send_notification]
+    # 데모용 tool 정의 (실제 적용 코드는 아래 print 블록 참고)
+    _ = [search_products, get_order_detail, cancel_order, create_refund, send_notification]
 
     # -- 핵심: create_agent 교체 --
-    from graph_tool_call.langchain import create_agent as create_filtered_agent
 
     # query_mode="message": 기본값, 추가 LLM 호출 없음 (빠름)
     # query_mode="llm": 대화 컨텍스트에서 검색 쿼리 생성 (멀티턴 강함)
@@ -284,27 +290,70 @@ def pattern_c_gateway():
         tools (50~500개) → create_gateway_tools() → 2개 meta-tool → agent_core
     """
     import json
-    from langchain_core.tools import tool
 
     # -- 시뮬레이션: DB에서 가져온 사용자 등록 tool 50개 --
     tools = []
     tool_categories = {
-        "order": ["create_order", "get_order", "cancel_order", "update_order", "list_orders",
-                  "get_order_status", "track_shipment", "confirm_delivery", "return_order",
-                  "exchange_order"],
-        "product": ["search_products", "get_product", "create_product", "update_product",
-                    "delete_product", "get_product_reviews", "add_product_review",
-                    "get_product_inventory", "update_price", "get_categories"],
-        "user": ["get_user", "create_user", "update_user", "delete_user", "list_users",
-                "get_user_orders", "get_user_wishlist", "add_to_wishlist",
-                "get_user_notifications", "update_preferences"],
-        "payment": ["process_payment", "create_refund", "get_payment_status",
-                    "list_transactions", "get_invoice", "send_receipt",
-                    "validate_coupon", "apply_discount", "get_billing_info",
-                    "update_payment_method"],
-        "admin": ["generate_report", "get_analytics", "export_data", "import_data",
-                  "get_system_status", "clear_cache", "send_notification",
-                  "create_announcement", "get_audit_log", "manage_permissions"],
+        "order": [
+            "create_order",
+            "get_order",
+            "cancel_order",
+            "update_order",
+            "list_orders",
+            "get_order_status",
+            "track_shipment",
+            "confirm_delivery",
+            "return_order",
+            "exchange_order",
+        ],
+        "product": [
+            "search_products",
+            "get_product",
+            "create_product",
+            "update_product",
+            "delete_product",
+            "get_product_reviews",
+            "add_product_review",
+            "get_product_inventory",
+            "update_price",
+            "get_categories",
+        ],
+        "user": [
+            "get_user",
+            "create_user",
+            "update_user",
+            "delete_user",
+            "list_users",
+            "get_user_orders",
+            "get_user_wishlist",
+            "add_to_wishlist",
+            "get_user_notifications",
+            "update_preferences",
+        ],
+        "payment": [
+            "process_payment",
+            "create_refund",
+            "get_payment_status",
+            "list_transactions",
+            "get_invoice",
+            "send_receipt",
+            "validate_coupon",
+            "apply_discount",
+            "get_billing_info",
+            "update_payment_method",
+        ],
+        "admin": [
+            "generate_report",
+            "get_analytics",
+            "export_data",
+            "import_data",
+            "get_system_status",
+            "clear_cache",
+            "send_notification",
+            "create_announcement",
+            "get_audit_log",
+            "manage_permissions",
+        ],
     }
 
     for category, tool_names in tool_categories.items():
@@ -410,7 +459,7 @@ def bonus_multiturn_scenario():
         top_name = results[0].name if results else "없음"
         match = "✓" if top_name == s["expected"] else "✗"
 
-        print(f"  턴 {s['turn']}: \"{s['message']}\"")
+        print(f'  턴 {s["turn"]}: "{s["message"]}"')
         print(f"    → message 모드 Top-1: {top_name} {match}")
         if "note" in s:
             print(f"    ※ {s['note']}")

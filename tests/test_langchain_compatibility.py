@@ -10,9 +10,6 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # Fake LangChain tool stubs (same pattern as test_langchain_gateway.py)
 # ---------------------------------------------------------------------------
@@ -62,9 +59,7 @@ def _make_math_tools() -> list[FakeTool]:
     )
     return [
         FakeTool(name="add", description="Add two numbers together", args_schema=add_schema),
-        FakeTool(
-            name="multiply", description="Multiply two numbers", args_schema=multiply_schema
-        ),
+        FakeTool(name="multiply", description="Multiply two numbers", args_schema=multiply_schema),
     ]
 
 
@@ -232,10 +227,12 @@ class TestCallTool:
     def test_call_existing_tool(self):
         call = self._get_call_tool(_make_diverse_tools())
 
-        result = call.invoke({
-            "tool_name": "cancel_order",
-            "arguments": {"order_id": "123"},
-        })
+        result = call.invoke(
+            {
+                "tool_name": "cancel_order",
+                "arguments": {"order_id": "123"},
+            }
+        )
 
         assert "cancel_order" in result
         assert "123" in result
@@ -243,10 +240,12 @@ class TestCallTool:
     def test_call_nonexistent_tool(self):
         call = self._get_call_tool(_make_diverse_tools())
 
-        result = call.invoke({
-            "tool_name": "nonexistent_tool",
-            "arguments": {},
-        })
+        result = call.invoke(
+            {
+                "tool_name": "nonexistent_tool",
+                "arguments": {},
+            }
+        )
         data = json.loads(result)
 
         assert "error" in data
@@ -255,19 +254,23 @@ class TestCallTool:
     def test_call_with_none_arguments(self):
         call = self._get_call_tool(_make_diverse_tools())
 
-        result = call.invoke({
-            "tool_name": "get_weather",
-            "arguments": None,
-        })
+        result = call.invoke(
+            {
+                "tool_name": "get_weather",
+                "arguments": None,
+            }
+        )
 
         assert "get_weather" in result
 
     def test_call_with_missing_arguments(self):
         call = self._get_call_tool(_make_diverse_tools())
 
-        result = call.invoke({
-            "tool_name": "get_weather",
-        })
+        result = call.invoke(
+            {
+                "tool_name": "get_weather",
+            }
+        )
 
         assert "get_weather" in result
 
@@ -387,10 +390,12 @@ class TestEndToEnd:
         assert any(t["name"] == "send_email" for t in search_result["tools"])
 
         # Step 2: Call
-        call_result = call.invoke({
-            "tool_name": "send_email",
-            "arguments": {"to": "user@example.com", "body": "hello"},
-        })
+        call_result = call.invoke(
+            {
+                "tool_name": "send_email",
+                "arguments": {"to": "user@example.com", "body": "hello"},
+            }
+        )
         assert "send_email" in call_result
         assert "executed" in call_result
 
@@ -410,10 +415,12 @@ class TestEndToEnd:
         search_result = json.loads(search.invoke({"query": "weather"}))
         assert any(t["name"] == "get_weather" for t in search_result["tools"])
 
-        call_result = call.invoke({
-            "tool_name": "get_weather",
-            "arguments": {"city": "Seoul"},
-        })
+        call_result = call.invoke(
+            {
+                "tool_name": "get_weather",
+                "arguments": {"city": "Seoul"},
+            }
+        )
         assert "get_weather" in call_result
 
     def test_user_example_scenario(self):
@@ -425,9 +432,7 @@ class TestEndToEnd:
         search_documents = FakeTool(
             name="search_documents", description="Search documents by query string"
         )
-        get_weather = FakeTool(
-            name="get_weather", description="Get current weather for a city"
-        )
+        get_weather = FakeTool(name="get_weather", description="Get current weather for a city")
 
         # ToolGraph creation and tool registration (user's pattern)
         tg_tool = ToolGraph()
@@ -451,10 +456,12 @@ class TestEndToEnd:
 
         # Verify call works
         call = next(t for t in tools if t.name == "call_tool")
-        call_result = call.invoke({
-            "tool_name": "add",
-            "arguments": {"a": 1, "b": 2},
-        })
+        call_result = call.invoke(
+            {
+                "tool_name": "add",
+                "arguments": {"a": 1, "b": 2},
+            }
+        )
         assert "add" in call_result
         assert "executed" in call_result
 
@@ -481,10 +488,12 @@ class TestEndToEnd:
         assert result["total_tools"] == 2
 
         # And the new tool is callable
-        call_result = call.invoke({
-            "tool_name": "multiply",
-            "arguments": {"a": 3, "b": 4},
-        })
+        call_result = call.invoke(
+            {
+                "tool_name": "multiply",
+                "arguments": {"a": 3, "b": 4},
+            }
+        )
         assert "multiply" in call_result
 
     def test_add_tools_batch(self):
@@ -546,10 +555,12 @@ class TestEdgeCases:
         gateway = tg.as_tools()
         call = next(t for t in gateway if t.name == "call_tool")
 
-        result = call.invoke({
-            "tool_name": "add",
-            "arguments": {"a": 1, "b": 2},
-        })
+        result = call.invoke(
+            {
+                "tool_name": "add",
+                "arguments": {"a": 1, "b": 2},
+            }
+        )
         assert "add" in result
         assert "executed" in result
 

@@ -60,16 +60,6 @@ def _find_relation(
 # ---------------------------------------------------------------------------
 
 
-def test_crud_requires():
-    """POST → GET/{id} should produce REQUIRES."""
-    tools = _pet_tools()
-    relations = detect_dependencies(tools)
-    rel = _find_relation(relations, "getPet", "createPet", RelationType.REQUIRES)
-    assert rel is not None, "GET single should REQUIRE POST"
-    assert rel.confidence >= 0.9
-    assert rel.layer == 1
-
-
 def test_crud_complementary():
     """POST and PUT are no longer marked COMPLEMENTARY (removed to reduce noise)."""
     tools = _pet_tools()

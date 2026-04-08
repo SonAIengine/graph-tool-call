@@ -6,8 +6,6 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-import pytest
-
 
 @dataclass
 class FakeTool:
@@ -134,10 +132,12 @@ class TestCallTool:
         tools = _make_tools()
         call = self._get_call_tool(tools)
 
-        result = call.invoke({
-            "tool_name": "cancel_order",
-            "arguments": {"order_id": "123"},
-        })
+        result = call.invoke(
+            {
+                "tool_name": "cancel_order",
+                "arguments": {"order_id": "123"},
+            }
+        )
 
         assert "cancel_order" in result
         assert "123" in result
@@ -146,10 +146,12 @@ class TestCallTool:
         tools = _make_tools()
         call = self._get_call_tool(tools)
 
-        result = call.invoke({
-            "tool_name": "nonexistent_tool",
-            "arguments": {},
-        })
+        result = call.invoke(
+            {
+                "tool_name": "nonexistent_tool",
+                "arguments": {},
+            }
+        )
         data = json.loads(result)
 
         assert "error" in data
@@ -159,9 +161,11 @@ class TestCallTool:
         tools = _make_tools()
         call = self._get_call_tool(tools)
 
-        result = call.invoke({
-            "tool_name": "get_weather",
-        })
+        result = call.invoke(
+            {
+                "tool_name": "get_weather",
+            }
+        )
 
         assert "get_weather" in result
 
@@ -169,10 +173,12 @@ class TestCallTool:
         tools = _make_tools()
         call = self._get_call_tool(tools)
 
-        result = call.invoke({
-            "tool_name": "get_weather",
-            "arguments": None,
-        })
+        result = call.invoke(
+            {
+                "tool_name": "get_weather",
+                "arguments": None,
+            }
+        )
 
         assert "get_weather" in result
 
@@ -194,10 +200,12 @@ class TestEndToEnd:
         assert any(t["name"] == "send_email" for t in search_result["tools"])
 
         # Step 2: Call
-        call_result = call.invoke({
-            "tool_name": "send_email",
-            "arguments": {"to": "user@example.com", "body": "hello"},
-        })
+        call_result = call.invoke(
+            {
+                "tool_name": "send_email",
+                "arguments": {"to": "user@example.com", "body": "hello"},
+            }
+        )
         assert "send_email" in call_result
         assert "executed" in call_result
 

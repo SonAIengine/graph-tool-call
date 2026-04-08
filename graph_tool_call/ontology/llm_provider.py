@@ -41,8 +41,10 @@ Find relationships between these API tools.
 Example:
 Tools: createUser, getUserProfile, deleteUser
 Answer: [
-  {{"source":"getUserProfile","target":"createUser","relation":"REQUIRES","confidence":0.9,"reason":"need user to exist"}},
-  {{"source":"createUser","target":"deleteUser","relation":"PRECEDES","confidence":0.8,"reason":"create before delete"}}
+  {{"source": "getUserProfile", "target": "createUser",
+    "relation": "REQUIRES", "confidence": 0.9, "reason": "need user to exist"}},
+  {{"source": "createUser", "target": "deleteUser",
+    "relation": "PRECEDES", "confidence": 0.8, "reason": "create before delete"}}
 ]
 
 Relation types:
@@ -154,6 +156,7 @@ def _extract_json(text: str) -> Any:
 
     # Remove <think>...</think> blocks (qwen3 thinking mode)
     import re as _re
+
     text = _re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
 
     # Remove markdown code blocks
@@ -288,8 +291,7 @@ class OntologyLLM(ABC):
         for i in range(0, len(relations), batch_size):
             batch = relations[i : i + batch_size]
             rels_text = "\n".join(
-                f"- {r.source} {r.relation_type.name} {r.target} ({r.reason[:60]})"
-                for r in batch
+                f"- {r.source} {r.relation_type.name} {r.target} ({r.reason[:60]})" for r in batch
             )
             prompt = _VERIFY_RELATIONS_PROMPT.format(
                 relations_list=rels_text,
@@ -334,8 +336,7 @@ class OntologyLLM(ABC):
         """
         tools_text = _format_tools_list(tools[:30])
         existing_text = "\n".join(
-            f"- {r.source} {r.relation_type.name} {r.target}"
-            for r in existing_relations[:30]
+            f"- {r.source} {r.relation_type.name} {r.target}" for r in existing_relations[:30]
         )
         prompt = _SUGGEST_MISSING_PROMPT.format(
             tools_list=tools_text,

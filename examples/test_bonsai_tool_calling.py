@@ -5,6 +5,7 @@
 2. OpenAI function calling format (tools parameter)
 3. graph-tool-call retrieve + LLM 조합
 """
+# ruff: noqa: E501
 
 from __future__ import annotations
 
@@ -128,9 +129,9 @@ def chat(messages: list[dict], tools: list[dict] | None = None, **kwargs) -> dic
 
 
 def print_header(title: str) -> None:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {title}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 def print_result(label: str, passed: bool, detail: str = "") -> None:
@@ -142,6 +143,7 @@ def print_result(label: str, passed: bool, detail: str = "") -> None:
 
 
 # ── TEST 1: SearchLLM 통합 ──────────────────────────────────────────
+
 
 def test_search_llm():
     """graph-tool-call의 OpenAICompatibleSearchLLM으로 query expansion 테스트."""
@@ -194,6 +196,7 @@ def test_search_llm():
 
 
 # ── TEST 2: OpenAI Function Calling ─────────────────────────────────
+
 
 def test_function_calling():
     """직접 tool calling format으로 호출하여 도구 선택 능력 테스트."""
@@ -256,7 +259,11 @@ def test_function_calling():
                     func_name = called.get("function", {}).get("name", "")
                     func_args_raw = called.get("function", {}).get("arguments", "{}")
                     try:
-                        func_args = json.loads(func_args_raw) if isinstance(func_args_raw, str) else func_args_raw
+                        func_args = (
+                            json.loads(func_args_raw)
+                            if isinstance(func_args_raw, str)
+                            else func_args_raw
+                        )
                     except json.JSONDecodeError:
                         func_args = {}
 
@@ -282,6 +289,7 @@ def test_function_calling():
 
 
 # ── TEST 3: graph-tool-call retrieve + LLM 조합 ─────────────────────
+
 
 def test_retrieve_with_llm():
     """ToolGraph retrieve 후 LLM에게 도구 선택시키는 end-to-end 테스트."""
@@ -344,7 +352,11 @@ def test_retrieve_with_llm():
                 func_name = tool_calls[0].get("function", {}).get("name", "")
                 func_args_raw = tool_calls[0].get("function", {}).get("arguments", "{}")
                 try:
-                    func_args = json.loads(func_args_raw) if isinstance(func_args_raw, str) else func_args_raw
+                    func_args = (
+                        json.loads(func_args_raw)
+                        if isinstance(func_args_raw, str)
+                        else func_args_raw
+                    )
                 except json.JSONDecodeError:
                     func_args = {}
                 passed = func_name == tc["expected_tool"]
@@ -388,6 +400,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"  [!] Test 3 failed: {e}")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  Done!")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")

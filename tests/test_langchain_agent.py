@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -87,7 +86,7 @@ def test_create_agent_builds_graph_and_calls_create_react_agent():
 
         from graph_tool_call.langchain.agent import create_agent
 
-        agent = create_agent(
+        create_agent(
             mock_model,
             tools=[get_weather, send_email, cancel_order],
             top_k=2,
@@ -156,7 +155,7 @@ def test_model_factory_filters_tools():
         state = {"messages": [HumanMessage(content="what's the weather in Seoul")]}
         runtime = MagicMock()
 
-        result = model_factory(state, runtime)
+        model_factory(state, runtime)
 
         # bind_tools should have been called with a filtered subset
         mock_model.bind_tools.assert_called_once()

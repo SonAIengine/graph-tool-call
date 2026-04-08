@@ -1448,17 +1448,21 @@ class ToolGraph:
             """
             schema = graph_ref._tools.get(tool_name)
             if schema is None:
-                return json.dumps({
-                    "error": f"Tool '{tool_name}' not found.",
-                    "hint": "Use search_tools to find the correct tool name.",
-                })
+                return json.dumps(
+                    {
+                        "error": f"Tool '{tool_name}' not found.",
+                        "hint": "Use search_tools to find the correct tool name.",
+                    }
+                )
 
             callable_ = schema.get_callable()
             if callable_ is None:
-                return json.dumps({
-                    "error": f"Tool '{tool_name}' is not callable.",
-                    "hint": "This tool was registered without a callable implementation.",
-                })
+                return json.dumps(
+                    {
+                        "error": f"Tool '{tool_name}' is not callable.",
+                        "hint": "This tool was registered without a callable implementation.",
+                    }
+                )
 
             args: dict[str, Any] = {}
             if arguments is not None:
@@ -1482,10 +1486,12 @@ class ToolGraph:
                     return result
                 return json.dumps(result, ensure_ascii=False, default=str)
             except Exception as e:
-                return json.dumps({
-                    "error": str(e),
-                    "tool_name": tool_name,
-                })
+                return json.dumps(
+                    {
+                        "error": str(e),
+                        "tool_name": tool_name,
+                    }
+                )
 
         return [search_tools, call_tool]
 

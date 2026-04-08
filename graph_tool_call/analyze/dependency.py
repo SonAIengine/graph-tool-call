@@ -253,11 +253,7 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
     posts = by_role.get("post_collection", [])
     gets_single = by_role.get("get_single", [])
     gets_collection = by_role.get("get_collection", [])
-    puts = by_role.get("put_single", [])
-    patches = by_role.get("patch_single", [])
     deletes = by_role.get("delete_single", [])
-
-    updates = puts + patches
 
     # --- Focused CRUD relations ---
     # Only create relations that represent real data dependencies,
@@ -280,7 +276,10 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
                     target=post.name,
                     relation_type=RelationType.REQUIRES,
                     confidence=0.9,
-                    evidence=f"{get_s.name} (GET single) requires {post.name} (POST) — same resource '{post_resource}'",
+                    evidence=(
+                        f"{get_s.name} (GET single) requires {post.name} (POST) "
+                        f"— same resource '{post_resource}'"
+                    ),
                     layer=1,
                 )
             )
@@ -481,7 +480,8 @@ def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
             # Require strong evidence: 2+ shared tokens, or the token
             # appears in a parameter ending with "id" (e.g., "orderId")
             has_id_param = any(
-                tok in p.name.lower() for p in tool_b.parameters
+                tok in p.name.lower()
+                for p in tool_b.parameters
                 for tok in shared
                 if "id" in p.name.lower()
             )
@@ -532,7 +532,8 @@ def _detect_cross_resource(tools: list[ToolSchema]) -> list[DetectedRelation]:
         name_tokens = _normalize_name(tool.name)
         # Remove verb prefix
         resource_tokens = [
-            t for t in name_tokens
+            t
+            for t in name_tokens
             if t not in ("get", "list", "create", "add", "post", "read", "find")
         ]
         for tok in resource_tokens:
@@ -574,16 +575,11 @@ def _detect_cross_resource(tools: list[ToolSchema]) -> list[DetectedRelation]:
                 # Prefer GET single over GET list/POST
                 provider_method = (provider.metadata.get("method") or "").upper()
                 provider_path = provider.metadata.get("path", "")
-                is_get_single = (
-                    provider_method == "GET"
-                    and _is_single_resource_path(provider_path)
-                )
+                is_get_single = provider_method == "GET" and _is_single_resource_path(provider_path)
 
                 # Only create cross-resource link if provider is from
                 # a DIFFERENT resource category than the consumer
-                consumer_resource = _extract_resource(
-                    tool.metadata.get("path", "")
-                )
+                consumer_resource = _extract_resource(tool.metadata.get("path", ""))
                 provider_resource = _extract_resource(provider_path)
                 if consumer_resource == provider_resource:
                     continue  # same resource — handled by structural detection
