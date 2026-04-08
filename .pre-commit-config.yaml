@@ -1,0 +1,21 @@
+# Pre-commit hooks for graph-tool-call
+#
+# Install once per clone:
+#     pip install pre-commit
+#     pre-commit install
+#
+# Run manually on all files:
+#     pre-commit run --all-files
+#
+# These hooks mirror the CI lint job (.github/workflows/ci.yml).
+# If they fail locally, CI will also fail — fix before committing.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.4
+    hooks:
+      - id: ruff
+        name: ruff check
+        args: [--fix]
+      - id: ruff-format
+        name: ruff format

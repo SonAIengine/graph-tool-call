@@ -39,12 +39,12 @@ English · [한국어](README-ko.md) · [中文](README-zh_CN.md) · [日本語]
 
 - [Why](#why)
 - [How it works](#how-it-works)
-- [Install](#install)
+- [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Choose your integration](#choose-your-integration)
 - [Benchmark](#benchmark)
-- [Advanced](#advanced)
-- [Docs](#docs)
+- [Advanced Features](#advanced-features)
+- [Documentation](#documentation)
 - [Contributing](#contributing)
 
 </details>
@@ -105,7 +105,7 @@ graph-tool-call returns the entire chain, not just one tool. Retrieval combines 
 
 ---
 
-## Install
+## Installation
 
 The core package has **zero dependencies** — just Python standard library. Install only what you need:
 
@@ -303,7 +303,7 @@ python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b    # full pipelin
 
 ---
 
-## Advanced
+## Advanced Features
 
 ### Embedding-based hybrid search
 
@@ -368,7 +368,7 @@ Builds richer categories, relations, and search keywords. Supports Ollama, OpenA
 
 ---
 
-## Docs
+## Documentation
 
 | Doc | Description |
 |---|---|
@@ -390,8 +390,9 @@ Contributions are welcome.
 ```bash
 git clone https://github.com/SonAIengine/graph-tool-call.git
 cd graph-tool-call
-pip install poetry
+pip install poetry pre-commit
 poetry install --with dev --all-extras
+pre-commit install   # auto-runs ruff on every commit
 
 # Test, lint, benchmark
 poetry run pytest -v

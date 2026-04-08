@@ -16,10 +16,11 @@ from __future__ import annotations
 import json
 import time
 
-from langchain_core.tools import tool
-
 pytest = __import__("pytest")
+pytest.importorskip("langchain_core")
+pytest.importorskip("langgraph")
 ChatOllama = pytest.importorskip("langchain_ollama").ChatOllama
+from langchain_core.tools import tool  # noqa: E402
 from langgraph.prebuilt import create_react_agent  # noqa: E402
 
 from graph_tool_call.langchain.gateway import create_gateway_tools  # noqa: E402
