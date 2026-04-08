@@ -6,6 +6,17 @@
 docs/
 ├── README.md                   ← 현재 문서 (인덱스)
 │
+├── cli.md                      # CLI 레퍼런스 (모든 명령)
+├── api-reference.md            # Python API 레퍼런스 (ToolGraph, helpers, middleware)
+├── benchmarks.md               # 벤치마크 결과 (pipeline / retrieval / competitive / scale)
+│
+├── integrations/               # 통합 가이드 (사용 패턴별)
+│   ├── mcp-server.md           # MCP server 모드
+│   ├── mcp-proxy.md            # MCP proxy (multi-backend aggregation)
+│   ├── langchain.md            # LangChain Gateway / auto-filter / retriever
+│   ├── middleware.md           # OpenAI/Anthropic SDK 1-line patch
+│   └── direct-api.md           # Python API + workflow planning
+│
 ├── architecture/               # 아키텍처 & 데이터 모델
 │   ├── overview.md             # 전체 아키텍처 (파이프라인, 레이어)
 │   └── data-model.md           # ToolSchema, RelationType, NodeType
@@ -44,11 +55,18 @@ docs/
 
 ## 읽는 순서
 
+**사용자 (라이브러리 쓰는 사람)**
+1. **시작**: 루트 [README.md](../README.md)
+2. **CLI 명령**: [cli.md](cli.md)
+3. **Python API**: [api-reference.md](api-reference.md)
+4. **통합 가이드**: [integrations/](integrations/) — 본인 스택에 맞는 패턴 선택
+5. **벤치마크**: [benchmarks.md](benchmarks.md)
+
+**개발자/기여자 (내부 구조 이해하려는 사람)**
 1. **전체 그림**: [architecture/overview.md](architecture/overview.md)
 2. **진행 상황**: [wbs/README.md](wbs/README.md)
-3. **현재 Phase 상세**: [wbs/phase-1-ingest.md](wbs/phase-1-ingest.md)
-4. **설계 깊이 파기**: `design/` 디렉토리
-5. **리서치 근거**: `research/` 디렉토리
+3. **설계 깊이 파기**: `design/` 디렉토리
+4. **리서치 근거**: `research/` 디렉토리
 
 ## 최근 추가 (v0.12)
 
