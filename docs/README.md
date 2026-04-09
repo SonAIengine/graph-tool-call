@@ -9,6 +9,7 @@ docs/
 ├── cli.md                      # CLI 레퍼런스 (모든 명령)
 ├── api-reference.md            # Python API 레퍼런스 (ToolGraph, helpers, middleware)
 ├── benchmarks.md               # 벤치마크 결과 (pipeline / retrieval / competitive / scale)
+├── roadmap.md                  # 고도화 후보 15개 + 우선순위 매트릭스 + 마일스톤
 │
 ├── integrations/               # 통합 가이드 (사용 패턴별)
 │   ├── mcp-server.md           # MCP server 모드
