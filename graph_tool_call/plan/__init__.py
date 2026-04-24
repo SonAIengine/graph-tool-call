@@ -40,6 +40,13 @@ from graph_tool_call.plan.schema import (
     ExecutionTrace,
     StepTrace,
 )
+from graph_tool_call.plan.synthesizer import (
+    PathSynthesizer,
+    PlanSynthesisError,
+    UnsatisfiableFieldError,
+    CyclicDependencyError,
+    MaxDepthExceededError,
+)
 
 __all__ = [
     # schema
@@ -59,4 +66,10 @@ __all__ = [
     "StepFailed",
     "PlanCompleted",
     "PlanAborted",
+    # synthesizer
+    "PathSynthesizer",
+    "PlanSynthesisError",
+    "UnsatisfiableFieldError",
+    "CyclicDependencyError",
+    "MaxDepthExceededError",
 ]
