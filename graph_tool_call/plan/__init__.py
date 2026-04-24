@@ -40,6 +40,16 @@ from graph_tool_call.plan.schema import (
     ExecutionTrace,
     StepTrace,
 )
+from graph_tool_call.plan.intent import (
+    IntentParseError,
+    ParsedIntent,
+    ToolCatalogEntry,
+    parse_intent,
+)
+from graph_tool_call.plan.response import (
+    synthesize_success_response,
+    synthesize_failure_response,
+)
 from graph_tool_call.plan.synthesizer import (
     PathSynthesizer,
     PlanSynthesisError,
@@ -72,4 +82,12 @@ __all__ = [
     "UnsatisfiableFieldError",
     "CyclicDependencyError",
     "MaxDepthExceededError",
+    # intent
+    "ToolCatalogEntry",
+    "ParsedIntent",
+    "IntentParseError",
+    "parse_intent",
+    # response
+    "synthesize_success_response",
+    "synthesize_failure_response",
 ]
