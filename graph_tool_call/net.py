@@ -44,8 +44,22 @@ class _LimitedRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _open_url(request: urllib.request.Request | str, *, timeout: int, max_redirects: int) -> Any:
-    opener = urllib.request.build_opener(_LimitedRedirectHandler(max_redirects))
+def _open_url(
+    request: urllib.request.Request | str,
+    *,
+    timeout: int,
+    max_redirects: int,
+    verify_ssl: bool = True,
+) -> Any:
+    """urllib opener — verify_ssl=False 시 self-signed/사내 CA 인증서 허용."""
+    handlers: list[Any] = [_LimitedRedirectHandler(max_redirects)]
+    if not verify_ssl:
+        import ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        handlers.append(urllib.request.HTTPSHandler(context=ctx))
+    opener = urllib.request.build_opener(*handlers)
     return opener.open(request, timeout=timeout)
 
 
@@ -128,13 +142,22 @@ def fetch_url_text(
     allowed_content_types: tuple[str, ...] = _DEFAULT_ALLOWED_CONTENT_TYPES,
     allow_private_hosts: bool = False,
     max_redirects: int = _DEFAULT_MAX_REDIRECTS,
+    verify_ssl: bool | None = None,
 ) -> str:
-    """Fetch UTF-8 text from a remote URL with basic SSRF protections."""
+    """Fetch UTF-8 text from a remote URL with basic SSRF protections.
+
+    ``verify_ssl`` — None 이면 ``allow_private_hosts`` 값에 따라 자동 결정
+    (사내망 hosts 는 self-signed CA 가 일반적이므로 verify off 가 기본).
+    """
     validate_remote_url(url, allow_private_hosts=allow_private_hosts)
+
+    if verify_ssl is None:
+        # allow_private_hosts=True 사용자는 보통 사내망 hitting. 사내 CA 포용.
+        verify_ssl = not allow_private_hosts
 
     req = urllib.request.Request(url, headers=headers or {})
     try:
-        with _open_url(req, timeout=timeout, max_redirects=max_redirects) as resp:
+        with _open_url(req, timeout=timeout, max_redirects=max_redirects, verify_ssl=verify_ssl) as resp:
             final_url = url
             if hasattr(resp, "geturl"):
                 candidate = resp.geturl()

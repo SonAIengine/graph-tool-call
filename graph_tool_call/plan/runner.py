@@ -1,0 +1,342 @@
+"""PlanRunner — deterministic executor for Plan artifacts.
+
+The runner is transport-agnostic: it takes a ``call_tool`` callable that
+actually performs each step. This decouples ``graph_tool_call`` (pure
+plan/graph logic) from integration concerns (HTTP, auth, retries —
+handled by the caller's adapter).
+
+The runner emits structured events as it progresses — callers can relay
+these over SSE, logs, or progress UIs.
+
+v1 scope reminder: **linear execution, no fan-out, no conditionals, no
+automatic re-planning**. Failures abort the run and return a trace.
+"""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Callable, Iterator
+
+from graph_tool_call.plan.binding import BindingError, resolve_bindings
+from graph_tool_call.plan.schema import (
+    ExecutionTrace,
+    Plan,
+    PlanStep,
+    StepTrace,
+)
+
+
+# ---------------------------------------------------------------------------
+# Event types — structured so callers can pattern-match by ``type`` field
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PlanStarted:
+    type: str = "plan.started"
+    plan_id: str = ""
+    goal: str = ""
+    step_count: int = 0
+
+
+@dataclass
+class StepStarted:
+    type: str = "step.started"
+    step_id: str = ""
+    tool: str = ""
+    args_resolved: dict[str, Any] = field(default_factory=dict)
+    index: int = 0
+    total: int = 0
+
+
+@dataclass
+class StepCompleted:
+    type: str = "step.completed"
+    step_id: str = ""
+    tool: str = ""
+    duration_ms: int = 0
+    output_preview: Any = None                 # truncated output for UI
+    output_size: int = 0
+
+
+@dataclass
+class StepFailed:
+    type: str = "step.failed"
+    step_id: str = ""
+    tool: str = ""
+    error: dict[str, Any] = field(default_factory=dict)
+    duration_ms: int = 0
+
+
+@dataclass
+class PlanCompleted:
+    type: str = "plan.completed"
+    plan_id: str = ""
+    output: Any = None
+    total_duration_ms: int = 0
+
+
+@dataclass
+class PlanAborted:
+    type: str = "plan.aborted"
+    plan_id: str = ""
+    failed_step: str = ""
+    error: dict[str, Any] = field(default_factory=dict)
+    total_duration_ms: int = 0
+
+
+PlanEvent = (
+    PlanStarted
+    | StepStarted
+    | StepCompleted
+    | StepFailed
+    | PlanCompleted
+    | PlanAborted
+)
+
+
+# ---------------------------------------------------------------------------
+# Runner
+# ---------------------------------------------------------------------------
+
+
+# ToolCaller signature: (tool_name, resolved_args) -> output_dict
+ToolCaller = Callable[[str, dict[str, Any]], Any]
+
+
+class PlanRunner:
+    """Execute a Plan step-by-step using a caller-provided tool invoker.
+
+    Usage::
+
+        def call_tool(name: str, args: dict) -> dict:
+            return my_http_executor.execute(name, args)
+
+        runner = PlanRunner(call_tool)
+        trace = runner.run(plan)                  # run to completion, return trace
+        # or — streaming:
+        for event in runner.run_stream(plan):
+            send_over_sse(event)
+    """
+
+    def __init__(
+        self,
+        call_tool: ToolCaller,
+        *,
+        output_preview_limit: int = 512,
+        on_error: str = "abort",                  # 'abort' only in v1
+    ) -> None:
+        self._call_tool = call_tool
+        self._preview_limit = output_preview_limit
+        if on_error != "abort":
+            raise ValueError("v1 PlanRunner only supports on_error='abort'")
+
+    # ----------------------------------------------------------------------
+    # Streaming interface — yields PlanEvent instances
+    # ----------------------------------------------------------------------
+
+    def run_stream(
+        self,
+        plan: Plan,
+        *,
+        input_context: dict[str, Any] | None = None,
+    ) -> Iterator[PlanEvent]:
+        """Execute *plan* and yield events as each step progresses.
+
+        ``input_context`` supplies values for ``${input.xxx}`` bindings —
+        typically the entities extracted by Stage 1 (intent parser).
+        """
+        started = _now_iso()
+        plan_start = time.monotonic()
+
+        yield PlanStarted(
+            plan_id=plan.id,
+            goal=plan.goal,
+            step_count=len(plan.steps),
+        )
+
+        # step_id -> output (runtime context for binding resolution)
+        context: dict[str, Any] = {}
+        if input_context:
+            context["input"] = dict(input_context)
+
+        trace_steps: list[StepTrace] = []
+
+        for idx, step in enumerate(plan.steps, start=1):
+            step_trace = StepTrace(id=step.id, tool=step.tool)
+            step_start = time.monotonic()
+
+            # 1. Resolve bindings
+            try:
+                resolved = resolve_bindings(step.args, context)
+            except BindingError as exc:
+                err = {
+                    "kind": "binding",
+                    "message": str(exc),
+                }
+                step_trace.error = err
+                step_trace.duration_ms = _ms_since(step_start)
+                trace_steps.append(step_trace)
+                yield StepFailed(
+                    step_id=step.id, tool=step.tool,
+                    error=err, duration_ms=step_trace.duration_ms,
+                )
+                yield PlanAborted(
+                    plan_id=plan.id, failed_step=step.id,
+                    error=err,
+                    total_duration_ms=_ms_since(plan_start),
+                )
+                return
+
+            step_trace.args_resolved = resolved
+            yield StepStarted(
+                step_id=step.id, tool=step.tool,
+                args_resolved=resolved,
+                index=idx, total=len(plan.steps),
+            )
+
+            # 2. Execute via caller's tool invoker
+            try:
+                output = self._call_tool(step.tool, resolved)
+            except Exception as exc:              # noqa: BLE001 — caller-defined
+                err = {
+                    "kind": "tool",
+                    "message": str(exc),
+                    "exception_type": type(exc).__name__,
+                }
+                step_trace.error = err
+                step_trace.duration_ms = _ms_since(step_start)
+                trace_steps.append(step_trace)
+                yield StepFailed(
+                    step_id=step.id, tool=step.tool,
+                    error=err, duration_ms=step_trace.duration_ms,
+                )
+                yield PlanAborted(
+                    plan_id=plan.id, failed_step=step.id,
+                    error=err,
+                    total_duration_ms=_ms_since(plan_start),
+                )
+                return
+
+            step_trace.output = output
+            step_trace.duration_ms = _ms_since(step_start)
+            trace_steps.append(step_trace)
+
+            # 3. Store output in context for later bindings
+            context[step.id] = output
+
+            yield StepCompleted(
+                step_id=step.id, tool=step.tool,
+                duration_ms=step_trace.duration_ms,
+                output_preview=_preview(output, self._preview_limit),
+                output_size=_output_size(output),
+            )
+
+        # 4. Resolve output_binding for final answer
+        try:
+            final = (
+                resolve_bindings(plan.output_binding, context)
+                if plan.output_binding
+                else (context[plan.steps[-1].id] if plan.steps else None)
+            )
+        except BindingError as exc:
+            err = {"kind": "output_binding", "message": str(exc)}
+            yield PlanAborted(
+                plan_id=plan.id, failed_step="<output_binding>",
+                error=err,
+                total_duration_ms=_ms_since(plan_start),
+            )
+            return
+
+        yield PlanCompleted(
+            plan_id=plan.id,
+            output=final,
+            total_duration_ms=_ms_since(plan_start),
+        )
+
+    # ----------------------------------------------------------------------
+    # Non-streaming interface — returns final ExecutionTrace
+    # ----------------------------------------------------------------------
+
+    def run(
+        self,
+        plan: Plan,
+        *,
+        input_context: dict[str, Any] | None = None,
+    ) -> ExecutionTrace:
+        """Execute *plan* and return an ExecutionTrace aggregating events."""
+        started_at = _now_iso()
+        started = time.monotonic()
+        trace_steps: list[StepTrace] = []
+        success = False
+        failed_step: str | None = None
+        output: Any = None
+
+        last_step_output: dict[str, Any] = {}
+
+        for event in self.run_stream(plan, input_context=input_context):
+            etype = event.type
+            if etype == "step.completed":
+                # step trace built progressively — simpler: derive from events
+                pass
+            elif etype == "plan.completed":
+                success = True
+                output = event.output  # type: ignore[union-attr]
+            elif etype == "plan.aborted":
+                failed_step = event.failed_step  # type: ignore[union-attr]
+
+        # Recompute trace_steps by re-running the stream? No — we already
+        # lost events. Instead the run_stream implementation should also
+        # surface StepTrace. For v1 keep trace minimal (plan-level only) —
+        # callers that need per-step detail should use run_stream.
+        _ = last_step_output  # (placeholder to satisfy future extension)
+        return ExecutionTrace(
+            plan_id=plan.id,
+            success=success,
+            steps=trace_steps,
+            output=output,
+            failed_step=failed_step,
+            total_duration_ms=_ms_since(started),
+            started_at=started_at,
+            ended_at=_now_iso(),
+        )
+
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+
+def _ms_since(start_monotonic: float) -> int:
+    return int((time.monotonic() - start_monotonic) * 1000)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _preview(value: Any, limit: int) -> Any:
+    """Trim large outputs for UI previews. Keep small values intact."""
+    if isinstance(value, (dict, list)):
+        import json as _json
+        try:
+            rendered = _json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return {"_preview": f"<unserializable {type(value).__name__}>"}
+        if len(rendered) <= limit:
+            return value
+        return {"_preview": rendered[:limit] + "…", "_truncated": True}
+    if isinstance(value, str) and len(value) > limit:
+        return value[:limit] + "…"
+    return value
+
+
+def _output_size(value: Any) -> int:
+    """Approximate serialized byte size (for observability)."""
+    import json as _json
+    try:
+        return len(_json.dumps(value, ensure_ascii=False))
+    except (TypeError, ValueError):
+        return 0

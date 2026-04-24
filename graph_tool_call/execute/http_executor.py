@@ -77,7 +77,12 @@ class HttpExecutor:
         for k, v in path_params.items():
             path = path.replace(f"{{{k}}}", urllib.parse.quote(str(v), safe=""))
 
-        url = f"{self._base_url}{path}"
+        # tool 자체 base_url(spec.servers 유래)이 있으면 그쪽 우선 — 한 컬렉션에
+        # 다른 호스트(common/product/member 등)의 source가 섞여 있을 때 source별
+        # 호스트로 라우팅한다. 없으면 executor 기본 base_url 사용.
+        tool_base = (metadata.get("base_url") or "").rstrip("/")
+        base = tool_base or self._base_url
+        url = f"{base}{path}"
         if query_params:
             url += "?" + urllib.parse.urlencode(query_params, doseq=True)
 

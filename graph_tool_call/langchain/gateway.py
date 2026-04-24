@@ -66,6 +66,93 @@ def _extract_parameters_info(tool: Any) -> list[dict[str, Any]] | None:
     return None
 
 
+def _summarize_response_schema(schema: dict[str, Any]) -> str | None:
+    """Produce a one-line summary of an OpenAPI response schema for the LLM.
+
+    Lists top-level field names + types so the model can plan parameter
+    extraction for the next call.
+    """
+    if not isinstance(schema, dict):
+        return None
+
+    # Unwrap arrays
+    container = schema
+    is_array = False
+    if container.get("type") == "array" and isinstance(container.get("items"), dict):
+        container = container["items"]
+        is_array = True
+
+    props = container.get("properties")
+    if not isinstance(props, dict) or not props:
+        # Fall back to a bare type description
+        t = container.get("type")
+        return f"array of {t}" if is_array and t else t
+
+    fields = []
+    for name, info in list(props.items())[:12]:
+        if not isinstance(info, dict):
+            fields.append(name)
+            continue
+        t = info.get("type") or info.get("$ref", "object").rsplit("/", 1)[-1]
+        fields.append(f"{name}:{t}")
+    summary = "{" + ", ".join(fields) + "}"
+    return f"array of {summary}" if is_array else summary
+
+
+def _enrich_from_graph(
+    name: str, graph: Any | None
+) -> dict[str, Any]:
+    """Pull source_label, method/path, response summary, and outgoing edges
+    from the underlying ToolGraph for *name*. Returns an empty dict if the
+    graph or tool is not available — callers should treat all keys as optional.
+    """
+    if graph is None:
+        return {}
+
+    enrichment: dict[str, Any] = {}
+
+    tool_schema = None
+    try:
+        tool_schema = graph.tools.get(name)
+    except Exception:
+        return enrichment
+
+    if tool_schema is not None and getattr(tool_schema, "metadata", None):
+        meta = tool_schema.metadata
+        if meta.get("source_label"):
+            enrichment["source"] = meta["source_label"]
+        if meta.get("method") and meta.get("path"):
+            enrichment["http"] = f"{meta['method'].upper()} {meta['path']}"
+        rs = meta.get("response_schema")
+        if isinstance(rs, dict):
+            summary = _summarize_response_schema(rs)
+            if summary:
+                enrichment["returns"] = summary
+
+    # Outgoing edges → chain hints
+    try:
+        engine = graph.graph
+        edges = engine.get_edges_from(name, direction="out")
+        chains: list[str] = []
+        for _src, target, attrs in edges:
+            relation = attrs.get("relation")
+            relation_name = (
+                relation.value if hasattr(relation, "value") else str(relation)
+            )
+            # Skip purely structural BELONGS_TO edges
+            if relation_name in ("belongs_to", "BELONGS_TO"):
+                continue
+            chains.append(f"{relation_name}→{target}")
+            if len(chains) >= 5:
+                break
+        if chains:
+            enrichment["next_candidates"] = chains
+    except Exception:
+        pass
+
+    return enrichment
+
+
 def create_gateway_tools(
     tools: list[Any],
     *,
@@ -111,12 +198,15 @@ def create_gateway_tools(
     total = len(tool_map)
     call_history: list[str] = []
 
+    underlying_graph = getattr(toolkit, "graph", None)
+
     @langchain_tool
     def search_tools(query: str, top_k: int | None = None) -> str:
         """Search available tools by natural language query.
 
         Use this FIRST to find which tools are available for the task.
-        Returns tool names, descriptions, and required parameters.
+        Returns tool names, descriptions, parameters, response shape, and
+        ``next_candidates`` (related tools you may want to call afterwards).
 
         Args:
             query: Natural language search query (e.g. "cancel order", "send email")
@@ -135,11 +225,12 @@ def create_gateway_tools(
                 desc = t.get("description", "")
             entry: dict[str, Any] = {
                 "name": name,
-                "description": desc[:200],
+                "description": desc[:300],
             }
             params = _extract_parameters_info(t)
             if params:
                 entry["parameters"] = params
+            entry.update(_enrich_from_graph(name, underlying_graph))
             matched.append(entry)
 
         output = {
@@ -148,8 +239,10 @@ def create_gateway_tools(
             "total_tools": total,
             "tools": matched,
             "hint": (
-                "Use call_tool to execute a tool. "
-                "Pass tool_name and arguments as a dict matching the parameters above."
+                "Use call_tool to execute a tool. Pass tool_name and arguments "
+                "as a dict matching the parameters above. The 'returns' field "
+                "shows the response shape — extract values from there to build "
+                "arguments for the next call (see 'next_candidates')."
             ),
         }
 
