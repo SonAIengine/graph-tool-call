@@ -220,6 +220,13 @@ class PlanRunner:
                 )
                 return
 
+            # 2a. Unwrap a single-level envelope when the response shape
+            # diverges from the schema in the canonical "{code, message,
+            # <wrapper>: {...}, timestamp}" pattern. One detect per step,
+            # not per binding — every binding for this step then resolves
+            # against the unwrapped dict naturally.
+            output = _maybe_unwrap_envelope(output, step.response_root_keys)
+
             step_trace.output = output
             step_trace.duration_ms = _ms_since(step_start)
             trace_steps.append(step_trace)
@@ -331,6 +338,56 @@ def _preview(value: Any, limit: int) -> Any:
     if isinstance(value, str) and len(value) > limit:
         return value[:limit] + "…"
     return value
+
+
+def _maybe_unwrap_envelope(
+    output: Any,
+    expected_root_keys: list[str],
+) -> Any:
+    """Peel one envelope layer when the response shape diverges from schema.
+
+    Conservative — unwraps only when ALL of these hold:
+
+      1. ``output`` is a dict with two or more root keys
+         (a bare ``{"payload": ...}`` is more likely real data than envelope).
+      2. Exactly one root value is itself a dict — the wrapper candidate.
+      3. Every other root value is scalar / null
+         (envelope siblings are status/code/message/timestamp — not
+         business collections).
+      4. None of ``expected_root_keys`` appears at the response root
+         (otherwise the response is already in schema-shape).
+      5. At least one ``expected_root_keys`` entry appears inside the
+         wrapper candidate (otherwise the dict-typed sibling is unrelated
+         business data — unwrapping would lose information).
+
+    The wrapper *key name* is never inspected, so this works for
+    ``payload`` / ``data`` / ``result`` / any other convention. Without
+    ``expected_root_keys`` there's no schema signal to validate against,
+    so the output passes through unchanged.
+    """
+    if not expected_root_keys or not isinstance(output, dict) or len(output) < 2:
+        return output
+
+    dict_keys = [k for k, v in output.items() if isinstance(v, dict)]
+    if len(dict_keys) != 1:
+        return output
+
+    wrapper_key = dict_keys[0]
+    for k, v in output.items():
+        if k == wrapper_key:
+            continue
+        if isinstance(v, (dict, list)):
+            return output
+
+    expected = set(expected_root_keys)
+    if expected & set(output.keys()):
+        return output
+
+    wrapper = output[wrapper_key]
+    if not (expected & set(wrapper.keys())):
+        return output
+
+    return wrapper
 
 
 def _output_size(value: Any) -> int:

@@ -31,6 +31,12 @@ class PlanStep:
     rationale: str = ""                        # why this step exists (for audit)
     timeout_ms: int | None = None
     retryable: bool = False                    # reserved for v1.1 retry policy
+    # Top-level keys the synthesizer expects in this tool's response,
+    # derived from ``produces[].json_path``. Used by PlanRunner to detect
+    # envelope wrappers (e.g. ``{code, message, payload: {...}}``) when the
+    # ingest captured the wrapped fields without the wrapper itself. Empty
+    # list means "no hint" — the runner then leaves the response untouched.
+    response_root_keys: list[str] = field(default_factory=list)
 
 
 @dataclass
