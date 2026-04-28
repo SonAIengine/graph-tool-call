@@ -56,6 +56,7 @@ from graph_tool_call.plan.synthesizer import (
     UnsatisfiableFieldError,
     CyclicDependencyError,
     MaxDepthExceededError,
+    DynamicOptionRequired,
 )
 
 __all__ = [
@@ -82,6 +83,7 @@ __all__ = [
     "UnsatisfiableFieldError",
     "CyclicDependencyError",
     "MaxDepthExceededError",
+    "DynamicOptionRequired",
     # intent
     "ToolCatalogEntry",
     "ParsedIntent",

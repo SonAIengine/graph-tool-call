@@ -9,8 +9,6 @@ shape persisted as ``api_tool_collections.graph.graph``) — no DB, no HTTP.
 
 v1 scope (per design §16.6):
   - Linear chain only — no fan-out, no parallel, no branching.
-  - If multiple producers exist for a required field, the first one is
-    picked (simple, predictable). Ambiguity handling is Phase D+.
   - Max recursion depth = 5 (guard against cyclic or pathological graphs).
 
 Matching order for each required consume field:
@@ -19,6 +17,19 @@ Matching order for each required consume field:
      (Pass 2 LLM enrichment quality).
   3. Another tool's ``produces`` with the same ``field_name``
      (Pass 1 deterministic extraction, fallback).
+
+Producer selection is ranked by Pass 2 metadata signals — no hardcoded
+domain or field rules:
+  - Entity affinity: producer consumes an entity the user supplied,
+    so chaining through it actually uses that entity.
+  - Pair hint: target's ``pairs_well_with`` includes this producer.
+  - Action preference: ``canonical_action`` = search/read fits a
+    prerequisite role better than create/update/delete.
+
+``consumes[].kind`` ("data" | "context", set by Pass 2):
+  - "data" — chain to a producer if entity doesn't match.
+  - "context" — ambient config (locale, site, tenant). Never chained;
+    must come from entity or skipped (runtime uses API default).
 """
 
 from __future__ import annotations
@@ -45,6 +56,38 @@ class CyclicDependencyError(PlanSynthesisError):
 
 class MaxDepthExceededError(PlanSynthesisError):
     """Recursion depth exceeded — likely a misshapen graph."""
+
+
+class DynamicOptionRequired(UnsatisfiableFieldError):
+    """A required data field has a single-hop producer that can be called
+    immediately with the user's entities + context_defaults. Surface this
+    so the caller can fetch the option list (instead of weaving a chain)
+    and ask the user to pick — the popup-driven UX for fields like
+    ``itmNo`` (single-품목 option) where the choices are dynamic per
+    request.
+
+    The exception carries enough metadata for the caller to:
+      * know which producer to call (``producer_name``)
+      * find the option array in the producer's response (``options_path``)
+      * pick a sensible label field next to each code (``label_field_hints``)
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        field_name: str,
+        semantic_tag: str,
+        producer_name: str,
+        options_path: str,
+        label_field_hints: list[str],
+    ) -> None:
+        super().__init__(message)
+        self.field_name = field_name
+        self.semantic_tag = semantic_tag
+        self.producer_name = producer_name
+        self.options_path = options_path
+        self.label_field_hints = list(label_field_hints)
 
 
 @dataclass
@@ -74,9 +117,26 @@ class PathSynthesizer:
         graph: dict[str, Any],
         *,
         max_depth: int = 5,
+        context_defaults: dict[str, Any] | None = None,
+        enum_field_names: set[str] | None = None,
     ) -> None:
         self._tools: dict[str, dict[str, Any]] = dict(graph.get("tools") or {})
         self._max_depth = max_depth
+        # Collection-level ambient values (locale, tenant id, site id, ...) the
+        # operator registers once per collection. Filled into ``kind=context``
+        # consume fields when the user's entities don't supply them — avoids
+        # repeating env-style args in every requirement and avoids leaking
+        # backend-specific defaults into library code. Lookup precedence:
+        # entities > context_defaults > skip.
+        self._context_defaults: dict[str, Any] = dict(context_defaults or {})
+        # Field names the operator registered an enum mapping for. When a
+        # required-data field of this kind can't be filled by an entity,
+        # the synthesizer raises UnsatisfiableFieldError instead of
+        # producer-chaining — the caller (service layer) is expected to
+        # surface a popup to the user rather than weaving an awkward
+        # producer chain that pulls in unrelated tools just to source a
+        # code value. User intent (popup choice) wins over chain depth.
+        self._enum_field_names: set[str] = set(enum_field_names or ())
         # semantic_tag -> [tool_name], insertion order preserved
         self._producers_by_semantic: dict[str, list[str]] = {}
         self._producers_by_field: dict[str, list[str]] = {}
@@ -133,6 +193,7 @@ class PathSynthesizer:
                 tool=partial.tool,
                 args=args,
                 rationale=partial.rationale,
+                response_root_keys=self._response_root_keys(tool_name),
             ))
 
         target_step_id = steps_by_tool[target].step_id
@@ -140,7 +201,10 @@ class PathSynthesizer:
             id=str(uuid.uuid4()),
             goal=goal or f"Execute {target}",
             steps=final_steps,
-            output_binding=f"${{{target_step_id}.body}}",
+            # PlanRunner adapter 는 step ctx 에 응답 body 를 root 로 노출 →
+            # ``${sN}`` 만으로 전체 응답 dict 가 잡힌다 (과거 ``${sN.body}`` 는
+            # adapter 가 ``{status, body}`` 을 그대로 흘릴 때의 흔적).
+            output_binding=f"${{{target_step_id}}}",
             created_at=datetime.now(timezone.utc).isoformat(),
             metadata={
                 "target": target,
@@ -187,28 +251,96 @@ class PathSynthesizer:
         rationales: list[str] = []
 
         for consume in consumes:
-            if not consume.get("required"):
-                continue
-
             field_name = consume.get("field_name") or ""
             semantic = consume.get("semantic_tag") or ""
+            kind = str(consume.get("kind") or "data").strip().lower()
+            is_required = bool(consume.get("required"))
 
-            # 1. Entity match (user-supplied)
+            # 1. Entity match (user-supplied) — applies to both data and
+            #    context, both required and optional. The user's input
+            #    always wins.
             entity_val = self._match_entity(entities, semantic, field_name)
             if entity_val is not None:
                 args[field_name] = entity_val
                 continue
 
-            # 2/3. Find a producer (semantic first, then field_name)
+            # 2. Context-kind: try collection-level defaults regardless of
+            #    required flag. Context is never chained — ambient config
+            #    must come from entity or operator-registered default
+            #    (chaining through e.g. getSiteInfo would inflate the plan
+            #    with steps that don't produce business value).
+            if kind == "context":
+                default = self._lookup_context_default(semantic, field_name)
+                if default is not None:
+                    args[field_name] = default
+                continue
+
+            # 3. Optional data field: leave out. The caller's backend will
+            #    apply its own defaults — synthesizer has no business
+            #    inventing values for optional business inputs.
+            if not is_required:
+                continue
+
+            # 4. Enum-field popup priority. If the operator registered an
+            #    enum mapping for this field, it's the kind of value the
+            #    user should pick from a popup — NOT something to chain
+            #    through a producer (which often drags in semantically
+            #    unrelated tools just because their response happens to
+            #    contain a code by the same name). Surface
+            #    UnsatisfiableFieldError so the caller can yield a
+            #    question.required event instead.
+            if field_name in self._enum_field_names:
+                raise UnsatisfiableFieldError(
+                    f"tool {tool_name!r} requires {field_name!r} "
+                    f"(semantic={semantic!r}) — enum field, expects user "
+                    f"selection (no producer chain attempted)"
+                )
+
+            # 5. Required data field → rank candidate producers and pick the best.
             producer = self._find_producer(
                 semantic=semantic, field_name=field_name,
-                exclude=tool_name,
+                target_tool=tool_name, entities=entities,
             )
             if producer is None:
                 raise UnsatisfiableFieldError(
                     f"tool {tool_name!r} requires {field_name!r} "
                     f"(semantic={semantic!r}) but no entity or producer found"
                 )
+
+            # 5a. Dynamic-option popup priority. Detect "read-detail then
+            #     pick one" patterns where the producer is a single-hop
+            #     read of a product/record whose response carries a
+            #     list of options the user must choose from (e.g.
+            #     ``getProductInfo`` exposes ``$.itmInfo[*].itmNo`` —
+            #     the available SKUs). In that case, defer to the caller
+            #     to fetch options and pop up a question, instead of
+            #     chaining the producer in and binding ``[0]`` blindly.
+            #
+            #     Constrained to ``canonical_action='read'`` because
+            #     ``search`` producers (e.g. seltSearchProduct → goodsNo)
+            #     are exactly the chain idiom we DO want — pick the first
+            #     hit and continue. Without this constraint legitimate
+            #     search→detail chains turn into popups.
+            producer_action = self._producer_action(producer)
+            if (
+                producer_action == "read"
+                and self._is_producer_simple_callable(producer, entities)
+            ):
+                opt_path = self._produces_path_for(
+                    producer, semantic=semantic, field_name=field_name,
+                )
+                if opt_path and "[*]" in opt_path:
+                    raise DynamicOptionRequired(
+                        f"tool {tool_name!r} requires {field_name!r} "
+                        f"(semantic={semantic!r}) — dynamic option from "
+                        f"{producer!r}; caller should fetch options and "
+                        f"prompt the user",
+                        field_name=field_name,
+                        semantic_tag=semantic,
+                        producer_name=producer,
+                        options_path=opt_path,
+                        label_field_hints=self._label_hints_for(producer, opt_path),
+                    )
 
             # Recurse into the producer first so step_id ordering is correct
             self._resolve(
@@ -254,18 +386,268 @@ class PathSynthesizer:
         *,
         semantic: str,
         field_name: str,
-        exclude: str,
+        target_tool: str,
+        entities: dict[str, Any],
     ) -> str | None:
-        """Pick the first producer matching semantic, falling back to field name."""
+        """Pick the best-ranked producer for ``semantic`` (or ``field_name``).
+
+        Candidates are gathered from both indexes (semantic first), then
+        ranked using Pass 2 metadata (``_rank_producers``) and finally
+        filtered by ``_is_chain_eligible`` — discards producers whose
+        ``canonical_action`` / ``primary_resource`` signal they're
+        unrelated to the target's domain (e.g. claim-cost calculator
+        showing up as a producer for a basket field just because a
+        ``produces`` entry happens to match).
+        """
+        candidates: list[str] = []
+        seen: set[str] = set()
         if semantic:
             for name in self._producers_by_semantic.get(semantic, []):
-                if name != exclude:
-                    return name
+                if name != target_tool and name not in seen:
+                    candidates.append(name)
+                    seen.add(name)
         if field_name:
             for name in self._producers_by_field.get(field_name, []):
-                if name != exclude:
-                    return name
+                if name != target_tool and name not in seen:
+                    candidates.append(name)
+                    seen.add(name)
+        if not candidates:
+            return None
+
+        ranked = self._rank_producers(
+            candidates, target_tool=target_tool, entities=entities,
+        )
+        for cand in ranked:
+            if self._is_chain_eligible(cand, target_tool=target_tool):
+                return cand
         return None
+
+    def _producer_action(self, producer_name: str) -> str:
+        """Return the producer's ``ai_metadata.canonical_action`` (lowercased,
+        empty string if missing). Used to gate dynamic-option popups to
+        ``read`` producers — search producers are the chain idiom (pick
+        first hit), not popup candidates.
+        """
+        tool = self._tools.get(producer_name) or {}
+        ai = (tool.get("metadata") or {}).get("ai_metadata") or {}
+        return str(ai.get("canonical_action") or "").strip().lower()
+
+    def _is_producer_simple_callable(
+        self,
+        producer_name: str,
+        entities: dict[str, Any],
+    ) -> bool:
+        """True iff the producer can be called with only the user's entities
+        and the collection's context_defaults — i.e. no further producer
+        chain needed to source its inputs.
+
+        Used to detect "single-hop dynamic option" cases: instead of
+        chaining the producer into the plan, the caller fetches it once
+        and pops up the resulting list to the user (e.g. itmNo from
+        getProductInfo when the user already supplied goodsNo).
+        """
+        producer = self._tools.get(producer_name) or {}
+        for c in (producer.get("metadata") or {}).get("consumes") or []:
+            if not isinstance(c, dict) or not c.get("required"):
+                continue
+            field = c.get("field_name") or ""
+            sem = c.get("semantic_tag") or ""
+            kind = str(c.get("kind") or "data").strip().lower()
+            if self._match_entity(entities, sem, field) is not None:
+                continue
+            if kind == "context" and self._lookup_context_default(sem, field) is not None:
+                continue
+            return False
+        return True
+
+    def _produces_path_for(
+        self,
+        producer_name: str,
+        *,
+        semantic: str,
+        field_name: str,
+    ) -> str:
+        """Find the producer's json_path that emits the given field — the
+        location of the option array in the response (e.g.
+        ``$.itmInfo[*].itmNo``). Empty string if no match.
+        """
+        producer = self._tools.get(producer_name) or {}
+        for p in (producer.get("metadata") or {}).get("produces") or []:
+            if not isinstance(p, dict):
+                continue
+            if semantic and p.get("semantic_tag") == semantic:
+                return str(p.get("json_path") or "")
+        # Fallback: match by field_name when semantic missing/mismatched
+        for p in (producer.get("metadata") or {}).get("produces") or []:
+            if not isinstance(p, dict):
+                continue
+            if field_name and p.get("field_name") == field_name:
+                return str(p.get("json_path") or "")
+        return ""
+
+    def _label_hints_for(
+        self,
+        producer_name: str,
+        options_path: str,
+    ) -> list[str]:
+        """Return field names that look like human labels living next to
+        the option-code field in the producer's response. Heuristic: same
+        array prefix, name ending in ``Nm`` / ``Name`` / ``Label``.
+
+        ``options_path`` looks like ``$.itmInfo[*].itmNo``; we walk the
+        producer's other produces entries that share the prefix
+        ``$.itmInfo[*].`` and pick the ones whose field_name suggests a
+        label.
+        """
+        producer = self._tools.get(producer_name) or {}
+        # Compute the array prefix: everything up to the last "."
+        if "." not in options_path:
+            return []
+        prefix = options_path.rsplit(".", 1)[0] + "."
+        hints: list[str] = []
+        seen: set[str] = set()
+        for p in (producer.get("metadata") or {}).get("produces") or []:
+            if not isinstance(p, dict):
+                continue
+            jp = str(p.get("json_path") or "")
+            if not jp.startswith(prefix):
+                continue
+            field = str(p.get("field_name") or "")
+            if not field or field in seen:
+                continue
+            lower = field.lower()
+            if lower.endswith("nm") or lower.endswith("name") or lower.endswith("label"):
+                hints.append(field)
+                seen.add(field)
+        return hints
+
+    def _is_chain_eligible(self, producer_name: str, *, target_tool: str) -> bool:
+        """Return True if ``producer_name`` may be added to the prerequisite
+        chain for ``target_tool``.
+
+        Two signals from Pass 2 ``ai_metadata`` decide:
+
+          1. ``canonical_action`` ∈ {search, read}
+             create/update/delete/action are not prerequisite material —
+             they perform side effects, never just data lookup.
+          2. ``primary_resource`` is in the target's domain set
+             (target's own resource + the prefix of every consume's
+             semantic_tag, e.g. ``product_id`` ⇒ ``product``).
+
+        Either signal absent (sparse ``ai_metadata``) ⇒ pass through.
+        Operators that haven't enriched the graph yet keep the previous
+        behaviour; once enriched, the policy starts filtering. Also
+        reverts to pass-through if the target itself has no ``ai_metadata``,
+        because the "domain set" can't be computed.
+        """
+        producer = self._tools.get(producer_name) or {}
+        p_meta = (producer.get("metadata") or {}).get("ai_metadata") or {}
+        p_action = str(p_meta.get("canonical_action") or "").strip().lower()
+        if not p_action:
+            return True
+        if p_action not in ("search", "read"):
+            return False
+
+        p_resource = str(p_meta.get("primary_resource") or "").strip().lower()
+        if not p_resource:
+            return True
+
+        target = self._tools.get(target_tool) or {}
+        t_meta_full = target.get("metadata") or {}
+        t_meta = t_meta_full.get("ai_metadata") or {}
+        t_resource = str(t_meta.get("primary_resource") or "").strip().lower()
+
+        related: set[str] = set()
+        if t_resource:
+            related.add(t_resource)
+            if "_" in t_resource:
+                related.add(t_resource.split("_", 1)[0])
+
+        for c in (t_meta_full.get("consumes") or []):
+            if not isinstance(c, dict):
+                continue
+            sem = str(c.get("semantic_tag") or "").strip().lower()
+            if not sem:
+                continue
+            related.add(sem.split("_", 1)[0] if "_" in sem else sem)
+
+        if not related:
+            return True
+
+        p_prefix = p_resource.split("_", 1)[0] if "_" in p_resource else p_resource
+        return p_resource in related or p_prefix in related
+
+    def _rank_producers(
+        self,
+        candidates: list[str],
+        *,
+        target_tool: str,
+        entities: dict[str, Any],
+    ) -> list[str]:
+        """Rank candidates by Pass 2 metadata signals.
+
+        Order:
+          1. Entity affinity — producer consumes a field the user already
+             supplied (so the chain actually uses user input).
+          2. Pair hint — target's ``pairs_well_with`` names this producer.
+          3. Action preference — ``search`` > ``read`` > others as a
+             prerequisite role.
+        Ties fall back to insertion order (stable sort).
+
+        No hardcoded names / regexes. Every signal is a per-tool Pass 2
+        field the LLM filled at ingest time.
+        """
+        target_meta = (self._tools.get(target_tool) or {}).get("metadata") or {}
+        target_ai = target_meta.get("ai_metadata") or {}
+        pair_names = {
+            str(p.get("tool") or "").strip()
+            for p in (target_ai.get("pairs_well_with") or [])
+            if isinstance(p, dict)
+        }
+        pair_names.discard("")
+        entity_keys = {str(k) for k in (entities or {}).keys()}
+
+        action_score = {"search": 3, "read": 2, "action": 1}
+
+        def _score(name: str) -> tuple[int, int, int]:
+            tool = self._tools.get(name) or {}
+            meta = tool.get("metadata") or {}
+            ai = meta.get("ai_metadata") or {}
+
+            affinity = 0
+            for c in (meta.get("consumes") or []):
+                tag = c.get("semantic_tag") or ""
+                fname = c.get("field_name") or ""
+                if (tag and tag in entity_keys) or (fname and fname in entity_keys):
+                    affinity += 1
+
+            pair_bonus = 1 if name in pair_names else 0
+            action = str(ai.get("canonical_action") or "").strip().lower()
+            return (affinity, pair_bonus, action_score.get(action, 0))
+
+        # Python's sort is stable; higher score wins, ties keep insertion order.
+        return sorted(candidates, key=_score, reverse=True)
+
+    def _response_root_keys(self, tool_name: str) -> list[str]:
+        """Top-level keys of the tool's response, taken from ``produces``.
+
+        Each ``produces[].json_path`` (e.g. ``$.searchDataList[*].goodsNo``)
+        contributes its first dotted segment (``searchDataList``). Used by
+        PlanRunner as a schema hint for envelope detection — when the
+        actual response is missing every hint at root but a single nested
+        dict contains them, the wrapper is peeled away.
+        """
+        tool = self._tools.get(tool_name) or {}
+        produces = (tool.get("metadata") or {}).get("produces") or []
+        out: list[str] = []
+        seen: set[str] = set()
+        for p in produces:
+            raw = p.get("json_path") or ""
+            head = _jsonpath_head(raw)
+            if head and head not in seen:
+                out.append(head)
+                seen.add(head)
+        return out
 
     def _producer_jsonpath(
         self,
@@ -297,6 +679,25 @@ class PathSynthesizer:
 
         raw = match.get("json_path") or ""
         return _normalize_jsonpath_for_binding(raw)
+
+    def _lookup_context_default(
+        self,
+        semantic: str,
+        field_name: str,
+    ) -> Any | None:
+        """Pick a registered context default for a consume field.
+
+        Mirrors ``_match_entity`` lookup order — semantic tag first (Pass 2
+        canonical id), field name second (Pass 1 raw). Returns ``None`` if
+        the operator hasn't registered a value for either key.
+        """
+        if not self._context_defaults:
+            return None
+        if semantic and semantic in self._context_defaults:
+            return self._context_defaults[semantic]
+        if field_name and field_name in self._context_defaults:
+            return self._context_defaults[field_name]
+        return None
 
     def _match_entity(
         self,
@@ -336,6 +737,25 @@ class PathSynthesizer:
         return value
 
 
+def _jsonpath_head(raw: str) -> str:
+    """First dotted segment of a JSONPath, stripping ``$``, ``.`` and ``[…]``.
+
+    ``$.payload.searchDataList[*].goodsNo`` → ``"payload"``.
+    ``$.totalCount`` → ``"totalCount"``.
+    Returns ``""`` for empty / unparseable input.
+    """
+    if not raw:
+        return ""
+    path = raw[1:] if raw.startswith("$") else raw
+    if path.startswith("."):
+        path = path[1:]
+    # Cut at the first separator (``.`` or ``[``).
+    for i, ch in enumerate(path):
+        if ch in ".[":
+            return path[:i]
+    return path
+
+
 def _normalize_jsonpath_for_binding(raw: str) -> str:
     """``$.body.goods[*].goodsNo`` → ``body.goods[0].goodsNo``.
 
@@ -357,4 +777,5 @@ __all__ = [
     "UnsatisfiableFieldError",
     "CyclicDependencyError",
     "MaxDepthExceededError",
+    "DynamicOptionRequired",
 ]
