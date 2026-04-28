@@ -46,11 +46,24 @@ class FieldSemantic:
 
     Used on both produces (what a tool outputs) and consumes (what it
     requires). ``json_path`` is set on produces; ``field`` is set on consumes.
+
+    ``kind`` (consumes only) distinguishes two roles:
+      - ``"data"``    — true data dependency (e.g. a business identifier
+                        needed to address the operation). PathSynthesizer
+                        will chain to a producer for this field.
+      - ``"context"`` — ambient config (locale, site, pagination). Must be
+                        supplied as an entity or collection default; the
+                        synthesizer will NOT build a prerequisite chain
+                        just to fetch it.
+
+    The default ``"data"`` matches pre-kind behavior (safe for tools whose
+    enrichment predates this schema change).
     """
 
     semantic: str
     json_path: str = ""
     field: str = ""
+    kind: str = "data"
 
 
 @dataclass
@@ -199,9 +212,19 @@ For each tool in the batch, output a JSON object with these fields:
       * Use CONSISTENT semantic ids across tools. If two tools both return a
         product identifier (one calls it "goodsNo", another "productId"),
         use the same semantic like "product_id".
-  - consumes_semantics: array of {{"semantic": "canonical_id", "field": "paramName"}}
+  - consumes_semantics: array of {{"semantic": "canonical_id",
+                                    "field": "paramName",
+                                    "kind": "data" | "context"}}
       * REQUIRED inputs only. Skip optional filters, pagination.
       * Same semantic id conventions as produces.
+      * kind="data" — business-data dependency: an identifier or value that
+        addresses a specific record (e.g. product_id, order_id, user_id,
+        search_keyword). A prior step in a plan normally produces it.
+      * kind="context" — ambient/environmental config shared across the
+        workflow (locale, site_no, tenant, pagination cursors, flag switches).
+        The user or the caller supplies it as a default — it is NOT produced
+        by a prior step. Use this for anything a plain UI user would set
+        once per session, not per request.
   - pairs_well_with: array of {{"tool": "tool_name_from_available_list",
                                 "reason": "brief reason"}}
       * 2-4 tools that typically precede or follow this tool.
@@ -271,14 +294,19 @@ def _parse_enrichment(data: Any) -> ToolEnrichment | None:
             for p in (data.get("produces_semantics") or [])
             if isinstance(p, dict) and str(p.get("semantic", "")).strip()
         ]
-        consumes = [
-            FieldSemantic(
-                semantic=str(c.get("semantic", "")).strip(),
-                field=str(c.get("field", "")).strip(),
+        consumes = []
+        for c in (data.get("consumes_semantics") or []):
+            if not (isinstance(c, dict) and str(c.get("semantic", "")).strip()):
+                continue
+            raw_kind = str(c.get("kind", "data")).strip().lower()
+            kind = raw_kind if raw_kind in ("data", "context") else "data"
+            consumes.append(
+                FieldSemantic(
+                    semantic=str(c.get("semantic", "")).strip(),
+                    field=str(c.get("field", "")).strip(),
+                    kind=kind,
+                )
             )
-            for c in (data.get("consumes_semantics") or [])
-            if isinstance(c, dict) and str(c.get("semantic", "")).strip()
-        ]
         pairs = [
             PairHint(
                 tool=str(p.get("tool", "")).strip(),
