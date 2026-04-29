@@ -24,6 +24,26 @@ class NodeType(str, Enum):
     DOMAIN = "domain"
 
 
+class Confidence(str, Enum):
+    """Edge confidence label, graphify-style.
+
+    Every edge in a graphify-style ToolGraph carries one of three labels so
+    downstream consumers (LLM agents, retrieval scoring, UI) can distinguish
+    deterministic facts from heuristic guesses.
+
+    EXTRACTED  — derived deterministically from the spec (path hierarchy,
+                 shared $ref, CRUD pattern). conf_score >= 0.85 AND layer == 1.
+    INFERRED   — heuristic match (name-based, RPC pattern, cross-resource).
+                 conf_score >= 0.85 but not strictly structural.
+    AMBIGUOUS  — low-confidence heuristic (0.70 <= conf_score < 0.85).
+                 Surface in UI for review; retrieval applies a score penalty.
+    """
+
+    EXTRACTED = "EXTRACTED"
+    INFERRED = "INFERRED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
 # Weights for relation types during retrieval scoring
 DEFAULT_RELATION_WEIGHTS: dict[str, float] = {
     RelationType.SIMILAR_TO: 0.8,
