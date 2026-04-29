@@ -134,6 +134,41 @@ def _schema_type(schema: dict[str, Any]) -> str:
     return _TYPE_MAP.get(schema.get("type", "string"), "string")
 
 
+def _pick_content_schema(content: dict[str, Any]) -> dict[str, Any]:
+    """Pick a usable schema from an OpenAPI ``content`` object.
+
+    OpenAPI 3.x lets a request body / response declare schemas under any
+    media-type key. The preferred order is:
+
+      1. ``application/json``                 — most common
+      2. ``application/*+json`` (e.g. hal+json) — JSON variants
+      3. ``*/*``                                — Spring/SpringDoc default when
+                                                  the operation doesn't pin a
+                                                  specific content type
+      4. first available media-type            — last resort
+
+    Returning the schema dict (possibly empty). The earlier code only
+    looked at ``application/json`` and silently dropped everything else,
+    which produced empty ``response_schema`` for every Spring endpoint
+    that uses the default ``*/*`` (real-world failure: x2bee Order API,
+    where this caused PathSynthesizer to find zero producers).
+    """
+    if not isinstance(content, dict) or not content:
+        return {}
+    if "application/json" in content:
+        return (content["application/json"] or {}).get("schema") or {}
+    for ct, val in content.items():
+        if isinstance(ct, str) and ct.endswith("+json"):
+            return (val or {}).get("schema") or {}
+    if "*/*" in content:
+        return (content["*/*"] or {}).get("schema") or {}
+    # Last resort: the first content type with a schema.
+    for val in content.values():
+        if isinstance(val, dict) and val.get("schema"):
+            return val["schema"]
+    return {}
+
+
 # ---------------------------------------------------------------------------
 # Operation -> ToolSchema
 # ---------------------------------------------------------------------------
@@ -241,39 +276,109 @@ def _extract_params_openapi3(
     *,
     required_only: bool = False,
 ) -> list[ToolParameter]:
-    """Extract parameters from an OpenAPI 3.x operation."""
+    """Extract parameters from an OpenAPI 3.x operation.
+
+    Spring/SpringDoc gotcha: when a controller takes a `@ModelAttribute`
+    DTO via query string, the spec sometimes lists BOTH the wrapper
+    object AND its inner fields as separate query parameters
+    (``regularOrderDetailRequest`` ``in=query`` ``type=object`` AND
+    ``rglrDeliNo`` ``in=query`` ``type=string``). Treating the wrapper
+    as a real input field poisons downstream producer matching: nothing
+    in the API ever returns a value named after the wrapper class, so
+    PathSynthesizer raises ``UnsatisfiableField`` on a phantom field.
+
+    Strategy: drop wrapper parameters when their inner properties are
+    already exposed as siblings; otherwise expand the wrapper into its
+    leaf properties so callers see the real input names.
+    """
     params: list[ToolParameter] = []
 
+    raw_parameters = list(operation.get("parameters", []))
+    # Pre-collect names from non-object parameters — used to detect when
+    # a wrapper's inner property is already exposed alongside it.
+    sibling_names: set[str] = {
+        str(p.get("name") or "")
+        for p in raw_parameters
+        if isinstance(p, dict) and _schema_type(p.get("schema", {}) or {}) not in ("object",)
+    }
+
     # Path / query / header / cookie parameters
-    for p in operation.get("parameters", []):
+    for p in raw_parameters:
         if "name" not in p:
             continue  # skip malformed parameters (missing required 'name' field)
         schema = p.get("schema", {})
         is_required = p.get("required", False)
+        ptype = _schema_type(schema)
+
+        # Wrapper-object/array query parameter handling.
+        # type=object → wrapper itself (Spring @ModelAttribute style).
+        # type=array of objects → wrapper used to send a list of structured
+        # records (less common but seen in some Spring specs); we expand the
+        # element schema's properties. Primitive arrays (array of integers /
+        # strings) are real list inputs and are NOT expanded here — those
+        # belong to the caller as a single multi-value field.
+        if ptype in ("object", "array") and p.get("in") == "query":
+            wrapper_props: dict[str, Any] = {}
+            wrapper_required: set[str] = set()
+            if ptype == "object":
+                wrapper_props = (schema.get("properties") or {}) if isinstance(schema, dict) else {}
+                wrapper_required = set(schema.get("required") or [])
+            else:  # array
+                items = (schema.get("items") or {}) if isinstance(schema, dict) else {}
+                if isinstance(items, dict) and items.get("type") == "object":
+                    wrapper_props = items.get("properties") or {}
+                    wrapper_required = set(items.get("required") or [])
+                # else: primitive-element array — don't expand, treat as real input
+            if wrapper_props:
+                # If every inner property is already a sibling parameter,
+                # drop the wrapper entirely (deduplication).
+                if all(prop in sibling_names for prop in wrapper_props):
+                    continue
+                # Otherwise expand the wrapper into individual leaves so
+                # producer matching has real field names to chase.
+                for prop_name, prop_schema in wrapper_props.items():
+                    if prop_name in sibling_names:
+                        continue  # don't double-list ones already exposed
+                    inner_required = prop_name in wrapper_required
+                    if required_only and not inner_required:
+                        continue
+                    inner_type = _schema_type(prop_schema or {})
+                    inner_desc = (prop_schema or {}).get("description", "") or ""
+                    params.append(
+                        ToolParameter(
+                            name=prop_name,
+                            type=inner_type,
+                            description=inner_desc,
+                            required=inner_required,
+                            enum=(prop_schema or {}).get("enum"),
+                        )
+                    )
+                continue  # wrapper itself is not added
+
         if required_only and not is_required:
             continue
         desc = p.get("description", "") or ""
         # object/array 타입이면 nested fields를 description에 펼쳐서
         # LLM이 정확한 필드명(예: searchWord)을 알 수 있게 한다.
-        if _schema_type(schema) in ("object", "array"):
+        if ptype in ("object", "array"):
             nested = _summarize_object_schema(schema)
             if nested:
                 desc = (desc + "\nFields:\n" + nested).strip() if desc else f"Fields:\n{nested}"
         params.append(
             ToolParameter(
                 name=p["name"],
-                type=_schema_type(schema),
+                type=ptype,
                 description=desc,
                 required=is_required,
                 enum=schema.get("enum"),
             )
         )
 
-    # requestBody
+    # requestBody — pick the most specific schema across declared media types
+    # (Spring/SpringDoc commonly emits */* — see _pick_content_schema notes).
     request_body = operation.get("requestBody", {})
     content = request_body.get("content", {})
-    json_content = content.get("application/json", {})
-    body_schema = json_content.get("schema", {})
+    body_schema = _pick_content_schema(content)
     body_required = set(body_schema.get("required", []))
     for prop_name, prop_schema in body_schema.get("properties", {}).items():
         is_required = prop_name in body_required
@@ -429,21 +534,24 @@ def _operation_to_tool(
     else:
         parameters = _extract_params_openapi3(operation, resolved_spec, required_only=required_only)
 
-    # Build response schema metadata
+    # Build response schema metadata. Walk responses in success-code order
+    # and use _pick_content_schema so we don't drop schemas declared under
+    # */*, application/*+json, or other non-JSON media types.
     responses = operation.get("responses", {})
     response_schema: dict[str, Any] = {}
     for code in ("200", "201", "default"):
-        if code in responses:
-            resp = responses[code]
-            # Swagger 2.0
-            if "schema" in resp:
-                response_schema = resp["schema"]
-                break
-            # OpenAPI 3.x
-            resp_content = resp.get("content", {})
-            if "application/json" in resp_content:
-                response_schema = resp_content["application/json"].get("schema", {})
-                break
+        if code not in responses:
+            continue
+        resp = responses[code] or {}
+        # Swagger 2.0 puts the schema directly on the response object.
+        if "schema" in resp and isinstance(resp.get("schema"), dict):
+            response_schema = resp["schema"]
+            break
+        # OpenAPI 3.x: inspect the content map.
+        picked = _pick_content_schema(resp.get("content") or {})
+        if picked:
+            response_schema = picked
+            break
 
     metadata: dict[str, Any] = {
         "source": "openapi",

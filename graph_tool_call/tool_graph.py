@@ -16,7 +16,7 @@ from graph_tool_call.core.dict_graph import DictGraph
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema, normalize_tool, parse_tool
 from graph_tool_call.ontology.builder import OntologyBuilder
-from graph_tool_call.ontology.schema import RelationType
+from graph_tool_call.ontology.schema import Confidence, RelationType
 
 
 def _encode_spec_url(base: str, raw_url: str) -> str:
@@ -488,9 +488,27 @@ class ToolGraph:
         target: str,
         relation: str | RelationType,
         weight: float = 1.0,
+        *,
+        confidence: str | Confidence | None = None,
+        conf_score: float | None = None,
+        layer: int | None = None,
+        evidence: str | None = None,
     ) -> None:
-        """Add a relation between two tools."""
-        self._builder.add_relation(source, target, relation, weight)
+        """Add a relation between two tools.
+
+        Optional graphify-style attrs are forwarded to ``OntologyBuilder``;
+        see ``OntologyBuilder.add_relation`` for semantics.
+        """
+        self._builder.add_relation(
+            source,
+            target,
+            relation,
+            weight,
+            confidence=confidence,
+            conf_score=conf_score,
+            layer=layer,
+            evidence=evidence,
+        )
         self._invalidate_retrieval()
 
     def add_domain(self, domain: str, description: str = "") -> None:

@@ -90,6 +90,46 @@ class DynamicOptionRequired(UnsatisfiableFieldError):
         self.label_field_hints = list(label_field_hints)
 
 
+def _normalize_field_name(name: str) -> str:
+    """Lowercase + strip separators for loose field-name matching.
+
+    Conservative on purpose:
+      ``ordNo`` → ``ordno``
+      ``ord_no`` → ``ordno``
+      ``ORD-NO`` → ``ordno``
+    BUT keeps token roots distinct:
+      ``ordNo`` ≠ ``orderNo`` (``ordno`` ≠ ``orderno``)
+    Token-level synonym mapping (``ord`` ↔ ``order``) is domain-specific
+    and not done here — the graph-edge fallback handles those cases.
+    """
+    if not name:
+        return ""
+    out: list[str] = []
+    for ch in name:
+        if ch.isalnum():
+            out.append(ch.lower())
+    return "".join(out)
+
+
+def _normalize_field_name(name: str) -> str:
+    """Lowercase + strip non-alphanumerics for loose field-name matching.
+
+    Conservative on purpose:
+      ``ordNo`` → ``ordno``    ``ord_no`` → ``ordno``    ``ORD-NO`` → ``ordno``
+
+    Token roots stay distinct:
+      ``ordNo`` ≠ ``orderNo``  (``ordno`` ≠ ``orderno``)
+
+    Token-level synonym mapping (``ord`` ↔ ``order``) is domain-specific
+    and intentionally NOT done here — that's the job of the graph-edge
+    fallback in ``_find_producer``, which uses path/$ref/CRUD signals
+    instead of name guessing.
+    """
+    if not name:
+        return ""
+    return "".join(ch.lower() for ch in name if ch.isalnum())
+
+
 @dataclass
 class _PartialStep:
     """In-progress step being built during bottom-up synthesis."""
@@ -140,6 +180,18 @@ class PathSynthesizer:
         # semantic_tag -> [tool_name], insertion order preserved
         self._producers_by_semantic: dict[str, list[str]] = {}
         self._producers_by_field: dict[str, list[str]] = {}
+        # Loose-field index: normalised field name → [tool_name].
+        # Lets ``ordNo`` match producers of ``ordno`` / ``ord_no`` / ``ORDNO``.
+        # Conservative — only normalises case + separators, never strips
+        # tokens (so ``ordNo`` ≠ ``orderNo`` — those need the graph fallback).
+        self._producers_by_loose_field: dict[str, list[str]] = {}
+        # graphify-mode adjacency: ``tool_name -> [edge_dict]`` for outgoing
+        # workflow edges (REQUIRES / PRECEDES / COMPLEMENTARY). Used as a
+        # fallback in ``_find_producer`` when neither semantic_tag nor
+        # field_name match — we walk the graph the user/extractor built
+        # rather than failing on field-name divergence.
+        self._workflow_edges_out: dict[str, list[dict[str, Any]]] = {}
+        self._index_workflow_edges(graph)
         self._build_producer_indexes()
 
     # ------------------------------------------------------------------
@@ -197,6 +249,23 @@ class PathSynthesizer:
             ))
 
         target_step_id = steps_by_tool[target].step_id
+
+        # Collect user_input slots so the runner can prompt the caller in
+        # advance and the UI can render a single popup with all missing
+        # fields, instead of one popup per step. Each entry: which step
+        # needs which field, and (when known) the original semantic_tag
+        # so frontend can show the same enum/popup the operator
+        # registered for that field.
+        user_input_slots: list[dict[str, Any]] = []
+        for step in final_steps:
+            for arg_name, arg_val in (step.args or {}).items():
+                if isinstance(arg_val, str) and arg_val.startswith("${user_input."):
+                    user_input_slots.append({
+                        "step_id": step.id,
+                        "tool": step.tool,
+                        "field_name": arg_name,
+                    })
+
         return Plan(
             id=str(uuid.uuid4()),
             goal=goal or f"Execute {target}",
@@ -210,6 +279,7 @@ class PathSynthesizer:
                 "target": target,
                 "entities": dict(entities),
                 "synthesized_by": "PathSynthesizer/v1",
+                "user_input_slots": user_input_slots,
             },
         )
 
@@ -297,15 +367,26 @@ class PathSynthesizer:
                 )
 
             # 5. Required data field → rank candidate producers and pick the best.
+            #    Pass ``visiting`` as ``excluded`` so cycle-prone candidates are
+            #    skipped here (Cycle policy A). The chain reroutes around the
+            #    cycle when an alternative producer exists; only when none
+            #    remains does the caller fall through to user-input slot (F2).
             producer = self._find_producer(
                 semantic=semantic, field_name=field_name,
                 target_tool=tool_name, entities=entities,
+                excluded=visiting,
             )
             if producer is None:
-                raise UnsatisfiableFieldError(
-                    f"tool {tool_name!r} requires {field_name!r} "
-                    f"(semantic={semantic!r}) but no entity or producer found"
-                )
+                # F2 + Cycle policy B: gracefully surface the field as a
+                # ``${user_input.<field>}`` placeholder rather than aborting
+                # the entire plan. The runner detects the placeholder at
+                # step-start and asks the user (or its surrounding agent)
+                # to supply the value. The plan's metadata records every
+                # such slot so the caller can pre-collect inputs.
+                placeholder = f"${{user_input.{field_name}}}"
+                args[field_name] = placeholder
+                rationales.append(f"{field_name} ← user_input")
+                continue
 
             # 5a. Dynamic-option popup priority. Detect "read-detail then
             #     pick one" patterns where the producer is a single-hop
@@ -342,14 +423,27 @@ class PathSynthesizer:
                         label_field_hints=self._label_hints_for(producer, opt_path),
                     )
 
-            # Recurse into the producer first so step_id ordering is correct
-            self._resolve(
-                tool_name=producer,
-                entities=entities,
-                steps_by_tool=steps_by_tool,
-                visiting=visiting,
-                depth=depth + 1,
-            )
+            # Recurse into the producer first so step_id ordering is correct.
+            # Cycle policy B + F2: if the producer's own chain is too deep
+            # or cycles back, we don't abort the whole plan — we drop this
+            # producer and fall back to a user_input slot for the field.
+            # This keeps the surface tool callable when the prerequisite
+            # chain extends beyond what the synthesiser can flatten.
+            try:
+                self._resolve(
+                    tool_name=producer,
+                    entities=entities,
+                    steps_by_tool=steps_by_tool,
+                    visiting=visiting,
+                    depth=depth + 1,
+                )
+            except (MaxDepthExceededError, CyclicDependencyError) as exc:
+                placeholder = f"${{user_input.{field_name}}}"
+                args[field_name] = placeholder
+                rationales.append(
+                    f"{field_name} ← user_input (chain unflattenable: {exc.__class__.__name__})"
+                )
+                continue
 
             # Build a placeholder binding — will be rewritten after step_ids
             # are assigned. Format: ${<tool_name>.<jsonpath-sans-root>}
@@ -370,16 +464,107 @@ class PathSynthesizer:
     # ------------------------------------------------------------------
 
     def _build_producer_indexes(self) -> None:
-        """Index which tools produce which semantic / field across graph."""
+        """Index which tools produce which semantic / field across the graph.
+
+        Echo-back filter: a tool that takes ``ordNo`` as input and echoes it
+        back in its response is NOT a producer of ``ordNo`` in any useful
+        sense — it's just relaying the value the caller already supplied. We
+        skip those entries so the index reflects tools that actually CREATE
+        or DISCOVER the value (``listOrders``, ``createOrder``,
+        ``searchOrders`` etc.) rather than every endpoint that happens to
+        round-trip the field.
+
+        Same rule applied to ``semantic_tag`` for parity with the LLM Pass 2
+        enrichment path. Empty consumes (no input fields) → never echo, so
+        all produces are real producers.
+        """
         for name, tool in self._tools.items():
             meta = tool.get("metadata") or {}
+            consumed_fields: set[str] = set()
+            consumed_semantics: set[str] = set()
+            for c in meta.get("consumes") or []:
+                if not isinstance(c, dict):
+                    continue
+                cf = c.get("field_name") or ""
+                cs = c.get("semantic_tag") or ""
+                if cf:
+                    consumed_fields.add(cf)
+                if cs:
+                    consumed_semantics.add(cs)
+
             for produce in meta.get("produces") or []:
                 sem = produce.get("semantic_tag") or ""
                 fname = produce.get("field_name") or ""
+                # Skip pure echo-back: the field came in, gets relayed out.
+                if fname and fname in consumed_fields:
+                    continue
+                if sem and sem in consumed_semantics:
+                    continue
                 if sem:
                     self._producers_by_semantic.setdefault(sem, []).append(name)
                 if fname:
                     self._producers_by_field.setdefault(fname, []).append(name)
+                    loose = _normalize_field_name(fname)
+                    if loose and loose != fname:
+                        self._producers_by_loose_field.setdefault(loose, []).append(name)
+
+    # ---- graphify edge indexing & traversal ---------------------------------
+
+    _WORKFLOW_RELATIONS: frozenset[str] = frozenset(
+        {"requires", "precedes", "complementary"}
+    )
+    _CONFIDENCE_RANK: dict[str, int] = {
+        "EXTRACTED": 0,
+        "INFERRED": 1,
+        "AMBIGUOUS": 2,
+    }
+
+    def _index_workflow_edges(self, graph: dict[str, Any]) -> None:
+        """Bucket the graphify graph's outgoing workflow edges by source tool.
+
+        Accepts the same graph dict the rest of the class consumes — looks
+        for ``graph.graph.edges`` (DictGraph.to_dict() output) or the
+        legacy NetworkX-style ``graph.graph.links`` if present. Edges
+        without a confidence label are kept (treated as fallback) so this
+        also works on graphs built before the graphify ingest landed.
+        """
+        graph_inner = graph.get("graph") or {}
+        edges = graph_inner.get("edges") or graph_inner.get("links") or []
+        for e in edges:
+            if not isinstance(e, dict):
+                continue
+            src = e.get("source") or e.get("from")
+            tgt = e.get("target") or e.get("to")
+            rel = e.get("relation")
+            rel_str = (
+                rel.value if hasattr(rel, "value")
+                else str(rel) if rel is not None else ""
+            ).lower()
+            if not src or not tgt or rel_str not in self._WORKFLOW_RELATIONS:
+                continue
+            self._workflow_edges_out.setdefault(src, []).append({
+                "target": tgt,
+                "relation": rel_str,
+                "confidence": e.get("confidence"),
+                "conf_score": float(e.get("conf_score") or 0.0),
+                "evidence": e.get("evidence") or "",
+            })
+
+    # Producer-signal score weights. Higher = stronger signal that this
+    # candidate genuinely produces the value the target needs. Weights chosen
+    # so combined signals (e.g. graph EXTRACTED + field exact = 90) beat any
+    # single signal, and graph EXTRACTED alone (50) beats field exact alone
+    # (40) — Path/$ref/CRUD-derived edges are more reliable than coincidental
+    # field-name overlap. ``semantic_exact`` requires LLM Pass 2 enrichment;
+    # when present it's the strongest signal we have.
+    _SIGNAL_WEIGHTS: dict[str, int] = {
+        "semantic_exact": 100,
+        "graph_EXTRACTED": 50,
+        "field_exact": 40,
+        "graph_INFERRED": 20,
+        "field_loose": 10,
+        "graph_AMBIGUOUS": 5,
+    }
 
     def _find_producer(
         self,
@@ -388,36 +573,133 @@ class PathSynthesizer:
         field_name: str,
         target_tool: str,
         entities: dict[str, Any],
+        excluded: set[str] | None = None,
     ) -> str | None:
-        """Pick the best-ranked producer for ``semantic`` (or ``field_name``).
+        """Pick the best producer using combined graph + schema signals.
 
-        Candidates are gathered from both indexes (semantic first), then
-        ranked using Pass 2 metadata (``_rank_producers``) and finally
-        filtered by ``_is_chain_eligible`` — discards producers whose
-        ``canonical_action`` / ``primary_resource`` signal they're
-        unrelated to the target's domain (e.g. claim-cost calculator
-        showing up as a producer for a basket field just because a
-        ``produces`` entry happens to match).
+        Producer matching is treated as the intersection of two first-class
+        signals (NOT a fallback chain):
+          (a) Schema match — semantic_tag / field_name on ``produces``.
+          (b) Graph traversal — outgoing REQUIRES / PRECEDES / COMPLEMENTARY
+              edges from ``target_tool``, ranked by ``confidence``.
+
+        A candidate accumulates one entry per matching signal. The signal
+        weights live in ``_SIGNAL_WEIGHTS`` and combine additively, so a
+        candidate matched by both graph EXTRACTED and field_exact (90) wins
+        over one matched only by field_exact (40). Tie-break uses the
+        existing Pass-2 ``_rank_producers`` (entity affinity, pair hint,
+        canonical action), and ``_is_chain_eligible`` still gates the final
+        pick — sparse Pass-2 metadata pass-throughs apply unchanged.
+
+        ``excluded`` is the set of tools currently being resolved (the
+        caller's ``visiting`` set). Producer candidates in this set would
+        re-enter recursion and trigger ``CyclicDependencyError`` — we skip
+        them here so the second-best candidate gets a chance instead. This
+        is the "skip-this-branch" cycle policy: the chain reroutes around
+        the cycle when alternative producers exist; only when all candidates
+        cycle does the caller fall back to user-input slot handling.
+
+        Returns the highest-scoring eligible candidate, or None if no
+        candidate has any signal (or all signals point to ``excluded`` tools).
         """
-        candidates: list[str] = []
-        seen: set[str] = set()
+        excluded = excluded or set()
+        candidate_signals: dict[str, set[str]] = {}
+
+        def _record(name: str, signal: str) -> None:
+            if name and name != target_tool:
+                candidate_signals.setdefault(name, set()).add(signal)
+
+        # (a) schema-side: exact semantic / field_name (echo-back already
+        # filtered when the index was built).
         if semantic:
-            for name in self._producers_by_semantic.get(semantic, []):
-                if name != target_tool and name not in seen:
-                    candidates.append(name)
-                    seen.add(name)
+            for n in self._producers_by_semantic.get(semantic, []):
+                _record(n, "semantic_exact")
         if field_name:
-            for name in self._producers_by_field.get(field_name, []):
-                if name != target_tool and name not in seen:
-                    candidates.append(name)
-                    seen.add(name)
-        if not candidates:
+            for n in self._producers_by_field.get(field_name, []):
+                _record(n, "field_exact")
+
+        # (a') schema-side: loose field match — separator/case folded.
+        # ``ordNo`` won't match ``orderNo`` (different roots) but will match
+        # ``ord_no`` / ``ORDNO``. Cross-naming-convention safety net.
+        if field_name:
+            loose = _normalize_field_name(field_name)
+            if loose:
+                for n in self._producers_by_loose_field.get(loose, []):
+                    if n in candidate_signals:
+                        continue  # already had a stronger signal
+                    _record(n, "field_loose")
+
+        # (b) graph-side: walk outgoing workflow edges, verify each
+        # candidate actually has a matching produces entry.
+        edges = self._workflow_edges_out.get(target_tool) or []
+        loose_target = _normalize_field_name(field_name) if field_name else ""
+        for e in edges:
+            cand = e.get("target")
+            if not cand or cand == target_tool:
+                continue
+            tool = self._tools.get(cand)
+            if not tool:
+                continue
+            cand_consumes_fields = {
+                (c or {}).get("field_name", "")
+                for c in (tool.get("metadata") or {}).get("consumes") or []
+                if isinstance(c, dict)
+            }
+            cand_consumes_semantics = {
+                (c or {}).get("semantic_tag", "")
+                for c in (tool.get("metadata") or {}).get("consumes") or []
+                if isinstance(c, dict)
+            }
+            for p in (tool.get("metadata") or {}).get("produces") or []:
+                if not isinstance(p, dict):
+                    continue
+                p_sem = p.get("semantic_tag") or ""
+                p_fname = p.get("field_name") or ""
+                # Echo-back guard for the candidate itself — same rule as
+                # _build_producer_indexes, applied here so graph-edge
+                # discoveries don't sneak in a relayed value.
+                if p_fname and p_fname in cand_consumes_fields:
+                    continue
+                if p_sem and p_sem in cand_consumes_semantics:
+                    continue
+
+                matched = False
+                if semantic and p_sem == semantic:
+                    matched = True
+                elif field_name and p_fname == field_name:
+                    matched = True
+                elif loose_target and _normalize_field_name(p_fname) == loose_target:
+                    matched = True
+                if not matched:
+                    continue
+
+                conf = e.get("confidence") or "AMBIGUOUS"
+                _record(cand, f"graph_{conf}")
+                break  # one signal per candidate per edge target is enough
+
+        if not candidate_signals:
             return None
 
+        # Score and pre-rank by signal strength (stable for equal scores).
+        def _score(signals: set[str]) -> int:
+            return sum(self._SIGNAL_WEIGHTS.get(s, 0) for s in signals)
+
+        scored = sorted(
+            candidate_signals.items(),
+            key=lambda item: (-_score(item[1]), item[0]),
+        )
+        sorted_names = [n for n, _ in scored]
+
+        # Pass 2 / chain-eligibility gate — pass-through when ai_metadata
+        # is sparse, identical behaviour to the previous implementation.
+        # Cycle filter: skip candidates currently in the resolution stack so
+        # the synthesiser reroutes around the cycle instead of raising.
         ranked = self._rank_producers(
-            candidates, target_tool=target_tool, entities=entities,
+            sorted_names, target_tool=target_tool, entities=entities,
         )
         for cand in ranked:
+            if cand in excluded:
+                continue
             if self._is_chain_eligible(cand, target_tool=target_tool):
                 return cand
         return None

@@ -68,10 +68,23 @@ class FieldSemantic:
 
 @dataclass
 class PairHint:
-    """LLM-suggested tool that pairs with the current tool."""
+    """A tool that pairs with the current tool in a workflow.
+
+    ``source`` distinguishes ownership so re-running auto enrichment doesn't
+    overwrite operator curation:
+      - ``"auto"``   — produced by Pass 2a (per-tool batch) or Pass 2b
+                       (cross-batch). Replaced on every Pass 2b re-run.
+      - ``"manual"`` — added by an operator through the UI. Never overwritten
+                       by automatic enrichment.
+
+    Default ``"manual"`` is intentional: legacy data without a ``source``
+    field gets the safer label, so a Pass 2b re-run does not silently delete
+    pre-existing entries that may have been hand-curated.
+    """
 
     tool: str
-    reason: str
+    reason: str = ""
+    source: str = "manual"
 
 
 @dataclass
@@ -192,11 +205,7 @@ You are annotating API tools for a plan-and-execute planning system.
 Produce structured metadata that downstream components use to (1) pick the
 right tool for a user's goal, (2) synthesize execution plans, and (3) wire
 one tool's output to another tool's input.
-
-AVAILABLE TOOLS IN THE COLLECTION (names + 1-line descriptions, for
-pairs_well_with reference):
-{all_tools_brief}
-
+{reference_block}{vocab_block}
 TOOLS TO ANNOTATE (this batch):
 {batch_detailed}
 
@@ -243,6 +252,51 @@ STRICT RULES:
   - Return JSON only. No markdown fences, no prose, no comments."""
 
 
+# Pass 2b — cross-batch workflow pairing.
+#
+# Per-tool enrichment (Pass 2a) only sees one batch at a time, so it cannot
+# spot pairs whose other half lives in a different batch. This prompt shows
+# the entire collection's 1-line summaries so the LLM can suggest workflow
+# successors that span resources.
+#
+# The output is batched (subset of tools per call) to stay within the
+# response token budget — input stays full, output stays small.
+_PAIRS_PROMPT = """\
+You are reviewing an API tool collection to suggest workflow pairs.
+
+For EACH tool in the OUTPUT BATCH, suggest 2-4 OTHER tools from the FULL
+TOOL LIST that are commonly invoked just before or just after this tool in
+a real-world workflow. Pairs SHOULD cross resource boundaries when there is
+a natural business sequence (e.g. product detail → add to cart → checkout).
+
+Pair quality matters more than quantity — only suggest tools you are
+confident about. If a tool has no good pair candidates, return an empty
+array for it.
+
+FULL TOOL LIST (all available tools — pick pairs only from this list):
+{full_list}
+
+OUTPUT BATCH (suggest pairs ONLY for these tools):
+{batch_list}
+
+OUTPUT FORMAT (strict JSON):
+{{
+  "tool_name_1": [
+    {{"tool": "other_tool_name", "reason": "short reason"}},
+    ...
+  ],
+  "tool_name_2": [...],
+  ...
+}}
+
+STRICT RULES:
+  - You MUST include one entry for EVERY tool in the OUTPUT BATCH (use
+    empty array if no good pairs).
+  - Pair tool names MUST exactly match a name in the FULL TOOL LIST.
+  - Do NOT pair a tool with itself.
+  - Return JSON only. No markdown fences, no prose, no comments."""
+
+
 def _format_tools_list(tools: list[ToolSummary]) -> str:
     lines = []
     for i, t in enumerate(tools, 1):
@@ -259,6 +313,22 @@ def _format_tools_brief(tools: list[ToolSummary]) -> str:
     Tool names like ``seltSearchProduct`` already encode intent.
     """
     return "\n".join(f"- {t.name}" for t in tools)
+
+
+def _format_tools_for_pairs(tools: list[ToolSummary]) -> str:
+    """Compact ``name: 1-line summary`` block for Pass 2b prompts.
+
+    Uses ``description`` (mapped from ai_metadata.one_line_summary by the
+    caller for tools that have been Pass 2a annotated) so the LLM can pair
+    based on workflow meaning, not just tool names.
+    """
+    lines = []
+    for t in tools:
+        summary = (t.description or "").strip().replace("\n", " ")
+        if len(summary) > 100:
+            summary = summary[:97] + "..."
+        lines.append(f"- {t.name}: {summary}" if summary else f"- {t.name}")
+    return "\n".join(lines)
 
 
 def _format_tools_for_enrichment(tools: list[ToolSummary]) -> str:
@@ -307,10 +377,15 @@ def _parse_enrichment(data: Any) -> ToolEnrichment | None:
                     kind=kind,
                 )
             )
+        # Pairs from per-tool enrichment are batch-scoped (LLM only sees the
+        # current batch), so quality is lower than cross-batch Pass 2b.
+        # Marked source="auto" so a Pass 2b run can replace them while
+        # preserving operator-curated source="manual" entries.
         pairs = [
             PairHint(
                 tool=str(p.get("tool", "")).strip(),
                 reason=str(p.get("reason", "")).strip(),
+                source="auto",
             )
             for p in (data.get("pairs_well_with") or [])
             if isinstance(p, dict) and str(p.get("tool", "")).strip()
@@ -624,45 +699,129 @@ class OntologyLLM(ABC):
 
         return all_queries
 
+    def enrich_pairs(
+        self,
+        tools: list[ToolSummary],
+        batch_size: int = 30,
+    ) -> dict[str, list[PairHint]]:
+        """Pass 2b — cross-batch workflow pair suggestion.
+
+        Unlike Pass 2a (``enrich_tool_semantics``) which sees only the
+        current batch, this pass shows the LLM the full collection's 1-line
+        summaries so it can suggest pairs that cross resource boundaries
+        (e.g. ``getProductDetail → addToCart`` even when the two tools live
+        in different swagger sources).
+
+        Output is batched only on the OUTPUT axis: input list stays full
+        for every call, output covers ``batch_size`` tools per call. This
+        keeps the prompt short and avoids the 8k-token output limit
+        truncating long pair lists.
+
+        Tools should arrive with ``description`` set to ai_metadata
+        ``one_line_summary`` when available (Pass 2a output) so pairing can
+        rely on workflow meaning, not just tool names.
+
+        Returns: {tool_name: [PairHint(source="auto"), ...]}
+        """
+        results: dict[str, list[PairHint]] = {}
+        if not tools:
+            return results
+
+        full_list = _format_tools_for_pairs(tools)
+
+        for i in range(0, len(tools), batch_size):
+            batch = tools[i : i + batch_size]
+            batch_list = _format_tools_for_pairs(batch)
+            prompt = _PAIRS_PROMPT.format(full_list=full_list, batch_list=batch_list)
+            response = self.generate(prompt)
+
+            try:
+                parsed = _extract_json(response)
+                if not isinstance(parsed, dict):
+                    continue
+                for name, raw_pairs in parsed.items():
+                    if not isinstance(raw_pairs, list):
+                        continue
+                    pair_list: list[PairHint] = []
+                    for p in raw_pairs:
+                        if not isinstance(p, dict):
+                            continue
+                        target = str(p.get("tool", "")).strip()
+                        if not target or target == name:
+                            continue
+                        pair_list.append(PairHint(
+                            tool=target,
+                            reason=str(p.get("reason", "")).strip(),
+                            source="auto",
+                        ))
+                    results[str(name)] = pair_list
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+
+        return results
+
     def enrich_tool_semantics(
         self,
         tools: list[ToolSummary],
         batch_size: int = 10,
         *,
         reference_tools: list[ToolSummary] | None = None,
+        existing_vocab: list[str] | None = None,
+        valid_tool_names: set[str] | None = None,
     ) -> dict[str, ToolEnrichment]:
         """Per-tool semantic annotation for Plan-and-Execute architecture.
 
-        ``tools`` = the batch (or batches) of tools to produce detailed
-        enrichment for. ``reference_tools`` = the full catalog used only to
-        build ``all_tools_brief`` in the prompt (so LLM picks
-        ``pairs_well_with`` from valid names). If ``reference_tools`` is
-        None, falls back to ``tools``.
+        ``tools`` = the batch(es) to produce detailed enrichment for.
 
-        Streaming callers typically pass one batch in ``tools`` + the full
-        collection in ``reference_tools`` + ``batch_size=len(tools)`` so the
-        internal loop runs once per caller invocation.
+        ``reference_tools`` (optional, default ``None``) — when supplied,
+        rendered as a brief tool list in the prompt so the LLM can pick
+        ``pairs_well_with`` from valid names. **Streaming callers should
+        usually pass ``None``** — Pass 2b handles pairs in a separate
+        cross-batch call, and skipping the reference block saves ~50%
+        prompt tokens. The pair list emitted in this pass is post-validated
+        against ``valid_tool_names`` instead.
 
-        Output is used by:
-          - Stage 1 (target selection) — ``one_line_summary`` + ``when_to_use``
-            in tool catalog make LLM picks more accurate with smaller context.
-          - Stage 2 (path synthesis) — ``produces_semantics`` /
-            ``consumes_semantics`` carry canonical semantic ids so bindings
-            work across convention mismatches (e.g. ``goodsNo`` ≡ ``productId``)
-            without a hardcoded synonym table.
-          - Graph edges — ``pairs_well_with`` becomes optional semantic edges
-            that complement structural field-match edges.
+        ``existing_vocab`` (optional) — accumulated semantic ids decided in
+        previous batches of the same enrichment run. The LLM is asked to
+        reuse these labels when applicable, which keeps cross-batch vocab
+        consistent (avoids ``product_id`` vs ``productId`` divergence).
+        Streaming callers should pass the unique semantics seen so far.
+
+        ``valid_tool_names`` (optional) — full set of tool names in the
+        collection. When supplied, ``pairs_well_with`` entries pointing to
+        tools outside this set are dropped silently (LLM hallucination
+        guard). When ``reference_tools`` is None the LLM only knows the
+        names in the current batch; without this guard it would invent
+        names for cross-batch pairs.
         """
         results: dict[str, ToolEnrichment] = {}
         if not tools:
             return results
 
-        all_brief = _format_tools_brief(reference_tools or tools)
+        ref_block = ""
+        if reference_tools:
+            ref_block = (
+                "\nAVAILABLE TOOLS IN THE COLLECTION (names + 1-line "
+                "descriptions, for pairs_well_with reference):\n"
+                + _format_tools_brief(reference_tools)
+                + "\n"
+            )
+
+        vocab_block = ""
+        if existing_vocab:
+            vocab_block = (
+                "\nEXISTING SEMANTIC VOCABULARY (reuse these canonical ids "
+                "when the field has the same meaning — keeps cross-batch "
+                "labels consistent):\n"
+                + "\n".join(f"- {s}" for s in sorted(set(existing_vocab)))
+                + "\n"
+            )
 
         for i in range(0, len(tools), batch_size):
             batch = tools[i : i + batch_size]
             prompt = _ENRICH_SEMANTICS_PROMPT.format(
-                all_tools_brief=all_brief,
+                reference_block=ref_block,
+                vocab_block=vocab_block,
                 batch_detailed=_format_tools_for_enrichment(batch),
             )
             response = self.generate(prompt)
@@ -673,8 +832,16 @@ class OntologyLLM(ABC):
                     continue
                 for name, data in parsed.items():
                     enrichment = _parse_enrichment(data)
-                    if enrichment is not None and enrichment.canonical_action:
-                        results[str(name)] = enrichment
+                    if enrichment is None or not enrichment.canonical_action:
+                        continue
+                    # Hallucination guard for pairs_well_with — drop entries
+                    # whose target name is not in the catalog.
+                    if valid_tool_names is not None:
+                        enrichment.pairs_well_with = [
+                            p for p in enrichment.pairs_well_with
+                            if p.tool in valid_tool_names and p.tool != str(name)
+                        ]
+                    results[str(name)] = enrichment
             except (json.JSONDecodeError, KeyError, TypeError):
                 continue
 
