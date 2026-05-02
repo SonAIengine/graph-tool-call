@@ -58,7 +58,7 @@ class MaxDepthExceededError(PlanSynthesisError):
     """Recursion depth exceeded — likely a misshapen graph."""
 
 
-class DynamicOptionRequired(UnsatisfiableFieldError):
+class DynamicOptionRequired(UnsatisfiableFieldError):  # noqa: N818
     """A required data field has a single-hop producer that can be called
     immediately with the user's entities + context_defaults. Surface this
     so the caller can fetch the option list (instead of weaving a chain)
@@ -137,7 +137,7 @@ class _PartialStep:
     tool: str
     args: dict[str, Any] = field(default_factory=dict)
     rationale: str = ""
-    step_id: str = ""                          # assigned at topological sort
+    step_id: str = ""  # assigned at topological sort
 
 
 class PathSynthesizer:
@@ -236,17 +236,16 @@ class PathSynthesizer:
         final_steps: list[PlanStep] = []
         for tool_name in ordered_tools:
             partial = steps_by_tool[tool_name]
-            args = {
-                k: self._rewrite_tool_refs(v, steps_by_tool)
-                for k, v in partial.args.items()
-            }
-            final_steps.append(PlanStep(
-                id=partial.step_id,
-                tool=partial.tool,
-                args=args,
-                rationale=partial.rationale,
-                response_root_keys=self._response_root_keys(tool_name),
-            ))
+            args = {k: self._rewrite_tool_refs(v, steps_by_tool) for k, v in partial.args.items()}
+            final_steps.append(
+                PlanStep(
+                    id=partial.step_id,
+                    tool=partial.tool,
+                    args=args,
+                    rationale=partial.rationale,
+                    response_root_keys=self._response_root_keys(tool_name),
+                )
+            )
 
         target_step_id = steps_by_tool[target].step_id
 
@@ -260,11 +259,13 @@ class PathSynthesizer:
         for step in final_steps:
             for arg_name, arg_val in (step.args or {}).items():
                 if isinstance(arg_val, str) and arg_val.startswith("${user_input."):
-                    user_input_slots.append({
-                        "step_id": step.id,
-                        "tool": step.tool,
-                        "field_name": arg_name,
-                    })
+                    user_input_slots.append(
+                        {
+                            "step_id": step.id,
+                            "tool": step.tool,
+                            "field_name": arg_name,
+                        }
+                    )
 
         return Plan(
             id=str(uuid.uuid4()),
@@ -372,8 +373,10 @@ class PathSynthesizer:
             #    cycle when an alternative producer exists; only when none
             #    remains does the caller fall through to user-input slot (F2).
             producer = self._find_producer(
-                semantic=semantic, field_name=field_name,
-                target_tool=tool_name, entities=entities,
+                semantic=semantic,
+                field_name=field_name,
+                target_tool=tool_name,
+                entities=entities,
                 excluded=visiting,
             )
             if producer is None:
@@ -403,12 +406,11 @@ class PathSynthesizer:
             #     hit and continue. Without this constraint legitimate
             #     search→detail chains turn into popups.
             producer_action = self._producer_action(producer)
-            if (
-                producer_action == "read"
-                and self._is_producer_simple_callable(producer, entities)
-            ):
+            if producer_action == "read" and self._is_producer_simple_callable(producer, entities):
                 opt_path = self._produces_path_for(
-                    producer, semantic=semantic, field_name=field_name,
+                    producer,
+                    semantic=semantic,
+                    field_name=field_name,
                 )
                 if opt_path and "[*]" in opt_path:
                     raise DynamicOptionRequired(
@@ -510,9 +512,7 @@ class PathSynthesizer:
 
     # ---- graphify edge indexing & traversal ---------------------------------
 
-    _WORKFLOW_RELATIONS: frozenset[str] = frozenset(
-        {"requires", "precedes", "complementary"}
-    )
+    _WORKFLOW_RELATIONS: frozenset[str] = frozenset({"requires", "precedes", "complementary"})
     _CONFIDENCE_RANK: dict[str, int] = {
         "EXTRACTED": 0,
         "INFERRED": 1,
@@ -537,18 +537,19 @@ class PathSynthesizer:
             tgt = e.get("target") or e.get("to")
             rel = e.get("relation")
             rel_str = (
-                rel.value if hasattr(rel, "value")
-                else str(rel) if rel is not None else ""
+                rel.value if hasattr(rel, "value") else str(rel) if rel is not None else ""
             ).lower()
             if not src or not tgt or rel_str not in self._WORKFLOW_RELATIONS:
                 continue
-            self._workflow_edges_out.setdefault(src, []).append({
-                "target": tgt,
-                "relation": rel_str,
-                "confidence": e.get("confidence"),
-                "conf_score": float(e.get("conf_score") or 0.0),
-                "evidence": e.get("evidence") or "",
-            })
+            self._workflow_edges_out.setdefault(src, []).append(
+                {
+                    "target": tgt,
+                    "relation": rel_str,
+                    "confidence": e.get("confidence"),
+                    "conf_score": float(e.get("conf_score") or 0.0),
+                    "evidence": e.get("evidence") or "",
+                }
+            )
 
     # Producer-signal score weights. Higher = stronger signal that this
     # candidate genuinely produces the value the target needs. Weights chosen
@@ -695,7 +696,9 @@ class PathSynthesizer:
         # Cycle filter: skip candidates currently in the resolution stack so
         # the synthesiser reroutes around the cycle instead of raising.
         ranked = self._rank_producers(
-            sorted_names, target_tool=target_tool, entities=entities,
+            sorted_names,
+            target_tool=target_tool,
+            entities=entities,
         )
         for cand in ranked:
             if cand in excluded:
@@ -845,7 +848,7 @@ class PathSynthesizer:
             if "_" in t_resource:
                 related.add(t_resource.split("_", 1)[0])
 
-        for c in (t_meta_full.get("consumes") or []):
+        for c in t_meta_full.get("consumes") or []:
             if not isinstance(c, dict):
                 continue
             sem = str(c.get("semantic_tag") or "").strip().lower()
@@ -897,7 +900,7 @@ class PathSynthesizer:
             ai = meta.get("ai_metadata") or {}
 
             affinity = 0
-            for c in (meta.get("consumes") or []):
+            for c in meta.get("consumes") or []:
                 tag = c.get("semantic_tag") or ""
                 fname = c.get("field_name") or ""
                 if (tag and tag in entity_keys) or (fname and fname in entity_keys):

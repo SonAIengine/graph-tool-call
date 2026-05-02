@@ -24,12 +24,12 @@ import argparse
 import asyncio
 import json
 
-
 # =====================================================================
 # 방법 1: MCP 서버에서 tool 수집 → gateway
 # =====================================================================
 # 실제 MCP 서버(Slack, GitHub, Jira 등)에서 tool을 가져와서
 # gateway 2개로 축약하는 패턴. xgen-workflow 실 적용 코드와 동일.
+
 
 async def example_mcp_gateway():
     """MCP 서버에서 tool 수집 후 gateway agent 구성."""
@@ -66,8 +66,9 @@ async def example_mcp_gateway():
                 # MCP tool → LangChain StructuredTool 변환
                 for t in response.tools:
                     from langchain_core.tools import StructuredTool
+
                     tool = StructuredTool.from_function(
-                        func=lambda **kwargs, _s=session, _n=t.name: asyncio.run(
+                        func=lambda _s=session, _n=t.name, **kwargs: asyncio.run(
                             _s.call_tool(_n, kwargs)
                         ),
                         name=t.name,
@@ -97,6 +98,7 @@ async def example_mcp_gateway():
 # Swagger/OpenAPI에서 tool을 자동 생성하고 gateway에 넣는 패턴.
 # 사내 API가 OpenAPI spec으로 문서화되어 있을 때 유용.
 
+
 def example_openapi_gateway():
     """OpenAPI spec에서 tool 생성 후 gateway agent 구성."""
     from langchain_openai import ChatOpenAI
@@ -104,7 +106,6 @@ def example_openapi_gateway():
 
     from graph_tool_call import ToolGraph
     from graph_tool_call.langchain import create_gateway_tools
-    from graph_tool_call.langchain.tools import tool_schema_to_openai_function
 
     # ── 1. OpenAPI spec에서 ToolGraph 구축 ───────────────────────
     # URL 또는 파일 경로 모두 가능
@@ -127,12 +128,15 @@ def example_openapi_gateway():
         def make_fn(tool_schema=schema):
             def fn(**kwargs):
                 req = build_request(tool_schema, kwargs)
-                return json.dumps({
-                    "method": req.method,
-                    "url": req.url,
-                    "body": req.body,
-                    "note": "실제 환경에서는 requests.request()로 호출",
-                })
+                return json.dumps(
+                    {
+                        "method": req.method,
+                        "url": req.url,
+                        "body": req.body,
+                        "note": "실제 환경에서는 requests.request()로 호출",
+                    }
+                )
+
             return fn
 
         tool = StructuredTool.from_function(
@@ -162,6 +166,7 @@ def example_openapi_gateway():
 # =====================================================================
 # 이미 LangChain tool이 있는 프로젝트에서 gateway 또는 filter를
 # 한 줄로 적용하는 패턴. 기존 코드 변경 최소화.
+
 
 def example_langchain_integration():
     """기존 LangChain tool에 gateway/filter 적용."""
@@ -214,8 +219,14 @@ def example_langchain_integration():
         return json.dumps({"ok": True, "channel": channel})
 
     all_tools = [
-        search, get_weather, send_email, create_calendar_event,
-        list_files, read_file, query_database, create_jira_issue,
+        search,
+        get_weather,
+        send_email,
+        create_calendar_event,
+        list_files,
+        read_file,
+        query_database,
+        create_jira_issue,
         send_slack_message,
     ]
     print(f"  기존 tool {len(all_tools)}개")

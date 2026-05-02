@@ -134,16 +134,13 @@ def _group_by_resource(tools: list[ToolSchema]) -> dict[str, list[ToolSchema]]:
 
     The base resource is the first *meaningful* non-param path segment.
     A segment is considered a non-meaningful prefix when it groups more than
-    ``_PREFIX_THRESHOLD`` percent of all tools — this handles version prefixes
+    ``prefix_threshold`` percent of all tools — this handles version prefixes
     (``/v1``, ``/v2``), routing prefixes (``/api``, ``/rest``), etc. without
     requiring a hardcoded list.
     """
-    _PREFIX_THRESHOLD = 0.4  # if a segment covers >40% of tools, it's a prefix
+    prefix_threshold = 0.4  # if a segment covers >40% of tools, it's a prefix
 
-    api_tools = [
-        t for t in tools
-        if t.metadata.get("path") and t.metadata.get("method")
-    ]
+    api_tools = [t for t in tools if t.metadata.get("path") and t.metadata.get("method")]
     if not api_tools:
         return {}
 
@@ -171,7 +168,7 @@ def _group_by_resource(tools: list[ToolSchema]) -> dict[str, list[ToolSchema]]:
         if not counter:
             break
         most_common_count = max(counter.values())
-        if most_common_count / total > _PREFIX_THRESHOLD:
+        if most_common_count / total > prefix_threshold:
             skip_depth = depth + 1
         else:
             break
@@ -296,11 +293,7 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
     posts = by_role.get("post_collection", [])
     gets_single = by_role.get("get_single", [])
     gets_collection = by_role.get("get_collection", [])
-    puts = by_role.get("put_single", [])
-    patches = by_role.get("patch_single", [])
     deletes = by_role.get("delete_single", [])
-
-    updates = puts + patches
 
     # --- Focused CRUD relations ---
     # Only create relations that represent real data dependencies,
@@ -323,7 +316,10 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
                     target=post.name,
                     relation_type=RelationType.REQUIRES,
                     confidence=0.9,
-                    evidence=f"{get_s.name} (GET single) requires {post.name} (POST) — same resource '{post_resource}'",
+                    evidence=(
+                        f"{get_s.name} (GET single) requires {post.name} (POST) — "
+                        f"same resource '{post_resource}'"
+                    ),
                     layer=1,
                 )
             )
@@ -524,7 +520,8 @@ def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
             # Require strong evidence: 2+ shared tokens, or the token
             # appears in a parameter ending with "id" (e.g., "orderId")
             has_id_param = any(
-                tok in p.name.lower() for p in tool_b.parameters
+                tok in p.name.lower()
+                for p in tool_b.parameters
                 for tok in shared
                 if "id" in p.name.lower()
             )
@@ -575,7 +572,8 @@ def _detect_cross_resource(tools: list[ToolSchema]) -> list[DetectedRelation]:
         name_tokens = _normalize_name(tool.name)
         # Remove verb prefix
         resource_tokens = [
-            t for t in name_tokens
+            t
+            for t in name_tokens
             if t not in ("get", "list", "create", "add", "post", "read", "find")
         ]
         for tok in resource_tokens:
@@ -617,16 +615,11 @@ def _detect_cross_resource(tools: list[ToolSchema]) -> list[DetectedRelation]:
                 # Prefer GET single over GET list/POST
                 provider_method = (provider.metadata.get("method") or "").upper()
                 provider_path = provider.metadata.get("path", "")
-                is_get_single = (
-                    provider_method == "GET"
-                    and _is_single_resource_path(provider_path)
-                )
+                is_get_single = provider_method == "GET" and _is_single_resource_path(provider_path)
 
                 # Only create cross-resource link if provider is from
                 # a DIFFERENT resource category than the consumer
-                consumer_resource = _extract_resource(
-                    tool.metadata.get("path", "")
-                )
+                consumer_resource = _extract_resource(tool.metadata.get("path", ""))
                 provider_resource = _extract_resource(provider_path)
                 if consumer_resource == provider_resource:
                     continue  # same resource — handled by structural detection
@@ -661,44 +654,92 @@ def _detect_cross_resource(tools: list[ToolSchema]) -> list[DetectedRelation]:
 # Maps leading verb in an RPC method name to a CRUD intent category.
 _VERB_TO_INTENT: dict[str, str] = {
     # read
-    "get": "read", "find": "read", "fetch": "read", "list": "read",
-    "search": "read", "select": "read", "load": "read", "read": "read",
+    "get": "read",
+    "find": "read",
+    "fetch": "read",
+    "list": "read",
+    "search": "read",
+    "select": "read",
+    "load": "read",
+    "read": "read",
     "download": "read",
     # write (create)
-    "save": "write", "create": "write", "add": "write", "insert": "write",
-    "register": "write", "regist": "write",
+    "save": "write",
+    "create": "write",
+    "add": "write",
+    "insert": "write",
+    "register": "write",
+    "regist": "write",
     # update
-    "modify": "update", "update": "update", "edit": "update",
-    "change": "update", "patch": "update",
+    "modify": "update",
+    "update": "update",
+    "edit": "update",
+    "change": "update",
+    "patch": "update",
     # delete
-    "delete": "delete", "remove": "delete", "cancel": "delete",
+    "delete": "delete",
+    "remove": "delete",
+    "cancel": "delete",
     "withdraw": "delete",
     # action (side-effect operations)
-    "process": "action", "execute": "action", "apply": "action",
-    "approve": "action", "reject": "action", "confirm": "action",
-    "accept": "action", "send": "action", "upload": "action",
+    "process": "action",
+    "execute": "action",
+    "apply": "action",
+    "approve": "action",
+    "reject": "action",
+    "confirm": "action",
+    "accept": "action",
+    "send": "action",
+    "upload": "action",
     "export": "action",
 }
 
 # Trailing tokens in method names that describe the *view*, not the resource.
-_NAME_SUFFIXES: frozenset[str] = frozenset({
-    "list", "detail", "details", "info", "count", "excel", "popup",
-    "summary", "check", "data", "total", "all", "page", "download",
-})
+_NAME_SUFFIXES: frozenset[str] = frozenset(
+    {
+        "list",
+        "detail",
+        "details",
+        "info",
+        "count",
+        "excel",
+        "popup",
+        "summary",
+        "check",
+        "data",
+        "total",
+        "all",
+        "page",
+        "download",
+    }
+)
 
 # Common DTO class-name suffixes that are not part of the resource identity.
-_DTO_SUFFIXES: frozenset[str] = frozenset({
-    "request", "response", "dto", "entity", "info", "base",
-    "api", "vo", "model", "form", "param", "result", "ml",
-})
+_DTO_SUFFIXES: frozenset[str] = frozenset(
+    {
+        "request",
+        "response",
+        "dto",
+        "entity",
+        "info",
+        "base",
+        "api",
+        "vo",
+        "model",
+        "form",
+        "param",
+        "result",
+        "ml",
+    }
+)
 
 # CRUD workflow rules: (source_intent, target_intent, relation, same_ctrl_conf, cross_ctrl_conf)
 # ``None`` for cross_ctrl_conf means the rule is skipped across controllers.
 _WORKFLOW_RULES: list[tuple[str, str, RelationType, float, float | None]] = [
-    ("read",   "write",  RelationType.REQUIRES, 0.9,  0.8),
-    ("update", "read",   RelationType.REQUIRES, 0.85, 0.75),
-    ("delete", "read",   RelationType.REQUIRES, 0.85, 0.75),
-    ("action", "read",   RelationType.REQUIRES, 0.75, None),
+    ("read", "write", RelationType.REQUIRES, 0.9, 0.8),
+    ("update", "read", RelationType.REQUIRES, 0.85, 0.75),
+    ("delete", "read", RelationType.REQUIRES, 0.85, 0.75),
+    ("action", "read", RelationType.REQUIRES, 0.75, None),
 ]
 
 
@@ -791,31 +832,35 @@ def _detect_rpc_crud_workflows(tools: list[ToolSchema]) -> list[DetectedRelation
                     same = _same_controller(src, tgt)
                     if not same and cross_conf is None:
                         continue
-                    relations.append(DetectedRelation(
-                        source=src.name,
-                        target=tgt.name,
-                        relation_type=rel_type,
-                        confidence=same_conf if same else cross_conf,  # type: ignore[arg-type]
-                        evidence=(
-                            f"{src.name} ({src_intent}) → {tgt.name} ({tgt_intent})"
-                            f" — resource '{resource}'"
-                        ),
-                        layer=4,
-                    ))
+                    relations.append(
+                        DetectedRelation(
+                            source=src.name,
+                            target=tgt.name,
+                            relation_type=rel_type,
+                            confidence=same_conf if same else cross_conf,  # type: ignore[arg-type]
+                            evidence=(
+                                f"{src.name} ({src_intent}) → {tgt.name} ({tgt_intent})"
+                                f" — resource '{resource}'"
+                            ),
+                            layer=4,
+                        )
+                    )
 
         # Readers within same controller are SIMILAR_TO.
         readers = by_intent.get("read", [])
         for i, r1 in enumerate(readers):
-            for r2 in readers[i + 1:]:
+            for r2 in readers[i + 1 :]:
                 if r1.name != r2.name and _same_controller(r1, r2):
-                    relations.append(DetectedRelation(
-                        source=r1.name,
-                        target=r2.name,
-                        relation_type=RelationType.SIMILAR_TO,
-                        confidence=0.8,
-                        evidence=f"{r1.name} ↔ {r2.name} — similar reads for '{resource}'",
-                        layer=4,
-                    ))
+                    relations.append(
+                        DetectedRelation(
+                            source=r1.name,
+                            target=r2.name,
+                            relation_type=RelationType.SIMILAR_TO,
+                            confidence=0.8,
+                            evidence=f"{r1.name} ↔ {r2.name} — similar reads for '{resource}'",
+                            layer=4,
+                        )
+                    )
 
     return relations
 
@@ -836,16 +881,18 @@ def _detect_rpc_dto_links(tools: list[ToolSchema]) -> list[DetectedRelation]:
         if not 2 <= len(members) <= 20:
             continue
         for i, a in enumerate(members):
-            for b in members[i + 1:]:
+            for b in members[i + 1 :]:
                 if a.name != b.name and not _same_controller(a, b):
-                    relations.append(DetectedRelation(
-                        source=a.name,
-                        target=b.name,
-                        relation_type=RelationType.COMPLEMENTARY,
-                        confidence=0.75,
-                        evidence=f"{a.name} ↔ {b.name} — shared DTO '{dto_res}'",
-                        layer=4,
-                    ))
+                    relations.append(
+                        DetectedRelation(
+                            source=a.name,
+                            target=b.name,
+                            relation_type=RelationType.COMPLEMENTARY,
+                            confidence=0.75,
+                            evidence=f"{a.name} ↔ {b.name} — shared DTO '{dto_res}'",
+                            layer=4,
+                        )
+                    )
 
     return relations
 

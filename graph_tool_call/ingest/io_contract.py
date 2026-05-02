@@ -245,9 +245,7 @@ def extract_consumes_for_operation(
     seen_names: set[str] = set()
 
     # query / path / header parameters
-    all_params = (operation.get("parameters") or []) + (
-        (path_item or {}).get("parameters") or []
-    )
+    all_params = (operation.get("parameters") or []) + ((path_item or {}).get("parameters") or [])
     for p in all_params:
         if not isinstance(p, dict) or "name" not in p:
             continue

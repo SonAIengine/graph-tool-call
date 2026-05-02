@@ -81,10 +81,7 @@ def _substring_seeds(
     for name, tool in tools.items():
         nname = _strip_diacritics(name).lower()
         ndesc = _strip_diacritics(tool.description or "").lower()
-        score = (
-            sum(1.0 for t in terms if t in nname)
-            + 0.5 * sum(1.0 for t in terms if t in ndesc)
-        )
+        score = sum(1.0 for t in terms if t in nname) + 0.5 * sum(1.0 for t in terms if t in ndesc)
         if score > 0:
             scored.append((name, score))
     scored.sort(key=lambda x: x[1], reverse=True)
@@ -182,11 +179,7 @@ def _bfs_from_seeds(
         return {}, []
 
     max_seed = max((s for _, s in seed_scores), default=1.0) or 1.0
-    scores: dict[str, float] = {
-        n: s / max_seed
-        for n, s in seed_scores
-        if graph.has_node(n)
-    }
+    scores: dict[str, float] = {n: s / max_seed for n, s in seed_scores if graph.has_node(n)}
     visited: set[str] = set(scores)
     frontier: list[str] = list(scores)
     edges_visited: list[tuple[str, str]] = []
@@ -301,9 +294,7 @@ def render_subgraph_text(
 
     # Order nodes: by retrieval score (desc) if known, else by name.
     if sort_by_score:
-        node_order = sorted(
-            node_set, key=lambda n: (-sort_by_score.get(n, 0.0), n)
-        )
+        node_order = sorted(node_set, key=lambda n: (-sort_by_score.get(n, 0.0), n))
     else:
         node_order = sorted(node_set)
 
@@ -437,9 +428,7 @@ def retrieve_graphify(
                 scores[h] *= _HISTORY_DEMOTE
 
     # 5) Filter to TOOL nodes only and rank
-    tool_scores: dict[str, float] = {
-        n: s for n, s in scores.items() if n in tg.tools
-    }
+    tool_scores: dict[str, float] = {n: s for n, s in scores.items() if n in tg.tools}
     ranked = sorted(tool_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
     chosen_names: set[str] = {n for n, _ in ranked}
 

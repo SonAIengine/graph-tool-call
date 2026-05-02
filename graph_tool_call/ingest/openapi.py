@@ -384,7 +384,7 @@ def _extract_params_openapi3(
         is_required = prop_name in body_required
         if required_only and not is_required:
             continue
-        desc = (prop_schema.get("description") or "")
+        desc = prop_schema.get("description") or ""
         # nested object/array는 한 단계 더 펼치기
         if _schema_type(prop_schema) in ("object", "array"):
             nested = _summarize_object_schema(prop_schema)

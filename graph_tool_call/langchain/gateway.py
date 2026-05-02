@@ -99,9 +99,7 @@ def _summarize_response_schema(schema: dict[str, Any]) -> str | None:
     return f"array of {summary}" if is_array else summary
 
 
-def _enrich_from_graph(
-    name: str, graph: Any | None
-) -> dict[str, Any]:
+def _enrich_from_graph(name: str, graph: Any | None) -> dict[str, Any]:
     """Pull source_label, method/path, response summary, and outgoing edges
     from the underlying ToolGraph for *name*. Returns an empty dict if the
     graph or tool is not available — callers should treat all keys as optional.
@@ -136,9 +134,7 @@ def _enrich_from_graph(
         chains: list[str] = []
         for _src, target, attrs in edges:
             relation = attrs.get("relation")
-            relation_name = (
-                relation.value if hasattr(relation, "value") else str(relation)
-            )
+            relation_name = relation.value if hasattr(relation, "value") else str(relation)
             # Skip purely structural BELONGS_TO edges
             if relation_name in ("belongs_to", "BELONGS_TO"):
                 continue

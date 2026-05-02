@@ -31,3 +31,6 @@ benchmarks/results/
 
 # Personal memo
 memo/
+
+# Benchmark output (timestamped, auto-generated)
+benchmarks/results/benchmark_*.json

@@ -99,8 +99,9 @@ class ToolEnrichment:
       - Graph edges (``pairs_well_with`` becomes semantic edges)
     """
 
-    canonical_action: str                         # search | read | create | update | delete | action
-    primary_resource: str                         # e.g. "product"
+    # canonical_action: search | read | create | update | delete | action
+    canonical_action: str
+    primary_resource: str  # e.g. "product"
     one_line_summary: str
     when_to_use: str
     when_not_to_use: str = ""
@@ -119,8 +120,10 @@ Find relationships between these API tools.
 Example:
 Tools: createUser, getUserProfile, deleteUser
 Answer: [
-  {{"source":"getUserProfile","target":"createUser","relation":"REQUIRES","confidence":0.9,"reason":"need user to exist"}},
-  {{"source":"createUser","target":"deleteUser","relation":"PRECEDES","confidence":0.8,"reason":"create before delete"}}
+  {{"source":"getUserProfile","target":"createUser","relation":"REQUIRES","confidence":0.9,
+    "reason":"need user to exist"}},
+  {{"source":"createUser","target":"deleteUser","relation":"PRECEDES","confidence":0.8,
+    "reason":"create before delete"}}
 ]
 
 Relation types:
@@ -365,7 +368,7 @@ def _parse_enrichment(data: Any) -> ToolEnrichment | None:
             if isinstance(p, dict) and str(p.get("semantic", "")).strip()
         ]
         consumes = []
-        for c in (data.get("consumes_semantics") or []):
+        for c in data.get("consumes_semantics") or []:
             if not (isinstance(c, dict) and str(c.get("semantic", "")).strip()):
                 continue
             raw_kind = str(c.get("kind", "data")).strip().lower()
@@ -430,6 +433,7 @@ def _extract_json(text: str) -> Any:
 
     # Remove <think>...</think> blocks (qwen3 thinking mode)
     import re as _re
+
     text = _re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
 
     # Remove markdown code blocks
@@ -564,8 +568,7 @@ class OntologyLLM(ABC):
         for i in range(0, len(relations), batch_size):
             batch = relations[i : i + batch_size]
             rels_text = "\n".join(
-                f"- {r.source} {r.relation_type.name} {r.target} ({r.reason[:60]})"
-                for r in batch
+                f"- {r.source} {r.relation_type.name} {r.target} ({r.reason[:60]})" for r in batch
             )
             prompt = _VERIFY_RELATIONS_PROMPT.format(
                 relations_list=rels_text,
@@ -610,8 +613,7 @@ class OntologyLLM(ABC):
         """
         tools_text = _format_tools_list(tools[:30])
         existing_text = "\n".join(
-            f"- {r.source} {r.relation_type.name} {r.target}"
-            for r in existing_relations[:30]
+            f"- {r.source} {r.relation_type.name} {r.target}" for r in existing_relations[:30]
         )
         prompt = _SUGGEST_MISSING_PROMPT.format(
             tools_list=tools_text,
@@ -749,11 +751,13 @@ class OntologyLLM(ABC):
                         target = str(p.get("tool", "")).strip()
                         if not target or target == name:
                             continue
-                        pair_list.append(PairHint(
-                            tool=target,
-                            reason=str(p.get("reason", "")).strip(),
-                            source="auto",
-                        ))
+                        pair_list.append(
+                            PairHint(
+                                tool=target,
+                                reason=str(p.get("reason", "")).strip(),
+                                source="auto",
+                            )
+                        )
                     results[str(name)] = pair_list
             except (json.JSONDecodeError, KeyError, TypeError):
                 continue
@@ -838,7 +842,8 @@ class OntologyLLM(ABC):
                     # whose target name is not in the catalog.
                     if valid_tool_names is not None:
                         enrichment.pairs_well_with = [
-                            p for p in enrichment.pairs_well_with
+                            p
+                            for p in enrichment.pairs_well_with
                             if p.tool in valid_tool_names and p.tool != str(name)
                         ]
                     results[str(name)] = enrichment

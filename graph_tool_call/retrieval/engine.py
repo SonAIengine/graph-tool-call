@@ -455,7 +455,8 @@ class RetrievalEngine:
 
         # Only consider graph candidates not already found by primary channels
         new_candidates = {
-            name: score for name, score in graph_scores.items()
+            name: score
+            for name, score in graph_scores.items()
             if name not in final_scores and name in self._tools
         }
         if not new_candidates:
@@ -496,7 +497,6 @@ class RetrievalEngine:
                 scores[name] *= 1.1
             elif query_intent.delete_intent > 0.5 and method == "DELETE":
                 scores[name] *= 1.15
-
 
     def _boost_embedding_rerank(self, query: str, scores: dict[str, float]) -> None:
         """Rerank top candidates using embedding description similarity."""
@@ -809,8 +809,12 @@ class RetrievalEngine:
         return await loop.run_in_executor(
             None,
             lambda: self.retrieve(
-                query, top_k=top_k, max_graph_depth=max_graph_depth,
-                mode=mode, llm=llm, history=history,
+                query,
+                top_k=top_k,
+                max_graph_depth=max_graph_depth,
+                mode=mode,
+                llm=llm,
+                history=history,
             ),
         )
 
@@ -830,8 +834,12 @@ class RetrievalEngine:
         return await loop.run_in_executor(
             None,
             lambda: self.retrieve_with_scores(
-                query, top_k=top_k, max_graph_depth=max_graph_depth,
-                mode=mode, llm=llm, history=history,
+                query,
+                top_k=top_k,
+                max_graph_depth=max_graph_depth,
+                mode=mode,
+                llm=llm,
+                history=history,
             ),
         )
 

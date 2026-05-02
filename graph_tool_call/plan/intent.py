@@ -22,7 +22,6 @@ from typing import Any
 
 from graph_tool_call.ontology.llm_provider import OntologyLLM, _extract_json
 
-
 # Minimum SequenceMatcher ratio for treating an LLM-emitted entity key as
 # a typo/expansion of a real vocab entry. 0.8 catches "search_keyword_name"
 # vs "search_keyword" (~0.85) while rejecting unrelated pairs like
@@ -40,21 +39,21 @@ class ToolCatalogEntry:
     """Condensed tool view for intent-parsing prompt — under ~150 chars each."""
 
     name: str
-    summary: str = ""                          # one_line_summary from ai_metadata
-    when_to_use: str = ""                      # ai_metadata.when_to_use
-    consumes_tags: list[str] = field(default_factory=list)   # required semantic ids
-    canonical_action: str = ""                 # "read" | "search" | "create" | ...
-    primary_resource: str = ""                 # "product" | ...
+    summary: str = ""  # one_line_summary from ai_metadata
+    when_to_use: str = ""  # ai_metadata.when_to_use
+    consumes_tags: list[str] = field(default_factory=list)  # required semantic ids
+    canonical_action: str = ""  # "read" | "search" | "create" | ...
+    primary_resource: str = ""  # "product" | ...
 
 
 @dataclass
 class ParsedIntent:
     """Stage 1 output — consumed by Stage 2 PathSynthesizer."""
 
-    target: str                                # tool name picked by LLM
+    target: str  # tool name picked by LLM
     entities: dict[str, Any] = field(default_factory=dict)
-    confidence: float = 0.0                    # 0.0 ~ 1.0
-    output_shape: str = "single"               # "single" | "list" | "count"
+    confidence: float = 0.0  # 0.0 ~ 1.0
+    output_shape: str = "single"  # "single" | "list" | "count"
     reasoning: str = ""
 
 
@@ -146,7 +145,10 @@ def _coerce_entity_keys(
             out[key_str] = value
             continue
         match = difflib.get_close_matches(
-            key_str, vocab, n=1, cutoff=_VOCAB_FUZZY_CUTOFF,
+            key_str,
+            vocab,
+            n=1,
+            cutoff=_VOCAB_FUZZY_CUTOFF,
         )
         if match:
             # If multiple LLM keys collapse onto the same vocab entry, the
@@ -169,8 +171,7 @@ def _format_seed_block(seed_entities: dict[str, Any] | None) -> str:
     if not seed_entities:
         return ""
     lines = "\n".join(
-        f'  - {k}: {json.dumps(v, ensure_ascii=False)}'
-        for k, v in seed_entities.items()
+        f"  - {k}: {json.dumps(v, ensure_ascii=False)}" for k, v in seed_entities.items()
     )
     return (
         "\n\nExisting entities (carried over from prior turns — keep these "
@@ -193,10 +194,10 @@ def _format_enum_block(enum_mappings: dict[str, dict[str, str]] | None) -> str:
     if not enum_mappings:
         return ""
     lines: list[str] = []
-    for field, codes in enum_mappings.items():
+    for field_name, codes in enum_mappings.items():
         if not isinstance(codes, dict) or not codes:
             continue
-        lines.append(f"  - {field}:")
+        lines.append(f"  - {field_name}:")
         for code, label in codes.items():
             lines.append(f'      "{code}" → {label}')
     if not lines:

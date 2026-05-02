@@ -124,7 +124,7 @@ def preserve_refs_for_detection(
     Returns the number of tools whose metadata was updated. Mutates ``tools``
     in place.
     """
-    paths = (raw_spec.get("paths") or {})
+    paths = raw_spec.get("paths") or {}
     if not isinstance(paths, dict):
         return 0
 
@@ -218,8 +218,13 @@ def _apply_pair_hints(
     from ``detect_dependencies`` UNLESS the new pair is operator-curated
     (``source="manual"``) — operator intent overrides automatic detection.
     """
-    stats = {"manual": 0, "auto": 0, "skipped_target_missing": 0,
-             "skipped_self": 0, "skipped_existing_structural": 0}
+    stats = {
+        "manual": 0,
+        "auto": 0,
+        "skipped_target_missing": 0,
+        "skipped_self": 0,
+        "skipped_existing_structural": 0,
+    }
     tool_names = set(tg.tools.keys())
 
     for s in schemas:
@@ -350,9 +355,7 @@ def ingest_openapi_graphify(
         stats["refs_preserved"] = preserve_refs_for_detection(schemas, raw_spec)
 
     # min_confidence=0.0 so we see every candidate; we re-bucket here.
-    relations: list[DetectedRelation] = detect_dependencies(
-        schemas, spec, min_confidence=0.0
-    )
+    relations: list[DetectedRelation] = detect_dependencies(schemas, spec, min_confidence=0.0)
 
     seen: set[tuple[str, str, str]] = set()  # (src, tgt, relation_value)
     for rel in relations:
@@ -419,7 +422,7 @@ def ingest_openapi_graphify(
         # cross_source also re-counted on these new edges for completeness.
         for s in schemas:
             ai = (s.metadata or {}).get("ai_metadata") or {}
-            for p in (ai.get("pairs_well_with") or []):
+            for p in ai.get("pairs_well_with") or []:
                 if not isinstance(p, dict):
                     continue
                 tgt = str(p.get("tool") or "").strip()

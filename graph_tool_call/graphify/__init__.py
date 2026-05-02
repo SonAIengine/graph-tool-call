@@ -30,6 +30,7 @@ __all__ = [
     "DEFAULT_CONF_AMBIGUOUS",
     "DEFAULT_CONF_EXTRACTED",
     "DEFAULT_CONF_INFERRED",
+    "_apply_pair_hints",
     "bucket_confidence",
     "ingest_openapi_graphify",
     "preserve_refs_for_detection",

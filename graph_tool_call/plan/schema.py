@@ -25,12 +25,12 @@ class PlanStep:
     at runtime by ``resolve_bindings`` using the accumulated step context.
     """
 
-    id: str                                    # "s1", "s2", ...
-    tool: str                                  # function_name (graph node name)
+    id: str  # "s1", "s2", ...
+    tool: str  # function_name (graph node name)
     args: dict[str, Any] = field(default_factory=dict)
-    rationale: str = ""                        # why this step exists (for audit)
+    rationale: str = ""  # why this step exists (for audit)
     timeout_ms: int | None = None
-    retryable: bool = False                    # reserved for v1.1 retry policy
+    retryable: bool = False  # reserved for v1.1 retry policy
     # Top-level keys the synthesizer expects in this tool's response,
     # derived from ``produces[].json_path``. Used by PlanRunner to detect
     # envelope wrappers (e.g. ``{code, message, payload: {...}}``) when the
@@ -51,11 +51,11 @@ class Plan:
     the final answer. If unset, runner returns the last step's result.
     """
 
-    id: str                                    # uuid
-    goal: str                                  # user requirement summary
+    id: str  # uuid
+    goal: str  # user requirement summary
     steps: list[PlanStep] = field(default_factory=list)
-    output_binding: str | None = None          # e.g. "${s2.body}"
-    created_at: str = ""                       # ISO8601
+    output_binding: str | None = None  # e.g. "${s2.body}"
+    created_at: str = ""  # ISO8601
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -66,8 +66,8 @@ class StepTrace:
     id: str
     tool: str
     args_resolved: dict[str, Any] = field(default_factory=dict)
-    output: Any = None                         # set on success
-    error: dict[str, Any] | None = None        # set on failure
+    output: Any = None  # set on success
+    error: dict[str, Any] | None = None  # set on failure
     duration_ms: int = 0
     retries: int = 0
 
@@ -79,7 +79,7 @@ class ExecutionTrace:
     plan_id: str
     success: bool
     steps: list[StepTrace] = field(default_factory=list)
-    output: Any = None                         # plan.output_binding resolved
+    output: Any = None  # plan.output_binding resolved
     failed_step: str | None = None
     total_duration_ms: int = 0
     started_at: str = ""

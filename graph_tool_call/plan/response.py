@@ -18,7 +18,6 @@ from typing import Any
 
 from graph_tool_call.ontology.llm_provider import OntologyLLM
 
-
 # ---------------------------------------------------------------------------
 # prompts
 # ---------------------------------------------------------------------------

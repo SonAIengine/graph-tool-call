@@ -15,18 +15,17 @@ automatic re-planning**. Failures abort the run and return a trace.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Iterator
+from typing import Any
 
 from graph_tool_call.plan.binding import BindingError, resolve_bindings
 from graph_tool_call.plan.schema import (
     ExecutionTrace,
     Plan,
-    PlanStep,
     StepTrace,
 )
-
 
 # ---------------------------------------------------------------------------
 # Event types — structured so callers can pattern-match by ``type`` field
@@ -57,7 +56,7 @@ class StepCompleted:
     step_id: str = ""
     tool: str = ""
     duration_ms: int = 0
-    output_preview: Any = None                 # truncated output for UI
+    output_preview: Any = None  # truncated output for UI
     output_size: int = 0
 
 
@@ -87,14 +86,7 @@ class PlanAborted:
     total_duration_ms: int = 0
 
 
-PlanEvent = (
-    PlanStarted
-    | StepStarted
-    | StepCompleted
-    | StepFailed
-    | PlanCompleted
-    | PlanAborted
-)
+PlanEvent = PlanStarted | StepStarted | StepCompleted | StepFailed | PlanCompleted | PlanAborted
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +118,7 @@ class PlanRunner:
         call_tool: ToolCaller,
         *,
         output_preview_limit: int = 512,
-        on_error: str = "abort",                  # 'abort' only in v1
+        on_error: str = "abort",  # 'abort' only in v1
     ) -> None:
         self._call_tool = call_tool
         self._preview_limit = output_preview_limit
@@ -148,7 +140,6 @@ class PlanRunner:
         ``input_context`` supplies values for ``${input.xxx}`` bindings —
         typically the entities extracted by Stage 1 (intent parser).
         """
-        started = _now_iso()
         plan_start = time.monotonic()
 
         yield PlanStarted(
@@ -180,11 +171,14 @@ class PlanRunner:
                 step_trace.duration_ms = _ms_since(step_start)
                 trace_steps.append(step_trace)
                 yield StepFailed(
-                    step_id=step.id, tool=step.tool,
-                    error=err, duration_ms=step_trace.duration_ms,
+                    step_id=step.id,
+                    tool=step.tool,
+                    error=err,
+                    duration_ms=step_trace.duration_ms,
                 )
                 yield PlanAborted(
-                    plan_id=plan.id, failed_step=step.id,
+                    plan_id=plan.id,
+                    failed_step=step.id,
                     error=err,
                     total_duration_ms=_ms_since(plan_start),
                 )
@@ -192,15 +186,17 @@ class PlanRunner:
 
             step_trace.args_resolved = resolved
             yield StepStarted(
-                step_id=step.id, tool=step.tool,
+                step_id=step.id,
+                tool=step.tool,
                 args_resolved=resolved,
-                index=idx, total=len(plan.steps),
+                index=idx,
+                total=len(plan.steps),
             )
 
             # 2. Execute via caller's tool invoker
             try:
                 output = self._call_tool(step.tool, resolved)
-            except Exception as exc:              # noqa: BLE001 — caller-defined
+            except Exception as exc:  # noqa: BLE001 — caller-defined
                 err = {
                     "kind": "tool",
                     "message": str(exc),
@@ -210,11 +206,14 @@ class PlanRunner:
                 step_trace.duration_ms = _ms_since(step_start)
                 trace_steps.append(step_trace)
                 yield StepFailed(
-                    step_id=step.id, tool=step.tool,
-                    error=err, duration_ms=step_trace.duration_ms,
+                    step_id=step.id,
+                    tool=step.tool,
+                    error=err,
+                    duration_ms=step_trace.duration_ms,
                 )
                 yield PlanAborted(
-                    plan_id=plan.id, failed_step=step.id,
+                    plan_id=plan.id,
+                    failed_step=step.id,
                     error=err,
                     total_duration_ms=_ms_since(plan_start),
                 )
@@ -235,7 +234,8 @@ class PlanRunner:
             context[step.id] = output
 
             yield StepCompleted(
-                step_id=step.id, tool=step.tool,
+                step_id=step.id,
+                tool=step.tool,
                 duration_ms=step_trace.duration_ms,
                 output_preview=_preview(output, self._preview_limit),
                 output_size=_output_size(output),
@@ -251,7 +251,8 @@ class PlanRunner:
         except BindingError as exc:
             err = {"kind": "output_binding", "message": str(exc)}
             yield PlanAborted(
-                plan_id=plan.id, failed_step="<output_binding>",
+                plan_id=plan.id,
+                failed_step="<output_binding>",
                 error=err,
                 total_duration_ms=_ms_since(plan_start),
             )
@@ -328,6 +329,7 @@ def _preview(value: Any, limit: int) -> Any:
     """Trim large outputs for UI previews. Keep small values intact."""
     if isinstance(value, (dict, list)):
         import json as _json
+
         try:
             rendered = _json.dumps(value, ensure_ascii=False)
         except (TypeError, ValueError):
@@ -393,6 +395,7 @@ def _maybe_unwrap_envelope(
 def _output_size(value: Any) -> int:
     """Approximate serialized byte size (for observability)."""
     import json as _json
+
     try:
         return len(_json.dumps(value, ensure_ascii=False))
     except (TypeError, ValueError):

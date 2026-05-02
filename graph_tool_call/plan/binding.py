@@ -102,9 +102,7 @@ def _lookup(expr: str, context: dict[str, Any]) -> Any:
             try:
                 idx = int(tok[1:-1])
             except ValueError as exc:
-                raise BindingError(
-                    f"non-numeric array index {tok!r} in binding {expr!r}"
-                ) from exc
+                raise BindingError(f"non-numeric array index {tok!r} in binding {expr!r}") from exc
             if not isinstance(node, (list, tuple)):
                 raise BindingError(
                     f"indexing {tok} on non-list type {type(node).__name__} (expr={expr!r})"
@@ -112,9 +110,7 @@ def _lookup(expr: str, context: dict[str, Any]) -> Any:
             try:
                 node = node[idx]
             except IndexError as exc:
-                raise BindingError(
-                    f"index {idx} out of range in binding {expr!r}"
-                ) from exc
+                raise BindingError(f"index {idx} out of range in binding {expr!r}") from exc
         else:
             if not isinstance(node, dict):
                 raise BindingError(
@@ -152,7 +148,7 @@ def _tokenize(expr: str) -> list[str]:
             end = expr.find("]", i)
             if end == -1:
                 raise BindingError(f"unclosed '[' in binding {expr!r}")
-            tokens.append(expr[i:end + 1])
+            tokens.append(expr[i : end + 1])
             i = end
         else:
             buf.append(ch)

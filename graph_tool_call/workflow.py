@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict, deque
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -118,9 +118,7 @@ class WorkflowPlan:
         self.confidence = "manual"
         return self
 
-    def set_param_mapping(
-        self, tool_name: str, param: str, source: str
-    ) -> WorkflowPlan:
+    def set_param_mapping(self, tool_name: str, param: str, source: str) -> WorkflowPlan:
         """Set a parameter mapping for a step.
 
         Example::
@@ -162,7 +160,6 @@ class WorkflowPlan:
             plan.open_editor(tools=tg.tools)
         """
         import tempfile
-        import urllib.parse
         import webbrowser
 
         # Build editor data: workflow + tool catalog
@@ -208,9 +205,7 @@ try {{
             webbrowser.open(f"file://{f.name}")
 
     @classmethod
-    def load(
-        cls, path: str | Path, *, tools: dict[str, ToolSchema]
-    ) -> WorkflowPlan:
+    def load(cls, path: str | Path, *, tools: dict[str, ToolSchema]) -> WorkflowPlan:
         """Load workflow from JSON file."""
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         steps = []
@@ -218,12 +213,14 @@ try {{
             tool = tools.get(s["tool"])
             if not tool:
                 continue
-            steps.append(WorkflowStep(
-                order=s.get("order", 0),
-                tool=tool,
-                reason=s.get("reason", ""),
-                params_from=s.get("params_from", {}),
-            ))
+            steps.append(
+                WorkflowStep(
+                    order=s.get("order", 0),
+                    tool=tool,
+                    reason=s.get("reason", ""),
+                    params_from=s.get("params_from", {}),
+                )
+            )
         plan = cls(
             goal=data.get("goal", ""),
             steps=steps,
@@ -300,8 +297,25 @@ class WorkflowPlanner:
     def _pick_primary(self, goal: str, scores: dict[str, float]) -> str:
         """Pick the best primary tool by combining graph score + name relevance."""
         tokens = set(re.split(r"[\s_\-/.,;:!?()]+", goal.lower()))
-        tokens -= {"a", "an", "the", "of", "for", "to", "in", "by", "is",
-                    "and", "or", "my", "all", "this", "that", "with", "from"}
+        tokens -= {
+            "a",
+            "an",
+            "the",
+            "of",
+            "for",
+            "to",
+            "in",
+            "by",
+            "is",
+            "and",
+            "or",
+            "my",
+            "all",
+            "this",
+            "that",
+            "with",
+            "from",
+        }
         tokens.discard("")
 
         def _relevance(name: str) -> float:
@@ -338,9 +352,7 @@ class WorkflowPlanner:
                 scores[name] = overlap
         return scores
 
-    def _build_chain(
-        self, target: str, max_steps: int
-    ) -> dict[str, set[str]]:
+    def _build_chain(self, target: str, max_steps: int) -> dict[str, set[str]]:
         """Build a prerequisite chain for the target tool.
 
         Follows REQUIRES edges to find data providers:
@@ -355,8 +367,6 @@ class WorkflowPlanner:
 
         if not self._graph.has_node(target):
             return dict(predecessors)
-
-        target_category = self._get_category(target)
 
         # BFS with max depth 2 — follow REQUIRES to find prerequisites
         visited: set[str] = {target}
@@ -393,9 +403,7 @@ class WorkflowPlanner:
 
                 if "REQUIRES" in relation and src == node:
                     # Accept GET as data provider (same or cross-resource)
-                    if n_method == "GET" or any(
-                        v in neighbor.lower() for v in ("get", "list")
-                    ):
+                    if n_method == "GET" or any(v in neighbor.lower() for v in ("get", "list")):
                         accepted = True
 
                 elif "PRECEDES" in relation and tgt == node:
@@ -403,8 +411,7 @@ class WorkflowPlanner:
                     neighbor_category = self._get_category(neighbor)
                     node_category = self._get_category(node)
                     same_cat = (
-                        node_category and neighbor_category
-                        and node_category == neighbor_category
+                        node_category and neighbor_category and node_category == neighbor_category
                     )
                     is_creator = n_method == "POST" or any(
                         v in neighbor.lower() for v in ("create", "add")
@@ -422,7 +429,7 @@ class WorkflowPlanner:
         # Trim to max_steps
         if len(predecessors) > max_steps:
             # Keep target + closest prerequisites
-            direct_preds = list(predecessors[target])[:max_steps - 1]
+            direct_preds = list(predecessors[target])[: max_steps - 1]
             trimmed: dict[str, set[str]] = {target: set(direct_preds)}
             for p in direct_preds:
                 trimmed[p] = predecessors.get(p, set()) & set(direct_preds)
@@ -460,9 +467,7 @@ class WorkflowPlanner:
                 result.append(n)
         return result
 
-    def _infer_reason(
-        self, tool_name: str, primary: str, chain: dict[str, set[str]]
-    ) -> str:
+    def _infer_reason(self, tool_name: str, primary: str, chain: dict[str, set[str]]) -> str:
         if tool_name == primary:
             return "primary action"
         dependents = [n for n, p in chain.items() if tool_name in p]
@@ -470,9 +475,7 @@ class WorkflowPlanner:
             return f"prerequisite for {', '.join(dependents)}"
         return "related"
 
-    def _enhance_with_llm(
-        self, plan: WorkflowPlan, llm: Any, max_steps: int
-    ) -> WorkflowPlan:
+    def _enhance_with_llm(self, plan: WorkflowPlan, llm: Any, max_steps: int) -> WorkflowPlan:
         """Use LLM to fill cross-resource gaps and add parameter mappings."""
         current_chain = [s.tool.name for s in plan.steps]
         available = []
@@ -498,7 +501,8 @@ Available tools:
 {chr(10).join(available[:60])}
 
 Return JSON:
-{{"steps": [{{"tool": "name", "reason": "why", "params_from": {{"param": "step.response.field"}}}}]}}
+{{"steps": [{{"tool": "name", "reason": "why",
+  "params_from": {{"param": "step.response.field"}}}}]}}
 
 Rules:
 - Keep existing chain steps unless clearly wrong
@@ -521,11 +525,14 @@ Rules:
                 tool = self._tools.get(s.get("tool", ""))
                 if not tool:
                     continue
-                new_steps.append(WorkflowStep(
-                    order=i + 1, tool=tool,
-                    reason=s.get("reason", ""),
-                    params_from=s.get("params_from", {}),
-                ))
+                new_steps.append(
+                    WorkflowStep(
+                        order=i + 1,
+                        tool=tool,
+                        reason=s.get("reason", ""),
+                        params_from=s.get("params_from", {}),
+                    )
+                )
             if new_steps:
                 plan.steps = new_steps
                 plan.confidence = "graph+llm"

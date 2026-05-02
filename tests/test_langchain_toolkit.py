@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-
-import pytest
 
 
 @dataclass
@@ -61,8 +59,7 @@ def test_filter_tools_preserves_original_objects():
 
 
 def test_filter_tools_with_prebuilt_graph():
-    from graph_tool_call import ToolGraph
-    from graph_tool_call import filter_tools
+    from graph_tool_call import ToolGraph, filter_tools
 
     tools = _make_tools()
     tg = ToolGraph()
@@ -114,8 +111,7 @@ def test_toolkit_all_tools():
 
 
 def test_toolkit_graph_accessible():
-    from graph_tool_call import ToolGraph
-    from graph_tool_call import GraphToolkit
+    from graph_tool_call import GraphToolkit, ToolGraph
 
     tools = _make_tools()
     toolkit = GraphToolkit(tools=tools)
@@ -125,8 +121,7 @@ def test_toolkit_graph_accessible():
 
 
 def test_toolkit_with_prebuilt_graph():
-    from graph_tool_call import ToolGraph
-    from graph_tool_call import GraphToolkit
+    from graph_tool_call import GraphToolkit, ToolGraph
 
     tg = ToolGraph()
     tools = _make_tools(5)

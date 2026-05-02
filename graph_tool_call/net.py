@@ -55,6 +55,7 @@ def _open_url(
     handlers: list[Any] = [_LimitedRedirectHandler(max_redirects)]
     if not verify_ssl:
         import ssl
+
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -157,7 +158,12 @@ def fetch_url_text(
 
     req = urllib.request.Request(url, headers=headers or {})
     try:
-        with _open_url(req, timeout=timeout, max_redirects=max_redirects, verify_ssl=verify_ssl) as resp:
+        with _open_url(
+            req,
+            timeout=timeout,
+            max_redirects=max_redirects,
+            verify_ssl=verify_ssl,
+        ) as resp:
             final_url = url
             if hasattr(resp, "geturl"):
                 candidate = resp.geturl()

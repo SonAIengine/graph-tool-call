@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from benchmarks.config import DATASET_REGISTRY
@@ -214,7 +214,10 @@ def print_comparison(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Competitive retrieval benchmark")
     parser.add_argument(
-        "--datasets", "-d", nargs="+", default=None,
+        "--datasets",
+        "-d",
+        nargs="+",
+        default=None,
         help="Datasets to benchmark (default: all non-legacy)",
     )
     parser.add_argument("--top-k", type=int, default=5)
@@ -223,20 +226,15 @@ def main() -> None:
     parser.add_argument("--save", action="store_true", help="Save results as JSON")
     args = parser.parse_args()
 
-    dataset_names = args.datasets or [
-        k for k, v in DATASET_REGISTRY.items() if not v.get("legacy")
-    ]
+    dataset_names = args.datasets or [k for k, v in DATASET_REGISTRY.items() if not v.get("legacy")]
 
-    active_strategies = [
-        s for s in STRATEGIES
-        if not (args.no_embedding and s.embedding)
-    ]
+    active_strategies = [s for s in STRATEGIES if not (args.no_embedding and s.embedding)]
 
-    print(f"\n  Competitive Retrieval Benchmark")
+    print("\n  Competitive Retrieval Benchmark")
     print(f"  Strategies: {len(active_strategies)}")
     print(f"  Datasets: {len(dataset_names)}")
     if any(s.embedding for s in active_strategies):
-        print(f"  Embedding: ollama/qwen3-embedding:0.6b")
+        print("  Embedding: ollama/qwen3-embedding:0.6b")
     print()
 
     all_results: dict[str, dict[str, StrategyResult]] = {}
@@ -257,15 +255,21 @@ def main() -> None:
         for strategy in active_strategies:
             print(f"    → {strategy.label}...", end="", flush=True)
             result = run_strategy(
-                tg_base, strategy, gt["queries"],
-                top_k=args.top_k, verbose=args.verbose,
+                tg_base,
+                strategy,
+                gt["queries"],
+                top_k=args.top_k,
+                verbose=args.verbose,
             )
             ds_results[strategy.name] = result
             print(f" Recall={result.recall_5:.1%} MRR={result.mrr:.3f}")
 
         print_comparison(
-            gt["name"], gt.get("tool_count", len(tg_base.tools)),
-            len(gt["queries"]), ds_results, active_strategies,
+            gt["name"],
+            gt.get("tool_count", len(tg_base.tools)),
+            len(gt["queries"]),
+            ds_results,
+            active_strategies,
         )
         all_results[ds_name] = ds_results
 

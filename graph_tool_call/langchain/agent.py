@@ -118,9 +118,7 @@ def _generate_query_with_llm(
     # Include a sample of tool names to help the LLM understand the domain
     sample_tools = ", ".join(tool_names[:20])
     user_prompt = (
-        f"Available tools include: {sample_tools}\n\n"
-        f"Conversation:\n{conversation}\n\n"
-        f"Search query:"
+        f"Available tools include: {sample_tools}\n\nConversation:\n{conversation}\n\nSearch query:"
     )
 
     try:
@@ -129,10 +127,12 @@ def _generate_query_with_llm(
         if hasattr(model, "bound_tools"):
             # If model has tools bound, get the underlying model
             base_model = model
-        response = base_model.invoke([
-            SystemMessage(content=_QUERY_GEN_SYSTEM),
-            HumanMessage(content=user_prompt),
-        ])
+        response = base_model.invoke(
+            [
+                SystemMessage(content=_QUERY_GEN_SYSTEM),
+                HumanMessage(content=user_prompt),
+            ]
+        )
         query = response.content.strip().strip('"').strip("'")
         if query:
             logger.debug("LLM-generated query: %s", query)
@@ -187,8 +187,7 @@ def create_agent(
         from langgraph.prebuilt import create_react_agent
     except ImportError:
         raise ImportError(
-            "langgraph is required for create_agent(). "
-            "Install with: pip install langgraph"
+            "langgraph is required for create_agent(). Install with: pip install langgraph"
         )
 
     from graph_tool_call import ToolGraph

@@ -121,8 +121,25 @@ class GraphSearcher:
         cat_index = self._get_category_index()
         query_lower = query.lower()
         query_tokens = set(re.split(r"[\s_\-/.,;:!?()]+", query_lower))
-        query_tokens -= {"a", "an", "the", "of", "for", "to", "in", "by", "is", "and", "or", "my",
-                         "all", "this", "that", "with", "from"}
+        query_tokens -= {
+            "a",
+            "an",
+            "the",
+            "of",
+            "for",
+            "to",
+            "in",
+            "by",
+            "is",
+            "and",
+            "or",
+            "my",
+            "all",
+            "this",
+            "that",
+            "with",
+            "from",
+        }
         query_tokens.discard("")
 
         if not query_tokens:
@@ -188,9 +205,7 @@ class GraphSearcher:
         return dict(ranked[:max_results])
 
     @staticmethod
-    def _compute_intent_boost(
-        intent: Any | None, tool_node: str, tools: dict | None
-    ) -> float:
+    def _compute_intent_boost(intent: Any | None, tool_node: str, tools: dict | None) -> float:
         """Score boost based on query intent vs tool's HTTP method/name."""
         if not intent or intent.is_neutral or not tools:
             return 1.0
@@ -206,18 +221,35 @@ class GraphSearcher:
         if intent.write_intent > 0.5:
             if method in ("POST", "PUT", "PATCH"):
                 boost = 1.8
-            for verb in ("create", "add", "set", "update", "enable",
-                         "register", "upload", "submit", "request",
-                         "fork", "star", "follow", "lock", "merge",
-                         "close", "open", "transfer", "approve",
-                         "checkout", "cancel", "clear"):
+            for verb in (
+                "create",
+                "add",
+                "set",
+                "update",
+                "enable",
+                "register",
+                "upload",
+                "submit",
+                "request",
+                "fork",
+                "star",
+                "follow",
+                "lock",
+                "merge",
+                "close",
+                "open",
+                "transfer",
+                "approve",
+                "checkout",
+                "cancel",
+                "clear",
+            ):
                 if verb in name_lower:
                     boost = max(boost, 1.5)
         elif intent.read_intent > 0.5:
             if method == "GET":
                 boost = 1.5
-            for verb in ("get", "list", "check", "download", "search",
-                         "validate", "calculate"):
+            for verb in ("get", "list", "check", "download", "search", "validate", "calculate"):
                 if verb in name_lower:
                     boost = max(boost, 1.3)
         elif intent.delete_intent > 0.5:
@@ -230,9 +262,7 @@ class GraphSearcher:
         return boost
 
     @staticmethod
-    def _compute_desc_boost(
-        query_tokens: set[str], tool_node: str, tools: dict | None
-    ) -> float:
+    def _compute_desc_boost(query_tokens: set[str], tool_node: str, tools: dict | None) -> float:
         """Boost tools whose description contains query keywords."""
         if not tools:
             return 1.0
@@ -299,9 +329,7 @@ class GraphSearcher:
                     # Decayed score: prerequisites get 60% at depth 1, 36% at depth 2
                     decay = 0.6 ** (depth + 1)
                     chain_score = base_score * decay
-                    chain_scores[neighbor] = max(
-                        chain_scores.get(neighbor, 0), chain_score
-                    )
+                    chain_scores[neighbor] = max(chain_scores.get(neighbor, 0), chain_score)
                     queue.append((neighbor, depth + 1))
 
         return chain_scores
