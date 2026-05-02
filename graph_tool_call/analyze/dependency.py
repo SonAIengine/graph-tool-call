@@ -317,8 +317,8 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
                     relation_type=RelationType.REQUIRES,
                     confidence=0.9,
                     evidence=(
-                        f"{get_s.name} (GET single) requires {post.name} (POST) — "
-                        f"same resource '{post_resource}'"
+                        f"{get_s.name} (GET single) requires {post.name} (POST) "
+                        f"— same resource '{post_resource}'"
                     ),
                     layer=1,
                 )

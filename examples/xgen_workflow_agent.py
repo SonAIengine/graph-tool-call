@@ -206,7 +206,8 @@ def pattern_b_create_agent():
         """Send push notification to a user."""
         return f"Sent to {user_id}"
 
-    _all_tools = [search_products, get_order_detail, cancel_order, create_refund, send_notification]
+    # 데모용 tool 정의 (실제 적용 코드는 아래 print 블록 참고)
+    _ = [search_products, get_order_detail, cancel_order, create_refund, send_notification]
 
     # -- 핵심: create_agent 교체 --
 

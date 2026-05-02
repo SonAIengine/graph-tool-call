@@ -120,10 +120,10 @@ Find relationships between these API tools.
 Example:
 Tools: createUser, getUserProfile, deleteUser
 Answer: [
-  {{"source":"getUserProfile","target":"createUser","relation":"REQUIRES","confidence":0.9,
-    "reason":"need user to exist"}},
-  {{"source":"createUser","target":"deleteUser","relation":"PRECEDES","confidence":0.8,
-    "reason":"create before delete"}}
+  {{"source": "getUserProfile", "target": "createUser",
+    "relation": "REQUIRES", "confidence": 0.9, "reason": "need user to exist"}},
+  {{"source": "createUser", "target": "deleteUser",
+    "relation": "PRECEDES", "confidence": 0.8, "reason": "create before delete"}}
 ]
 
 Relation types:

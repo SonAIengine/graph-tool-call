@@ -9,16 +9,18 @@ xgen-workflow에서 실제 사용되는 MCP tool 구조를 시뮬레이션:
 
 총 62개 tool → gateway 2개로 변환 → LLM이 검색+실행.
 """
+# ruff: noqa: E501 — mock JSON responses are intentionally one-line for readability
 
 from __future__ import annotations
 
 import json
 import time
 
-from langchain_core.tools import tool
-
 pytest = __import__("pytest")
+pytest.importorskip("langchain_core")
+pytest.importorskip("langgraph")
 ChatOllama = pytest.importorskip("langchain_ollama").ChatOllama
+from langchain_core.tools import tool  # noqa: E402
 from langgraph.prebuilt import create_react_agent  # noqa: E402
 
 from graph_tool_call.langchain.gateway import create_gateway_tools  # noqa: E402

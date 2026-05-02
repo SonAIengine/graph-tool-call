@@ -25,9 +25,8 @@ htmlcov/
 .env
 .env.local
 
-# Benchmark results (environment-dependent, except baselines)
-benchmarks/results/
-!benchmarks/results/baseline*.json
+# Benchmark results
+# benchmarks/results/ — 모델별 벤치마크 문서 포함을 위해 추적
 
 # Personal memo
 memo/

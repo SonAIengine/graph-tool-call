@@ -70,6 +70,7 @@ all = ["networkx", "pyyaml", "numpy", "sentence-transformers", "rapidfuzz", "lan
 pytest = "^8.0"
 pytest-asyncio = "^0.23"
 ruff = ">=0.11"
+pre-commit = "^4.0"
 langgraph-bigtool = "^0.0.3"
 
 [tool.ruff]

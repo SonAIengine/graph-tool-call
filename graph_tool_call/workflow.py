@@ -501,8 +501,9 @@ Available tools:
 {chr(10).join(available[:60])}
 
 Return JSON:
-{{"steps": [{{"tool": "name", "reason": "why",
-  "params_from": {{"param": "step.response.field"}}}}]}}
+{{"steps": [
+  {{"tool": "name", "reason": "why", "params_from": {{"param": "step.response.field"}}}}
+]}}
 
 Rules:
 - Keep existing chain steps unless clearly wrong

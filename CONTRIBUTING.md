@@ -7,8 +7,19 @@ Contributions are welcome! Here's how to get started.
 ```bash
 git clone https://github.com/SonAIengine/graph-tool-call.git
 cd graph-tool-call
-pip install poetry
+pip install poetry pre-commit
 poetry install --with dev --all-extras
+pre-commit install   # auto-runs ruff on every commit
+```
+
+The `pre-commit install` step wires up `.pre-commit-config.yaml` so that
+`ruff check --fix` and `ruff format` run automatically before each commit.
+This catches the same lint issues CI checks, before they reach the remote.
+
+To run the hooks manually on the whole tree:
+
+```bash
+pre-commit run --all-files
 ```
 
 ## Running Tests

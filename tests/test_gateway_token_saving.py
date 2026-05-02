@@ -3,15 +3,16 @@
 Measures actual token usage difference when binding all tools
 vs only search_tools + call_tool gateway meta-tools.
 """
+# ruff: noqa: E501 — mock JSON responses are intentionally one-line for readability
 
 from __future__ import annotations
 
 import json
 
-from langchain_core.tools import tool
-
 pytest = __import__("pytest")
+pytest.importorskip("langchain_core")
 ChatOllama = pytest.importorskip("langchain_ollama").ChatOllama
+from langchain_core.tools import tool  # noqa: E402
 
 from graph_tool_call.langchain.gateway import create_gateway_tools  # noqa: E402
 
@@ -413,19 +414,17 @@ def main():
     # --- Comparison ---
     print(f"\n{'=' * 70}")
     print("COMPARISON")
-    char_reduction = (1 - gw_chars / all_chars) * 100
-    print(f"  Tool schema: {all_chars:,} → {gw_chars:,} chars ({char_reduction:.0f}% reduction)")
-    token_reduction = (1 - gw_tokens_est / all_tokens_est) * 100
     print(
-        f"  Estimated tokens: ~{all_tokens_est:,} → ~{gw_tokens_est:,} "
-        f"({token_reduction:.0f}% reduction)"
+        f"  Tool schema: {all_chars:,} → {gw_chars:,} chars ({(1 - gw_chars / all_chars) * 100:.0f}% reduction)"
+    )
+    print(
+        f"  Estimated tokens: ~{all_tokens_est:,} → ~{gw_tokens_est:,} ({(1 - gw_tokens_est / all_tokens_est) * 100:.0f}% reduction)"
     )
 
     if isinstance(prompt_all, int) and isinstance(prompt_gw, int):
         actual_reduction = (1 - prompt_gw / prompt_all) * 100
         print(
-            f"  Actual prompt_tokens: {prompt_all:,} → {prompt_gw:,} "
-            f"({actual_reduction:.0f}% reduction)"
+            f"  Actual prompt_tokens: {prompt_all:,} → {prompt_gw:,} ({actual_reduction:.0f}% reduction)"
         )
         saved = prompt_all - prompt_gw
         print(f"  Tokens saved per turn: {saved:,}")
