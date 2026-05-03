@@ -91,27 +91,6 @@ class DynamicOptionRequired(UnsatisfiableFieldError):  # noqa: N818
 
 
 def _normalize_field_name(name: str) -> str:
-    """Lowercase + strip separators for loose field-name matching.
-
-    Conservative on purpose:
-      ``ordNo`` → ``ordno``
-      ``ord_no`` → ``ordno``
-      ``ORD-NO`` → ``ordno``
-    BUT keeps token roots distinct:
-      ``ordNo`` ≠ ``orderNo`` (``ordno`` ≠ ``orderno``)
-    Token-level synonym mapping (``ord`` ↔ ``order``) is domain-specific
-    and not done here — the graph-edge fallback handles those cases.
-    """
-    if not name:
-        return ""
-    out: list[str] = []
-    for ch in name:
-        if ch.isalnum():
-            out.append(ch.lower())
-    return "".join(out)
-
-
-def _normalize_field_name(name: str) -> str:
     """Lowercase + strip non-alphanumerics for loose field-name matching.
 
     Conservative on purpose:

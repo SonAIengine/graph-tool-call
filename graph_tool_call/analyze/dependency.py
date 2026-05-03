@@ -670,6 +670,7 @@ _VERB_TO_INTENT: dict[str, str] = {
     "insert": "write",
     "register": "write",
     "regist": "write",
+    "reg": "write",  # camelCase 약어 (regGoodsApprove 등)
     # update
     "modify": "update",
     "update": "update",

@@ -257,8 +257,13 @@ def extract_consumes_for_operation(
             continue
         if is_swagger2:
             ftype = p.get("type") or "string"
+            # Swagger 2.0 — enum lives directly on the parameter object.
+            enum_vals = p.get("enum") or []
         else:
-            ftype = _schema_type(p.get("schema") or {}) or "string"
+            param_schema = p.get("schema") or {}
+            ftype = _schema_type(param_schema) or "string"
+            # OpenAPI 3.x — enum lives under ``schema``.
+            enum_vals = param_schema.get("enum") or [] if isinstance(param_schema, dict) else []
         if p["name"] in seen_names:
             continue
         seen_names.add(p["name"])
@@ -269,6 +274,7 @@ def extract_consumes_for_operation(
                 field_type=ftype,
                 required=is_required,
                 description=str(p.get("description") or "")[:200],
+                enum=list(enum_vals),
             )
         )
 

@@ -75,6 +75,8 @@ class PlanCompleted:
     plan_id: str = ""
     output: Any = None
     total_duration_ms: int = 0
+    # 누적 step traces — 비-스트리밍 ``run()`` 이 ExecutionTrace.steps 채울 때 사용.
+    trace_steps: list[StepTrace] = field(default_factory=list)
 
 
 @dataclass
@@ -84,6 +86,7 @@ class PlanAborted:
     failed_step: str = ""
     error: dict[str, Any] = field(default_factory=dict)
     total_duration_ms: int = 0
+    trace_steps: list[StepTrace] = field(default_factory=list)
 
 
 PlanEvent = PlanStarted | StepStarted | StepCompleted | StepFailed | PlanCompleted | PlanAborted
@@ -137,8 +140,12 @@ class PlanRunner:
     ) -> Iterator[PlanEvent]:
         """Execute *plan* and yield events as each step progresses.
 
-        ``input_context`` supplies values for ``${input.xxx}`` bindings —
-        typically the entities extracted by Stage 1 (intent parser).
+        ``input_context`` supplies values for ``${input.xxx}`` and
+        ``${user_input.xxx}`` bindings (both keys resolve to the same dict,
+        kept as aliases because the synthesizer emits ``user_input`` for
+        F2/Cycle-policy fallbacks and historical entity-injection paths use
+        ``input``). Typically the entities extracted by Stage 1 (intent
+        parser) plus any operator-supplied seed values.
         """
         plan_start = time.monotonic()
 
@@ -148,10 +155,14 @@ class PlanRunner:
             step_count=len(plan.steps),
         )
 
-        # step_id -> output (runtime context for binding resolution)
+        # step_id -> output (runtime context for binding resolution).
+        # ``input`` and ``user_input`` are aliases — same dict, both names —
+        # so binding ``${input.x}`` and ``${user_input.x}`` both resolve.
         context: dict[str, Any] = {}
         if input_context:
-            context["input"] = dict(input_context)
+            input_dict = dict(input_context)
+            context["input"] = input_dict
+            context["user_input"] = input_dict
 
         trace_steps: list[StepTrace] = []
 
@@ -181,6 +192,7 @@ class PlanRunner:
                     failed_step=step.id,
                     error=err,
                     total_duration_ms=_ms_since(plan_start),
+                    trace_steps=list(trace_steps),
                 )
                 return
 
@@ -216,6 +228,7 @@ class PlanRunner:
                     failed_step=step.id,
                     error=err,
                     total_duration_ms=_ms_since(plan_start),
+                    trace_steps=list(trace_steps),
                 )
                 return
 
@@ -255,6 +268,7 @@ class PlanRunner:
                 failed_step="<output_binding>",
                 error=err,
                 total_duration_ms=_ms_since(plan_start),
+                trace_steps=list(trace_steps),
             )
             return
 
@@ -262,6 +276,7 @@ class PlanRunner:
             plan_id=plan.id,
             output=final,
             total_duration_ms=_ms_since(plan_start),
+            trace_steps=list(trace_steps),
         )
 
     # ----------------------------------------------------------------------
@@ -274,7 +289,12 @@ class PlanRunner:
         *,
         input_context: dict[str, Any] | None = None,
     ) -> ExecutionTrace:
-        """Execute *plan* and return an ExecutionTrace aggregating events."""
+        """Execute *plan* and return an ExecutionTrace aggregating events.
+
+        ``trace_steps`` 는 종결 이벤트 (``PlanCompleted`` / ``PlanAborted``) 가
+        실어 보내는 것을 그대로 사용 — run_stream 안에서 step 단위로 누적된
+        StepTrace 가 그대로 ExecutionTrace.steps 에 들어간다.
+        """
         started_at = _now_iso()
         started = time.monotonic()
         trace_steps: list[StepTrace] = []
@@ -282,24 +302,16 @@ class PlanRunner:
         failed_step: str | None = None
         output: Any = None
 
-        last_step_output: dict[str, Any] = {}
-
         for event in self.run_stream(plan, input_context=input_context):
             etype = event.type
-            if etype == "step.completed":
-                # step trace built progressively — simpler: derive from events
-                pass
-            elif etype == "plan.completed":
+            if etype == "plan.completed":
                 success = True
                 output = event.output  # type: ignore[union-attr]
+                trace_steps = list(event.trace_steps)  # type: ignore[union-attr]
             elif etype == "plan.aborted":
                 failed_step = event.failed_step  # type: ignore[union-attr]
+                trace_steps = list(event.trace_steps)  # type: ignore[union-attr]
 
-        # Recompute trace_steps by re-running the stream? No — we already
-        # lost events. Instead the run_stream implementation should also
-        # surface StepTrace. For v1 keep trace minimal (plan-level only) —
-        # callers that need per-step detail should use run_stream.
-        _ = last_step_output  # (placeholder to satisfy future extension)
         return ExecutionTrace(
             plan_id=plan.id,
             success=success,
