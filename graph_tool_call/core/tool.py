@@ -408,6 +408,26 @@ _ANNOTATION_BY_VERB: dict[str, MCPAnnotations] = {
         destructive_hint=False,
         idempotent_hint=False,
     ),
+    "insert": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    "register": MCPAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    "regist": MCPAnnotations(  # 일부 코드베이스 약어 (regUser, registOrder)
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
+    "reg": MCPAnnotations(  # camelCase 짧은 약어 (regGoodsApprove)
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+    ),
     # update verbs
     "update": MCPAnnotations(
         read_only_hint=False,

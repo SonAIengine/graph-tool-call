@@ -23,3 +23,21 @@ def test_basic_verbs_unchanged():
     assert _VERB_TO_INTENT.get("create") == "write"
     assert _VERB_TO_INTENT.get("update") == "update"
     assert _VERB_TO_INTENT.get("delete") == "delete"
+
+
+# ─── _ANNOTATION_BY_VERB sibling 일관성 (잠복 결함) ──
+
+
+def test_annotation_by_verb_covers_register_family():
+    """``_ANNOTATION_BY_VERB`` 도 register 계열 커버해야 — _VERB_TO_INTENT 와 sibling.
+
+    ``registerUser`` / ``insertOrder`` / ``regGoodsApprove`` 같은 도구가 MCP
+    annotation 을 받을 수 있어야 한다 (read_only_hint=False, ...).
+    """
+    from graph_tool_call.core.tool import _ANNOTATION_BY_VERB
+    for verb in ("register", "regist", "reg", "insert"):
+        assert verb in _ANNOTATION_BY_VERB, (
+            f"verb {verb!r} 누락 — _VERB_TO_INTENT 와 sibling vocabulary 불일치"
+        )
+        assert _ANNOTATION_BY_VERB[verb].read_only_hint is False
+        assert _ANNOTATION_BY_VERB[verb].destructive_hint is False
