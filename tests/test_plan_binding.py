@@ -2,6 +2,7 @@
 
 binding placeholder resolution + error 동작.
 """
+
 from __future__ import annotations
 
 import pytest

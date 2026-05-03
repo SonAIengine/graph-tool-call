@@ -2,6 +2,7 @@
 
 특히 query/path parameter 의 enum 추출 (리뷰에서 빠뜨려진 부분) 확인.
 """
+
 from __future__ import annotations
 
 from graph_tool_call.ingest.io_contract import (

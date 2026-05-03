@@ -2,6 +2,7 @@
 
 핵심 합성 시나리오 + Cycle/F2 fallback 의 user_input placeholder 출력.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -15,8 +16,8 @@ from graph_tool_call.plan.synthesizer import (
 
 def _basic_graph() -> dict:
     """포함:
-      - 'searchProduct': 입력=keyword, 출력=goodsNo (semantic=goods.id)
-      - 'getProductDetail': 입력=goodsNo (semantic=goods.id) → 의존
+    - 'searchProduct': 입력=keyword, 출력=goodsNo (semantic=goods.id)
+    - 'getProductDetail': 입력=goodsNo (semantic=goods.id) → 의존
     """
     return {
         "tools": {
@@ -24,9 +25,7 @@ def _basic_graph() -> dict:
                 "metadata": {
                     "method": "GET",
                     "path": "/api/v1/products",
-                    "consumes": [
-                        {"field_name": "keyword", "kind": "data", "required": True}
-                    ],
+                    "consumes": [{"field_name": "keyword", "kind": "data", "required": True}],
                     "produces": [
                         {
                             "field_name": "goodsNo",
@@ -52,9 +51,7 @@ def _basic_graph() -> dict:
                             "required": True,
                         }
                     ],
-                    "produces": [
-                        {"field_name": "name", "json_path": "$.body.name"}
-                    ],
+                    "produces": [{"field_name": "name", "json_path": "$.body.name"}],
                     "ai_metadata": {
                         "canonical_action": "read",
                         "primary_resource": "product",
@@ -104,7 +101,8 @@ def test_synthesize_chains_producer_when_entity_missing():
     """
     syn = PathSynthesizer(_basic_graph())
     plan = syn.synthesize(
-        target="getProductDetail", entities={"keyword": "shoes"},
+        target="getProductDetail",
+        entities={"keyword": "shoes"},
     )
     assert len(plan.steps) == 2, "검색 + 상세조회 2-step chain"
     assert plan.steps[0].tool == "searchProduct"
@@ -127,9 +125,7 @@ def test_synthesize_falls_back_to_user_input_placeholder():
         "tools": {
             "needsX": {
                 "metadata": {
-                    "consumes": [
-                        {"field_name": "mysteryField", "kind": "data", "required": True}
-                    ],
+                    "consumes": [{"field_name": "mysteryField", "kind": "data", "required": True}],
                     "produces": [],
                     "ai_metadata": {"canonical_action": "read"},
                 },

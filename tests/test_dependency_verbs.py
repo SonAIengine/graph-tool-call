@@ -2,6 +2,7 @@
 
 특히 'reg' 약어가 'write' intent 로 분류되는지 확인 (리뷰 🟢 항목).
 """
+
 from __future__ import annotations
 
 from graph_tool_call.analyze.dependency import _VERB_TO_INTENT
@@ -35,6 +36,7 @@ def test_annotation_by_verb_covers_register_family():
     annotation 을 받을 수 있어야 한다 (read_only_hint=False, ...).
     """
     from graph_tool_call.core.tool import _ANNOTATION_BY_VERB
+
     for verb in ("register", "regist", "reg", "insert"):
         assert verb in _ANNOTATION_BY_VERB, (
             f"verb {verb!r} 누락 — _VERB_TO_INTENT 와 sibling vocabulary 불일치"

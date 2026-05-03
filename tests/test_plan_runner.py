@@ -2,6 +2,7 @@
 
 리뷰 CRITICAL #1, #2 회귀 방지 + 핵심 동작 cover.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -106,6 +107,7 @@ def test_execution_trace_accumulates_steps():
 
 def test_execution_trace_includes_failed_step():
     """실패해도 실패한 step + 그 이전 step 이 trace 에 포함."""
+
     def flaky(name: str, args: dict[str, Any]) -> dict[str, Any]:
         if name == "boom":
             raise RuntimeError("simulated")
@@ -155,24 +157,19 @@ def test_plan_completed_carries_trace_steps():
         goal="g",
         steps=[PlanStep(id="s1", tool="echo", args={"x": "hi"})],
     )
-    completed = next(
-        e for e in PlanRunner(_echo).run_stream(plan)
-        if isinstance(e, PlanCompleted)
-    )
+    completed = next(e for e in PlanRunner(_echo).run_stream(plan) if isinstance(e, PlanCompleted))
     assert len(completed.trace_steps) == 1
     assert completed.trace_steps[0].id == "s1"
 
 
 def test_plan_aborted_carries_trace_steps():
     """abort 시에도 PlanAborted 가 그때까지의 trace_steps 를 실어 보내야 함."""
+
     def fail(name: str, args: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("boom")
 
     plan = Plan(id="t", goal="g", steps=[PlanStep(id="s1", tool="x")])
-    aborted = next(
-        e for e in PlanRunner(fail).run_stream(plan)
-        if isinstance(e, PlanAborted)
-    )
+    aborted = next(e for e in PlanRunner(fail).run_stream(plan) if isinstance(e, PlanAborted))
     assert len(aborted.trace_steps) == 1
     assert aborted.trace_steps[0].error is not None
 
