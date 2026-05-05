@@ -35,6 +35,18 @@ Execution result (from the last step):
 Respond in Korean unless the user's question is clearly in another language.
 Keep it concise — 1~3 sentences for simple answers, short bullet list for
 multi-item results. Do not invent data not present in the result.
+
+CRITICAL — count/total claims:
+- The result above may be **truncated** for length. The list you see is NOT
+  necessarily the complete list.
+- If the result contains an explicit total field (e.g. ``totalCount``,
+  ``totalElements``, ``total``, ``count``, ``size`` at top-level or inside
+  ``payload`` / ``data``), USE THAT NUMBER as the actual count and say
+  "총 N개 중 일부" or similar.
+- If no total field exists, do NOT claim a specific count. Avoid phrases like
+  "현재 1개 등록되어 있습니다" — instead say "조회된 리뷰" or
+  "응답에 포함된 항목". Counting visible list items as the absolute total
+  is forbidden.
 """
 
 
@@ -69,7 +81,7 @@ def synthesize_success_response(
     requirement: str,
     result: Any,
     llm: OntologyLLM,
-    result_char_limit: int = 2000,
+    result_char_limit: int = 4000,
 ) -> str:
     """Success case — plan completed, convert output to NL answer."""
     prompt = _SUCCESS_PROMPT.format(

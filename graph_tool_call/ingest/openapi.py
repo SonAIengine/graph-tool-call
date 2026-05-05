@@ -202,6 +202,11 @@ def _extract_params_swagger2(
                 )
         else:
             is_required = p.get("required", False)
+            # OpenAPI 3.x / Swagger 2.0: path 파라미터는 본질적으로 required.
+            # 많은 spec이 명시 안 해도 URL placeholder라 호출 시 반드시 값이 있어야 함.
+            # synthesizer가 required 안 보고 빈 entity로 plan 생성 → HTTP 호출 실패 케이스 차단.
+            if location == "path":
+                is_required = True
             if required_only and not is_required:
                 continue
             params.append(
@@ -308,6 +313,11 @@ def _extract_params_openapi3(
             continue  # skip malformed parameters (missing required 'name' field)
         schema = p.get("schema", {})
         is_required = p.get("required", False)
+        # OpenAPI 3.x: path 파라미터는 본질적으로 required (URL placeholder 채우려면 필수).
+        # 많은 spec이 명시 안 해도 강제로 required 처리해야 synthesizer가 빈 entity를
+        # UnsatisfiableFieldError로 raise → question.required popup으로 사용자에게 묻는다.
+        if p.get("in") == "path":
+            is_required = True
         ptype = _schema_type(schema)
 
         # Wrapper-object/array query parameter handling.
