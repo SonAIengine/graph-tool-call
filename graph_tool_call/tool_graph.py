@@ -16,7 +16,7 @@ from graph_tool_call.core.dict_graph import DictGraph
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema, normalize_tool, parse_tool
 from graph_tool_call.ontology.builder import OntologyBuilder
-from graph_tool_call.ontology.schema import RelationType
+from graph_tool_call.ontology.schema import Confidence, RelationType
 
 
 def _encode_spec_url(base: str, raw_url: str) -> str:
@@ -289,6 +289,9 @@ class ToolGraph:
         min_confidence: float = 0.7,
         allow_private_hosts: bool = False,
         max_response_bytes: int = 5_000_000,
+        source_label: str | None = None,
+        on_conflict: str = "overwrite",
+        relink_existing: bool = True,
     ) -> list[ToolSchema]:
         """Ingest an OpenAPI/Swagger spec, register tools, and auto-detect relations.
 
@@ -304,11 +307,29 @@ class ToolGraph:
             If True (default), run automatic dependency detection.
         min_confidence:
             Minimum confidence threshold for detected relations.
+        source_label:
+            Optional origin tag stored on each tool's ``metadata["source_label"]``.
+            Enables :meth:`list_sources` / :meth:`remove_source` and is used
+            to derive the namespace prefix when ``on_conflict="prefix"``.
+        on_conflict:
+            How to handle a name collision with an already-registered tool.
+
+            - ``"overwrite"`` (default): replace the existing tool.
+            - ``"prefix"``: rename incoming as ``{source_label}.{name}`` (or
+              ``incoming.{name}`` if no label provided). Subsequent collisions
+              after prefixing fall back to ``overwrite``.
+            - ``"skip"``: keep the existing tool, drop the incoming one.
+            - ``"error"``: raise ``ValueError`` on the first collision.
+        relink_existing:
+            When True (default), after adding the new batch, dependency
+            detection is re-run across **new ↔ existing** tools so that
+            cross-source edges are discovered. Has no effect when this is
+            the first ingest or ``detect_dependencies=False``.
 
         Returns
         -------
         list[ToolSchema]
-            The ingested tool schemas.
+            The ingested tool schemas (with any prefix-rename applied).
         """
         from graph_tool_call.ingest.openapi import ingest_openapi
 
@@ -319,13 +340,16 @@ class ToolGraph:
             allow_private_hosts=allow_private_hosts,
             max_response_bytes=max_response_bytes,
         )
-        self._register_tools_batch(
+        registered = self._register_tools_batch(
             tools,
             detect_dependencies=detect_dependencies,
             min_confidence=min_confidence,
             spec=spec.raw,
+            source_label=source_label,
+            on_conflict=on_conflict,
+            relink_existing=relink_existing,
         )
-        return tools
+        return registered
 
     def ingest_mcp_tools(
         self,
@@ -464,9 +488,27 @@ class ToolGraph:
         target: str,
         relation: str | RelationType,
         weight: float = 1.0,
+        *,
+        confidence: str | Confidence | None = None,
+        conf_score: float | None = None,
+        layer: int | None = None,
+        evidence: str | None = None,
     ) -> None:
-        """Add a relation between two tools."""
-        self._builder.add_relation(source, target, relation, weight)
+        """Add a relation between two tools.
+
+        Optional graphify-style attrs are forwarded to ``OntologyBuilder``;
+        see ``OntologyBuilder.add_relation`` for semantics.
+        """
+        self._builder.add_relation(
+            source,
+            target,
+            relation,
+            weight,
+            confidence=confidence,
+            conf_score=conf_score,
+            layer=layer,
+            evidence=evidence,
+        )
         self._invalidate_retrieval()
 
     def add_domain(self, domain: str, description: str = "") -> None:
@@ -923,33 +965,92 @@ class ToolGraph:
         detect_dependencies: bool = True,
         min_confidence: float = 0.7,
         spec: dict | None = None,
-    ) -> None:
+        source_label: str | None = None,
+        on_conflict: str = "overwrite",
+        relink_existing: bool = True,
+    ) -> list[ToolSchema]:
         """Register tools, assign categories, and detect dependencies.
 
         Shared logic for ingest_openapi, ingest_mcp_tools, and ingest_functions.
+        Returns the list of tools that were actually registered (after any
+        conflict-driven rename or skip).
         """
+        had_existing = bool(self._tools)
+        registered: list[ToolSchema] = []
         categories_seen: set[str] = set()
-        for tool in tools:
-            self._tools[tool.name] = tool
-            self._builder.add_tool(tool)
-            if tool.domain:
-                if tool.domain not in categories_seen:
-                    if not self._graph.has_node(tool.domain):
-                        self._builder.add_category(tool.domain)
-                    categories_seen.add(tool.domain)
-                self._builder.assign_category(tool.name, tool.domain)
 
-        if detect_dependencies and len(tools) >= 2:
+        for tool in tools:
+            resolved = self._resolve_conflict(tool, on_conflict, source_label)
+            if resolved is None:
+                continue
+            if source_label:
+                resolved.metadata["source_label"] = source_label
+            self._tools[resolved.name] = resolved
+            self._builder.add_tool(resolved)
+            if resolved.domain:
+                if resolved.domain not in categories_seen:
+                    if not self._graph.has_node(resolved.domain):
+                        self._builder.add_category(resolved.domain)
+                    categories_seen.add(resolved.domain)
+                self._builder.assign_category(resolved.name, resolved.domain)
+            registered.append(resolved)
+
+        if detect_dependencies and registered:
             from graph_tool_call.analyze.dependency import detect_dependencies as _detect
 
-            kwargs: dict = {"min_confidence": min_confidence}
-            if spec:
-                kwargs["spec"] = spec
-            relations = _detect(tools, **kwargs)
-            for rel in relations:
-                self._builder.add_relation(rel.source, rel.target, rel.relation_type)
+            # Scope of detection:
+            #   - First ingest, or relink disabled  → only the new batch.
+            #   - Incremental + relink_existing     → union of new + all existing,
+            #     so cross-source edges (e.g. order.* ↔ claim.*) are discovered.
+            if had_existing and relink_existing and len(self._tools) >= 2:
+                scope = list(self._tools.values())
+            else:
+                scope = registered
+
+            if len(scope) >= 2:
+                kwargs: dict = {"min_confidence": min_confidence}
+                if spec:
+                    kwargs["spec"] = spec
+                relations = _detect(scope, **kwargs)
+                for rel in relations:
+                    self._builder.add_relation(rel.source, rel.target, rel.relation_type)
 
         self._invalidate_retrieval()
+        return registered
+
+    def _resolve_conflict(
+        self,
+        tool: ToolSchema,
+        on_conflict: str,
+        source_label: str | None,
+    ) -> ToolSchema | None:
+        """Apply the *on_conflict* policy. Returns the tool to register, or None to skip.
+
+        Mutates ``tool.name`` when prefix-renaming.
+        """
+        if tool.name not in self._tools:
+            return tool
+
+        if on_conflict == "overwrite":
+            return tool
+        if on_conflict == "skip":
+            return None
+        if on_conflict == "error":
+            raise ValueError(
+                f"Tool '{tool.name}' already exists "
+                f"(on_conflict='error', incoming source_label={source_label!r})"
+            )
+        if on_conflict == "prefix":
+            prefix = source_label or "incoming"
+            new_name = f"{prefix}.{tool.name}"
+            # If the prefixed name also collides, fall through to overwrite —
+            # the caller has already chosen prefix as the deconfliction strategy.
+            tool.name = new_name
+            return tool
+        raise ValueError(
+            f"Unknown on_conflict policy: {on_conflict!r} "
+            "(expected 'overwrite' | 'prefix' | 'skip' | 'error')"
+        )
 
     # --- from_url ---
 
@@ -1166,6 +1267,60 @@ class ToolGraph:
         if added:
             self._invalidate_retrieval()
         return added
+
+    # --- source management (incremental ingest) ---
+
+    def list_sources(self) -> list[str]:
+        """Return distinct ``source_label`` values across all registered tools."""
+        seen: dict[str, None] = {}
+        for tool in self._tools.values():
+            label = tool.metadata.get("source_label") if tool.metadata else None
+            if label and label not in seen:
+                seen[label] = None
+        return list(seen.keys())
+
+    def tools_by_source(self, source_label: str) -> list[ToolSchema]:
+        """Return all tools tagged with the given ``source_label``."""
+        return [
+            t
+            for t in self._tools.values()
+            if t.metadata and t.metadata.get("source_label") == source_label
+        ]
+
+    def remove_source(self, source_label: str) -> int:
+        """Remove every tool tagged with *source_label* and its incident edges.
+
+        Returns the number of tools removed.
+        """
+        victims = [t.name for t in self.tools_by_source(source_label)]
+        for name in victims:
+            self._tools.pop(name, None)
+            if self._graph.has_node(name):
+                self._graph.remove_node(name)
+        if victims:
+            self._invalidate_retrieval()
+        return len(victims)
+
+    def relink(self, *, min_confidence: float = 0.7) -> int:
+        """Re-run dependency detection across all currently registered tools.
+
+        New relations are added to the existing graph. Existing edges are
+        preserved (the underlying graph engine deduplicates edges by
+        ``(source, target, relation)``).
+
+        Returns the number of detected relations applied (including
+        previously known ones — use this as an upper bound, not a delta).
+        """
+        if len(self._tools) < 2:
+            return 0
+        from graph_tool_call.analyze.dependency import detect_dependencies as _detect
+
+        relations = _detect(list(self._tools.values()), min_confidence=min_confidence)
+        for rel in relations:
+            self._builder.add_relation(rel.source, rel.target, rel.relation_type)
+        if relations:
+            self._invalidate_retrieval()
+        return len(relations)
 
     def analyze(
         self,
@@ -1397,17 +1552,28 @@ class ToolGraph:
             """Search available tools by natural language query.
 
             Use this FIRST to find which tools are available for the task.
-            Returns tool names, descriptions, and required parameters.
+            Returns tool names, descriptions, required parameters, and
+            **dependency hints** (``prerequisites`` for tools that must be
+            called first, ``relations`` for tools used together or in order).
+
+            Planning rule:
+              - Pick the single tool that best matches the user's goal.
+              - If its ``prerequisites`` are non-empty, call those first and
+                feed their results into the target tool's arguments.
+              - ``relations`` with type=precedes/requires imply call order.
 
             Args:
                 query: Natural language search query (e.g. "add numbers", "get weather")
                 top_k: Max number of results (optional)
             """
             k = top_k if top_k is not None else default_top_k
-            results = graph_ref.retrieve(query, top_k=k)
+            # retrieve_with_scores 를 써야 _enrich_relations 가 채운 relations/prerequisites
+            # 가 살아남는다. retrieve() 는 ToolSchema 만 반환해 이 정보가 버려짐.
+            results = graph_ref.retrieve_with_scores(query, top_k=k)
 
             matched = []
-            for schema in results:
+            for result in results:
+                schema = result.tool
                 entry: dict[str, Any] = {
                     "name": schema.name,
                     "description": (schema.description or "")[:200],
@@ -1422,6 +1588,22 @@ class ToolGraph:
                         }
                         for p in schema.parameters
                     ]
+                # Dependency / ordering hints from graph edges.
+                # prerequisites: REQUIRES targets not in the result set — LLM
+                # should call these first. relations: edges among result set
+                # members, carrying human-readable hint strings.
+                if result.prerequisites:
+                    entry["prerequisites"] = list(result.prerequisites)
+                if result.relations:
+                    entry["relations"] = [
+                        {
+                            "target": rel.target,
+                            "type": rel.type,
+                            "direction": rel.direction,
+                            "hint": rel.hint,
+                        }
+                        for rel in result.relations
+                    ]
                 matched.append(entry)
 
             output = {
@@ -1430,8 +1612,10 @@ class ToolGraph:
                 "total_tools": len(graph_ref._tools),
                 "tools": matched,
                 "hint": (
-                    "Use call_tool to execute a tool. "
-                    "Pass tool_name and arguments as a dict matching the parameters above."
+                    "Pick ONE tool matching the user's goal. If its "
+                    "'prerequisites' list is non-empty, call those tools "
+                    "first and use their results to fill the target tool's "
+                    "arguments. Then call_tool the target."
                 ),
             }
             return json.dumps(output, ensure_ascii=False, indent=2)

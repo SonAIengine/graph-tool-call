@@ -5,7 +5,7 @@ from __future__ import annotations
 from graph_tool_call.core.dict_graph import DictGraph
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema
-from graph_tool_call.ontology.schema import NodeType, RelationType
+from graph_tool_call.ontology.schema import Confidence, NodeType, RelationType
 
 
 class OntologyBuilder:
@@ -64,11 +64,36 @@ class OntologyBuilder:
         target: str,
         relation: str | RelationType,
         weight: float = 1.0,
+        *,
+        confidence: str | Confidence | None = None,
+        conf_score: float | None = None,
+        layer: int | None = None,
+        evidence: str | None = None,
     ) -> None:
-        """Add a directed relation between two nodes."""
+        """Add a directed relation between two nodes.
+
+        Optional graphify-style attrs (all default None — existing callers
+        unaffected):
+
+        confidence:  Confidence label (EXTRACTED / INFERRED / AMBIGUOUS).
+        conf_score:  Raw 0.0–1.0 score from the upstream detector.
+        layer:       1=structural (path/CRUD/$ref), 2=heuristic (name/RPC).
+        evidence:    Human-readable reason; capped at 200 chars to avoid bloat.
+        """
         if isinstance(relation, str):
             relation = RelationType(relation)
-        self._graph.add_edge(source, target, relation=relation, weight=weight)
+        if isinstance(confidence, Confidence):
+            confidence = confidence.value
+        attrs: dict = {"relation": relation, "weight": weight}
+        if confidence is not None:
+            attrs["confidence"] = confidence
+        if conf_score is not None:
+            attrs["conf_score"] = float(conf_score)
+        if layer is not None:
+            attrs["layer"] = int(layer)
+        if evidence:
+            attrs["evidence"] = evidence[:200]
+        self._graph.add_edge(source, target, **attrs)
 
     # --- queries ---
 

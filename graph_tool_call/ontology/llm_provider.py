@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import urllib.request
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from graph_tool_call.ontology.schema import RelationType
@@ -13,11 +13,20 @@ from graph_tool_call.ontology.schema import RelationType
 
 @dataclass
 class ToolSummary:
-    """Lightweight tool representation for LLM prompts."""
+    """Lightweight tool representation for LLM prompts.
+
+    The optional fields (``method``, ``path``, ``response_fields``) extend the
+    summary for semantic enrichment (``enrich_tool_semantics``). They are
+    ignored by methods that don't need them, preserving backward compat.
+    """
 
     name: str
     description: str
     parameters: list[str]  # just parameter names
+    # Extended context for semantic enrichment (optional)
+    method: str = ""
+    path: str = ""
+    response_fields: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -29,6 +38,76 @@ class InferredRelation:
     relation_type: RelationType
     confidence: float
     reason: str
+
+
+@dataclass
+class FieldSemantic:
+    """A field annotated with its semantic identifier.
+
+    Used on both produces (what a tool outputs) and consumes (what it
+    requires). ``json_path`` is set on produces; ``field`` is set on consumes.
+
+    ``kind`` (consumes only) distinguishes two roles:
+      - ``"data"``    — true data dependency (e.g. a business identifier
+                        needed to address the operation). PathSynthesizer
+                        will chain to a producer for this field.
+      - ``"context"`` — ambient config (locale, site, pagination). Must be
+                        supplied as an entity or collection default; the
+                        synthesizer will NOT build a prerequisite chain
+                        just to fetch it.
+
+    The default ``"data"`` matches pre-kind behavior (safe for tools whose
+    enrichment predates this schema change).
+    """
+
+    semantic: str
+    json_path: str = ""
+    field: str = ""
+    kind: str = "data"
+
+
+@dataclass
+class PairHint:
+    """A tool that pairs with the current tool in a workflow.
+
+    ``source`` distinguishes ownership so re-running auto enrichment doesn't
+    overwrite operator curation:
+      - ``"auto"``   — produced by Pass 2a (per-tool batch) or Pass 2b
+                       (cross-batch). Replaced on every Pass 2b re-run.
+      - ``"manual"`` — added by an operator through the UI. Never overwritten
+                       by automatic enrichment.
+
+    Default ``"manual"`` is intentional: legacy data without a ``source``
+    field gets the safer label, so a Pass 2b re-run does not silently delete
+    pre-existing entries that may have been hand-curated.
+    """
+
+    tool: str
+    reason: str = ""
+    source: str = "manual"
+
+
+@dataclass
+class ToolEnrichment:
+    """Per-tool semantic annotation produced by ``enrich_tool_semantics``.
+
+    This is the Pass 2 output of the Plan-and-Execute L0 knowledge base.
+    Used downstream by:
+      - Stage 1 target selection (``when_to_use`` in catalog)
+      - Stage 2 path synthesis (``produces_semantics`` / ``consumes_semantics``
+        replace hardcoded synonym tables)
+      - Graph edges (``pairs_well_with`` becomes semantic edges)
+    """
+
+    # canonical_action: search | read | create | update | delete | action
+    canonical_action: str
+    primary_resource: str  # e.g. "product"
+    one_line_summary: str
+    when_to_use: str
+    when_not_to_use: str = ""
+    produces_semantics: list[FieldSemantic] = field(default_factory=list)
+    consumes_semantics: list[FieldSemantic] = field(default_factory=list)
+    pairs_well_with: list[PairHint] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -124,12 +203,210 @@ Output ONLY a JSON array:
 [{{"source":"toolA","target":"toolB","relation":"PRECEDES","confidence":0.9,"reason":"..."}}]"""
 
 
+_ENRICH_SEMANTICS_PROMPT = """\
+You are annotating API tools for a plan-and-execute planning system.
+Produce structured metadata that downstream components use to (1) pick the
+right tool for a user's goal, (2) synthesize execution plans, and (3) wire
+one tool's output to another tool's input.
+{reference_block}{vocab_block}
+TOOLS TO ANNOTATE (this batch):
+{batch_detailed}
+
+For each tool in the batch, output a JSON object with these fields:
+  - canonical_action: one of "search" | "read" | "create" | "update" | "delete" | "action"
+  - primary_resource: one lowercase noun (e.g. "product", "order", "user", "shop", "category")
+  - one_line_summary: short natural-language summary (<=60 chars)
+  - when_to_use: 1-2 sentences describing the trigger condition
+  - when_not_to_use: optional 1 sentence (can be empty) — alternative tool cases
+  - produces_semantics: array of {{"semantic": "canonical_id", "json_path": "$.body..."}}
+      * Include only MEANINGFUL fields (IDs, names, key metrics).
+      * Skip pagination, headers, status codes.
+      * Use CONSISTENT semantic ids across tools. If two tools both return a
+        product identifier (one calls it "goodsNo", another "productId"),
+        use the same semantic like "product_id".
+  - consumes_semantics: array of {{"semantic": "canonical_id",
+                                    "field": "paramName",
+                                    "kind": "data" | "context"}}
+      * REQUIRED inputs only. Skip optional filters, pagination.
+      * Same semantic id conventions as produces.
+      * kind="data" — business-data dependency: an identifier or value that
+        addresses a specific record (e.g. product_id, order_id, user_id,
+        search_keyword). A prior step in a plan normally produces it.
+      * kind="context" — ambient/environmental config shared across the
+        workflow (locale, site_no, tenant, pagination cursors, flag switches).
+        The user or the caller supplies it as a default — it is NOT produced
+        by a prior step. Use this for anything a plain UI user would set
+        once per session, not per request.
+  - pairs_well_with: array of {{"tool": "tool_name_from_available_list",
+                                "reason": "brief reason"}}
+      * 2-4 tools that typically precede or follow this tool.
+      * Names MUST match the available list exactly. Do not invent.
+
+OUTPUT FORMAT (strict):
+{{
+  "tool_name_1": {{...fields...}},
+  "tool_name_2": {{...fields...}}
+}}
+
+STRICT RULES:
+  - You MUST produce one entry for EVERY tool in the batch.
+  - Do NOT skip tools with unclear descriptions — make your best guess.
+  - Keep fields concise (short sentences) so all tools fit in the output.
+  - Return JSON only. No markdown fences, no prose, no comments."""
+
+
+# Pass 2b — cross-batch workflow pairing.
+#
+# Per-tool enrichment (Pass 2a) only sees one batch at a time, so it cannot
+# spot pairs whose other half lives in a different batch. This prompt shows
+# the entire collection's 1-line summaries so the LLM can suggest workflow
+# successors that span resources.
+#
+# The output is batched (subset of tools per call) to stay within the
+# response token budget — input stays full, output stays small.
+_PAIRS_PROMPT = """\
+You are reviewing an API tool collection to suggest workflow pairs.
+
+For EACH tool in the OUTPUT BATCH, suggest 2-4 OTHER tools from the FULL
+TOOL LIST that are commonly invoked just before or just after this tool in
+a real-world workflow. Pairs SHOULD cross resource boundaries when there is
+a natural business sequence (e.g. product detail → add to cart → checkout).
+
+Pair quality matters more than quantity — only suggest tools you are
+confident about. If a tool has no good pair candidates, return an empty
+array for it.
+
+FULL TOOL LIST (all available tools — pick pairs only from this list):
+{full_list}
+
+OUTPUT BATCH (suggest pairs ONLY for these tools):
+{batch_list}
+
+OUTPUT FORMAT (strict JSON):
+{{
+  "tool_name_1": [
+    {{"tool": "other_tool_name", "reason": "short reason"}},
+    ...
+  ],
+  "tool_name_2": [...],
+  ...
+}}
+
+STRICT RULES:
+  - You MUST include one entry for EVERY tool in the OUTPUT BATCH (use
+    empty array if no good pairs).
+  - Pair tool names MUST exactly match a name in the FULL TOOL LIST.
+  - Do NOT pair a tool with itself.
+  - Return JSON only. No markdown fences, no prose, no comments."""
+
+
 def _format_tools_list(tools: list[ToolSummary]) -> str:
     lines = []
     for i, t in enumerate(tools, 1):
         params = ", ".join(t.parameters) if t.parameters else "none"
         lines.append(f"{i}. {t.name} - {t.description} (params: {params})")
     return "\n".join(lines)
+
+
+def _format_tools_brief(tools: list[ToolSummary]) -> str:
+    """Compact name list for the ``pairs_well_with`` reference.
+
+    Name-only (no descriptions) to keep prompt small — descriptions would
+    bloat the prompt by N× since every batch prompt contains this list.
+    Tool names like ``seltSearchProduct`` already encode intent.
+    """
+    return "\n".join(f"- {t.name}" for t in tools)
+
+
+def _format_tools_for_pairs(tools: list[ToolSummary]) -> str:
+    """Compact ``name: 1-line summary`` block for Pass 2b prompts.
+
+    Uses ``description`` (mapped from ai_metadata.one_line_summary by the
+    caller for tools that have been Pass 2a annotated) so the LLM can pair
+    based on workflow meaning, not just tool names.
+    """
+    lines = []
+    for t in tools:
+        summary = (t.description or "").strip().replace("\n", " ")
+        if len(summary) > 100:
+            summary = summary[:97] + "..."
+        lines.append(f"- {t.name}: {summary}" if summary else f"- {t.name}")
+    return "\n".join(lines)
+
+
+def _format_tools_for_enrichment(tools: list[ToolSummary]) -> str:
+    """Detailed per-tool block for enrichment prompt input."""
+    blocks = []
+    for t in tools:
+        parts = [f"== {t.name} =="]
+        if t.method and t.path:
+            parts.append(f"HTTP: {t.method.upper()} {t.path}")
+        if t.description:
+            desc = t.description.strip()[:400]
+            parts.append(f"Description: {desc}")
+        if t.parameters:
+            params = ", ".join(t.parameters[:25])
+            parts.append(f"Request fields: {params}")
+        if t.response_fields:
+            resp = ", ".join(t.response_fields[:25])
+            parts.append(f"Response fields: {resp}")
+        blocks.append("\n".join(parts))
+    return "\n\n".join(blocks)
+
+
+def _parse_enrichment(data: Any) -> ToolEnrichment | None:
+    """Build a ToolEnrichment from LLM JSON output. Tolerant of missing keys."""
+    if not isinstance(data, dict):
+        return None
+    try:
+        produces = [
+            FieldSemantic(
+                semantic=str(p.get("semantic", "")).strip(),
+                json_path=str(p.get("json_path", "")).strip(),
+            )
+            for p in (data.get("produces_semantics") or [])
+            if isinstance(p, dict) and str(p.get("semantic", "")).strip()
+        ]
+        consumes = []
+        for c in data.get("consumes_semantics") or []:
+            if not (isinstance(c, dict) and str(c.get("semantic", "")).strip()):
+                continue
+            raw_kind = str(c.get("kind", "data")).strip().lower()
+            kind = raw_kind if raw_kind in ("data", "context") else "data"
+            consumes.append(
+                FieldSemantic(
+                    semantic=str(c.get("semantic", "")).strip(),
+                    field=str(c.get("field", "")).strip(),
+                    kind=kind,
+                )
+            )
+        # Pairs from per-tool enrichment are batch-scoped (LLM only sees the
+        # current batch), so quality is lower than cross-batch Pass 2b.
+        # Marked source="auto" so a Pass 2b run can replace them while
+        # preserving operator-curated source="manual" entries.
+        pairs = [
+            PairHint(
+                tool=str(p.get("tool", "")).strip(),
+                reason=str(p.get("reason", "")).strip(),
+                source="auto",
+            )
+            for p in (data.get("pairs_well_with") or [])
+            if isinstance(p, dict) and str(p.get("tool", "")).strip()
+        ]
+        action = str(data.get("canonical_action", "")).strip().lower()
+        resource = str(data.get("primary_resource", "")).strip().lower()
+        return ToolEnrichment(
+            canonical_action=action,
+            primary_resource=resource,
+            one_line_summary=str(data.get("one_line_summary", "")).strip(),
+            when_to_use=str(data.get("when_to_use", "")).strip(),
+            when_not_to_use=str(data.get("when_not_to_use", "")).strip(),
+            produces_semantics=produces,
+            consumes_semantics=consumes,
+            pairs_well_with=pairs,
+        )
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return None
 
 
 def _parse_relation_type(s: str) -> RelationType | None:
@@ -424,6 +701,157 @@ class OntologyLLM(ABC):
 
         return all_queries
 
+    def enrich_pairs(
+        self,
+        tools: list[ToolSummary],
+        batch_size: int = 30,
+    ) -> dict[str, list[PairHint]]:
+        """Pass 2b — cross-batch workflow pair suggestion.
+
+        Unlike Pass 2a (``enrich_tool_semantics``) which sees only the
+        current batch, this pass shows the LLM the full collection's 1-line
+        summaries so it can suggest pairs that cross resource boundaries
+        (e.g. ``getProductDetail → addToCart`` even when the two tools live
+        in different swagger sources).
+
+        Output is batched only on the OUTPUT axis: input list stays full
+        for every call, output covers ``batch_size`` tools per call. This
+        keeps the prompt short and avoids the 8k-token output limit
+        truncating long pair lists.
+
+        Tools should arrive with ``description`` set to ai_metadata
+        ``one_line_summary`` when available (Pass 2a output) so pairing can
+        rely on workflow meaning, not just tool names.
+
+        Returns: {tool_name: [PairHint(source="auto"), ...]}
+        """
+        results: dict[str, list[PairHint]] = {}
+        if not tools:
+            return results
+
+        full_list = _format_tools_for_pairs(tools)
+
+        for i in range(0, len(tools), batch_size):
+            batch = tools[i : i + batch_size]
+            batch_list = _format_tools_for_pairs(batch)
+            prompt = _PAIRS_PROMPT.format(full_list=full_list, batch_list=batch_list)
+            response = self.generate(prompt)
+
+            try:
+                parsed = _extract_json(response)
+                if not isinstance(parsed, dict):
+                    continue
+                for name, raw_pairs in parsed.items():
+                    if not isinstance(raw_pairs, list):
+                        continue
+                    pair_list: list[PairHint] = []
+                    for p in raw_pairs:
+                        if not isinstance(p, dict):
+                            continue
+                        target = str(p.get("tool", "")).strip()
+                        if not target or target == name:
+                            continue
+                        pair_list.append(
+                            PairHint(
+                                tool=target,
+                                reason=str(p.get("reason", "")).strip(),
+                                source="auto",
+                            )
+                        )
+                    results[str(name)] = pair_list
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+
+        return results
+
+    def enrich_tool_semantics(
+        self,
+        tools: list[ToolSummary],
+        batch_size: int = 10,
+        *,
+        reference_tools: list[ToolSummary] | None = None,
+        existing_vocab: list[str] | None = None,
+        valid_tool_names: set[str] | None = None,
+    ) -> dict[str, ToolEnrichment]:
+        """Per-tool semantic annotation for Plan-and-Execute architecture.
+
+        ``tools`` = the batch(es) to produce detailed enrichment for.
+
+        ``reference_tools`` (optional, default ``None``) — when supplied,
+        rendered as a brief tool list in the prompt so the LLM can pick
+        ``pairs_well_with`` from valid names. **Streaming callers should
+        usually pass ``None``** — Pass 2b handles pairs in a separate
+        cross-batch call, and skipping the reference block saves ~50%
+        prompt tokens. The pair list emitted in this pass is post-validated
+        against ``valid_tool_names`` instead.
+
+        ``existing_vocab`` (optional) — accumulated semantic ids decided in
+        previous batches of the same enrichment run. The LLM is asked to
+        reuse these labels when applicable, which keeps cross-batch vocab
+        consistent (avoids ``product_id`` vs ``productId`` divergence).
+        Streaming callers should pass the unique semantics seen so far.
+
+        ``valid_tool_names`` (optional) — full set of tool names in the
+        collection. When supplied, ``pairs_well_with`` entries pointing to
+        tools outside this set are dropped silently (LLM hallucination
+        guard). When ``reference_tools`` is None the LLM only knows the
+        names in the current batch; without this guard it would invent
+        names for cross-batch pairs.
+        """
+        results: dict[str, ToolEnrichment] = {}
+        if not tools:
+            return results
+
+        ref_block = ""
+        if reference_tools:
+            ref_block = (
+                "\nAVAILABLE TOOLS IN THE COLLECTION (names + 1-line "
+                "descriptions, for pairs_well_with reference):\n"
+                + _format_tools_brief(reference_tools)
+                + "\n"
+            )
+
+        vocab_block = ""
+        if existing_vocab:
+            vocab_block = (
+                "\nEXISTING SEMANTIC VOCABULARY (reuse these canonical ids "
+                "when the field has the same meaning — keeps cross-batch "
+                "labels consistent):\n"
+                + "\n".join(f"- {s}" for s in sorted(set(existing_vocab)))
+                + "\n"
+            )
+
+        for i in range(0, len(tools), batch_size):
+            batch = tools[i : i + batch_size]
+            prompt = _ENRICH_SEMANTICS_PROMPT.format(
+                reference_block=ref_block,
+                vocab_block=vocab_block,
+                batch_detailed=_format_tools_for_enrichment(batch),
+            )
+            response = self.generate(prompt)
+
+            try:
+                parsed = _extract_json(response)
+                if not isinstance(parsed, dict):
+                    continue
+                for name, data in parsed.items():
+                    enrichment = _parse_enrichment(data)
+                    if enrichment is None or not enrichment.canonical_action:
+                        continue
+                    # Hallucination guard for pairs_well_with — drop entries
+                    # whose target name is not in the catalog.
+                    if valid_tool_names is not None:
+                        enrichment.pairs_well_with = [
+                            p
+                            for p in enrichment.pairs_well_with
+                            if p.tool in valid_tool_names and p.tool != str(name)
+                        ]
+                    results[str(name)] = enrichment
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+
+        return results
+
 
 # ---------------------------------------------------------------------------
 # Ollama Provider
@@ -476,18 +904,25 @@ class OpenAICompatibleOntologyLLM(OntologyLLM):
         model: str = "gpt-4o-mini",
         base_url: str = "https://api.openai.com/v1",
         api_key: str = "",
+        max_tokens: int = 8192,
+        timeout: int = 300,
     ) -> None:
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        self.max_tokens = max_tokens
+        self.timeout = timeout
 
     def generate(self, prompt: str) -> str:
         url = f"{self.base_url}/chat/completions"
+        # max_tokens 를 명시 지정하지 않으면 provider 기본값 (일부 모델은 4096)
+        # 으로 잘려서 batch enrichment JSON 이 중간에 truncate → 일부 tool 누락.
         payload = json.dumps(
             {
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.1,
+                "max_tokens": self.max_tokens,
             }
         ).encode()
 
@@ -496,7 +931,7 @@ class OpenAICompatibleOntologyLLM(OntologyLLM):
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=120) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310
             result = json.loads(resp.read().decode())
             choices = result.get("choices", [])
             if choices:

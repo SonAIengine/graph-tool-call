@@ -473,7 +473,10 @@ def api_get_customer_info(customer_id: str) -> str:
 
 @tool
 def api_submit_approval(document_id: str, action: str) -> str:
-    """결재: 문서 결재를 승인 또는 반려합니다. Approve or reject a document in the approval workflow."""
+    """결재: 문서 결재를 승인 또는 반려합니다.
+
+    Approve or reject a document in the approval workflow.
+    """
     return json.dumps({"document_id": document_id, "action": action, "result": "processed"})
 
 
