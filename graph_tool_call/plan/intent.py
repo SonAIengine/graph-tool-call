@@ -28,6 +28,12 @@ from graph_tool_call.ontology.llm_provider import OntologyLLM, _extract_json
 # "search_keyword" vs "search_query" (~0.54).
 _VOCAB_FUZZY_CUTOFF = 0.8
 
+# Looser cutoff for tool-name coercion. Tool names mangle harder than field
+# keys — e.g. "나라장터" vs "나라장터api" is ~0.73, below the 0.8 vocab bar — so
+# 0.6 lets an obvious suffix/typo through. Candidate sets are small (retrieval
+# top-K) and only the single closest match (n=1) is taken, bounding the risk.
+_TARGET_FUZZY_CUTOFF = 0.6
+
 
 # ---------------------------------------------------------------------------
 # data shape
@@ -108,6 +114,13 @@ Selection guidance (apply only after the constraints hold):
   - Free-text values (descriptive phrases like "quarzen 티셔츠",
     "black hoodie") match fields named "searchWord", "query",
     "keyword", or names ending in "Nm" / "Name".
+  - Date / period / range values ("2026-05-01", "5월 1일부터", "지난주")
+    and count / size / page values ("20개", "first 10", "3건") are NOT
+    free text — they MUST map to the exact field name listed in a
+    candidate's "needs:" line (e.g. "inqryBgnDt", "inqryEndDt", "size",
+    "from", "pageNo", "numOfRows"). NEVER invent generic keys like
+    "startDate", "endDate", "count", "limit", or "page" — if no listed
+    field fits, omit the value rather than guessing a key name.
   - When several fields could carry the value without violating HC1,
     prefer one a candidate's "needs:" line lists — that is a field a
     tool you already considered actually accepts.
@@ -309,12 +322,23 @@ def parse_intent(
     if not target:
         raise IntentParseError("target missing from LLM output")
 
-    # Validate target is in the catalog — guard against hallucinated names
+    # Validate target is in the catalog — guard against hallucinated names.
+    # The LLM frequently emits a slightly-mangled tool name, especially for
+    # non-ASCII names ("나라장터" → "나라장터api"). Coerce a close match to the
+    # canonical catalog name before giving up — same forgiveness applied to
+    # entity keys below. Only a high-similarity single match is accepted so a
+    # genuinely wrong pick still errors.
     allowed = {e.name for e in catalog}
     if target not in allowed:
-        raise IntentParseError(
-            f"target {target!r} not in catalog (candidates: {sorted(allowed)[:5]!r}...)"
+        match = difflib.get_close_matches(
+            target, list(allowed), n=1, cutoff=_TARGET_FUZZY_CUTOFF,
         )
+        if match:
+            target = match[0]
+        else:
+            raise IntentParseError(
+                f"target {target!r} not in catalog (candidates: {sorted(allowed)[:5]!r}...)"
+            )
 
     entities_raw = parsed.get("entities")
     entities = entities_raw if isinstance(entities_raw, dict) else {}
