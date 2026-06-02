@@ -331,7 +331,10 @@ def parse_intent(
     allowed = {e.name for e in catalog}
     if target not in allowed:
         match = difflib.get_close_matches(
-            target, list(allowed), n=1, cutoff=_TARGET_FUZZY_CUTOFF,
+            target,
+            list(allowed),
+            n=1,
+            cutoff=_TARGET_FUZZY_CUTOFF,
         )
         if match:
             target = match[0]
