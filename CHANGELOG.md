@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-06-29
+
+### Added
+- **Pluggable BM25 tokenizer** — 커스텀 토크나이저 주입 훅
+  - `BM25Scorer(..., *, tokenizer=...)` keyword-only 인자. 기본 `None` 은 기존 `_tokenize` 와 바이트 단위 동일 (100% 후방호환).
+  - `ToolGraph.set_tokenizer("kiwi" | callable | None)` — keyword 검색 전체(그리고 동일 BM25 인스턴스를 공유하는 graphify seed)에 토크나이저 전파. 엔진 invalidate 후 재생성 시 자동 재주입.
+  - `wrap_tokenizer()` 자동판별 (`wrap_embedding`/`wrap_llm` 패턴) + `KiwiTokenizer` 하이브리드: 영문 파이프라인은 그대로 두고 한글 span 만 Kiwi 형태소로 분리, Kiwi 가 못 쪼갠 OOV 는 char-bigram 으로 폴백.
+  - `kiwipiepy` optional dependency + `korean` extra (`pip install graph-tool-call[korean]`). 미설치 시 라이브러리 import 에 영향 없음 (lazy import).
+  - 효과: 한국어 무공백 복합어("배송상태조회")가 char-bigram 노이즈("송상","태조") 없이 깨끗한 형태소로 분리 → `_KO_EN_DICT` 사전 적중률 상승 → 한↔영 cross-language 검색 정확도 향상.
+
 ## [0.19.0] - 2026-03-24
 
 ### Added

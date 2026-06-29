@@ -156,6 +156,7 @@ class ToolGraph:
         self._metadata: dict[str, Any] = {}
         self._gateway_tools: list[Any] | None = None
         self._gateway_top_k: int = 10
+        self._tokenizer: Any = None
 
     @property
     def graph(self) -> GraphEngine:
@@ -643,6 +644,21 @@ class ToolGraph:
         engine = self._get_retrieval_engine()
         engine.set_embedding_index(index)
 
+    def set_tokenizer(self, tokenizer: Any = "kiwi") -> None:
+        """Set a custom BM25 tokenizer for keyword retrieval.
+
+        Accepts the string ``"kiwi"`` (requires the ``[korean]`` extra), a
+        callable ``str -> list[str]``, or ``None`` to restore the built-in
+        tokenizer. Applied to all keyword scoring, including graphify seed
+        selection (which shares the same BM25 instance). Stored on the graph so
+        it survives retrieval-engine invalidation (tool add/merge).
+        """
+        from graph_tool_call.retrieval.tokenizer import wrap_tokenizer
+
+        self._tokenizer = wrap_tokenizer(tokenizer)
+        if self._retrieval is not None:
+            self._retrieval.set_tokenizer(self._tokenizer)
+
     def enable_reranker(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> None:
         """Enable cross-encoder reranking for improved precision.
 
@@ -953,6 +969,8 @@ class ToolGraph:
             from graph_tool_call.retrieval.engine import RetrievalEngine
 
             self._retrieval = RetrievalEngine(self._graph, self._tools)
+            if self._tokenizer is not None:
+                self._retrieval.set_tokenizer(self._tokenizer)
         return self._retrieval
 
     def _invalidate_retrieval(self) -> None:

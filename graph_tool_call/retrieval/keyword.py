@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Callable
 
 from graph_tool_call.core.tool import ToolSchema
 
@@ -228,11 +229,17 @@ class BM25Scorer:
         k1: float = 1.2,
         b: float = 0.75,
         stopword_df_threshold: float = 0.7,
+        *,
+        tokenizer: Callable[[str], list[str]] | None = None,
     ) -> None:
         self._k1 = k1
         self._b = b
         self._tools = tools
         self._stopword_df_threshold = stopword_df_threshold
+        # Custom tokenizer hook. None → built-in BM25Scorer._tokenize (byte-for-byte
+        # backward compatible). A callable str → list[str] replaces tokenization in
+        # both indexing and scoring (BM25 requires index/query symmetry).
+        self._tokenize_fn: Callable[[str], list[str]] = tokenizer or BM25Scorer._tokenize
         self._doc_freqs: dict[str, int] = {}  # term -> number of docs containing it
         self._doc_lens: dict[str, int] = {}  # tool_name -> doc length
         self._avg_dl: float = 0.0
@@ -263,7 +270,7 @@ class BM25Scorer:
             self._tf_maps[name] = tf_map
 
             # Count name tokens for length penalty
-            self._name_token_counts[name] = len(self._tokenize(name))
+            self._name_token_counts[name] = len(self._tokenize_fn(name))
 
             # Count document frequency (unique terms per document)
             for term in tf_map:
@@ -288,7 +295,7 @@ class BM25Scorer:
 
         Returns dict of tool_name -> BM25 score (only non-zero scores).
         """
-        raw_tokens = self._tokenize(query)
+        raw_tokens = self._tokenize_fn(query)
         if not raw_tokens:
             return {}
         # Remove stopwords from query; keep all if everything is a stopword
@@ -332,7 +339,7 @@ class BM25Scorer:
 
     def _name_subsequence_boost(self, query_tokens: list[str], tool_name: str) -> float:
         """Boost score when query tokens match tool name in order."""
-        name_tokens = self._tokenize(tool_name)
+        name_tokens = self._tokenize_fn(tool_name)
         if not name_tokens or not query_tokens:
             return 1.0
         qi = 0
@@ -342,25 +349,23 @@ class BM25Scorer:
         match_ratio = qi / len(query_tokens)
         return 1.0 + match_ratio * 0.5  # up to 1.5x boost
 
-    @staticmethod
-    def _tokenize_tool(tool: ToolSchema) -> list[str]:
+    def _tokenize_tool(self, tool: ToolSchema) -> list[str]:
         """Extract tokens from all tool fields: name, description, tags, param names, metadata."""
         tokens: list[str] = []
-        tokens.extend(BM25Scorer._tokenize(tool.name))
-        tokens.extend(BM25Scorer._tokenize(tool.description))
+        tokens.extend(self._tokenize_fn(tool.name))
+        tokens.extend(self._tokenize_fn(tool.description))
         for tag in tool.tags:
-            tokens.extend(BM25Scorer._tokenize(tag))
+            tokens.extend(self._tokenize_fn(tag))
         for param in tool.parameters:
-            tokens.extend(BM25Scorer._tokenize(param.name))
-        tokens.extend(BM25Scorer._extract_metadata_tokens(tool))
+            tokens.extend(self._tokenize_fn(param.name))
+        tokens.extend(self._extract_metadata_tokens(tool))
         # Include LLM-generated example queries for richer keyword matching
         if hasattr(tool, "metadata") and tool.metadata:
             for eq in tool.metadata.get("example_queries", []):
-                tokens.extend(BM25Scorer._tokenize(eq))
+                tokens.extend(self._tokenize_fn(eq))
         return tokens
 
-    @staticmethod
-    def _extract_metadata_tokens(tool: ToolSchema) -> list[str]:
+    def _extract_metadata_tokens(self, tool: ToolSchema) -> list[str]:
         """Extract discriminative tokens from tool metadata (path, method).
 
         For OpenAPI tools, the path carries critical scope/sub-resource information
@@ -383,7 +388,7 @@ class BM25Scorer:
         # Split path into segments, skip empty and {param} placeholders
         segments = [s for s in path.split("/") if s and not s.startswith("{")]
         for seg in segments:
-            tokens.extend(BM25Scorer._tokenize(seg))
+            tokens.extend(self._tokenize_fn(seg))
 
         # Scope detection: does the path contain a {namespace} parameter?
         has_namespace_param = "{namespace}" in path or "{ns}" in path

@@ -129,6 +129,7 @@ class RetrievalEngine:
         self._annotation_weight = annotation_weight
         self._embedding_index: Any = None
         self._bm25: BM25Scorer | None = None
+        self._tokenizer: Any = None
         self._reranker: Any = None
         self._diversity_lambda: float | None = None
         self._weights_manual: bool = False
@@ -136,8 +137,17 @@ class RetrievalEngine:
     def _get_bm25(self) -> BM25Scorer:
         """Lazy-initialize BM25 scorer."""
         if self._bm25 is None:
-            self._bm25 = BM25Scorer(self._tools)
+            self._bm25 = BM25Scorer(self._tools, tokenizer=self._tokenizer)
         return self._bm25
+
+    def set_tokenizer(self, tokenizer: Any) -> None:
+        """Set a custom BM25 tokenizer (or None to restore the built-in one).
+
+        Applied symmetrically to indexing and querying. Invalidates the cached
+        BM25 index so it rebuilds with the new tokenizer on next use.
+        """
+        self._tokenizer = tokenizer
+        self._bm25 = None
 
     def set_embedding_index(self, index: Any) -> None:
         """Attach an EmbeddingIndex for hybrid search."""
