@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "graph-tool-call"
-version = "0.20.1"
+version = "0.21.0"
 description = "Graph-structured tool retrieval for LLM agents — zero-dependency, ontology-aware hybrid search"
 authors = ["SonAIengine"]
 license = "MIT"
@@ -15,7 +15,7 @@ keywords = [
     "langchain", "mcp", "mcp-server", "openapi", "swagger",
     "tool-retrieval", "rag", "bm25", "hybrid-search", "workflow",
     "openai", "anthropic", "claude", "token-optimization", "agentic",
-    "zero-dependency",
+    "zero-dependency", "korean", "tokenizer", "morpheme",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -53,6 +53,7 @@ ai-api-lint = {version = ">=0.1.0", optional = true}
 dash = {version = ">=2.18.0", optional = true}
 dash-cytoscape = {version = ">=1.0.2", optional = true}
 mcp = {version = ">=1.0.0", optional = true}
+kiwipiepy = {version = ">=0.17.0", optional = true}
 
 [tool.poetry.extras]
 openapi = ["pyyaml"]
@@ -64,6 +65,7 @@ visualization = ["pyvis", "networkx"]
 dashboard = ["dash", "dash-cytoscape"]
 lint = ["ai-api-lint"]
 mcp = ["mcp"]
+korean = ["kiwipiepy"]
 all = ["networkx", "pyyaml", "numpy", "sentence-transformers", "rapidfuzz", "langchain-core", "pyvis", "ai-api-lint", "dash", "dash-cytoscape", "mcp"]
 
 [tool.poetry.group.dev.dependencies]
