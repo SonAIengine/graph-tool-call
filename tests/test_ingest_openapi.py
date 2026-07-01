@@ -100,6 +100,69 @@ class TestIngestOpenAPI31:
         # POST /orders has no operationId -> auto-generated
         assert "post_orders" in names
 
+    def test_ingest_xquik_search_openapi31(self) -> None:
+        spec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Xquik API", "version": "1.0"},
+            "servers": [{"url": "https://xquik.com"}],
+            "components": {
+                "securitySchemes": {
+                    "apiKey": {"type": "apiKey", "name": "x-api-key", "in": "header"}
+                }
+            },
+            "paths": {
+                "/api/v1/x/tweets/search": {
+                    "get": {
+                        "operationId": "searchTweets",
+                        "summary": "Search X posts",
+                        "security": [{"apiKey": []}],
+                        "tags": ["x"],
+                        "parameters": [
+                            {
+                                "name": "q",
+                                "in": "query",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "queryType",
+                                "in": "query",
+                                "schema": {
+                                    "type": "string",
+                                    "enum": ["Latest", "Top"],
+                                    "default": "Latest",
+                                },
+                            },
+                            {
+                                "name": "limit",
+                                "in": "query",
+                                "schema": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 200,
+                                    "default": 20,
+                                },
+                            },
+                        ],
+                        "responses": {"200": {"description": "Search results"}},
+                    }
+                }
+            },
+        }
+
+        tools, normalized = ingest_openapi(spec)
+        search = next(t for t in tools if t.name == "searchTweets")
+        params = {param.name: param for param in search.parameters}
+
+        assert normalized.version.value == "openapi_3.1"
+        assert search.description.startswith("Search X posts")
+        assert search.tags == ["x"]
+        assert search.metadata["method"] == "get"
+        assert search.metadata["path"] == "/api/v1/x/tweets/search"
+        assert params["q"].required is True
+        assert params["queryType"].enum == ["Latest", "Top"]
+        assert params["limit"].type == "integer"
+
 
 # ---------------------------------------------------------------------------
 # Feature tests
