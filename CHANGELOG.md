@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 수천 규모 검색 고도화 (A-P1-5)
+- **`retrieval.prefilter.CategoryPrefilter`** — 대형 코퍼스에서 카테고리 토큰 매치(+임베딩 있으면 카테고리 센트로이드) 로 후보 풀을 만들고 **BM25 top-N 을 반드시 union(recall-preserving 가드)**. 신호 약하면 `None`(전체 코퍼스). 풀 크기 `[min_pool=150, max_pool=500]` 로 bound(좁으면 1-hop 그래프 이웃으로 확장, 넓으면 cap — cap 시 BM25-top 은 절대 제외 안 함).
+- **`RetrievalEngine` 스케일 훅** — `enable_prefilter()`(기본 off, `n>=500` 에서만 발동), `resource_first_search` 를 프리필터와 그래프 채널이 **1회만 공유**. embedding/annotation/graph 채널에 pool `restrict` 전파(keyword 는 full 유지 = recall 백본). `n>1000` adaptive weight 티어 추가(임베딩 강화 0.55). `n>300` & 임베딩 미설정 시 최초 retrieve 때 1회 `warnings.warn`.
+- **BM25 name-token 캐싱** — `_name_subsequence_boost` 가 매 쿼리 전체 도구명을 재토큰화·재스테밍하던 것을 인덱스 빌드 시 캐싱. **5000 도구 latency p50 80ms→28ms (약 2.9x), recall 무영향.** `BM25Scorer.score(query, *, restrict=None)` 추가(pool 한정 스코어링; `None`=기존 동일).
+- **dynamic-k + 페이지네이션** — `search_tools(query, top_k, page)` 응답에 `page`/`has_more`/`hint`. `elbow_cut_k()`(top 2k 스코어 elbow 컷: 확신 높으면 2~3, 모호하면 k). `ToolGraph.as_tools(adaptive_k=None)` 기본 off(하위호환). `tool_graph.py` + `mcp_server.py` 양쪽.
+- **`ToolGraph.tune_for_scale()`** — 프리필터 on + diversity λ=0.7 + dynamic-k on 원클릭 프리셋. **`enable_embedding("auto")`** — sentence-transformers→OpenAI env→Ollama 순 자동 감지.
+- **`benchmarks/run_scale_benchmark.py`** — 번들 스펙(github/k8s/ecommerce) 네임스페이스 변형으로 3k/5k 합성 코퍼스. recall@5 / latency p50·p95 / 응답 크기 측정, 프리필터 off/on 비교. **recall delta = 0(프리필터 recall 보존)**.
+
 ## [0.21.0] - 2026-06-29
 
 ### Added

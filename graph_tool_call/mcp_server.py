@@ -118,7 +118,7 @@ def create_mcp_server(
     # --- MCP Tools ---
 
     @mcp_app.tool()
-    def search_tools(query: str, top_k: int = 5) -> str:
+    def search_tools(query: str, top_k: int = 5, page: int = 1) -> str:
         """Search for relevant tools by natural language query.
 
         Returns the most relevant tools for the given query, ranked by
@@ -130,20 +130,37 @@ def create_mcp_server(
             query: Natural language description of what you want to do.
                    Examples: "user authentication", "delete a file",
                    "manage shopping cart items"
-            top_k: Maximum number of tools to return (default: 5)
+            top_k: Maximum number of tools to return per page (default: 5)
+            page: 1-based page for browsing beyond the first results. The
+                  response carries ``page`` and ``has_more`` so you can decide
+                  whether to request the next page.
         """
         if not tg.tools:
             return json.dumps({"error": "No tools loaded. Use load_source() first."})
 
-        from graph_tool_call.retrieval.engine import build_workflow_summary
+        from graph_tool_call.retrieval.engine import build_workflow_summary, elbow_cut_k
 
-        scored_results = tg.retrieve_with_scores(query, top_k=top_k, history=_call_history or None)
+        page = max(1, int(page or 1))
+        fetch = top_k * page + 1
+        all_results = tg.retrieve_with_scores(query, top_k=fetch, history=_call_history or None)
+
+        # Dynamic-k: first page trims to the elbow when tune_for_scale() enabled it.
+        page_size = top_k
+        if getattr(tg, "_adaptive_k_default", False) and page == 1:
+            page_size = elbow_cut_k([r.score for r in all_results], top_k)
+
+        start = (page - 1) * top_k
+        end = start + page_size
+        scored_results = all_results[start:end]
+        has_more = len(all_results) > end
         tools_out = [r.to_dict(include_params=True) for r in scored_results]
 
         output: dict[str, Any] = {
             "query": query,
             "count": len(tools_out),
             "total_tools": len(tg.tools),
+            "page": page,
+            "has_more": has_more,
             "tools": tools_out,
         }
         workflow = build_workflow_summary(scored_results)

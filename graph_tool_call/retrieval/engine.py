@@ -133,6 +133,11 @@ class RetrievalEngine:
         self._reranker: Any = None
         self._diversity_lambda: float | None = None
         self._weights_manual: bool = False
+        # Scale hooks (A-P1-5). Prefilter is opt-in and only fires at n>=500;
+        # off by default so small/medium corpora are byte-identical to before.
+        self._prefilter: Any = None
+        self._prefilter_enabled: bool = False
+        self._embedding_warned: bool = False
 
     def _get_bm25(self) -> BM25Scorer:
         """Lazy-initialize BM25 scorer."""
@@ -159,6 +164,28 @@ class RetrievalEngine:
             self._graph_weight = 0.45
             self._keyword_weight = 0.25
             self._embedding_weight = 0.3
+        # Let the prefilter pick up the index (centroid signal) on rebuild.
+        if self._prefilter is not None:
+            self._prefilter.set_embedding_index(index)
+
+    def enable_prefilter(self, enabled: bool = True) -> None:
+        """Enable/disable the category prefilter for large corpora.
+
+        When enabled the prefilter only fires at ``len(tools) >= 500`` — below
+        that the full corpus is cheap and the pipeline is unchanged. The pool
+        is recall-preserving (always unions the BM25 top-N).
+        """
+        self._prefilter_enabled = enabled
+
+    def _get_prefilter(self) -> Any:
+        """Lazy-build the CategoryPrefilter bound to the current graph/index."""
+        if self._prefilter is None:
+            from graph_tool_call.retrieval.prefilter import CategoryPrefilter
+
+            self._prefilter = CategoryPrefilter(
+                self._graph, self._tools, embedding_index=self._embedding_index
+            )
+        return self._prefilter
 
     def set_weights(
         self,
@@ -225,28 +252,60 @@ class RetrievalEngine:
         # Dynamic wRRF weights based on corpus size
         kw, gw, ew, aw = self._get_adaptive_weights()
 
-        # --- Score computation (skip channels with weight=0) ---
-        keyword_scores = self._compute_keyword_scores(effective_query, query) if kw > 0 else {}
-        embedding_scores = self._compute_embedding_scores(query, top_k) if ew > 0 else {}
-
-        # Annotation-aware scoring
         from graph_tool_call.retrieval.annotation_scorer import compute_annotation_scores
         from graph_tool_call.retrieval.intent import classify_intent
 
         query_intent = classify_intent(query)
-        annotation_scores = compute_annotation_scores(query_intent, self._tools) if aw > 0 else {}
+
+        # Keyword scores over the FULL corpus — cheap (inverted index) and the
+        # recall backbone; also the source of the prefilter's BM25-top guard.
+        keyword_scores = self._compute_keyword_scores(effective_query, query) if kw > 0 else {}
+
+        # Resource-first (category) search — the graph channel needs it and the
+        # prefilter reuses the SAME result (one call, not two). At prefilter
+        # scale we fetch a deeper slice (max_pool) so the pool has enough
+        # category coverage; otherwise the original ``top_k * 3`` depth (so the
+        # prefilter-off path is byte-identical).
+        prefilter_active = self._prefilter_enabled and len(self._tools) >= 500
+        resource_scores: dict[str, float] = {}
+        if gw > 0 or prefilter_active:
+            rr_max = max(top_k * 3, 500) if prefilter_active else top_k * 3
+            resource_scores = self._searcher.resource_first_search(
+                query, intent=query_intent, max_results=rr_max, tools=self._tools
+            )
+
+        # Large-corpus prefilter: narrow the candidate set the EXPENSIVE
+        # channels (embedding / annotation / graph) score. ``None`` = no
+        # prefilter (full corpus), so small corpora are unaffected.
+        restrict = self._maybe_prefilter(
+            effective_query, query_intent, keyword_scores, resource_scores
+        )
+
+        # --- Score computation (skip channels with weight=0) ---
+        embedding_scores = self._compute_embedding_scores(query, top_k, restrict) if ew > 0 else {}
+
+        # Annotation-aware scoring (restricted to the pool when prefiltering)
+        annotation_tools = (
+            self._tools
+            if restrict is None
+            else {n: self._tools[n] for n in restrict if n in self._tools}
+        )
+        annotation_scores = (
+            compute_annotation_scores(query_intent, annotation_tools) if aw > 0 else {}
+        )
 
         # Graph: independent retrieval channel (resource-first + BFS)
         graph_scores: dict[str, float] = {}
         if gw > 0:
-            resource_scores = self._searcher.resource_first_search(
-                query, intent=query_intent, max_results=top_k * 3, tools=self._tools
-            )
             seed_tools = self._build_seed_tools(keyword_scores, history, query=query)
             bfs_scores = self._compute_graph_scores(seed_tools, max_graph_depth, top_k)
             graph_scores = dict(bfs_scores)
             for name, score in resource_scores.items():
                 graph_scores[name] = max(graph_scores.get(name, 0), score)
+            # Confine graph candidates to the pool so injection stays within the
+            # prefiltered set (the pool already contains the category matches).
+            if restrict is not None:
+                graph_scores = {n: s for n, s in graph_scores.items() if n in restrict}
 
         # wRRF fusion — Graph is NOT included here; it acts as candidate injection
         score_sources: list[tuple[dict[str, float], float]] = [
@@ -343,15 +402,60 @@ class RetrievalEngine:
         )
         return dict(expanded)
 
-    def _compute_embedding_scores(self, query: str, top_k: int) -> dict[str, float]:
-        """Compute embedding similarity scores."""
+    def _compute_embedding_scores(
+        self, query: str, top_k: int, restrict: set[str] | None = None
+    ) -> dict[str, float]:
+        """Compute embedding similarity scores.
+
+        When ``restrict`` is given (prefilter pool), search deeper and keep only
+        pool members so the pool's top hits aren't crowded out by out-of-pool
+        neighbours that would be discarded downstream anyway.
+        """
         if self._embedding_index is None or self._embedding_index.size <= 0:
             return {}
         try:
             query_emb = self._embedding_index.encode(query)
-            return dict(self._embedding_index.search(query_emb, top_k=top_k * 3))
+            depth = top_k * 3 if restrict is None else max(top_k * 3, len(restrict))
+            hits = self._embedding_index.search(query_emb, top_k=depth)
+            if restrict is not None:
+                return {n: s for n, s in hits if n in restrict}
+            return dict(hits)
         except (ValueError, ImportError):
             return {}
+
+    def _maybe_prefilter(
+        self,
+        effective_query: str,
+        query_intent: Any,
+        keyword_scores: dict[str, float],
+        resource_scores: dict[str, float],
+    ) -> set[str] | None:
+        """Build a prefilter candidate pool, or ``None`` to score the full corpus.
+
+        Fires only when the prefilter is enabled and the corpus is large
+        (``>= 500`` tools). Warns once when a large corpus runs without an
+        embedding index (semantic recall is left on the table). ``resource_scores``
+        is the shared ``resource_first_search`` result (avoids a second call).
+        """
+        n = len(self._tools)
+        if n > 300 and self._embedding_index is None and not self._embedding_warned:
+            import warnings
+
+            self._embedding_warned = True
+            warnings.warn(
+                f"Retrieving over {n} tools without an embedding index — "
+                "semantic/cross-language recall is degraded. Call "
+                "enable_embedding('auto') (or attach an index) for better "
+                "large-corpus recall.",
+                stacklevel=3,
+            )
+        if not self._prefilter_enabled or n < 500:
+            return None
+        ranked_kw = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
+        bm25_top = [name for name, _ in ranked_kw[:50]]
+        return self._get_prefilter().candidate_pool(
+            effective_query, query_intent, bm25_top, resource_scored=resource_scores
+        )
 
     def _augment_graph_with_embedding_seeds(
         self,
@@ -672,8 +776,13 @@ class RetrievalEngine:
             return (0.25, 0.15, 0.55, 0.05)
         elif n <= 100:
             return (0.25, 0.15, 0.50, 0.10)
-        else:
+        elif n <= 1000:
             return (0.20, 0.20, 0.50, 0.10)
+        else:
+            # >1000 tools: lean harder on embeddings. Exact keyword matches get
+            # noisier as many operationIds share tokens at this scale, while
+            # semantic similarity stays discriminative. (Tunable via bench.)
+            return (0.15, 0.20, 0.55, 0.10)
 
     def _enrich_relations(self, results: list[RetrievalResult]) -> None:
         """Attach inter-result relations and prerequisites to each result."""
@@ -933,6 +1042,38 @@ class RetrievalEngine:
     def _tokenize(text: str) -> list[str]:
         """Split text into lowercase tokens."""
         return [t.lower() for t in re.split(r"[\s_\-/.,;:!?()]+", text) if t]
+
+
+def elbow_cut_k(scores: list[float], k: int, *, min_k: int = 2) -> int:
+    """Dynamic result count via an elbow cut over the top scores.
+
+    Given descending ``scores`` and a ceiling ``k``, return how many to keep:
+    when one/few candidates clearly dominate (a large relative score drop early
+    in the top ``2k``), return that smaller count (down to ``min_k``); when the
+    top scores are flat/ambiguous, return ``k``. Lets a confident query surface
+    2–3 tools while an ambiguous one still gets the full ``k``.
+
+    A "large drop" is a >=50% fall relative to the top score between two
+    adjacent ranks. Pure function — no engine state.
+    """
+    n = len(scores)
+    if n <= min_k:
+        return n
+    top = scores[0]
+    if top <= 0:
+        return min(k, n)
+    window = scores[: max(2 * k, min_k + 1)]
+    best_cut, best_drop = min(k, n), 0.0
+    # Find the sharpest adjacent drop anywhere in the top window (keep i+1
+    # items). A drop before ``min_k`` — e.g. one dominant hit — still counts;
+    # the cut is then clamped up to ``min_k`` so we never return too few.
+    for i in range(0, min(len(window) - 1, k)):
+        drop = (window[i] - window[i + 1]) / top
+        if drop > best_drop:
+            best_drop, best_cut = drop, i + 1
+    if best_drop >= 0.5:
+        return max(min_k, min(best_cut, k))
+    return min(k, n)
 
 
 def build_workflow_summary(results: list[RetrievalResult]) -> list[str] | None:
