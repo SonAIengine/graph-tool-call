@@ -20,12 +20,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from graph_tool_call.plan.binding import BindingError, resolve_bindings
+from graph_tool_call.plan.binding import BindingError, _tokenize, resolve_bindings
+from graph_tool_call.plan.coercion import coerce_args
 from graph_tool_call.plan.deps import is_output_consumed
+from graph_tool_call.plan.extraction import find_value_paths
 from graph_tool_call.plan.repair import PlanRepairer
 from graph_tool_call.plan.schema import (
     ExecutionTrace,
     Plan,
+    PlanStep,
     StepTrace,
 )
 
@@ -130,6 +133,30 @@ class PlanRepaired:
     step_count: int = 0
 
 
+@dataclass
+class BindingRepaired:
+    """A stale ``${sN.path}`` was re-pointed at a value found elsewhere in the
+    source's response (opt-in ``binding_recovery``)."""
+
+    type: str = "binding.repaired"
+    step_id: str = ""
+    field_name: str = ""
+    recovered_path: str = ""
+    value_preview: Any = None
+
+
+@dataclass
+class ArgsCoerced:
+    """One or more resolved args were type-cast / enum-folded before the call
+    (opt-in ``validate_args='coerce'``)."""
+
+    type: str = "args.coerced"
+    step_id: str = ""
+    tool: str = ""
+    changes: list[dict[str, Any]] = field(default_factory=list)
+    unresolved: list[str] = field(default_factory=list)
+
+
 PlanEvent = (
     PlanStarted
     | StepStarted
@@ -140,6 +167,8 @@ PlanEvent = (
     | StepRetrying
     | StepSkipped
     | PlanRepaired
+    | BindingRepaired
+    | ArgsCoerced
 )
 
 
@@ -192,6 +221,9 @@ class PlanRunner:
         on_error: str = "abort",
         retry_policy: RetryPolicy | None = None,
         repairer: PlanRepairer | None = None,
+        tools: dict[str, Any] | None = None,
+        binding_recovery: bool = False,
+        validate_args: str = "off",
         _sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._call_tool = call_tool
@@ -207,6 +239,16 @@ class PlanRunner:
         # Injectable sleep so tests can run backoff logic without wall-clock
         # delay; production uses ``time.sleep``.
         self._sleep = _sleep
+        # Parameter-strengthening hooks (A-P0-2). All opt-in / off by default.
+        # ``tools`` maps tool_name -> ToolSchema and powers arg coercion; when
+        # absent, coercion silently no-ops. ``binding_recovery`` repairs a
+        # stale ${sN.path} via a response-tree search. ``validate_args`` runs
+        # ``coerce`` on resolved args before the call.
+        self._tools = tools
+        self._binding_recovery = binding_recovery
+        if validate_args not in ("off", "coerce"):
+            raise ValueError("PlanRunner validate_args must be 'off' or 'coerce'")
+        self._validate_args = validate_args
 
     # ----------------------------------------------------------------------
     # Streaming interface — yields PlanEvent instances
@@ -258,31 +300,43 @@ class PlanRunner:
             step_trace = StepTrace(id=step.id, tool=step.tool)
             step_start = time.monotonic()
 
-            # 1. Resolve bindings
+            # 1. Resolve bindings (optionally recovering a stale ${sN.path}).
             try:
                 resolved = resolve_bindings(step.args, context)
             except BindingError as exc:
-                err = {
-                    "kind": "binding",
-                    "message": str(exc),
-                }
-                step_trace.error = err
-                step_trace.duration_ms = _ms_since(step_start)
-                trace_steps.append(step_trace)
-                yield StepFailed(
-                    step_id=step.id,
-                    tool=step.tool,
-                    error=err,
-                    duration_ms=step_trace.duration_ms,
-                )
-                yield PlanAborted(
-                    plan_id=plan.id,
-                    failed_step=step.id,
-                    error=err,
-                    total_duration_ms=_ms_since(plan_start),
-                    trace_steps=list(trace_steps),
-                )
-                return
+                recovered = None
+                if self._binding_recovery:
+                    recovered = self._recover_bindings(step, context)
+                if recovered is None:
+                    err = {
+                        "kind": "binding",
+                        "message": str(exc),
+                    }
+                    step_trace.error = err
+                    step_trace.duration_ms = _ms_since(step_start)
+                    trace_steps.append(step_trace)
+                    yield StepFailed(
+                        step_id=step.id,
+                        tool=step.tool,
+                        error=err,
+                        duration_ms=step_trace.duration_ms,
+                    )
+                    yield PlanAborted(
+                        plan_id=plan.id,
+                        failed_step=step.id,
+                        error=err,
+                        total_duration_ms=_ms_since(plan_start),
+                        trace_steps=list(trace_steps),
+                    )
+                    return
+                resolved, recovery_events = recovered
+                yield from recovery_events
+
+            # 1b. Optional arg coercion (type cast + fuzzy enum) before the call.
+            if self._validate_args == "coerce":
+                resolved, coerce_event = self._coerce_step_args(step, resolved)
+                if coerce_event is not None:
+                    yield coerce_event
 
             step_trace.args_resolved = resolved
             yield StepStarted(
@@ -472,6 +526,109 @@ class PlanRunner:
         if policy is None:
             return 0
         return int(policy.backoff_base_ms * (policy.backoff_factor ** (attempt - 1)))
+
+    # ----------------------------------------------------------------------
+    # parameter-strengthening helpers (A-P0-2)
+    # ----------------------------------------------------------------------
+
+    def _coerce_step_args(
+        self, step: PlanStep, resolved: dict[str, Any]
+    ) -> tuple[dict[str, Any], ArgsCoerced | None]:
+        """Type-cast / enum-fold *resolved* against the step's tool schema.
+
+        No-op (returns args unchanged, ``None`` event) when no ``tools`` map is
+        configured or the tool isn't found — coercion needs the parameter
+        schema to know target types / enum members.
+        """
+        if not self._tools:
+            return resolved, None
+        tool = self._tools.get(step.tool)
+        if tool is None:
+            return resolved, None
+        report = coerce_args(tool, resolved)
+        if not report.changes:
+            return resolved, None
+        return report.corrected, ArgsCoerced(
+            step_id=step.id,
+            tool=step.tool,
+            changes=report.changes,
+            unresolved=report.unresolved,
+        )
+
+    def _recover_bindings(
+        self, step: PlanStep, context: dict[str, Any]
+    ) -> tuple[dict[str, Any], list[BindingRepaired]] | None:
+        """Best-effort repair of a step's failing bindings.
+
+        Resolves each arg independently; for any that raises ``BindingError``
+        it tries to relocate the value elsewhere in the referenced source's
+        response (:func:`find_value_paths`). Succeeds only when *every* failing
+        arg recovers to a single clear candidate — otherwise returns ``None``
+        so the caller aborts as before (never silently drops an arg).
+        """
+        recovered_args: dict[str, Any] = {}
+        events: list[BindingRepaired] = []
+        for key, raw in step.args.items():
+            try:
+                recovered_args[key] = resolve_bindings(raw, context)
+                continue
+            except BindingError:
+                pass
+            fixed = self._recover_one_binding(raw, context)
+            if fixed is None:
+                return None
+            value, recovered_path = fixed
+            recovered_args[key] = value
+            events.append(
+                BindingRepaired(
+                    step_id=step.id,
+                    field_name=key,
+                    recovered_path=recovered_path,
+                    value_preview=_preview(value, self._preview_limit),
+                )
+            )
+        return recovered_args, events
+
+    def _recover_one_binding(self, value: Any, context: dict[str, Any]) -> tuple[Any, str] | None:
+        """Relocate a single whole-string ``${head.path}`` binding.
+
+        Returns ``(value, recovered_dotted_path)`` on a unique match, else
+        ``None``. Only handles whole-string bindings against a known source in
+        ``context`` — mixed literal/binding strings and unknown sources are out
+        of scope (too ambiguous to auto-repair).
+        """
+        if not (isinstance(value, str) and value.startswith("${") and value.endswith("}")):
+            return None
+        expr = value[2:-1].strip()
+        if not expr:
+            return None
+        tokens = _tokenize(expr)
+        if not tokens:
+            return None
+        head = tokens[0]
+        source = context.get(head)
+        if not isinstance(source, (dict, list)):
+            return None
+
+        # Target field = last identifier token of the failing path (skip array
+        # indices like ``[0]``). Without one there's nothing specific to seek.
+        target = ""
+        for tok in reversed(tokens[1:]):
+            if not (tok.startswith("[") and tok.endswith("]")):
+                target = tok
+                break
+        if not target:
+            return None
+
+        candidates = find_value_paths(source, field_name=target, max_candidates=5)
+        if not candidates:
+            return None
+        best = candidates[0]
+        # Require a clear winner — ambiguity (a runner-up at equal confidence)
+        # means we can't be sure which value the plan intended.
+        if len(candidates) > 1 and candidates[1].confidence >= best.confidence:
+            return None
+        return best.value, f"{head}.{best.path}"
 
     # ----------------------------------------------------------------------
     # Non-streaming interface — returns final ExecutionTrace

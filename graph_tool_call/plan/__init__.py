@@ -24,6 +24,10 @@ from graph_tool_call.plan.binding import (
     BindingError,
     resolve_bindings,
 )
+from graph_tool_call.plan.coercion import (
+    CoercionReport,
+    coerce_args,
+)
 from graph_tool_call.plan.deps import (
     compute_step_deps,
     is_output_consumed,
@@ -49,6 +53,8 @@ from graph_tool_call.plan.response import (
     synthesize_success_response,
 )
 from graph_tool_call.plan.runner import (
+    ArgsCoerced,
+    BindingRepaired,
     PlanAborted,
     PlanCompleted,
     PlanEvent,
@@ -98,6 +104,8 @@ __all__ = [
     "StepRetrying",
     "StepSkipped",
     "PlanRepaired",
+    "BindingRepaired",
+    "ArgsCoerced",
     "RetryPolicy",
     # recovery: deps / extraction / repair
     "compute_step_deps",
@@ -108,6 +116,9 @@ __all__ = [
     "ValueExtractorLLM",
     "PlanRepairer",
     "RepairResult",
+    # coercion
+    "CoercionReport",
+    "coerce_args",
     # synthesizer
     "PathSynthesizer",
     "PlanSynthesisError",

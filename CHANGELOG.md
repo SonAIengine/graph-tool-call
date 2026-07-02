@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`PathSynthesizer.synthesize(exclude_tools=...)`** — keyword-only, 기존 `_find_producer(excluded=...)` 재사용. 기본 `None` 으로 하위호환.
 - **`benchmarks/run_recovery_benchmark.py`** — fault-injection 으로 recovery_rate 측정(baseline abort 25% → recover 100%).
 
+### Added — 파라미터 할당 강화 (A-P0-2)
+- **`plan.coercion.coerce_args(tool, args, *, fuzzy_enum=True, cast_types=True)`** — 실행 직전 resolved args 를 도구 스키마에 맞춰 정리(non-mutating). 타입 캐스트(`"3"`→`3`, `"true"`→`True`), fuzzy enum(casefold+구분자 폴딩, `ToolParameter.enum` 소비). `CoercionReport(corrected, changes, unresolved)`. bool→int 재캐스트 금지 등 보수적.
+- **`PlanRunner` 파라미터 훅** (전부 opt-in, 기본 off):
+  - `tools: dict[str, ToolSchema]` — coercion 이 참조할 도구 스키마. 없으면 no-op.
+  - `validate_args="coerce"` — 실행 전 `coerce_args` 적용, `ArgsCoerced` 이벤트. 기본 `"off"`.
+  - `binding_recovery=True` — `${sN.path}` 가 실제 응답 모양과 안 맞으면 `find_value_paths` 로 트리 검색해 단일 명확후보 자동수리, `BindingRepaired` 이벤트. 애매(동률 후보)하면 회수 포기→기존처럼 abort(silent 오선택 방지).
+- **`plan.extraction.ValueExtractorLLM`** Protocol — 값 추출 LLM 훅 시그니처(P1 seam, 미사용).
+
 ## [0.21.0] - 2026-06-29
 
 ### Added
