@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from graph_tool_call.plan.deps import compute_step_deps
 from graph_tool_call.plan.schema import Plan, PlanStep
 
 
@@ -183,12 +184,22 @@ class PathSynthesizer:
         target: str,
         entities: dict[str, Any] | None = None,
         goal: str = "",
+        exclude_tools: set[str] | None = None,
     ) -> Plan:
         """Build a Plan whose final step is ``target`` with required args
         filled by entities + prerequisite steps.
 
         Raises ``UnsatisfiableFieldError`` if a required field has no
         producer or entity mapping.
+
+        ``exclude_tools`` (keyword-only, default ``None``) names producer
+        candidates the synthesis must avoid — reusing the existing
+        ``_find_producer(excluded=...)`` cycle-avoidance seam. The plan
+        repairer passes the failed tool here so re-synthesis reroutes through
+        an alternative producer (or falls back to a ``${user_input.x}`` slot
+        when none remains). Excluding the ``target`` itself is a no-op — the
+        target is the entry point, not a chained producer — so the repairer
+        declines to repair a failed target upstream.
         """
         if target not in self._tools:
             raise PlanSynthesisError(f"target tool not in graph: {target!r}")
@@ -204,6 +215,7 @@ class PathSynthesizer:
             steps_by_tool=steps_by_tool,
             visiting=visiting,
             depth=0,
+            exclude_tools=exclude_tools or set(),
         )
 
         # Assign topological ids s1..sN by insertion order
@@ -246,7 +258,7 @@ class PathSynthesizer:
                         }
                     )
 
-        return Plan(
+        plan = Plan(
             id=str(uuid.uuid4()),
             goal=goal or f"Execute {target}",
             steps=final_steps,
@@ -263,6 +275,15 @@ class PathSynthesizer:
             },
         )
 
+        # Record each step's data dependencies (which earlier steps its args
+        # bind to). Additive hint only — the runner still executes linearly;
+        # recovery's safe-skip and dependency-aware UIs read it.
+        deps = compute_step_deps(plan)
+        for step in plan.steps:
+            step.depends_on = sorted(deps.get(step.id, set()))
+
+        return plan
+
     # ------------------------------------------------------------------
     # core recursion
     # ------------------------------------------------------------------
@@ -275,6 +296,7 @@ class PathSynthesizer:
         steps_by_tool: dict[str, _PartialStep],
         visiting: set[str],
         depth: int,
+        exclude_tools: set[str] = frozenset(),  # type: ignore[assignment]
     ) -> str:
         """Ensure ``tool_name`` has a PartialStep with resolved args.
 
@@ -356,7 +378,7 @@ class PathSynthesizer:
                 field_name=field_name,
                 target_tool=tool_name,
                 entities=entities,
-                excluded=visiting,
+                excluded=visiting | exclude_tools,
             )
             if producer is None:
                 # F2 + Cycle policy B: gracefully surface the field as a
@@ -417,6 +439,7 @@ class PathSynthesizer:
                     steps_by_tool=steps_by_tool,
                     visiting=visiting,
                     depth=depth + 1,
+                    exclude_tools=exclude_tools,
                 )
             except (MaxDepthExceededError, CyclicDependencyError) as exc:
                 placeholder = f"${{user_input.{field_name}}}"
