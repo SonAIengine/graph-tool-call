@@ -257,6 +257,11 @@ class BM25Scorer:
         total_len = 0
         self._tf_maps: dict[str, dict[str, int]] = {}  # pre-computed tf per doc
         self._name_token_counts: dict[str, int] = {}  # operationId token count
+        # Cache each tool's name tokens once at build time. ``score()`` used to
+        # re-tokenize (and re-stem) every tool name on *every* query inside
+        # ``_name_subsequence_boost`` — O(corpus) tokenization per query, which
+        # dominated latency at thousands of tools. Caching makes it a lookup.
+        self._name_tokens: dict[str, list[str]] = {}
         for name, tool in self._tools.items():
             tokens = self._tokenize_tool(tool)
             self._tool_tokens[name] = tokens
@@ -269,8 +274,10 @@ class BM25Scorer:
                 tf_map[t] = tf_map.get(t, 0) + 1
             self._tf_maps[name] = tf_map
 
-            # Count name tokens for length penalty
-            self._name_token_counts[name] = len(self._tokenize_fn(name))
+            # Count name tokens for length penalty (+ cache the tokens themselves)
+            name_tokens = self._tokenize_fn(name)
+            self._name_tokens[name] = name_tokens
+            self._name_token_counts[name] = len(name_tokens)
 
             # Count document frequency (unique terms per document)
             for term in tf_map:
@@ -290,10 +297,15 @@ class BM25Scorer:
             }
             self._stopwords = _BASE_STOPWORDS | frozenset(auto_stops)
 
-    def score(self, query: str) -> dict[str, float]:
+    def score(self, query: str, *, restrict: set[str] | None = None) -> dict[str, float]:
         """Score all tools against query using BM25.
 
         Returns dict of tool_name -> BM25 score (only non-zero scores).
+
+        ``restrict`` (keyword-only) limits scoring to the given tool names — a
+        perf lever for large corpora when the caller has already narrowed the
+        candidate set (e.g. a category prefilter pool). ``None`` (default)
+        scores the whole corpus and is byte-for-byte the pre-existing behaviour.
         """
         raw_tokens = self._tokenize_fn(query)
         if not raw_tokens:
@@ -306,6 +318,8 @@ class BM25Scorer:
 
         scores: dict[str, float] = {}
         for name in self._tool_tokens:
+            if restrict is not None and name not in restrict:
+                continue
             doc_len = self._doc_lens[name]
             tf_map = self._tf_maps[name]
             doc_score = 0.0
@@ -339,7 +353,10 @@ class BM25Scorer:
 
     def _name_subsequence_boost(self, query_tokens: list[str], tool_name: str) -> float:
         """Boost score when query tokens match tool name in order."""
-        name_tokens = self._tokenize_fn(tool_name)
+        # Cached at index build (falls back to tokenizing for ad-hoc names).
+        name_tokens = self._name_tokens.get(tool_name)
+        if name_tokens is None:
+            name_tokens = self._tokenize_fn(tool_name)
         if not name_tokens or not query_tokens:
             return 1.0
         qi = 0
