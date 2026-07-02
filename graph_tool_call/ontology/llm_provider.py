@@ -227,16 +227,24 @@ For each tool in the batch, output a JSON object with these fields:
   - consumes_semantics: array of {{"semantic": "canonical_id",
                                     "field": "paramName",
                                     "kind": "data" | "context"}}
-      * REQUIRED inputs only. Skip optional filters, pagination.
+      * Include (a) REQUIRED business-data inputs (kind="data"), AND
+        (b) ANY environmental/context parameter (kind="context") EVEN IF the
+        schema marks it optional. Skip only pure pagination
+        (page/pageSize/rowsPerPage/offset/limit/cursor) and one-off free-text
+        search filters.
       * Same semantic id conventions as produces.
       * kind="data" — business-data dependency: an identifier or value that
         addresses a specific record (e.g. product_id, order_id, user_id,
         search_keyword). A prior step in a plan normally produces it.
-      * kind="context" — ambient/environmental config shared across the
-        workflow (locale, site_no, tenant, pagination cursors, flag switches).
-        The user or the caller supplies it as a default — it is NOT produced
-        by a prior step. Use this for anything a plain UI user would set
-        once per session, not per request.
+      * kind="context" — ambient/environmental config shared across the whole
+        workflow: site/mall/shop id, tenant/org/company id, channel, locale/
+        language/country code, currency, or session flag switches. The user or
+        caller supplies it once as a session default — it is NOT produced by a
+        prior step. **Mark these kind="context" EVEN IF the schema says
+        optional**, so the runtime auto-fills them from collection
+        context_defaults instead of asking the user every turn. Rule of thumb:
+        anything a UI user would set once per session (not per request) and
+        that is NOT the primary thing this tool acts on.
   - pairs_well_with: array of {{"tool": "tool_name_from_available_list",
                                 "reason": "brief reason"}}
       * 2-4 tools that typically precede or follow this tool.
