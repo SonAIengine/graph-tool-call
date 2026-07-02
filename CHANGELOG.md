@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Plan 실패 복구 루프 (A-P0-1)
+- **`PlanRunner` 복구 모드** — `on_error="retry" | "recover"` (기존 `"abort"` 는 기본값, 바이트 단위 동일 동작 유지).
+  - `retry_policy: RetryPolicy(max_attempts=2, backoff_base_ms=200, backoff_factor=2.0, retry_all=False)` — `kind="tool"` 실패만 지수 백오프로 재시도. step 이 `retryable=True` 로 opt-in 하거나 `retry_all=True` 일 때만. `StepTrace.retries` 실채움. `_sleep` 주입 가능(테스트용).
+  - **recover 캐스케이드**: retry → skip(출력을 아무도 안 쓰면 안전 스킵) → replan(실패 producer 를 우회하도록 재합성). 모두 실패 시 기존처럼 abort.
+  - 신규 additive 이벤트: `StepRetrying` / `StepSkipped` / `PlanRepaired`.
+- **`plan.repair.PlanRepairer`** — 실패 step 을 우회해 재합성. `Plan.metadata` 의 target/entities 복원 + 완료 step 출력을 entity 로 병합 후 `synthesize(exclude_tools=...)`. target 자체 실패는 복구 불가(None). `RepairResult(plan, reused_outputs, excluded_tools)`.
+- **`plan.deps`** — `compute_step_deps(plan)`(step→선행 step 의존), `is_output_consumed(plan, step_id, after_index)`(안전 스킵 판정). binding 정규식 재사용.
+- **`plan.extraction`** — `find_value_paths(output, *, field_name, ...)`(응답 트리 BFS: exact→loose key, 랭크된 `PathCandidate`), `extract_produced_entities(tool_meta, output)`(produces 스키마→entity, semantic+field 양쪽 키). `ValueExtractorLLM` Protocol(P1 훅).
+- **`PlanStep.depends_on`** — args 바인딩이 참조하는 선행 step id (synthesizer 가 채움). **빈 리스트=선형 시맨틱 유지**, 실행기는 여전히 순차 실행(DAG defer). 복구/UI 용 힌트.
+- **`PathSynthesizer.synthesize(exclude_tools=...)`** — keyword-only, 기존 `_find_producer(excluded=...)` 재사용. 기본 `None` 으로 하위호환.
+- **`benchmarks/run_recovery_benchmark.py`** — fault-injection 으로 recovery_rate 측정(baseline abort 25% → recover 100%).
+
+### Added — 파라미터 할당 강화 (A-P0-2)
+- **`plan.coercion.coerce_args(tool, args, *, fuzzy_enum=True, cast_types=True)`** — 실행 직전 resolved args 를 도구 스키마에 맞춰 정리(non-mutating). 타입 캐스트(`"3"`→`3`, `"true"`→`True`), fuzzy enum(casefold+구분자 폴딩, `ToolParameter.enum` 소비). `CoercionReport(corrected, changes, unresolved)`. bool→int 재캐스트 금지 등 보수적.
+- **`PlanRunner` 파라미터 훅** (전부 opt-in, 기본 off):
+  - `tools: dict[str, ToolSchema]` — coercion 이 참조할 도구 스키마. 없으면 no-op.
+  - `validate_args="coerce"` — 실행 전 `coerce_args` 적용, `ArgsCoerced` 이벤트. 기본 `"off"`.
+  - `binding_recovery=True` — `${sN.path}` 가 실제 응답 모양과 안 맞으면 `find_value_paths` 로 트리 검색해 단일 명확후보 자동수리, `BindingRepaired` 이벤트. 애매(동률 후보)하면 회수 포기→기존처럼 abort(silent 오선택 방지).
+- **`plan.extraction.ValueExtractorLLM`** Protocol — 값 추출 LLM 훅 시그니처(P1 seam, 미사용).
+
 ## [0.21.0] - 2026-06-29
 
 ### Added

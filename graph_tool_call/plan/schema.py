@@ -30,7 +30,14 @@ class PlanStep:
     args: dict[str, Any] = field(default_factory=dict)
     rationale: str = ""  # why this step exists (for audit)
     timeout_ms: int | None = None
-    retryable: bool = False  # reserved for v1.1 retry policy
+    retryable: bool = False  # opt-in retry hint consumed by PlanRunner RetryPolicy
+    # Step ids this step's args bindings reference. Populated by the
+    # synthesizer at final assembly (``compute_step_deps``). An **empty list
+    # keeps the linear semantics** — the executor still runs steps in listed
+    # order (DAG scheduling is deferred). This field is a machine-readable
+    # dependency hint used by recovery (``is_output_consumed`` safe-skip) and
+    # by UIs that want to render the data-flow, not a change to execution.
+    depends_on: list[str] = field(default_factory=list)
     # Top-level keys the synthesizer expects in this tool's response,
     # derived from ``produces[].json_path``. Used by PlanRunner to detect
     # envelope wrappers (e.g. ``{code, message, payload: {...}}``) when the
