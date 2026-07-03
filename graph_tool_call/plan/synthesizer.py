@@ -319,6 +319,11 @@ class PathSynthesizer:
         metadata = tool.get("metadata") or {}
         consumes = metadata.get("consumes") or []
 
+        # Target's canonical_action drives the search-leaf policy below.
+        # Empty/absent (un-enriched collection) → no-op, today's behavior.
+        target_ai = metadata.get("ai_metadata") or {}
+        target_action = str(target_ai.get("canonical_action") or "").strip().lower()
+
         args: dict[str, Any] = {}
         rationales: list[str] = []
 
@@ -367,6 +372,29 @@ class PathSynthesizer:
                     f"(semantic={semantic!r}) — enum field, expects user "
                     f"selection (no producer chain attempted)"
                 )
+
+            # 4b. Search-leaf policy. A ``search`` operation is a query leaf:
+            #     every input is a filter/criterion the *user* supplies, never
+            #     a value chained in from an unrelated producer. Spawning a
+            #     producer chain for a search's required filter is exactly what
+            #     turns a "list products" lookup into a multi-hop plan. So for
+            #     ``search`` targets we surface the field as a
+            #     ``${user_input.<field>}`` slot (single step) instead of
+            #     chaining a producer. ``read`` is deliberately excluded — the
+            #     read→detail idiom (getDetail(id) ← search) is a legitimate
+            #     chain preserved by the dynamic-option branch (5a) below.
+            #     Note: entity match (1), context (2) and optional-skip (3)
+            #     already ran, so a user-supplied filter still binds and an
+            #     optional filter is already dropped — this gate only rewrites
+            #     *required* data filters on a search. Degrades to the producer
+            #     path when canonical_action is absent (un-enriched collections
+            #     keep today's behavior).
+            if target_action == "search":
+                args[field_name] = f"${{user_input.{field_name}}}"
+                rationales.append(
+                    f"{field_name} ← user_input (search filter, not chained)"
+                )
+                continue
 
             # 5. Required data field → rank candidate producers and pick the best.
             #    Pass ``visiting`` as ``excluded`` so cycle-prone candidates are
