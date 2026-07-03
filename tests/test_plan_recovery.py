@@ -193,6 +193,25 @@ def test_recover_skips_step_whose_output_is_unconsumed():
     assert completed.type == "plan.completed"
 
 
+def test_recover_terminal_step_skipped_aborts_cleanly_without_output_binding():
+    """recover 모드에서 종료 step 이 safe-skip 되고 output_binding 도 없으면
+    context[last]=KeyError 로 crash 하지 말고 깔끔한 plan.aborted 로 종료해야 한다.
+
+    (XGEN force_target 단일 step chip-click 이 도구 실패 시 KeyError 로 죽던 회귀 방지.)
+    """
+    plan = Plan(
+        id="t",
+        goal="g",
+        steps=[PlanStep(id="s1", tool="only")],  # 단일 step, output_binding 없음
+    )
+    caller = make_caller({}, fail_perm={"only"})
+    runner = PlanRunner(caller, on_error="recover")  # repairer 없음 → skip 시도
+    events = list(runner.run_stream(plan))  # KeyError 안 나야
+    assert [e for e in events if isinstance(e, StepSkipped)], "종료 step 이 safe-skip 됨"
+    assert events[-1].type == "plan.aborted"
+    assert events[-1].failed_step == "<output_binding>"
+
+
 def test_recover_does_not_skip_consumed_output_without_repairer():
     """출력이 소비되면 skip 불가 — repairer 없으면 abort."""
     plan = Plan(

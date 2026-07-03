@@ -478,13 +478,24 @@ class PlanRunner:
             )
             idx += 1
 
-        # 4. Resolve output_binding for final answer
+        # 4. Resolve output_binding for final answer.
+        #    In recover mode the terminal step may have been safe-skipped (its
+        #    output consumed by nobody), leaving nothing in context under its
+        #    id — treat that as an abort, not a KeyError, so callers get a clean
+        #    PlanAborted (→ their failure path) instead of an uncaught crash.
         try:
-            final = (
-                resolve_bindings(plan.output_binding, context)
-                if plan.output_binding
-                else (context[plan.steps[-1].id] if plan.steps else None)
-            )
+            if plan.output_binding:
+                final = resolve_bindings(plan.output_binding, context)
+            elif plan.steps:
+                last_id = plan.steps[-1].id
+                if last_id not in context:
+                    raise BindingError(
+                        f"terminal step {last_id!r} produced no output "
+                        f"(skipped or failed) — no answer to return"
+                    )
+                final = context[last_id]
+            else:
+                final = None
         except BindingError as exc:
             err = {"kind": "output_binding", "message": str(exc)}
             yield PlanAborted(
