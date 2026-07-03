@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-03
+
 ### Changed — Search-leaf 합성 정책 (조회는 단일 step)
 - **`PathSynthesizer._resolve`** — target 의 `ai_metadata.canonical_action == "search"` 이면 required 데이터 필터를 producer 로 체인하지 않고 `${user_input.<field>}` 슬롯으로 surface. 조회(검색/목록)는 질의 leaf 이므로 모든 입력은 사용자가 주는 필터/조건이지, 무관한 producer 에서 끌어오는 값이 아니다. `getGoodsList` 류가 12개 필터마다 producer 를 붙여 단순 조회를 다단계 plan 으로 폭발시키던 문제의 근본 방지.
   - **`read` 는 제외** — read→detail 관용구(`getDetail(id)` ← search)는 정당한 체인이므로 dynamic-option 분기(5a)와 함께 보존.
   - **entity 매칭(1)·context(2)·optional-skip(3) 이후** 적용 — 사용자가 준 필터값은 그대로 바인딩되고, optional 필터는 이미 drop 되므로 이 게이트는 *required* 데이터 필터만 재작성.
   - `canonical_action` 이 없으면(un-enriched) no-op → 기존 동작 유지.
+  - **동작 변경 주의**: enrich 된 search target 에 한해 합성 출력이 바뀐다(필터→user_input slot). 미enrich 컬렉션은 무영향.
+
+### Fixed — recover 모드 종료 step 안전스킵 crash
+- **`PlanRunner.run_stream`** — recover 모드에서 종료 step 이 safe-skip 되어 `context` 에 그 출력이 없을 때 `context[last_step_id]` 가 `KeyError` 로 죽던 것을 깔끔한 `PlanAborted`(`failed_step="<output_binding>"`)로 변환. `output_binding` 없는 단일 step(또는 전 step 스킵) plan 이 어떤 caller 에서도 crash 하지 않는다.
 
 ## [0.22.0] - 2026-07-03
 
