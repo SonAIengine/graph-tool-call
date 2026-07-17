@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-18
+
+### Added
+- **Graphify collection metadata helper** — `graphify.annotate_graphify_metadata()` adds stable `graph_tool_call_version`, `collection_graph_version`, and `enrichment_status` fields for XGEN-style persisted API collection graphs without coupling the engine to product storage.
+- **Enrichment status detection** — `graphify.detect_enrichment_status()` reports `empty` / `not_started` / `partial` / `complete` from serialized tool metadata.
+
+### Fixed
+- **Version drift** — synchronized `graph_tool_call.__version__` with the package version so CLI, serialized graph metadata, and product integrations report the same engine version.
+
 ## [0.23.0] - 2026-07-03
 
 ### Changed — Search-leaf 합성 정책 (조회는 단일 step)
@@ -426,7 +435,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.23.0...v0.24.0
+[0.23.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.22.0...v0.23.0
+[0.22.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.21.0...v0.22.0
+[0.21.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.20.1...v0.21.0
+[0.20.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.19.0...v0.20.0
+[0.19.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.13.1...v0.18.0
+[0.13.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.12.1...v0.13.0
+[0.12.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.11.1...v0.12.0
+[0.11.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.11.0...v0.11.1
+[0.11.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.8.0...v0.9.0

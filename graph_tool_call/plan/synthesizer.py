@@ -391,9 +391,7 @@ class PathSynthesizer:
             #     keep today's behavior).
             if target_action == "search":
                 args[field_name] = f"${{user_input.{field_name}}}"
-                rationales.append(
-                    f"{field_name} ← user_input (search filter, not chained)"
-                )
+                rationales.append(f"{field_name} ← user_input (search filter, not chained)")
                 continue
 
             # 5. Required data field → rank candidate producers and pick the best.
