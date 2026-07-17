@@ -137,6 +137,46 @@ def _try_swagger_config(
     return None
 
 
+def _detect_embedding_backend() -> str:
+    """Auto-detect an available embedding backend, returning its spec string.
+
+    Preference order (local/free first, then hosted, then a local server):
+
+      1. ``sentence-transformers`` installed → local MiniLM (no keys, offline).
+      2. ``OPENAI_API_KEY`` set → OpenAI ``text-embedding-3-small``.
+      3. Ollama reachable (``OLLAMA_HOST`` or ``localhost:11434``) →
+         ``nomic-embed-text``.
+
+    Raises ``RuntimeError`` when none is available so the caller can fall back
+    to keyword-only retrieval with a clear message.
+    """
+    import importlib.util
+    import os
+
+    if importlib.util.find_spec("sentence_transformers") is not None:
+        return "sentence-transformers/all-MiniLM-L6-v2"
+    if os.environ.get("OPENAI_API_KEY"):
+        return "openai/text-embedding-3-small"
+    if os.environ.get("OLLAMA_HOST") or _ollama_reachable():
+        return "ollama/nomic-embed-text"
+    raise RuntimeError(
+        "enable_embedding('auto') found no embedding backend. Install "
+        "sentence-transformers (pip install graph-tool-call[embedding]), set "
+        "OPENAI_API_KEY, or run Ollama — or pass an explicit provider."
+    )
+
+
+def _ollama_reachable(host: str = "127.0.0.1", port: int = 11434) -> bool:
+    """Best-effort short-timeout probe of a local Ollama server."""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=0.3):
+            return True
+    except OSError:
+        return False
+
+
 class ToolGraph:
     """High-level API for graph-structured tool management and retrieval.
 
@@ -157,6 +197,8 @@ class ToolGraph:
         self._gateway_tools: list[Any] | None = None
         self._gateway_top_k: int = 10
         self._tokenizer: Any = None
+        # Default for as_tools(adaptive_k=None); tune_for_scale() flips it on.
+        self._adaptive_k_default: bool = False
 
     @property
     def graph(self) -> GraphEngine:
@@ -638,6 +680,9 @@ class ToolGraph:
         """
         from graph_tool_call.retrieval.embedding import EmbeddingIndex, wrap_embedding
 
+        if embedding == "auto":
+            embedding = _detect_embedding_backend()
+
         provider = wrap_embedding(embedding)
         index = EmbeddingIndex(provider=provider)
         index.build_from_tools(self._tools)
@@ -681,6 +726,28 @@ class ToolGraph:
         """
         engine = self._get_retrieval_engine()
         engine.set_diversity(lambda_)
+
+    def tune_for_scale(self) -> None:
+        """One-call retrieval preset for thousands-of-tools corpora.
+
+        Enables, together:
+
+        - the **category prefilter** (recall-preserving candidate pool; only
+          fires at ``>= 500`` tools),
+        - **MMR diversity** (λ=0.7) so near-duplicate operations don't crowd the
+          top results, and
+        - **dynamic-k** for :meth:`as_tools` so confident queries return fewer
+          tools.
+
+        Idempotent and safe to call on any corpus — the prefilter no-ops below
+        500 tools. A one-time warning is emitted at retrieve time if no
+        embedding index is attached (semantic recall is degraded at scale; call
+        :meth:`enable_embedding` with ``"auto"`` to fix).
+        """
+        engine = self._get_retrieval_engine()
+        engine.enable_prefilter(True)
+        engine.set_diversity(0.7)
+        self._adaptive_k_default = True
 
     # --- execution ---
 
@@ -1513,7 +1580,7 @@ class ToolGraph:
 
     # --- LangChain gateway integration ---
 
-    def as_tools(self, *, top_k: int = 10) -> list[Any]:
+    def as_tools(self, *, top_k: int = 10, adaptive_k: bool | None = None) -> list[Any]:
         """Create two LangChain gateway meta-tools backed by this ToolGraph.
 
         Returns ``[search_tools, call_tool]`` that can be passed directly to
@@ -1528,6 +1595,12 @@ class ToolGraph:
         ----------
         top_k:
             Default number of search results (default: 10).
+        adaptive_k:
+            When True, ``search_tools`` dynamically trims confident results
+            (elbow cut over the top scores) so an unambiguous query returns
+            2–3 tools instead of the full ``top_k``. ``None`` (default) inherits
+            the graph's setting — off unless :meth:`tune_for_scale` enabled it —
+            keeping the pre-existing full-``top_k`` behaviour by default.
 
         Returns
         -------
@@ -1550,9 +1623,10 @@ class ToolGraph:
             # Use with any LangChain/LangGraph agent
             agent = create_react_agent(model=llm, tools=tg.as_tools())
         """
-        return self._create_gateway_tools(top_k=top_k)
+        use_adaptive = self._adaptive_k_default if adaptive_k is None else adaptive_k
+        return self._create_gateway_tools(top_k=top_k, adaptive_k=use_adaptive)
 
-    def _create_gateway_tools(self, *, top_k: int) -> list[Any]:
+    def _create_gateway_tools(self, *, top_k: int, adaptive_k: bool = False) -> list[Any]:
         """Internal: create LangChain gateway meta-tools."""
         try:
             from langchain_core.tools import tool as langchain_tool
@@ -1565,8 +1639,10 @@ class ToolGraph:
         graph_ref = self
         default_top_k = top_k
 
+        default_adaptive_k = adaptive_k
+
         @langchain_tool
-        def search_tools(query: str, top_k: int | None = None) -> str:
+        def search_tools(query: str, top_k: int | None = None, page: int = 1) -> str:
             """Search available tools by natural language query.
 
             Use this FIRST to find which tools are available for the task.
@@ -1582,12 +1658,30 @@ class ToolGraph:
 
             Args:
                 query: Natural language search query (e.g. "add numbers", "get weather")
-                top_k: Max number of results (optional)
+                top_k: Max number of results per page (optional)
+                page: 1-based page number for browsing beyond the first results
+                      (optional; the response carries ``page`` and ``has_more``)
             """
             k = top_k if top_k is not None else default_top_k
+            page = max(1, int(page or 1))
+            # Fetch enough to cover the requested page, plus one extra to detect
+            # ``has_more`` without a second query.
+            fetch = k * page + 1
             # retrieve_with_scores 를 써야 _enrich_relations 가 채운 relations/prerequisites
             # 가 살아남는다. retrieve() 는 ToolSchema 만 반환해 이 정보가 버려짐.
-            results = graph_ref.retrieve_with_scores(query, top_k=k)
+            all_results = graph_ref.retrieve_with_scores(query, top_k=fetch)
+
+            # Dynamic-k: on the first page, when confident, trim to the elbow.
+            page_size = k
+            if default_adaptive_k and page == 1:
+                from graph_tool_call.retrieval.engine import elbow_cut_k
+
+                page_size = elbow_cut_k([r.score for r in all_results], k)
+
+            start = (page - 1) * k
+            end = start + page_size
+            results = all_results[start:end]
+            has_more = len(all_results) > end
 
             matched = []
             for result in results:
@@ -1624,17 +1718,25 @@ class ToolGraph:
                     ]
                 matched.append(entry)
 
+            hint = (
+                "Pick ONE tool matching the user's goal. If its "
+                "'prerequisites' list is non-empty, call those tools "
+                "first and use their results to fill the target tool's "
+                "arguments. Then call_tool the target."
+            )
+            if has_more:
+                hint += (
+                    f" More results available — call search_tools again with "
+                    f"page={page + 1} if none of these fit."
+                )
             output = {
                 "query": query,
                 "matched": len(matched),
                 "total_tools": len(graph_ref._tools),
+                "page": page,
+                "has_more": has_more,
                 "tools": matched,
-                "hint": (
-                    "Pick ONE tool matching the user's goal. If its "
-                    "'prerequisites' list is non-empty, call those tools "
-                    "first and use their results to fill the target tool's "
-                    "arguments. Then call_tool the target."
-                ),
+                "hint": hint,
             }
             return json.dumps(output, ensure_ascii=False, indent=2)
 

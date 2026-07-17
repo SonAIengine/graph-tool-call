@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-18
+
+### Added
+- **Graphify collection metadata helper** — `graphify.annotate_graphify_metadata()` adds stable `graph_tool_call_version`, `collection_graph_version`, and `enrichment_status` fields for XGEN-style persisted API collection graphs without coupling the engine to product storage.
+- **Enrichment status detection** — `graphify.detect_enrichment_status()` reports `empty` / `not_started` / `partial` / `complete` from serialized tool metadata.
+
+### Fixed
+- **Version drift** — synchronized `graph_tool_call.__version__` with the package version so CLI, serialized graph metadata, and product integrations report the same engine version.
+
+## [0.23.0] - 2026-07-03
+
+### Changed — Search-leaf 합성 정책 (조회는 단일 step)
+- **`PathSynthesizer._resolve`** — target 의 `ai_metadata.canonical_action == "search"` 이면 required 데이터 필터를 producer 로 체인하지 않고 `${user_input.<field>}` 슬롯으로 surface. 조회(검색/목록)는 질의 leaf 이므로 모든 입력은 사용자가 주는 필터/조건이지, 무관한 producer 에서 끌어오는 값이 아니다. `getGoodsList` 류가 12개 필터마다 producer 를 붙여 단순 조회를 다단계 plan 으로 폭발시키던 문제의 근본 방지.
+  - **`read` 는 제외** — read→detail 관용구(`getDetail(id)` ← search)는 정당한 체인이므로 dynamic-option 분기(5a)와 함께 보존.
+  - **entity 매칭(1)·context(2)·optional-skip(3) 이후** 적용 — 사용자가 준 필터값은 그대로 바인딩되고, optional 필터는 이미 drop 되므로 이 게이트는 *required* 데이터 필터만 재작성.
+  - `canonical_action` 이 없으면(un-enriched) no-op → 기존 동작 유지.
+  - **동작 변경 주의**: enrich 된 search target 에 한해 합성 출력이 바뀐다(필터→user_input slot). 미enrich 컬렉션은 무영향.
+
+### Fixed — recover 모드 종료 step 안전스킵 crash
+- **`PlanRunner.run_stream`** — recover 모드에서 종료 step 이 safe-skip 되어 `context` 에 그 출력이 없을 때 `context[last_step_id]` 가 `KeyError` 로 죽던 것을 깔끔한 `PlanAborted`(`failed_step="<output_binding>"`)로 변환. `output_binding` 없는 단일 step(또는 전 step 스킵) plan 이 어떤 caller 에서도 crash 하지 않는다.
+
+## [0.22.0] - 2026-07-03
+
+### Added — Plan 실패 복구 루프 (A-P0-1)
+- **`PlanRunner` 복구 모드** — `on_error="retry" | "recover"` (기존 `"abort"` 는 기본값, 바이트 단위 동일 동작 유지).
+  - `retry_policy: RetryPolicy(max_attempts=2, backoff_base_ms=200, backoff_factor=2.0, retry_all=False)` — `kind="tool"` 실패만 지수 백오프로 재시도. step 이 `retryable=True` 로 opt-in 하거나 `retry_all=True` 일 때만. `StepTrace.retries` 실채움. `_sleep` 주입 가능(테스트용).
+  - **recover 캐스케이드**: retry → skip(출력을 아무도 안 쓰면 안전 스킵) → replan(실패 producer 를 우회하도록 재합성). 모두 실패 시 기존처럼 abort.
+  - 신규 additive 이벤트: `StepRetrying` / `StepSkipped` / `PlanRepaired`.
+- **`plan.repair.PlanRepairer`** — 실패 step 을 우회해 재합성. `Plan.metadata` 의 target/entities 복원 + 완료 step 출력을 entity 로 병합 후 `synthesize(exclude_tools=...)`. target 자체 실패는 복구 불가(None). `RepairResult(plan, reused_outputs, excluded_tools)`.
+- **`plan.deps`** — `compute_step_deps(plan)`(step→선행 step 의존), `is_output_consumed(plan, step_id, after_index)`(안전 스킵 판정). binding 정규식 재사용.
+- **`plan.extraction`** — `find_value_paths(output, *, field_name, ...)`(응답 트리 BFS: exact→loose key, 랭크된 `PathCandidate`), `extract_produced_entities(tool_meta, output)`(produces 스키마→entity, semantic+field 양쪽 키). `ValueExtractorLLM` Protocol(P1 훅).
+- **`PlanStep.depends_on`** — args 바인딩이 참조하는 선행 step id (synthesizer 가 채움). **빈 리스트=선형 시맨틱 유지**, 실행기는 여전히 순차 실행(DAG defer). 복구/UI 용 힌트.
+- **`PathSynthesizer.synthesize(exclude_tools=...)`** — keyword-only, 기존 `_find_producer(excluded=...)` 재사용. 기본 `None` 으로 하위호환.
+- **`benchmarks/run_recovery_benchmark.py`** — fault-injection 으로 recovery_rate 측정(baseline abort 25% → recover 100%).
+
+### Added — 파라미터 할당 강화 (A-P0-2)
+- **`plan.coercion.coerce_args(tool, args, *, fuzzy_enum=True, cast_types=True)`** — 실행 직전 resolved args 를 도구 스키마에 맞춰 정리(non-mutating). 타입 캐스트(`"3"`→`3`, `"true"`→`True`), fuzzy enum(casefold+구분자 폴딩, `ToolParameter.enum` 소비). `CoercionReport(corrected, changes, unresolved)`. bool→int 재캐스트 금지 등 보수적.
+- **`PlanRunner` 파라미터 훅** (전부 opt-in, 기본 off):
+  - `tools: dict[str, ToolSchema]` — coercion 이 참조할 도구 스키마. 없으면 no-op.
+  - `validate_args="coerce"` — 실행 전 `coerce_args` 적용, `ArgsCoerced` 이벤트. 기본 `"off"`.
+  - `binding_recovery=True` — `${sN.path}` 가 실제 응답 모양과 안 맞으면 `find_value_paths` 로 트리 검색해 단일 명확후보 자동수리, `BindingRepaired` 이벤트. 애매(동률 후보)하면 회수 포기→기존처럼 abort(silent 오선택 방지).
+- **`plan.extraction.ValueExtractorLLM`** Protocol — 값 추출 LLM 훅 시그니처(P1 seam, 미사용).
+
+### Added — 수천 규모 검색 고도화 (A-P1-5)
+- **`retrieval.prefilter.CategoryPrefilter`** — 대형 코퍼스에서 카테고리 토큰 매치(+임베딩 있으면 카테고리 센트로이드) 로 후보 풀을 만들고 **BM25 top-N 을 반드시 union(recall-preserving 가드)**. 신호 약하면 `None`(전체 코퍼스). 풀 크기 `[min_pool=150, max_pool=500]` 로 bound(좁으면 1-hop 그래프 이웃으로 확장, 넓으면 cap — cap 시 BM25-top 은 절대 제외 안 함).
+- **`RetrievalEngine` 스케일 훅** — `enable_prefilter()`(기본 off, `n>=500` 에서만 발동), `resource_first_search` 를 프리필터와 그래프 채널이 **1회만 공유**. embedding/annotation/graph 채널에 pool `restrict` 전파(keyword 는 full 유지 = recall 백본). `n>1000` adaptive weight 티어 추가(임베딩 강화 0.55). `n>300` & 임베딩 미설정 시 최초 retrieve 때 1회 `warnings.warn`.
+- **BM25 name-token 캐싱** — `_name_subsequence_boost` 가 매 쿼리 전체 도구명을 재토큰화·재스테밍하던 것을 인덱스 빌드 시 캐싱. **5000 도구 latency p50 80ms→28ms (약 2.9x), recall 무영향.** `BM25Scorer.score(query, *, restrict=None)` 추가(pool 한정 스코어링; `None`=기존 동일).
+- **dynamic-k + 페이지네이션** — `search_tools(query, top_k, page)` 응답에 `page`/`has_more`/`hint`. `elbow_cut_k()`(top 2k 스코어 elbow 컷: 확신 높으면 2~3, 모호하면 k). `ToolGraph.as_tools(adaptive_k=None)` 기본 off(하위호환). `tool_graph.py` + `mcp_server.py` 양쪽.
+- **`ToolGraph.tune_for_scale()`** — 프리필터 on + diversity λ=0.7 + dynamic-k on 원클릭 프리셋. **`enable_embedding("auto")`** — sentence-transformers→OpenAI env→Ollama 순 자동 감지.
+- **`benchmarks/run_scale_benchmark.py`** — 번들 스펙(github/k8s/ecommerce) 네임스페이스 변형으로 3k/5k 합성 코퍼스. recall@5 / latency p50·p95 / 응답 크기 측정, 프리필터 off/on 비교. **recall delta = 0(프리필터 recall 보존)**.
+
 ## [0.21.0] - 2026-06-29
 
 ### Added
@@ -384,7 +435,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.23.0...v0.24.0
+[0.23.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.22.0...v0.23.0
+[0.22.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.21.0...v0.22.0
+[0.21.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.20.1...v0.21.0
+[0.20.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.19.0...v0.20.0
+[0.19.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.13.1...v0.18.0
+[0.13.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.12.1...v0.13.0
+[0.12.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.11.1...v0.12.0
+[0.11.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.11.0...v0.11.1
+[0.11.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.8.0...v0.9.0

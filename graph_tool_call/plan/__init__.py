@@ -24,24 +24,48 @@ from graph_tool_call.plan.binding import (
     BindingError,
     resolve_bindings,
 )
+from graph_tool_call.plan.coercion import (
+    CoercionReport,
+    coerce_args,
+)
+from graph_tool_call.plan.deps import (
+    compute_step_deps,
+    is_output_consumed,
+)
+from graph_tool_call.plan.extraction import (
+    PathCandidate,
+    ValueExtractorLLM,
+    extract_produced_entities,
+    find_value_paths,
+)
 from graph_tool_call.plan.intent import (
     IntentParseError,
     ParsedIntent,
     ToolCatalogEntry,
     parse_intent,
 )
+from graph_tool_call.plan.repair import (
+    PlanRepairer,
+    RepairResult,
+)
 from graph_tool_call.plan.response import (
     synthesize_failure_response,
     synthesize_success_response,
 )
 from graph_tool_call.plan.runner import (
+    ArgsCoerced,
+    BindingRepaired,
     PlanAborted,
     PlanCompleted,
     PlanEvent,
+    PlanRepaired,
     PlanRunner,
     PlanStarted,
+    RetryPolicy,
     StepCompleted,
     StepFailed,
+    StepRetrying,
+    StepSkipped,
     StepStarted,
 )
 from graph_tool_call.plan.schema import (
@@ -77,6 +101,24 @@ __all__ = [
     "StepFailed",
     "PlanCompleted",
     "PlanAborted",
+    "StepRetrying",
+    "StepSkipped",
+    "PlanRepaired",
+    "BindingRepaired",
+    "ArgsCoerced",
+    "RetryPolicy",
+    # recovery: deps / extraction / repair
+    "compute_step_deps",
+    "is_output_consumed",
+    "PathCandidate",
+    "find_value_paths",
+    "extract_produced_entities",
+    "ValueExtractorLLM",
+    "PlanRepairer",
+    "RepairResult",
+    # coercion
+    "CoercionReport",
+    "coerce_args",
     # synthesizer
     "PathSynthesizer",
     "PlanSynthesisError",

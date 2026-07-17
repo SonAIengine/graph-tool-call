@@ -166,3 +166,93 @@ def test_synthesize_context_field_uses_collection_default():
     syn = PathSynthesizer(g, context_defaults={"locale": "ko_KR"})
     plan = syn.synthesize(target="needsLocale", entities={})
     assert plan.steps[0].args == {"locale": "ko_KR"}
+
+
+# ─── search-leaf 정책 (조회 target 은 필터를 체인하지 않음) ──
+
+
+def _search_filter_graph() -> dict:
+    """검색 target 이 required 필터를 갖고, 그 필터를 만들 수 있는 producer 도 존재.
+
+    - 'getCustomer' (read): 입력=name, 출력=customerId (semantic=customer.id)
+    - 'searchOrders' (search): 입력=customerId(required, semantic=customer.id) +
+      keyword(required). producer(getCustomer)가 customerId 를 만들 수 있지만,
+      search-leaf 정책상 조회 target 의 필터는 체인하지 않고 user_input 슬롯으로.
+    """
+    return {
+        "tools": {
+            "getCustomer": {
+                "metadata": {
+                    "method": "GET",
+                    "consumes": [{"field_name": "name", "kind": "data", "required": True}],
+                    "produces": [
+                        {
+                            "field_name": "customerId",
+                            "json_path": "$.body.customerId",
+                            "semantic_tag": "customer.id",
+                        }
+                    ],
+                    "ai_metadata": {"canonical_action": "read", "primary_resource": "customer"},
+                },
+            },
+            "searchOrders": {
+                "metadata": {
+                    "method": "GET",
+                    "consumes": [
+                        {
+                            "field_name": "customerId",
+                            "semantic_tag": "customer.id",
+                            "kind": "data",
+                            "required": True,
+                        },
+                        {"field_name": "keyword", "kind": "data", "required": True},
+                    ],
+                    "produces": [],
+                    "ai_metadata": {"canonical_action": "search", "primary_resource": "order"},
+                },
+            },
+        },
+    }
+
+
+def test_search_target_does_not_chain_producer_for_required_filter():
+    """조회(canonical_action=search) target 의 required 필터는 producer 가 있어도
+    체인하지 않고 user_input 슬롯으로 남겨 단일 step 을 유지한다.
+
+    (getGoodsList 류 검색이 12개 필터마다 producer 를 붙여 다단계 plan 으로
+    폭발하던 회귀의 근본 방지.)
+    """
+    syn = PathSynthesizer(_search_filter_graph())
+    plan = syn.synthesize(target="searchOrders", entities={})
+    assert len(plan.steps) == 1, "검색은 단일 step (producer 체인 없음)"
+    assert plan.steps[0].tool == "searchOrders"
+    assert plan.steps[0].args == {
+        "customerId": "${user_input.customerId}",
+        "keyword": "${user_input.keyword}",
+    }
+    assert all(s.tool != "getCustomer" for s in plan.steps), "producer 는 plan 에 없어야"
+
+
+def test_search_target_entity_filter_still_binds():
+    """search-leaf 정책은 entity 매칭(1)보다 뒤 — 사용자가 준 필터값은 그대로 바인딩."""
+    syn = PathSynthesizer(_search_filter_graph())
+    plan = syn.synthesize(target="searchOrders", entities={"customerId": "C123"})
+    assert len(plan.steps) == 1
+    args = plan.steps[0].args
+    assert args["customerId"] == "C123", "entity 로 준 필터는 user_input 이 아니라 실제 값"
+    assert args["keyword"] == "${user_input.keyword}"
+
+
+def test_read_target_still_chains_search_producer():
+    """search-leaf 정책은 read target 에는 적용 안 됨 — read→detail 체인은 보존.
+
+    getProductDetail(read) 은 goodsNo 를 searchProduct(search) 에서 체인하고,
+    그 producer searchProduct 의 keyword 필터는 search-leaf 로 user_input 이 된다.
+    """
+    syn = PathSynthesizer(_basic_graph())
+    plan = syn.synthesize(target="getProductDetail", entities={})
+    assert len(plan.steps) == 2, "read 는 여전히 search producer 를 체인"
+    assert plan.steps[0].tool == "searchProduct"
+    assert plan.steps[1].tool == "getProductDetail"
+    assert plan.steps[0].args == {"keyword": "${user_input.keyword}"}
+    assert "s1" in plan.steps[1].args.get("goodsNo", "")

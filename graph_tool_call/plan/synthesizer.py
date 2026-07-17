@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from graph_tool_call.plan.deps import compute_step_deps
 from graph_tool_call.plan.schema import Plan, PlanStep
 
 
@@ -183,12 +184,22 @@ class PathSynthesizer:
         target: str,
         entities: dict[str, Any] | None = None,
         goal: str = "",
+        exclude_tools: set[str] | None = None,
     ) -> Plan:
         """Build a Plan whose final step is ``target`` with required args
         filled by entities + prerequisite steps.
 
         Raises ``UnsatisfiableFieldError`` if a required field has no
         producer or entity mapping.
+
+        ``exclude_tools`` (keyword-only, default ``None``) names producer
+        candidates the synthesis must avoid — reusing the existing
+        ``_find_producer(excluded=...)`` cycle-avoidance seam. The plan
+        repairer passes the failed tool here so re-synthesis reroutes through
+        an alternative producer (or falls back to a ``${user_input.x}`` slot
+        when none remains). Excluding the ``target`` itself is a no-op — the
+        target is the entry point, not a chained producer — so the repairer
+        declines to repair a failed target upstream.
         """
         if target not in self._tools:
             raise PlanSynthesisError(f"target tool not in graph: {target!r}")
@@ -204,6 +215,7 @@ class PathSynthesizer:
             steps_by_tool=steps_by_tool,
             visiting=visiting,
             depth=0,
+            exclude_tools=exclude_tools or set(),
         )
 
         # Assign topological ids s1..sN by insertion order
@@ -246,7 +258,7 @@ class PathSynthesizer:
                         }
                     )
 
-        return Plan(
+        plan = Plan(
             id=str(uuid.uuid4()),
             goal=goal or f"Execute {target}",
             steps=final_steps,
@@ -263,6 +275,15 @@ class PathSynthesizer:
             },
         )
 
+        # Record each step's data dependencies (which earlier steps its args
+        # bind to). Additive hint only — the runner still executes linearly;
+        # recovery's safe-skip and dependency-aware UIs read it.
+        deps = compute_step_deps(plan)
+        for step in plan.steps:
+            step.depends_on = sorted(deps.get(step.id, set()))
+
+        return plan
+
     # ------------------------------------------------------------------
     # core recursion
     # ------------------------------------------------------------------
@@ -275,6 +296,7 @@ class PathSynthesizer:
         steps_by_tool: dict[str, _PartialStep],
         visiting: set[str],
         depth: int,
+        exclude_tools: set[str] = frozenset(),  # type: ignore[assignment]
     ) -> str:
         """Ensure ``tool_name`` has a PartialStep with resolved args.
 
@@ -296,6 +318,11 @@ class PathSynthesizer:
         tool = self._tools.get(tool_name) or {}
         metadata = tool.get("metadata") or {}
         consumes = metadata.get("consumes") or []
+
+        # Target's canonical_action drives the search-leaf policy below.
+        # Empty/absent (un-enriched collection) → no-op, today's behavior.
+        target_ai = metadata.get("ai_metadata") or {}
+        target_action = str(target_ai.get("canonical_action") or "").strip().lower()
 
         args: dict[str, Any] = {}
         rationales: list[str] = []
@@ -346,6 +373,27 @@ class PathSynthesizer:
                     f"selection (no producer chain attempted)"
                 )
 
+            # 4b. Search-leaf policy. A ``search`` operation is a query leaf:
+            #     every input is a filter/criterion the *user* supplies, never
+            #     a value chained in from an unrelated producer. Spawning a
+            #     producer chain for a search's required filter is exactly what
+            #     turns a "list products" lookup into a multi-hop plan. So for
+            #     ``search`` targets we surface the field as a
+            #     ``${user_input.<field>}`` slot (single step) instead of
+            #     chaining a producer. ``read`` is deliberately excluded — the
+            #     read→detail idiom (getDetail(id) ← search) is a legitimate
+            #     chain preserved by the dynamic-option branch (5a) below.
+            #     Note: entity match (1), context (2) and optional-skip (3)
+            #     already ran, so a user-supplied filter still binds and an
+            #     optional filter is already dropped — this gate only rewrites
+            #     *required* data filters on a search. Degrades to the producer
+            #     path when canonical_action is absent (un-enriched collections
+            #     keep today's behavior).
+            if target_action == "search":
+                args[field_name] = f"${{user_input.{field_name}}}"
+                rationales.append(f"{field_name} ← user_input (search filter, not chained)")
+                continue
+
             # 5. Required data field → rank candidate producers and pick the best.
             #    Pass ``visiting`` as ``excluded`` so cycle-prone candidates are
             #    skipped here (Cycle policy A). The chain reroutes around the
@@ -356,7 +404,7 @@ class PathSynthesizer:
                 field_name=field_name,
                 target_tool=tool_name,
                 entities=entities,
-                excluded=visiting,
+                excluded=visiting | exclude_tools,
             )
             if producer is None:
                 # F2 + Cycle policy B: gracefully surface the field as a
@@ -417,6 +465,7 @@ class PathSynthesizer:
                     steps_by_tool=steps_by_tool,
                     visiting=visiting,
                     depth=depth + 1,
+                    exclude_tools=exclude_tools,
                 )
             except (MaxDepthExceededError, CyclicDependencyError) as exc:
                 placeholder = f"${{user_input.{field_name}}}"

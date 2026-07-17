@@ -21,17 +21,25 @@ from graph_tool_call.graphify.ingest import (
     ingest_openapi_graphify,
     preserve_refs_for_detection,
 )
+from graph_tool_call.graphify.metadata import (
+    COLLECTION_GRAPH_VERSION,
+    annotate_graphify_metadata,
+    detect_enrichment_status,
+)
 from graph_tool_call.graphify.retrieval import (
     render_subgraph_text,
     retrieve_graphify,
 )
 
 __all__ = [
+    "COLLECTION_GRAPH_VERSION",
     "DEFAULT_CONF_AMBIGUOUS",
     "DEFAULT_CONF_EXTRACTED",
     "DEFAULT_CONF_INFERRED",
     "_apply_pair_hints",
+    "annotate_graphify_metadata",
     "bucket_confidence",
+    "detect_enrichment_status",
     "ingest_openapi_graphify",
     "preserve_refs_for_detection",
     "render_subgraph_text",
