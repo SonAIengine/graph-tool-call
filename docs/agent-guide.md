@@ -33,6 +33,21 @@ poetry run pytest tests/ -v
 poetry run pytest tests/ -q
 ```
 
+### 빠른 반복 루프
+연구/실험 중에는 전체 배포 검증 대신 아래 명령을 먼저 사용한다.
+
+```bash
+make quick
+SKIP_LINT=1 make quick
+make release-check
+make pypi-smoke
+```
+
+- `make quick`: graphify/search/plan/runner 계약 테스트만 빠르게 실행한다.
+- `SKIP_LINT=1 make quick`: 코드 탐색 중 lint를 잠시 건너뛴다.
+- `make release-check`: 릴리즈 직전 전체 lint/test/build/twine check를 실행한다.
+- `make pypi-smoke`: PyPI 배포 후 깨끗한 venv에서 public import를 검증한다.
+
 ## CI 기준
 - 워크플로우: `.github/workflows/ci.yml`
 - lint는 Poetry 환경에서 `ruff check`, `ruff format --check` 기준으로 돈다.
