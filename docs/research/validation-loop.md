@@ -61,10 +61,29 @@ poetry run python -m benchmarks.bfcl_tool_selection.failures \
   --output /tmp/gtc-bfcl-k5-hard-cases.txt
 ```
 
+그 다음 같은 report를 inspector로 읽어서 정답 tool의 현재 rank와 distractor를
+확인한다. 이 단계는 LLM을 호출하지 않으며, 알고리즘 수정 전에 실패 원인을
+개발 단위로 쪼개기 위한 것이다.
+
+```bash
+make bfcl-inspect-failures \
+  REPORT=/tmp/gtc-bfcl-full-retrieved-k5-repeats2-current-v7.json \
+  OUT=/tmp/gtc-bfcl-k5-hard-cases-inspect.json
+```
+
+생성되는 JSON은 케이스별로 아래 정보를 남긴다.
+
+- `expected[].rank`: 정답 tool이 deeper retrieval에서 발견된 순위
+- `missing_at_k`, `missing_at_depth`: top-K 또는 inspect depth에서도 빠진 정답
+- `distractors`: top-K에서 정답을 밀어낸 후보와 score breakdown
+- `issues`: `expected_present_below_top_k`, `weak_or_missing_keyword_signal`,
+  `partial_multi_tool_at_k` 같은 개선 대상 분류
+
 그 subset만 deterministic으로 먼저 본다.
 
 ```bash
 CASE_IDS_FILE=/tmp/gtc-bfcl-k5-hard-cases.txt \
+BFCL_MIN_RECALL_AT_5=0 \
 ARTIFACT_DIR=/tmp/gtc-hardcase-det \
 make research-check-deterministic
 ```
