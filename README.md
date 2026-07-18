@@ -212,6 +212,10 @@ provides concrete request or response examples, ingest derives additive
 Common response envelopes such as `code/message/data` also record wrapper,
 collection, and value-path aliases, so XGEN-style adapters can recover produced
 values from either raw OpenAPI bodies or normalized `body` wrappers.
+Retrieval indexes tool descriptions, tags, parameter names/descriptions, AI
+metadata, and curated/indexable IO fields. Promoted raw OpenAPI contract rows
+remain planning-first by default, so large Swagger specs do not flood BM25 with
+common identifier fields unless the caller explicitly opts in.
 
 ### Workflow planning
 

@@ -207,6 +207,10 @@ The promotion step adds high-value fields to `metadata.produces` /
 Promoted raw contract rows set `search_signal=False` by default so target-tool
 BM25 ranking is not flooded by identifier fields. Turn indexing on only for a
 controlled experiment or a curated collection.
+BM25 still indexes parameter descriptions and curated/indexable field metadata,
+including aliases and enum values. This lets example-derived object parameters
+such as `filters` match field-level queries like `brandNo` / "브랜드번호"
+without turning every raw contract leaf into a search token.
 
 ---
 

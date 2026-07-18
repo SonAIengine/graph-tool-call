@@ -105,6 +105,21 @@ _KO_EN_DICT: dict[str, list[str]] = {
     "후기": ["review", "feedback", "comment"],
     "평점": ["rate", "rating", "score"],
     "카테고리": ["categori", "tag", "group"],
+    # ── E-Commerce field aliases commonly found in Korean BO OpenAPI specs ──
+    "번호": ["id", "no", "number", "num"],
+    "코드": ["code", "cd"],
+    "명": ["name", "nm"],
+    "상품번호": ["good", "goods", "product", "item", "no", "id", "number"],
+    "상품명": ["good", "goods", "product", "item", "name", "nm"],
+    "브랜드": ["brand"],
+    "브랜드번호": ["brand", "no", "id", "number"],
+    "브랜드명": ["brand", "name", "nm"],
+    "고객": ["customer", "cust", "user", "member"],
+    "고객번호": ["customer", "cust", "user", "member", "no", "id", "number"],
+    "회원번호": ["member", "user", "account", "no", "id", "number"],
+    "주문번호": ["order", "ord", "purchase", "no", "id", "number"],
+    "배송번호": ["shipping", "deliver", "shipment", "no", "id", "number"],
+    "카테고리번호": ["categori", "category", "cate", "no", "id", "number"],
     # ── User / Auth ──
     "사용자": ["user", "account"],
     "회원": ["user", "member", "account"],
@@ -411,6 +426,8 @@ class BM25Scorer:
             tokens.extend(self._tokenize_fn(tag))
         for param in tool.parameters:
             tokens.extend(self._tokenize_fn(param.name))
+            if param.description:
+                tokens.extend(self._tokenize_fn(param.description))
         tokens.extend(self._extract_metadata_tokens(tool))
         # Include LLM-generated example queries for richer keyword matching
         if hasattr(tool, "metadata") and tool.metadata:
@@ -524,10 +541,26 @@ class BM25Scorer:
                     and field.get("search_signal") is False
                 ):
                     continue
-                for field_key in ("field_name", "semantic_tag", "json_path", "field_type", "kind"):
+                for field_key in (
+                    "field_name",
+                    "semantic_tag",
+                    "json_path",
+                    "field_type",
+                    "kind",
+                    "description",
+                    "example_name",
+                ):
                     value = field.get(field_key)
                     if value:
                         tokens.extend(self._tokenize_fn(str(value)))
+                for alias in field.get("value_path_aliases") or []:
+                    if alias:
+                        tokens.extend(self._tokenize_fn(str(alias)))
+                enum_values = field.get("enum")
+                if isinstance(enum_values, list):
+                    for value in enum_values[:20]:
+                        if value is not None:
+                            tokens.extend(self._tokenize_fn(str(value)))
 
         return tokens
 

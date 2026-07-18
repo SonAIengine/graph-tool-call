@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from graph_tool_call import __version__
-from graph_tool_call.core.tool import ToolSchema
+from graph_tool_call.core.tool import ToolParameter, ToolSchema
 from graph_tool_call.graphify import (
     COLLECTION_GRAPH_VERSION,
     build_io_contract,
@@ -584,6 +584,75 @@ def test_retrieve_with_scores_indexes_ai_metadata_and_io_contract_terms():
     results = tg.retrieve_with_scores("상품 상세 조회", top_k=1)
 
     assert results[0].tool.name == "opaque001"
+    assert results[0].keyword_score > 0
+
+
+def test_retrieve_with_scores_expands_korean_business_field_aliases():
+    tg = ToolGraph()
+    tg.add_tool(
+        ToolSchema(
+            name="opaqueGoodsDetail",
+            description="",
+            metadata={
+                "consumes": [
+                    {
+                        "field_name": "goodsNo",
+                        "semantic_tag": "product_id",
+                        "kind": "data",
+                    }
+                ]
+            },
+        )
+    )
+    tg.add_tool(
+        ToolSchema(
+            name="opaqueOrderDetail",
+            description="",
+            metadata={
+                "consumes": [
+                    {
+                        "field_name": "ordNo",
+                        "semantic_tag": "order_id",
+                        "kind": "data",
+                    }
+                ]
+            },
+        )
+    )
+
+    results = tg.retrieve_with_scores("상품번호로 상세 확인", top_k=1)
+
+    assert results[0].tool.name == "opaqueGoodsDetail"
+    assert results[0].keyword_score > 0
+
+
+def test_retrieve_with_scores_indexes_parameter_descriptions_for_example_fields():
+    tg = ToolGraph()
+    tg.add_tool(
+        ToolSchema(
+            name="op001",
+            description="",
+            parameters=[
+                ToolParameter(
+                    name="filters",
+                    type="object",
+                    description="Fields:\n- brandNo (string)\n- saleStatusCd (string)",
+                )
+            ],
+            metadata={"method": "post", "path": "/api/bo/goods/search"},
+        )
+    )
+    tg.add_tool(
+        ToolSchema(
+            name="op002",
+            description="상품 목록 조회",
+            parameters=[ToolParameter(name="keyword", type="string")],
+        )
+    )
+
+    results = tg.retrieve_with_scores("브랜드번호로 상품 검색", top_k=1)
+
+    assert results[0].tool.name == "op001"
     assert results[0].keyword_score > 0
 
 

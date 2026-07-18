@@ -17,6 +17,10 @@ The graphify package owns product-neutral collection graph logic.
 - Promoted raw OpenAPI contract rows default to `search_signal=False`; they are
   planning/producer signals unless the caller deliberately opts into BM25 field
   indexing.
+- BM25 indexes parameter descriptions plus curated/indexable field descriptions,
+  aliases, and enum values. Example-derived object parameters can therefore
+  match XGEN-style field queries such as `goodsNo` / "상품번호" without indexing
+  every raw OpenAPI leaf.
 - `expand_candidates_with_producers(...)` expands retrieval candidates with deterministic 1-hop producers for required `kind=data` inputs.
 - `normalize_graph_edge(...)`, `merge_graph_edges(...)`, and `derive_plan_trace_edges(...)` normalize structural, LLM-curated, manual, and run-observed signals into graph version 2 edge metadata.
 - `retrieve_graphify(..., include_evidence=True)` keeps the legacy response keys and adds score/evidence details for logs and UI.
