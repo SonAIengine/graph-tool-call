@@ -116,6 +116,9 @@ OpenAPI field direction is enforced before graph/search promotion:
   as response-only hints
 - nested object/array leaves inherit parent `readOnly`, `writeOnly`, and
   `deprecated` hints
+- `oneOf` / `anyOf` schemas are expanded across all object branches instead of
+  only the first branch; branch-local required fields are marked with
+  `required_in_branch` and do not become global request requirements
 
 `HttpExecutor` uses this metadata before falling back to method-based heuristics,
 so POST operations with query/header parameters are rendered correctly. It also

@@ -129,6 +129,56 @@ def test_build_io_contract_filters_readonly_writeonly_by_direction():
     assert next(row for row in consumes if row["field_name"] == "password")["write_only"] is True
 
 
+def test_build_io_contract_unions_oneof_branch_fields():
+    request_body_schema = {
+        "oneOf": [
+            {
+                "type": "object",
+                "required": ["paymentType", "cardNumber"],
+                "properties": {
+                    "paymentType": {"type": "string", "enum": ["card"]},
+                    "cardNumber": {"type": "string"},
+                },
+            },
+            {
+                "type": "object",
+                "required": ["paymentType", "bankCode"],
+                "properties": {
+                    "paymentType": {"type": "string", "enum": ["bank"]},
+                    "bankCode": {"type": "string"},
+                },
+            },
+        ]
+    }
+    response_schema = {
+        "anyOf": [
+            {
+                "type": "object",
+                "properties": {"paymentId": {"type": "string"}},
+            },
+            {
+                "type": "object",
+                "properties": {"approvalNo": {"type": "string"}},
+            },
+        ]
+    }
+
+    produces, consumes = build_io_contract(
+        response_schema=response_schema,
+        request_body_schema=request_body_schema,
+    )
+    by_consume = {row["field_name"]: row for row in consumes}
+    by_produce = {row["field_name"]: row for row in produces}
+
+    assert set(by_consume) == {"paymentType", "cardNumber", "bankCode"}
+    assert by_consume["paymentType"]["enum"] == ["card", "bank"]
+    assert by_consume["paymentType"]["required"] is False
+    assert by_consume["paymentType"]["required_in_branch"] is True
+    assert by_consume["paymentType"]["schema_combinator"] == "oneOf"
+    assert set(by_produce) == {"paymentId", "approvalNo"}
+    assert by_produce["approvalNo"]["schema_combinator"] == "anyOf"
+
+
 def test_promote_api_contract_signals_selects_useful_fields_without_wrapper_noise():
     search = ToolSchema(
         name="searchProducts",

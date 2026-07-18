@@ -107,6 +107,11 @@ _CONTRACT_HINT_KEYS = (
     "read_only",
     "write_only",
     "deprecated",
+    "schema_combinator",
+    "schema_branch",
+    "schema_branch_count",
+    "schema_branches",
+    "required_in_branch",
 )
 
 

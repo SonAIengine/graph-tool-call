@@ -505,8 +505,8 @@ def _missing_required_inputs(
         method in ("POST", "PUT", "PATCH")
         and isinstance(request_body, dict)
         and request_body.get("required")
-        and not body_rows
         and not has_body_argument
+        and (not body_rows or not any(bool(row.get("required")) for row in body_rows))
     ):
         add(
             {
@@ -976,6 +976,11 @@ def _copy_validation_hint(source: dict[str, Any], target: dict[str, Any]) -> Non
         "min_properties",
         "max_properties",
         "multiple_of",
+        "schema_combinator",
+        "schema_branch",
+        "schema_branch_count",
+        "schema_branches",
+        "required_in_branch",
     ):
         value = source.get(key)
         if value not in (None, "", []):

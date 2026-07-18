@@ -124,6 +124,106 @@ def test_extract_leaves_preserves_read_write_direction_hints():
     assert by_name["oldField"].deprecated is True
 
 
+def test_extract_leaves_unions_oneof_branches_without_global_required():
+    schema = {
+        "oneOf": [
+            {
+                "type": "object",
+                "required": ["paymentType", "cardNumber"],
+                "properties": {
+                    "paymentType": {"type": "string", "enum": ["card"]},
+                    "cardNumber": {"type": "string"},
+                },
+            },
+            {
+                "type": "object",
+                "required": ["paymentType", "bankCode"],
+                "properties": {
+                    "paymentType": {"type": "string", "enum": ["bank"]},
+                    "bankCode": {"type": "string"},
+                },
+            },
+        ]
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert set(by_name) == {"paymentType", "cardNumber", "bankCode"}
+    assert by_name["paymentType"].enum == ["card", "bank"]
+    assert by_name["paymentType"].required is False
+    assert by_name["paymentType"].required_in_branch is True
+    assert by_name["paymentType"].schema_combinator == "oneOf"
+    assert by_name["paymentType"].schema_branch is None
+    assert by_name["paymentType"].schema_branch_count == 2
+    assert by_name["paymentType"].schema_branches == [0, 1]
+    assert by_name["cardNumber"].required is False
+    assert by_name["cardNumber"].required_in_branch is True
+    assert by_name["cardNumber"].schema_branch == 0
+    assert by_name["bankCode"].schema_branch == 1
+
+
+def test_extract_leaves_unions_anyof_array_item_branches():
+    schema = {
+        "type": "array",
+        "items": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {"productNo": {"type": "string"}},
+                },
+                {
+                    "type": "object",
+                    "properties": {"couponNo": {"type": "string"}},
+                },
+            ]
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$.items")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert set(by_name) == {"productNo", "couponNo"}
+    assert by_name["productNo"].json_path == "$.items[*].productNo"
+    assert by_name["productNo"].schema_combinator == "anyOf"
+    assert by_name["couponNo"].schema_branch == 1
+
+
+def test_extract_leaves_preserves_oneof_nested_under_allof():
+    schema = {
+        "allOf": [
+            {
+                "type": "object",
+                "required": ["orderNo"],
+                "properties": {"orderNo": {"type": "string"}},
+            },
+            {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "required": ["cancelReason"],
+                        "properties": {"cancelReason": {"type": "string"}},
+                    },
+                    {
+                        "type": "object",
+                        "required": ["returnReason"],
+                        "properties": {"returnReason": {"type": "string"}},
+                    },
+                ]
+            },
+        ]
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert set(by_name) == {"orderNo", "cancelReason", "returnReason"}
+    assert by_name["orderNo"].required is True
+    assert by_name["cancelReason"].required is False
+    assert by_name["cancelReason"].required_in_branch is True
+    assert by_name["returnReason"].schema_branch == 1
+
+
 def test_operation_extractors_filter_inverse_direction_fields():
     operation = {
         "requestBody": {

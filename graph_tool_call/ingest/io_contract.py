@@ -52,6 +52,11 @@ class FieldLeaf:
     read_only: bool = False
     write_only: bool = False
     deprecated: bool = False
+    schema_combinator: str = ""
+    schema_branch: int | None = None
+    schema_branch_count: int | None = None
+    schema_branches: list[int] = field(default_factory=list)
+    required_in_branch: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +77,10 @@ def extract_leaves(
     _parent_read_only: bool = False,
     _parent_write_only: bool = False,
     _parent_deprecated: bool = False,
+    _schema_combinator: str = "",
+    _schema_branch: int | None = None,
+    _schema_branch_count: int | None = None,
+    _alternative_branch: bool = False,
 ) -> list[FieldLeaf]:
     """Recursively walk a JSON Schema, emitting leaf field info.
 
@@ -100,6 +109,23 @@ def extract_leaves(
     write_only = _parent_write_only or bool(schema.get("writeOnly", False))
     deprecated = _parent_deprecated or bool(schema.get("deprecated", False))
 
+    alternative_leaves = _extract_alternative_leaves(
+        schema,
+        base_path=base_path,
+        parent_required=parent_required,
+        max_depth=max_depth,
+        depth=_depth,
+        read_only=read_only,
+        write_only=write_only,
+        deprecated=deprecated,
+        schema_combinator=_schema_combinator,
+        schema_branch=_schema_branch,
+        schema_branch_count=_schema_branch_count,
+        alternative_branch=_alternative_branch,
+    )
+    if alternative_leaves is not None:
+        return alternative_leaves
+
     schema_type = _normalize_type(schema.get("type"))
 
     # Object: walk properties
@@ -112,6 +138,10 @@ def extract_leaves(
             parent_read_only=read_only,
             parent_write_only=write_only,
             parent_deprecated=deprecated,
+            schema_combinator=_schema_combinator,
+            schema_branch=_schema_branch,
+            schema_branch_count=_schema_branch_count,
+            alternative_branch=_alternative_branch,
         )
 
     # Array: walk items with [*] suffix
@@ -126,6 +156,10 @@ def extract_leaves(
             _parent_read_only=read_only,
             _parent_write_only=write_only,
             _parent_deprecated=deprecated,
+            _schema_combinator=_schema_combinator,
+            _schema_branch=_schema_branch,
+            _schema_branch_count=_schema_branch_count,
+            _alternative_branch=_alternative_branch,
         )
 
     # Primitive: emit a single leaf using the trailing path segment as name
@@ -138,7 +172,7 @@ def extract_leaves(
             json_path=base_path,
             field_name=field_name,
             field_type=schema_type or "string",
-            required=parent_required,
+            required=parent_required and not _alternative_branch,
             description=str(schema.get("description") or "")[:200],
             enum=list(schema.get("enum") or []),
             format=str(schema.get("format") or ""),
@@ -160,6 +194,11 @@ def extract_leaves(
             read_only=read_only,
             write_only=write_only,
             deprecated=deprecated,
+            schema_combinator=_schema_combinator,
+            schema_branch=_schema_branch,
+            schema_branch_count=_schema_branch_count,
+            schema_branches=[_schema_branch] if _schema_branch is not None else [],
+            required_in_branch=parent_required if _alternative_branch else False,
         )
     ]
 
@@ -173,6 +212,10 @@ def _walk_object(
     parent_read_only: bool = False,
     parent_write_only: bool = False,
     parent_deprecated: bool = False,
+    schema_combinator: str = "",
+    schema_branch: int | None = None,
+    schema_branch_count: int | None = None,
+    alternative_branch: bool = False,
 ) -> list[FieldLeaf]:
     leaves: list[FieldLeaf] = []
     properties = schema.get("properties") or {}
@@ -192,6 +235,10 @@ def _walk_object(
             _parent_read_only=parent_read_only,
             _parent_write_only=parent_write_only,
             _parent_deprecated=parent_deprecated,
+            _schema_combinator=schema_combinator,
+            _schema_branch=schema_branch,
+            _schema_branch_count=schema_branch_count,
+            _alternative_branch=alternative_branch,
         )
         if child_leaves:
             leaves.extend(child_leaves)
@@ -203,7 +250,7 @@ def _walk_object(
                     json_path=child_path,
                     field_name=prop_name,
                     field_type=_schema_type(prop_schema) or "object",
-                    required=is_required,
+                    required=is_required and not alternative_branch,
                     description=(
                         str(prop_schema.get("description") or "")[:200]
                         if isinstance(prop_schema, dict)
@@ -280,42 +327,188 @@ def _walk_object(
                         if isinstance(prop_schema, dict)
                         else False
                     ),
+                    schema_combinator=schema_combinator,
+                    schema_branch=schema_branch,
+                    schema_branch_count=schema_branch_count,
+                    schema_branches=[schema_branch] if schema_branch is not None else [],
+                    required_in_branch=is_required if alternative_branch else False,
                 )
             )
     return leaves
 
 
-def _resolve_combinators(schema: dict[str, Any]) -> dict[str, Any]:
-    """Flatten ``allOf`` / pick first ``oneOf`` / ``anyOf``.
+def _extract_alternative_leaves(
+    schema: dict[str, Any],
+    *,
+    base_path: str,
+    parent_required: bool,
+    max_depth: int,
+    depth: int,
+    read_only: bool,
+    write_only: bool,
+    deprecated: bool,
+    schema_combinator: str,
+    schema_branch: int | None,
+    schema_branch_count: int | None,
+    alternative_branch: bool,
+) -> list[FieldLeaf] | None:
+    """Return unioned leaves for ``oneOf``/``anyOf`` without globalizing branch requireds."""
+    for key in ("oneOf", "anyOf"):
+        raw_candidates = schema.get(key)
+        if not isinstance(raw_candidates, list) or not raw_candidates:
+            continue
+        candidates = [candidate for candidate in raw_candidates if isinstance(candidate, dict)]
+        if not candidates:
+            continue
 
-    v1 strategy: best-effort. Doesn't handle JSON Schema combinator semantics
-    fully — sufficient to surface field shapes for our planning use.
+        leaves: list[FieldLeaf] = []
+        base_schema = {k: v for k, v in schema.items() if k not in {"oneOf", "anyOf"}}
+        if _has_extractable_shape(base_schema, base_path=base_path):
+            leaves.extend(
+                extract_leaves(
+                    base_schema,
+                    base_path=base_path,
+                    parent_required=parent_required,
+                    max_depth=max_depth,
+                    _depth=depth,
+                    _parent_read_only=read_only,
+                    _parent_write_only=write_only,
+                    _parent_deprecated=deprecated,
+                    _schema_combinator=schema_combinator,
+                    _schema_branch=schema_branch,
+                    _schema_branch_count=schema_branch_count,
+                    _alternative_branch=alternative_branch,
+                )
+            )
+
+        branch_count = len(candidates)
+        for index, candidate_schema in enumerate(candidates):
+            leaves.extend(
+                extract_leaves(
+                    candidate_schema,
+                    base_path=base_path,
+                    parent_required=parent_required,
+                    max_depth=max_depth,
+                    _depth=depth + 1,
+                    _parent_read_only=read_only,
+                    _parent_write_only=write_only,
+                    _parent_deprecated=deprecated,
+                    _schema_combinator=key,
+                    _schema_branch=index,
+                    _schema_branch_count=branch_count,
+                    _alternative_branch=True,
+                )
+            )
+        return _merge_duplicate_leaves(leaves)
+    return None
+
+
+def _has_extractable_shape(schema: dict[str, Any], *, base_path: str) -> bool:
+    if not isinstance(schema, dict) or not schema:
+        return False
+    if isinstance(schema.get("properties"), dict) and schema["properties"]:
+        return True
+    if _normalize_type(schema.get("type")) == "array" and isinstance(schema.get("items"), dict):
+        return True
+    if base_path != "$" and (
+        _normalize_type(schema.get("type")) not in ("", "object", "array") or schema.get("enum")
+    ):
+        return True
+    return False
+
+
+def _merge_duplicate_leaves(leaves: list[FieldLeaf]) -> list[FieldLeaf]:
+    merged: list[FieldLeaf] = []
+    by_key: dict[tuple[str, str], FieldLeaf] = {}
+    for leaf in leaves:
+        key = (leaf.json_path, leaf.field_name)
+        existing = by_key.get(key)
+        if existing is None:
+            merged.append(leaf)
+            by_key[key] = leaf
+            continue
+        existing.required = existing.required or leaf.required
+        existing.required_in_branch = existing.required_in_branch or leaf.required_in_branch
+        existing.enum = _merge_list_values(existing.enum, leaf.enum)
+        existing.schema_branches = _merge_list_values(
+            existing.schema_branches,
+            leaf.schema_branches,
+        )
+        if existing.schema_branch != leaf.schema_branch:
+            existing.schema_branch = None
+        for attr in (
+            "description",
+            "format",
+            "default",
+            "example",
+            "nullable",
+            "pattern",
+            "minimum",
+            "maximum",
+            "exclusive_minimum",
+            "exclusive_maximum",
+            "min_length",
+            "max_length",
+            "min_items",
+            "max_items",
+            "min_properties",
+            "max_properties",
+            "multiple_of",
+            "read_only",
+            "write_only",
+            "deprecated",
+            "schema_combinator",
+            "schema_branch_count",
+        ):
+            existing_value = getattr(existing, attr)
+            leaf_value = getattr(leaf, attr)
+            if existing_value in (None, "", [], False) and leaf_value not in (None, "", []):
+                setattr(existing, attr, leaf_value)
+    return merged
+
+
+def _merge_list_values(left: list[Any], right: list[Any]) -> list[Any]:
+    merged = list(left or [])
+    for value in right or []:
+        if value not in merged:
+            merged.append(value)
+    return merged
+
+
+def _resolve_combinators(schema: dict[str, Any]) -> dict[str, Any]:
+    """Flatten ``allOf``.
+
+    ``oneOf`` / ``anyOf`` are handled by the walker as additive branch unions so
+    we do not lose valid request/response fields after the first branch.
     """
     if "allOf" in schema and isinstance(schema["allOf"], list):
         merged_props: dict[str, Any] = dict(schema.get("properties") or {})
         merged_required: list[str] = list(schema.get("required") or [])
+        out = {k: v for k, v in schema.items() if k != "allOf"}
         for sub in schema["allOf"]:
             if not isinstance(sub, dict):
                 continue
-            merged_props.update(sub.get("properties") or {})
-            for r in sub.get("required") or []:
+            resolved_sub = _resolve_combinators(sub)
+            merged_props.update(resolved_sub.get("properties") or {})
+            for r in resolved_sub.get("required") or []:
                 if r not in merged_required:
                     merged_required.append(r)
-        out = dict(schema)
-        out["type"] = "object"
-        out["properties"] = merged_props
-        out["required"] = merged_required
+            for key in ("oneOf", "anyOf"):
+                sub_candidates = resolved_sub.get(key)
+                if isinstance(sub_candidates, list) and sub_candidates:
+                    out.setdefault(key, [])
+                    if isinstance(out[key], list):
+                        out[key].extend(sub_candidates)
+            for key in ("readOnly", "writeOnly", "deprecated", "nullable"):
+                if resolved_sub.get(key) and key not in out:
+                    out[key] = resolved_sub[key]
+        if merged_props:
+            out["type"] = "object"
+            out["properties"] = merged_props
+        if merged_required:
+            out["required"] = merged_required
         return out
 
-    for key in ("oneOf", "anyOf"):
-        candidates = schema.get(key)
-        if isinstance(candidates, list) and candidates:
-            first = next((c for c in candidates if isinstance(c, dict)), None)
-            if first is not None:
-                # Merge the candidate as a base, parent fields override
-                base = dict(first)
-                base.update({k: v for k, v in schema.items() if k != key})
-                return base
     return schema
 
 

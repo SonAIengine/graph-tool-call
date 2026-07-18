@@ -502,6 +502,82 @@ class TestBuildRequest:
         assert req.headers["Content-type"] == "application/x-www-form-urlencoded"
         assert req.data.decode("utf-8") == "keyword=%EC%83%81%ED%92%88&page=1"
 
+    def test_oneof_request_body_builds_matching_variant_without_requiring_all_branches(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Payment API", "version": "1.0.0"},
+            "paths": {
+                "/payments": {
+                    "post": {
+                        "operationId": "createPayment",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "oneOf": [
+                                            {
+                                                "type": "object",
+                                                "required": ["paymentType", "cardNumber"],
+                                                "properties": {
+                                                    "paymentType": {
+                                                        "type": "string",
+                                                        "enum": ["card"],
+                                                    },
+                                                    "cardNumber": {"type": "string"},
+                                                },
+                                            },
+                                            {
+                                                "type": "object",
+                                                "required": ["paymentType", "bankCode"],
+                                                "properties": {
+                                                    "paymentType": {
+                                                        "type": "string",
+                                                        "enum": ["bank"],
+                                                    },
+                                                    "bankCode": {"type": "string"},
+                                                },
+                                            },
+                                        ]
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(
+            tools[0],
+            {"paymentType": "bank", "bankCode": "004"},
+        )
+        req = executor.build_request(
+            tools[0],
+            {"paymentType": "bank", "bankCode": "004"},
+        )
+        empty_diagnostics = executor.validate_request(tools[0], {})
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_required"] == []
+        assert diagnostics["invalid_arguments"] == []
+        assert json.loads(req.data.decode("utf-8")) == {
+            "paymentType": "bank",
+            "bankCode": "004",
+        }
+        assert empty_diagnostics["valid"] is False
+        assert empty_diagnostics["missing_required"] == [
+            {
+                "name": "body",
+                "location": "body",
+                "source": "request_body",
+                "content_type": "application/json",
+            }
+        ]
+
     def test_validate_request_reports_missing_required_and_unused_arguments(self):
         tool = _make_tool(
             name="updateOrder",

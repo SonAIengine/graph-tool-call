@@ -386,6 +386,147 @@ class TestIngestOpenAPI30:
         assert "password" not in produces
         assert produces["id"]["read_only"] is True
 
+    def test_oneof_request_body_exposes_all_variant_fields(self) -> None:
+        """Request body alternatives should surface every valid branch field."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Payment API", "version": "1.0.0"},
+            "paths": {
+                "/payments": {
+                    "post": {
+                        "operationId": "createPayment",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "allOf": [
+                                            {
+                                                "type": "object",
+                                                "required": ["merchantNo"],
+                                                "properties": {"merchantNo": {"type": "string"}},
+                                            },
+                                            {
+                                                "oneOf": [
+                                                    {
+                                                        "type": "object",
+                                                        "required": ["paymentType", "cardNumber"],
+                                                        "properties": {
+                                                            "paymentType": {
+                                                                "type": "string",
+                                                                "enum": ["card"],
+                                                            },
+                                                            "cardNumber": {"type": "string"},
+                                                        },
+                                                    },
+                                                    {
+                                                        "type": "object",
+                                                        "required": ["paymentType", "bankCode"],
+                                                        "properties": {
+                                                            "paymentType": {
+                                                                "type": "string",
+                                                                "enum": ["bank"],
+                                                            },
+                                                            "bankCode": {"type": "string"},
+                                                        },
+                                                    },
+                                                ]
+                                            },
+                                        ],
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        openapi = tool.metadata["openapi"]
+        params = {param.name: param for param in tool.parameters}
+        request_fields = {row["field_name"]: row for row in openapi["request_body"]["all_fields"]}
+        top_level_fields = {
+            row["field_name"]: row for row in openapi["request_body"]["all_top_level_fields"]
+        }
+        consumes = {row["field_name"]: row for row in tool.metadata["api_contract"]["consumes"]}
+
+        assert set(params) == {"merchantNo", "paymentType", "cardNumber", "bankCode"}
+        assert params["merchantNo"].required is True
+        assert params["cardNumber"].required is False
+        assert params["bankCode"].required is False
+        assert request_fields["merchantNo"]["required"] is True
+        assert request_fields["paymentType"]["enum"] == ["card", "bank"]
+        assert request_fields["paymentType"]["required"] is False
+        assert request_fields["paymentType"]["required_in_branch"] is True
+        assert request_fields["paymentType"]["schema_combinator"] == "oneOf"
+        assert request_fields["paymentType"]["schema_branches"] == [0, 1]
+        assert top_level_fields["bankCode"]["schema_branch"] == 1
+        assert consumes["merchantNo"]["required"] is True
+        assert consumes["paymentType"]["enum"] == ["card", "bank"]
+        assert consumes["cardNumber"]["required"] is False
+
+    def test_oneof_response_exposes_all_variant_fields(self) -> None:
+        """Response alternatives should contribute produces for search and graph edges."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Payment API", "version": "1.0.0"},
+            "paths": {
+                "/payments/{paymentNo}": {
+                    "get": {
+                        "operationId": "getPayment",
+                        "parameters": [
+                            {
+                                "name": "paymentNo",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "paymentNo": {"type": "string"},
+                                                        "cardApprovalNo": {"type": "string"},
+                                                    },
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "paymentNo": {"type": "string"},
+                                                        "bankTransferNo": {"type": "string"},
+                                                    },
+                                                },
+                                            ]
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        response_fields = {
+            row["field_name"]: row for row in tools[0].metadata["openapi"]["response"]["fields"]
+        }
+        produces = {row["field_name"]: row for row in tools[0].metadata["api_contract"]["produces"]}
+
+        assert set(response_fields) == {"paymentNo", "cardApprovalNo", "bankTransferNo"}
+        assert response_fields["paymentNo"]["schema_branches"] == [0, 1]
+        assert produces["bankTransferNo"]["schema_branch"] == 1
+
 
 class TestIngestOpenAPI31:
     def test_ingest_openapi31(self) -> None:

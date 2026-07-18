@@ -81,6 +81,14 @@ request field와 `readOnly` response field는 그대로 보존해 XGEN이 해당
 방향성을 설명하거나 로그에 남길 수 있게 한다. nested object/array leaf는
 부모의 `readOnly`/`writeOnly`/`deprecated` hint를 상속한다.
 
+`oneOf`/`anyOf` schema는 첫 번째 branch만 선택하지 않고 모든 object branch의
+field를 union으로 추출한다. branch 안에서만 required인 field는
+`required_in_branch=true`, `schema_combinator`, `schema_branch`,
+`schema_branches` metadata를 남기되 전역 `required=true`로 승격하지 않는다.
+`allOf` 안에 들어있는 `oneOf`/`anyOf`도 공통 field와 branch field를 모두 보존한다.
+이렇게 해야 결제수단/배송방식처럼 대안 body schema를 가진 API에서 tool graph와
+request validation이 서로 다른 branch field를 동시에 요구하지 않는다.
+
 `HttpExecutor`는 이 metadata를 사용해 query/path/header/cookie parameter의
 OpenAPI serialization 규칙(`style`, `explode`, `allowReserved`)을 반영한다.
 request body는 `application/json`, `application/x-www-form-urlencoded`,

@@ -200,6 +200,9 @@ without network I/O; see [docs/api-reference.md](docs/api-reference.md#execution
 Request contracts exclude OpenAPI `readOnly` fields and response contracts
 exclude `writeOnly` fields, keeping generated tool inputs and graph edges aligned
 with the direction in which each field can actually travel.
+OpenAPI `oneOf` / `anyOf` request and response schemas are read as a union of
+branch fields with branch evidence preserved, so graph construction and request
+validation do not silently drop every branch after the first one.
 
 ### Workflow planning
 

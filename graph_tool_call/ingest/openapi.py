@@ -154,6 +154,13 @@ _SCHEMA_HINT_KEYS: tuple[tuple[str, str], ...] = (
     ("deprecated", "deprecated"),
 )
 _ROW_HINT_KEYS = tuple(row_key for _schema_key, row_key in _SCHEMA_HINT_KEYS)
+_DERIVED_FIELD_HINT_KEYS = (
+    "schema_combinator",
+    "schema_branch",
+    "schema_branch_count",
+    "schema_branches",
+    "required_in_branch",
+)
 
 
 def _schema_type(schema: dict[str, Any]) -> str:
@@ -177,7 +184,7 @@ def _add_schema_hints(row: dict[str, Any], schema: dict[str, Any]) -> None:
 
 
 def _copy_row_hints(source: dict[str, Any], target: dict[str, Any]) -> None:
-    for key in (*_ROW_HINT_KEYS, "description"):
+    for key in (*_ROW_HINT_KEYS, *_DERIVED_FIELD_HINT_KEYS, "description"):
         value = source.get(key)
         if value not in (None, "", []):
             target[key] = copy.deepcopy(value)
@@ -432,19 +439,16 @@ def _extract_params_swagger2(
         if location == "body":
             # Expand body schema properties as individual params
             body_schema = p.get("schema", {})
-            body_required = set(body_schema.get("required", []))
-            for prop_name, prop_schema in body_schema.get("properties", {}).items():
-                if isinstance(prop_schema, dict) and prop_schema.get("readOnly"):
-                    continue
-                is_required = prop_name in body_required
-                if required_only and not is_required:
+            for row in _request_body_top_level_rows(body_schema):
+                if required_only and not row.get("required"):
                     continue
                 params.append(
                     ToolParameter(
-                        name=prop_name,
-                        type=_schema_type(prop_schema),
-                        description=prop_schema.get("description", ""),
-                        required=is_required,
+                        name=str(row["field_name"]),
+                        type=str(row.get("field_type") or "string"),
+                        description=str(row.get("description") or ""),
+                        required=bool(row.get("required")),
+                        enum=row.get("enum") if isinstance(row.get("enum"), list) else None,
                     )
                 )
         else:
@@ -638,28 +642,23 @@ def _extract_params_openapi3(
     content = request_body.get("content", {})
     seen_body_props: set[str] = set()
     for _content_type, body_schema in _iter_request_body_schemas(content):
-        body_required = set(body_schema.get("required", []))
-        for prop_name, prop_schema in body_schema.get("properties", {}).items():
-            if isinstance(prop_schema, dict) and prop_schema.get("readOnly"):
+        for row in _request_body_top_level_rows(body_schema):
+            prop_name = str(row.get("field_name") or "")
+            if not prop_name:
                 continue
             if prop_name in seen_body_props:
                 continue
             seen_body_props.add(prop_name)
-            is_required = prop_name in body_required
+            is_required = bool(row.get("required"))
             if required_only and not is_required:
                 continue
-            desc = prop_schema.get("description") or ""
-            # nested object/array는 한 단계 더 펼치기
-            if _schema_type(prop_schema) in ("object", "array"):
-                nested = _summarize_object_schema(prop_schema)
-                if nested:
-                    desc = (desc + "\nFields:\n" + nested).strip() if desc else f"Fields:\n{nested}"
             params.append(
                 ToolParameter(
                     name=prop_name,
-                    type=_schema_type(prop_schema),
-                    description=desc,
+                    type=str(row.get("field_type") or "string"),
+                    description=str(row.get("description") or ""),
                     required=is_required,
+                    enum=row.get("enum") if isinstance(row.get("enum"), list) else None,
                 )
             )
 
@@ -995,6 +994,10 @@ def _schema_field_rows(
 def _request_body_top_level_rows(schema: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(schema, dict) or not schema:
         return []
+    schema = _flatten_top_level_allof(schema)
+    alternative_rows = _alternative_top_level_rows(schema)
+    if alternative_rows is not None:
+        return alternative_rows
     properties = schema.get("properties") or {}
     if not isinstance(properties, dict):
         return []
@@ -1013,6 +1016,10 @@ def _request_body_top_level_rows(schema: dict[str, Any]) -> list[dict[str, Any]]
         }
         _add_schema_hints(row, prop)
         desc = str(prop.get("description") or "").strip()
+        if _schema_type(prop) in ("object", "array"):
+            nested = _summarize_object_schema(prop)
+            if nested:
+                desc = (desc + "\nFields:\n" + nested).strip() if desc else f"Fields:\n{nested}"
         if desc:
             row["description"] = desc[:300]
         enum = prop.get("enum")
@@ -1020,6 +1027,112 @@ def _request_body_top_level_rows(schema: dict[str, Any]) -> list[dict[str, Any]]
             row["enum"] = list(enum)
         rows.append(row)
     return rows
+
+
+def _flatten_top_level_allof(schema: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(schema.get("allOf"), list):
+        return schema
+    out = {k: v for k, v in schema.items() if k != "allOf"}
+    merged_props: dict[str, Any] = dict(schema.get("properties") or {})
+    merged_required: list[Any] = list(schema.get("required") or [])
+    for sub in schema.get("allOf") or []:
+        if not isinstance(sub, dict):
+            continue
+        sub = _flatten_top_level_allof(sub)
+        merged_props.update(sub.get("properties") or {})
+        for required_name in sub.get("required") or []:
+            if required_name not in merged_required:
+                merged_required.append(required_name)
+        for key in ("oneOf", "anyOf"):
+            candidates = sub.get(key)
+            if isinstance(candidates, list) and candidates:
+                out.setdefault(key, [])
+                if isinstance(out[key], list):
+                    out[key].extend(candidates)
+        for key in ("readOnly", "writeOnly", "deprecated", "nullable"):
+            if sub.get(key) and key not in out:
+                out[key] = sub[key]
+    if merged_props:
+        out["type"] = "object"
+        out["properties"] = merged_props
+    if merged_required:
+        out["required"] = merged_required
+    return out
+
+
+def _alternative_top_level_rows(schema: dict[str, Any]) -> list[dict[str, Any]] | None:
+    for key in ("oneOf", "anyOf"):
+        raw_candidates = schema.get(key)
+        if not isinstance(raw_candidates, list) or not raw_candidates:
+            continue
+        candidates = [candidate for candidate in raw_candidates if isinstance(candidate, dict)]
+        if not candidates:
+            continue
+
+        rows: list[dict[str, Any]] = []
+        base_schema = {k: v for k, v in schema.items() if k not in {"oneOf", "anyOf"}}
+        if isinstance(base_schema.get("properties"), dict) and base_schema["properties"]:
+            rows.extend(_request_body_top_level_rows(base_schema))
+
+        branch_count = len(candidates)
+        for index, candidate_schema in enumerate(candidates):
+            for row in _request_body_top_level_rows(candidate_schema):
+                row = dict(row)
+                if row.get("required"):
+                    row["required_in_branch"] = True
+                row["required"] = False
+                row["schema_combinator"] = key
+                row["schema_branch"] = index
+                row["schema_branch_count"] = branch_count
+                row["schema_branches"] = [index]
+                rows.append(row)
+        return _merge_top_level_rows(rows)
+    return None
+
+
+def _merge_top_level_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    by_name: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        name = str(row.get("field_name") or "")
+        if not name:
+            continue
+        existing = by_name.get(name)
+        if existing is None:
+            merged.append(row)
+            by_name[name] = row
+            continue
+        existing["required"] = bool(existing.get("required")) or bool(row.get("required"))
+        if row.get("required_in_branch"):
+            existing["required_in_branch"] = True
+        if row.get("enum"):
+            existing["enum"] = _merge_list_values(existing.get("enum") or [], row.get("enum") or [])
+        if row.get("schema_branches"):
+            existing["schema_branches"] = _merge_list_values(
+                existing.get("schema_branches") or [],
+                row.get("schema_branches") or [],
+            )
+            existing.pop("schema_branch", None)
+        for key in (
+            *_ROW_HINT_KEYS,
+            "schema_combinator",
+            "schema_branch_count",
+            "required_in_branch",
+            "description",
+            "field_type",
+        ):
+            value = row.get(key)
+            if existing.get(key) in (None, "", [], False) and value not in (None, "", []):
+                existing[key] = copy.deepcopy(value)
+    return merged
+
+
+def _merge_list_values(left: list[Any], right: list[Any]) -> list[Any]:
+    merged = list(left or [])
+    for value in right or []:
+        if value not in merged:
+            merged.append(value)
+    return merged
 
 
 def _leaf_row(leaf: FieldLeaf, *, location: str) -> dict[str, Any]:
@@ -1054,6 +1167,11 @@ def _leaf_row(leaf: FieldLeaf, *, location: str) -> dict[str, Any]:
         ("read_only", "read_only"),
         ("write_only", "write_only"),
         ("deprecated", "deprecated"),
+        ("schema_combinator", "schema_combinator"),
+        ("schema_branch", "schema_branch"),
+        ("schema_branch_count", "schema_branch_count"),
+        ("schema_branches", "schema_branches"),
+        ("required_in_branch", "required_in_branch"),
     ):
         value = getattr(leaf, source_key)
         if value not in (None, "", []):
