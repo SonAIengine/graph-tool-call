@@ -101,6 +101,34 @@ def test_build_io_contract_preserves_kind_required_enum_and_semantics():
     assert by_consume["Authorization"]["required"] is False
 
 
+def test_build_io_contract_filters_readonly_writeonly_by_direction():
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "readOnly": True},
+            "password": {"type": "string", "writeOnly": True},
+        },
+    }
+    request_body_schema = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "readOnly": True},
+            "email": {"type": "string"},
+            "password": {"type": "string", "writeOnly": True},
+        },
+    }
+
+    produces, consumes = build_io_contract(
+        response_schema=response_schema,
+        request_body_schema=request_body_schema,
+    )
+
+    assert {row["field_name"] for row in produces} == {"id"}
+    assert {row["field_name"] for row in consumes} == {"email", "password"}
+    assert produces[0]["read_only"] is True
+    assert next(row for row in consumes if row["field_name"] == "password")["write_only"] is True
+
+
 def test_promote_api_contract_signals_selects_useful_fields_without_wrapper_noise():
     search = ToolSchema(
         name="searchProducts",
@@ -190,6 +218,58 @@ def test_promote_api_contract_signals_selects_useful_fields_without_wrapper_nois
     assert consumes["giftMessage"]["required"] is True
     assert stats["produces_added"] == 1
     assert stats["consumes_added"] == 5
+
+
+def test_promote_api_contract_signals_skips_inverse_direction_fields():
+    search = ToolSchema(
+        name="searchUsers",
+        metadata={
+            "api_contract": {
+                "produces": [
+                    {
+                        "field_name": "userId",
+                        "json_path": "$.items[*].userId",
+                        "field_type": "string",
+                    },
+                    {
+                        "field_name": "password",
+                        "json_path": "$.items[*].password",
+                        "field_type": "string",
+                        "write_only": True,
+                    },
+                ],
+                "consumes": [],
+            }
+        },
+    )
+    create = ToolSchema(
+        name="createUser",
+        metadata={
+            "api_contract": {
+                "produces": [],
+                "consumes": [
+                    {
+                        "field_name": "userId",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "body",
+                        "read_only": True,
+                    },
+                    {
+                        "field_name": "email",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "body",
+                    },
+                ],
+            }
+        },
+    )
+
+    promote_api_contract_signals([search, create], promote_rare_produces=True)
+
+    assert {row["field_name"] for row in search.metadata["produces"]} == {"userId"}
+    assert {row["field_name"] for row in create.metadata["consumes"]} == {"email"}
 
 
 def test_ingest_openapi_graphify_can_promote_contracts_into_data_flow_edges():

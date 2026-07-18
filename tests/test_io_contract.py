@@ -91,6 +91,82 @@ def test_extract_leaves_preserves_schema_hints():
     assert by_name["quantity"].maximum == 99
 
 
+def test_extract_leaves_preserves_read_write_direction_hints():
+    schema = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "readOnly": True},
+            "password": {"type": "string", "writeOnly": True},
+            "profile": {
+                "type": "object",
+                "readOnly": True,
+                "properties": {"displayName": {"type": "string"}},
+            },
+            "auditEvents": {
+                "type": "array",
+                "writeOnly": True,
+                "items": {
+                    "type": "object",
+                    "properties": {"reason": {"type": "string"}},
+                },
+            },
+            "oldField": {"type": "string", "deprecated": True},
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert by_name["id"].read_only is True
+    assert by_name["password"].write_only is True
+    assert by_name["displayName"].read_only is True
+    assert by_name["reason"].write_only is True
+    assert by_name["oldField"].deprecated is True
+
+
+def test_operation_extractors_filter_inverse_direction_fields():
+    operation = {
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["id", "password"],
+                        "properties": {
+                            "id": {"type": "string", "readOnly": True},
+                            "password": {"type": "string", "writeOnly": True},
+                        },
+                    }
+                }
+            }
+        },
+        "responses": {
+            "200": {
+                "description": "OK",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "readOnly": True},
+                                "password": {"type": "string", "writeOnly": True},
+                            },
+                        }
+                    }
+                },
+            }
+        },
+    }
+
+    consumes = {leaf.field_name: leaf for leaf in extract_consumes_for_operation(operation)}
+    produces = {leaf.field_name: leaf for leaf in extract_produces_for_operation(operation)}
+
+    assert "id" not in consumes
+    assert consumes["password"].write_only is True
+    assert produces["id"].read_only is True
+    assert "password" not in produces
+
+
 # ─── consumes — enum 추출 회귀 (리뷰 🟢 항목) ──
 
 

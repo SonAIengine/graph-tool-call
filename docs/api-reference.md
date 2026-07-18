@@ -108,6 +108,15 @@ tool's metadata:
   metadata, without runtime credentials
 - `metadata.api_contract`: raw extracted produces/consumes rows for graph building
 
+OpenAPI field direction is enforced before graph/search promotion:
+
+- request-body consumes exclude `readOnly` fields and preserve `writeOnly`
+  fields as request-only hints
+- response produces exclude `writeOnly` fields and preserve `readOnly` fields
+  as response-only hints
+- nested object/array leaves inherit parent `readOnly`, `writeOnly`, and
+  `deprecated` hints
+
 `HttpExecutor` uses this metadata before falling back to method-based heuristics,
 so POST operations with query/header parameters are rendered correctly. It also
 honors common OpenAPI parameter serialization rules such as `form`,

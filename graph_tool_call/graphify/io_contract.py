@@ -149,6 +149,7 @@ def build_io_contract(
         required: bool = False,
         enum: list[Any] | None = None,
         location: str = "",
+        hints: dict[str, Any] | None = None,
     ) -> None:
         if not name:
             return
@@ -162,6 +163,7 @@ def build_io_contract(
                         existing["enum"] = list(enum)
                     if location and not existing.get("location"):
                         existing["location"] = location
+                    _copy_contract_hints(hints or {}, existing)
                     break
             return
         seen.add(name)
@@ -174,10 +176,13 @@ def build_io_contract(
             row["enum"] = list(enum)
         if location:
             row["location"] = location
+        _copy_contract_hints(hints or {}, row)
         consumes.append(row)
 
     for p in api_body_params or []:
         if not isinstance(p, dict):
+            continue
+        if p.get("read_only"):
             continue
         name = str(p.get("name") or "").strip()
         _add_consume(
@@ -190,6 +195,8 @@ def build_io_contract(
 
     if isinstance(request_body_schema, dict) and request_body_schema:
         for leaf in extract_leaves(request_body_schema, base_path="$"):
+            if leaf.read_only:
+                continue
             if leaf.field_type in ("object", "array"):
                 continue
             _add_consume(
@@ -198,6 +205,7 @@ def build_io_contract(
                 required=leaf.required,
                 enum=leaf.enum,
                 location="body",
+                hints=_leaf_hints(leaf),
             )
 
     for p in parameters or []:
@@ -408,6 +416,8 @@ def _build_produces(response_schema: dict[str, Any] | None) -> list[dict[str, An
     if not isinstance(response_schema, dict) or not response_schema:
         return produces
     for leaf in extract_leaves(response_schema, base_path="$"):
+        if leaf.write_only:
+            continue
         row: dict[str, Any] = {
             "json_path": leaf.json_path,
             "field_name": leaf.field_name,
@@ -429,6 +439,8 @@ def _request_body_maps(
     if not isinstance(request_body_schema, dict) or not request_body_schema:
         return required, types, enums
     for leaf in extract_leaves(request_body_schema, base_path="$"):
+        if leaf.read_only:
+            continue
         if leaf.field_type in ("object", "array"):
             continue
         required[leaf.field_name] = bool(leaf.required)
@@ -546,6 +558,8 @@ def _promote_produce_row(
     field_name = str(row.get("field_name") or "").strip()
     if not field_name:
         return None
+    if row.get("write_only"):
+        return None
     field_key = _canonical_field_key(field_name)
     if field_key in _GENERIC_PRODUCE_FIELDS:
         return None
@@ -580,6 +594,8 @@ def _promote_consume_row(
         return None
     field_name = str(row.get("field_name") or "").strip()
     if not field_name:
+        return None
+    if row.get("read_only"):
         return None
 
     location = str(row.get("location") or row.get("in") or "").strip().lower()
@@ -639,6 +655,19 @@ def _copy_leaf_hints(leaf: Any, row: dict[str, Any]) -> None:
         value = getattr(leaf, key, None)
         if value not in (None, "", []):
             row[key] = value
+
+
+def _leaf_hints(leaf: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {}
+    _copy_leaf_hints(leaf, row)
+    return row
+
+
+def _copy_contract_hints(source: dict[str, Any], target: dict[str, Any]) -> None:
+    for key in _CONTRACT_HINT_KEYS:
+        value = source.get(key)
+        if value not in (None, "", []):
+            target[key] = value
 
 
 def _consume_kind(field_name: str, *, location: str, policy: _Policy) -> str:

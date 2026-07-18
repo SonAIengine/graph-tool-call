@@ -302,6 +302,90 @@ class TestIngestOpenAPI30:
             for row in metadata["api_contract"]["consumes"]
         )
 
+    def test_readonly_writeonly_fields_respect_request_response_direction(self) -> None:
+        """Direction-only OpenAPI fields should not pollute inverse IO contracts."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Users API", "version": "1.0.0"},
+            "paths": {
+                "/users": {
+                    "post": {
+                        "operationId": "createUser",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["email", "password", "id"],
+                                        "properties": {
+                                            "id": {"type": "string", "readOnly": True},
+                                            "email": {"type": "string"},
+                                            "password": {"type": "string", "writeOnly": True},
+                                            "profile": {
+                                                "type": "object",
+                                                "readOnly": True,
+                                                "properties": {"displayName": {"type": "string"}},
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {"type": "string", "readOnly": True},
+                                                "email": {"type": "string"},
+                                                "password": {
+                                                    "type": "string",
+                                                    "writeOnly": True,
+                                                },
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        openapi = tool.metadata["openapi"]
+        request_fields = {row["field_name"]: row for row in openapi["request_body"]["all_fields"]}
+        top_level_fields = {
+            row["field_name"]: row
+            for row in openapi["request_body"]["content_types"][0]["top_level_fields"]
+        }
+        response_fields = {row["field_name"]: row for row in openapi["response"]["fields"]}
+        consumes = {row["field_name"]: row for row in tool.metadata["api_contract"]["consumes"]}
+        produces = {row["field_name"]: row for row in tool.metadata["api_contract"]["produces"]}
+
+        assert {param.name for param in tool.parameters} >= {"email", "password"}
+        assert "id" not in {param.name for param in tool.parameters}
+        assert "profile" not in {param.name for param in tool.parameters}
+        assert "id" not in request_fields
+        assert "id" not in top_level_fields
+        assert "profile" not in top_level_fields
+        assert top_level_fields["password"]["write_only"] is True
+        assert "displayName" not in request_fields
+        assert request_fields["password"]["write_only"] is True
+        assert "password" not in response_fields
+        assert response_fields["id"]["read_only"] is True
+        assert "id" not in consumes
+        assert "displayName" not in consumes
+        assert consumes["password"]["write_only"] is True
+        assert "password" not in produces
+        assert produces["id"]["read_only"] is True
+
 
 class TestIngestOpenAPI31:
     def test_ingest_openapi31(self) -> None:

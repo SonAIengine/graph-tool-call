@@ -14,7 +14,7 @@ runs ``_resolve_refs`` from ``graph_tool_call.ingest.openapi``).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 
@@ -44,6 +44,14 @@ class FieldLeaf:
     max_length: int | None = None
     min_items: int | None = None
     max_items: int | None = None
+    min_properties: int | None = None
+    max_properties: int | None = None
+    multiple_of: Any = None
+    exclusive_minimum: Any = None
+    exclusive_maximum: Any = None
+    read_only: bool = False
+    write_only: bool = False
+    deprecated: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +69,9 @@ def extract_leaves(
     parent_required: bool = False,
     max_depth: int = _DEFAULT_MAX_DEPTH,
     _depth: int = 0,
+    _parent_read_only: bool = False,
+    _parent_write_only: bool = False,
+    _parent_deprecated: bool = False,
 ) -> list[FieldLeaf]:
     """Recursively walk a JSON Schema, emitting leaf field info.
 
@@ -85,12 +96,23 @@ def extract_leaves(
         return []
 
     schema = _resolve_combinators(schema)
+    read_only = _parent_read_only or bool(schema.get("readOnly", False))
+    write_only = _parent_write_only or bool(schema.get("writeOnly", False))
+    deprecated = _parent_deprecated or bool(schema.get("deprecated", False))
 
     schema_type = _normalize_type(schema.get("type"))
 
     # Object: walk properties
     if schema_type == "object" or "properties" in schema:
-        return _walk_object(schema, base_path, max_depth, _depth)
+        return _walk_object(
+            schema,
+            base_path,
+            max_depth,
+            _depth,
+            parent_read_only=read_only,
+            parent_write_only=write_only,
+            parent_deprecated=deprecated,
+        )
 
     # Array: walk items with [*] suffix
     if schema_type == "array":
@@ -101,6 +123,9 @@ def extract_leaves(
             parent_required=parent_required,
             max_depth=max_depth,
             _depth=_depth + 1,
+            _parent_read_only=read_only,
+            _parent_write_only=write_only,
+            _parent_deprecated=deprecated,
         )
 
     # Primitive: emit a single leaf using the trailing path segment as name
@@ -123,10 +148,18 @@ def extract_leaves(
             pattern=str(schema.get("pattern") or ""),
             minimum=schema.get("minimum"),
             maximum=schema.get("maximum"),
+            exclusive_minimum=schema.get("exclusiveMinimum"),
+            exclusive_maximum=schema.get("exclusiveMaximum"),
             min_length=schema.get("minLength"),
             max_length=schema.get("maxLength"),
             min_items=schema.get("minItems"),
             max_items=schema.get("maxItems"),
+            min_properties=schema.get("minProperties"),
+            max_properties=schema.get("maxProperties"),
+            multiple_of=schema.get("multipleOf"),
+            read_only=read_only,
+            write_only=write_only,
+            deprecated=deprecated,
         )
     ]
 
@@ -136,6 +169,10 @@ def _walk_object(
     base_path: str,
     max_depth: int,
     depth: int,
+    *,
+    parent_read_only: bool = False,
+    parent_write_only: bool = False,
+    parent_deprecated: bool = False,
 ) -> list[FieldLeaf]:
     leaves: list[FieldLeaf] = []
     properties = schema.get("properties") or {}
@@ -152,6 +189,9 @@ def _walk_object(
             parent_required=is_required,
             max_depth=max_depth,
             _depth=depth + 1,
+            _parent_read_only=parent_read_only,
+            _parent_write_only=parent_write_only,
+            _parent_deprecated=parent_deprecated,
         )
         if child_leaves:
             leaves.extend(child_leaves)
@@ -191,6 +231,16 @@ def _walk_object(
                     ),
                     minimum=prop_schema.get("minimum") if isinstance(prop_schema, dict) else None,
                     maximum=prop_schema.get("maximum") if isinstance(prop_schema, dict) else None,
+                    exclusive_minimum=(
+                        prop_schema.get("exclusiveMinimum")
+                        if isinstance(prop_schema, dict)
+                        else None
+                    ),
+                    exclusive_maximum=(
+                        prop_schema.get("exclusiveMaximum")
+                        if isinstance(prop_schema, dict)
+                        else None
+                    ),
                     min_length=(
                         prop_schema.get("minLength") if isinstance(prop_schema, dict) else None
                     ),
@@ -202,6 +252,33 @@ def _walk_object(
                     ),
                     max_items=(
                         prop_schema.get("maxItems") if isinstance(prop_schema, dict) else None
+                    ),
+                    min_properties=(
+                        prop_schema.get("minProperties") if isinstance(prop_schema, dict) else None
+                    ),
+                    max_properties=(
+                        prop_schema.get("maxProperties") if isinstance(prop_schema, dict) else None
+                    ),
+                    multiple_of=(
+                        prop_schema.get("multipleOf") if isinstance(prop_schema, dict) else None
+                    ),
+                    read_only=parent_read_only
+                    or (
+                        bool(prop_schema.get("readOnly", False))
+                        if isinstance(prop_schema, dict)
+                        else False
+                    ),
+                    write_only=parent_write_only
+                    or (
+                        bool(prop_schema.get("writeOnly", False))
+                        if isinstance(prop_schema, dict)
+                        else False
+                    ),
+                    deprecated=parent_deprecated
+                    or (
+                        bool(prop_schema.get("deprecated", False))
+                        if isinstance(prop_schema, dict)
+                        else False
                     ),
                 )
             )
@@ -279,7 +356,7 @@ def extract_produces_for_operation(
     response_schema = _pick_response_schema(operation, is_swagger2=is_swagger2)
     if not response_schema:
         return []
-    return extract_leaves(response_schema, base_path="$")
+    return [leaf for leaf in extract_leaves(response_schema, base_path="$") if not leaf.write_only]
 
 
 def extract_consumes_for_operation(
@@ -338,21 +415,14 @@ def extract_consumes_for_operation(
     body_schema = _pick_request_body_schema(operation, is_swagger2=is_swagger2)
     if body_schema:
         for leaf in extract_leaves(body_schema, base_path="$"):
+            if leaf.read_only:
+                continue
             if required_only and not leaf.required:
                 continue
             if leaf.field_name in seen_names:
                 continue
             seen_names.add(leaf.field_name)
-            leaves.append(
-                FieldLeaf(
-                    json_path=leaf.field_name,  # flat for consumes
-                    field_name=leaf.field_name,
-                    field_type=leaf.field_type,
-                    required=leaf.required,
-                    description=leaf.description,
-                    enum=leaf.enum,
-                )
-            )
+            leaves.append(replace(leaf, json_path=leaf.field_name))  # flat for consumes
 
     return leaves
 

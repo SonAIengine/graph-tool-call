@@ -73,6 +73,14 @@ metadata["response_schema"] = {
 | `error_responses` | non-2xx response만 모은 실패 처리용 catalog |
 | `security` | OpenAPI security requirements와 static scheme 정보. runtime token/cookie 값은 보존하지 않음 |
 
+OpenAPI `readOnly`/`writeOnly` 방향성도 contract 추출 전에 반영한다.
+request body의 `readOnly` field는 tool parameter, `request_body.fields`,
+`api_contract.consumes`에서 제외하고, response의 `writeOnly` field는
+`response.fields`, `api_contract.produces`에서 제외한다. 반대로 `writeOnly`
+request field와 `readOnly` response field는 그대로 보존해 XGEN이 해당 값의
+방향성을 설명하거나 로그에 남길 수 있게 한다. nested object/array leaf는
+부모의 `readOnly`/`writeOnly`/`deprecated` hint를 상속한다.
+
 `HttpExecutor`는 이 metadata를 사용해 query/path/header/cookie parameter의
 OpenAPI serialization 규칙(`style`, `explode`, `allowReserved`)을 반영한다.
 request body는 `application/json`, `application/x-www-form-urlencoded`,

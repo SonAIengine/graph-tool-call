@@ -268,14 +268,16 @@ def _content_type_rows(
         }
         if schema:
             row["schema_type"] = _schema_type(schema)
-            row["field_count"] = len(extract_leaves(schema, base_path="$"))
             if location == "request_body":
                 top_level_fields = _request_body_top_level_rows(schema)
                 fields = _schema_field_rows(schema, location="body")
+                row["field_count"] = len(fields)
                 if top_level_fields:
                     row["top_level_fields"] = top_level_fields
                 if fields:
                     row["fields"] = fields
+            else:
+                row["field_count"] = len(_schema_field_rows(schema, location=location))
         encoding = media.get("encoding")
         if isinstance(encoding, dict) and encoding:
             row["encoding"] = _encoding_rows(encoding)
@@ -432,6 +434,8 @@ def _extract_params_swagger2(
             body_schema = p.get("schema", {})
             body_required = set(body_schema.get("required", []))
             for prop_name, prop_schema in body_schema.get("properties", {}).items():
+                if isinstance(prop_schema, dict) and prop_schema.get("readOnly"):
+                    continue
                 is_required = prop_name in body_required
                 if required_only and not is_required:
                     continue
@@ -636,6 +640,8 @@ def _extract_params_openapi3(
     for _content_type, body_schema in _iter_request_body_schemas(content):
         body_required = set(body_schema.get("required", []))
         for prop_name, prop_schema in body_schema.get("properties", {}).items():
+            if isinstance(prop_schema, dict) and prop_schema.get("readOnly"):
+                continue
             if prop_name in seen_body_props:
                 continue
             seen_body_props.add(prop_name)
@@ -978,6 +984,10 @@ def _schema_field_rows(
     if not isinstance(schema, dict) or not schema:
         return rows
     for leaf in extract_leaves(schema, base_path="$"):
+        if location in {"body", "request_body"} and leaf.read_only:
+            continue
+        if location == "response" and leaf.write_only:
+            continue
         rows.append(_leaf_row(leaf, location=location))
     return rows
 
@@ -992,6 +1002,8 @@ def _request_body_top_level_rows(schema: dict[str, Any]) -> list[dict[str, Any]]
     rows: list[dict[str, Any]] = []
     for name, prop in properties.items():
         prop = prop if isinstance(prop, dict) else {}
+        if prop.get("readOnly"):
+            continue
         row: dict[str, Any] = {
             "field_name": str(name),
             "json_path": f"$.{name}",
@@ -1030,10 +1042,18 @@ def _leaf_row(leaf: FieldLeaf, *, location: str) -> dict[str, Any]:
         ("pattern", "pattern"),
         ("minimum", "minimum"),
         ("maximum", "maximum"),
+        ("exclusive_minimum", "exclusive_minimum"),
+        ("exclusive_maximum", "exclusive_maximum"),
         ("min_length", "min_length"),
         ("max_length", "max_length"),
         ("min_items", "min_items"),
         ("max_items", "max_items"),
+        ("min_properties", "min_properties"),
+        ("max_properties", "max_properties"),
+        ("multiple_of", "multiple_of"),
+        ("read_only", "read_only"),
+        ("write_only", "write_only"),
+        ("deprecated", "deprecated"),
     ):
         value = getattr(leaf, source_key)
         if value not in (None, "", []):

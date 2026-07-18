@@ -197,6 +197,9 @@ request bodies, and returns matched response metadata for success/error
 diagnostics. `HttpExecutor.validate_request()` provides missing-required,
 missing-security, invalid-argument, and unused-argument preflight diagnostics
 without network I/O; see [docs/api-reference.md](docs/api-reference.md#execution).
+Request contracts exclude OpenAPI `readOnly` fields and response contracts
+exclude `writeOnly` fields, keeping generated tool inputs and graph edges aligned
+with the direction in which each field can actually travel.
 
 ### Workflow planning
 
