@@ -57,6 +57,15 @@ class SpecProfile:
 
 
 @dataclass
+class PreparedScaleGraph:
+    loaded_specs: list[LoadedSpec]
+    profiles: list[SpecProfile]
+    graph: ToolGraph
+    ingest_summary: dict[str, Any]
+    build_seconds: float
+
+
+@dataclass
 class SearchEvaluation:
     case_id: str
     query: str
@@ -64,6 +73,12 @@ class SearchEvaluation:
     expected_any: list[str]
     retrieved: list[str]
     expected_ranks: dict[str, int | None]
+    primary_expected_rank: int | None
+    best_expected_rank: int | None
+    required_expected_found_at_k: bool
+    any_expected_found_at_k: bool
+    top_1_hit: float
+    top_3_hit: float
     hit_at_k: float
     expected_tool_recall_at_k: float
     mrr: float
@@ -87,34 +102,28 @@ def run_benchmark(
     allow_private_hosts: bool = False,
 ) -> dict[str, Any]:
     """Run the scale acceptance benchmark and return a JSON-serializable report."""
-    started = time.perf_counter()
-    loaded_specs = load_specs(
+    prepared = prepare_scale_graph(
         swagger_url=swagger_url,
         spec_sources=spec_sources,
         max_response_bytes=max_response_bytes,
         allow_private_hosts=allow_private_hosts,
-    )
-    profiles = [profile_spec(loaded) for loaded in loaded_specs]
-    tg, ingest_summary = build_scale_graph(
-        loaded_specs,
         detect_dependencies=detect_dependencies,
         min_confidence=min_confidence,
     )
-    build_seconds = round(time.perf_counter() - started, 3)
 
     cases_doc = load_cases(cases_path)
     selected_top_k = int(top_k or cases_doc.get("top_k") or 10)
     cases = [
-        evaluate_search_case(case, tg=tg, top_k=selected_top_k)
+        evaluate_search_case(case, tg=prepared.graph, top_k=selected_top_k)
         for case in cases_doc.get("cases", [])
     ]
     search_summary = summarize_search(cases, thresholds=cases_doc.get("thresholds") or {})
     scale_summary = summarize_scale(
-        profiles,
-        loaded_specs=loaded_specs,
-        ingest_summary=ingest_summary,
-        graph=tg,
-        build_seconds=build_seconds,
+        prepared.profiles,
+        loaded_specs=prepared.loaded_specs,
+        ingest_summary=prepared.ingest_summary,
+        graph=prepared.graph,
+        build_seconds=prepared.build_seconds,
         min_spec_count=min_spec_count,
         min_unique_tools=min_unique_tools,
         max_build_seconds=max_build_seconds,
@@ -136,9 +145,132 @@ def run_benchmark(
         "status": status,
         "scale": scale_summary,
         "search": search_summary,
-        "specs": [asdict(profile) for profile in profiles],
+        "specs": [asdict(profile) for profile in prepared.profiles],
         "cases": [asdict(case) for case in cases],
     }
+
+
+def run_top_k_sweep(
+    *,
+    swagger_url: str = DEFAULT_X2BEE_SWAGGER_URL,
+    spec_sources: list[str | dict[str, Any]] | None = None,
+    cases_path: Path | None = DEFAULT_X2BEE_CASES_PATH,
+    top_ks: list[int] | None = None,
+    acceptance_top_k: int | None = None,
+    detect_dependencies: bool = True,
+    min_confidence: float = 0.7,
+    min_spec_count: int = 1,
+    min_unique_tools: int = 1000,
+    max_build_seconds: float = 30.0,
+    max_response_bytes: int = 5_000_000,
+    allow_private_hosts: bool = False,
+) -> dict[str, Any]:
+    """Run one large graph build and compare multiple retrieval top-K settings."""
+    prepared = prepare_scale_graph(
+        swagger_url=swagger_url,
+        spec_sources=spec_sources,
+        max_response_bytes=max_response_bytes,
+        allow_private_hosts=allow_private_hosts,
+        detect_dependencies=detect_dependencies,
+        min_confidence=min_confidence,
+    )
+    cases_doc = load_cases(cases_path)
+    selected_top_ks = _normalize_top_ks(top_ks or [3, 5, int(cases_doc.get("top_k") or 10)])
+    selected_acceptance_top_k = int(
+        acceptance_top_k or cases_doc.get("top_k") or max(selected_top_ks)
+    )
+    if selected_acceptance_top_k not in selected_top_ks:
+        selected_top_ks = _normalize_top_ks([*selected_top_ks, selected_acceptance_top_k])
+
+    scale_summary = summarize_scale(
+        prepared.profiles,
+        loaded_specs=prepared.loaded_specs,
+        ingest_summary=prepared.ingest_summary,
+        graph=prepared.graph,
+        build_seconds=prepared.build_seconds,
+        min_spec_count=min_spec_count,
+        min_unique_tools=min_unique_tools,
+        max_build_seconds=max_build_seconds,
+    )
+    thresholds = cases_doc.get("thresholds") or {}
+    sweep: list[dict[str, Any]] = []
+    acceptance_search_status = "skipped"
+    for top_k in selected_top_ks:
+        cases = [
+            evaluate_search_case(case, tg=prepared.graph, top_k=top_k)
+            for case in cases_doc.get("cases", [])
+        ]
+        search_summary = summarize_search(
+            cases,
+            thresholds=thresholds if top_k == selected_acceptance_top_k else {},
+        )
+        search_summary["thresholds_applied"] = bool(
+            top_k == selected_acceptance_top_k and thresholds
+        )
+        if top_k != selected_acceptance_top_k and search_summary["status"] != "skipped":
+            search_summary["status"] = "diagnostic"
+        if top_k == selected_acceptance_top_k:
+            acceptance_search_status = str(search_summary["status"])
+        sweep.append(
+            {
+                "top_k": top_k,
+                "search": search_summary,
+                "cases": [asdict(case) for case in cases],
+            }
+        )
+
+    status = "pass" if scale_summary["status"] == "pass" else "fail"
+    if cases_doc.get("cases") and acceptance_search_status != "pass":
+        status = "fail"
+
+    return {
+        "benchmark": cases_doc.get("name") or "XGEN API Scale Acceptance",
+        "description": cases_doc.get("description") or "",
+        "methodology": "xgen_large_openapi_top_k_sweep",
+        "model": "none",
+        "graph_tool_call_version": __version__,
+        "source_url": swagger_url,
+        "top_ks": selected_top_ks,
+        "acceptance_top_k": selected_acceptance_top_k,
+        "detect_dependencies": detect_dependencies,
+        "min_confidence": min_confidence,
+        "status": status,
+        "scale": scale_summary,
+        "sweep": sweep,
+        "specs": [asdict(profile) for profile in prepared.profiles],
+    }
+
+
+def prepare_scale_graph(
+    *,
+    swagger_url: str,
+    spec_sources: list[str | dict[str, Any]] | None,
+    max_response_bytes: int,
+    allow_private_hosts: bool,
+    detect_dependencies: bool,
+    min_confidence: float,
+) -> PreparedScaleGraph:
+    """Load, profile, ingest, and graph a large OpenAPI collection once."""
+    started = time.perf_counter()
+    loaded_specs = load_specs(
+        swagger_url=swagger_url,
+        spec_sources=spec_sources,
+        max_response_bytes=max_response_bytes,
+        allow_private_hosts=allow_private_hosts,
+    )
+    profiles = [profile_spec(loaded) for loaded in loaded_specs]
+    graph, ingest_summary = build_scale_graph(
+        loaded_specs,
+        detect_dependencies=detect_dependencies,
+        min_confidence=min_confidence,
+    )
+    return PreparedScaleGraph(
+        loaded_specs=loaded_specs,
+        profiles=profiles,
+        graph=graph,
+        ingest_summary=ingest_summary,
+        build_seconds=round(time.perf_counter() - started, 3),
+    )
 
 
 def load_specs(
@@ -308,10 +440,14 @@ def evaluate_search_case(
         else recall_at_k(retrieved, expected_union, top_k)
     )
     expected_ranks = {name: _rank_of(retrieved, name) for name in sorted(expected_union)}
+    primary_expected_rank = _rank_of(retrieved, expected_tools[0]) if expected_tools else None
+    ranked_expected = [rank for rank in expected_ranks.values() if rank is not None]
+    best_expected_rank = min(ranked_expected) if ranked_expected else None
     issues = _case_issues(
         expected_tools=expected_tools,
         expected_any=expected_any,
         retrieved_set=retrieved_set,
+        best_expected_rank=best_expected_rank,
     )
 
     return SearchEvaluation(
@@ -321,6 +457,12 @@ def evaluate_search_case(
         expected_any=expected_any,
         retrieved=retrieved,
         expected_ranks=expected_ranks,
+        primary_expected_rank=primary_expected_rank,
+        best_expected_rank=best_expected_rank,
+        required_expected_found_at_k=required_ok,
+        any_expected_found_at_k=any_ok,
+        top_1_hit=1.0 if best_expected_rank == 1 else 0.0,
+        top_3_hit=1.0 if best_expected_rank is not None and best_expected_rank <= 3 else 0.0,
         hit_at_k=hit,
         expected_tool_recall_at_k=recall_expected,
         mrr=mrr(retrieved, expected_union),
@@ -396,10 +538,21 @@ def summarize_search(
         "cases": len(cases),
         "case_hit_at_k": _mean(case.hit_at_k for case in cases),
         "expected_tool_recall_at_k": _mean(case.expected_tool_recall_at_k for case in cases),
+        "top_1_hit_at_k": _mean(case.top_1_hit for case in cases),
+        "top_3_hit_at_k": _mean(case.top_3_hit for case in cases),
         "mean_mrr": _mean(case.mrr for case in cases),
+        "mean_best_expected_rank": _mean(
+            case.best_expected_rank for case in cases if case.best_expected_rank is not None
+        ),
+        "max_best_expected_rank": max(
+            (case.best_expected_rank for case in cases if case.best_expected_rank is not None),
+            default=None,
+        ),
         "avg_latency_ms": round(_mean(case.latency_ms for case in cases), 3),
         "p50_latency_ms": _percentile([case.latency_ms for case in cases], 0.5),
         "max_latency_ms": max(case.latency_ms for case in cases),
+        "rank_buckets": _rank_buckets(cases),
+        "missing_expected_tools": _missing_expected_tools(cases),
         "issues": dict(Counter(issue for case in cases for issue in case.issues).most_common()),
     }
     if thresholds:
@@ -447,6 +600,7 @@ def _case_issues(
     expected_tools: list[str],
     expected_any: list[str],
     retrieved_set: set[str],
+    best_expected_rank: int | None,
 ) -> list[str]:
     issues: list[str] = []
     missing_required = [name for name in expected_tools if name not in retrieved_set]
@@ -454,6 +608,10 @@ def _case_issues(
         issues.append("missing_required_expected_tool")
     if expected_any and not (set(expected_any) & retrieved_set):
         issues.append("missing_any_expected_tool")
+    if best_expected_rank is not None and best_expected_rank > 1:
+        issues.append("best_expected_below_top_1")
+    if best_expected_rank is not None and best_expected_rank > 3:
+        issues.append("best_expected_below_top_3")
     return issues or ["pass"]
 
 
@@ -509,6 +667,33 @@ def _percentile(values: list[float], q: float) -> float:
     return round(vals[index], 3)
 
 
+def _rank_buckets(cases: list[SearchEvaluation]) -> dict[str, int]:
+    buckets = {"top_1": 0, "top_3": 0, "top_5": 0, "top_10": 0, "missing": 0}
+    for case in cases:
+        for rank in case.expected_ranks.values():
+            if rank == 1:
+                buckets["top_1"] += 1
+            elif rank is not None and rank <= 3:
+                buckets["top_3"] += 1
+            elif rank is not None and rank <= 5:
+                buckets["top_5"] += 1
+            elif rank is not None and rank <= 10:
+                buckets["top_10"] += 1
+            else:
+                buckets["missing"] += 1
+    return buckets
+
+
+def _missing_expected_tools(cases: list[SearchEvaluation]) -> dict[str, int]:
+    missing = Counter(
+        name
+        for case in cases
+        for name, rank in case.expected_ranks.items()
+        if rank is None and name in set(case.expected_tools)
+    )
+    return dict(missing.most_common())
+
+
 def _threshold_passed(summary: dict[str, Any], metric: str, threshold: float) -> bool:
     if metric.startswith("max_"):
         value = float(summary.get(metric.removeprefix("max_"), 0.0))
@@ -544,11 +729,13 @@ def _print_report(report: dict[str, Any]) -> None:
     if search["status"] != "skipped":
         print(
             "search: status={status} cases={cases} hit@K={hit:.2f} recall@K={recall:.2f} "
-            "mrr={mrr_:.2f} avg_latency={latency:.2f}ms".format(
+            "top1={top1:.2f} top3={top3:.2f} mrr={mrr_:.2f} avg_latency={latency:.2f}ms".format(
                 status=search["status"],
                 cases=search["cases"],
                 hit=search["case_hit_at_k"],
                 recall=search["expected_tool_recall_at_k"],
+                top1=search["top_1_hit_at_k"],
+                top3=search["top_3_hit_at_k"],
                 mrr_=search["mean_mrr"],
                 latency=search["avg_latency_ms"],
             )
@@ -565,6 +752,60 @@ def _print_report(report: dict[str, Any]) -> None:
             )
 
 
+def _print_sweep_report(report: dict[str, Any]) -> None:
+    scale = report["scale"]
+    print(report["benchmark"])
+    print(
+        "status={status} specs={specs} operations={ops} unique_tools={tools} "
+        "duplicates={dupes} edges={edges} build={build:.2f}s acceptance_k={acceptance}".format(
+            status=report["status"],
+            specs=scale["spec_count"],
+            ops=scale["operation_count"],
+            tools=scale["unique_tool_count"],
+            dupes=scale["duplicate_tool_count"],
+            edges=scale["edge_count"],
+            build=scale["build_seconds"],
+            acceptance=report["acceptance_top_k"],
+        )
+    )
+    for run in report["sweep"]:
+        search = run["search"]
+        if search["status"] == "skipped":
+            print(f"k={run['top_k']}: search skipped")
+            continue
+        suffix = " acceptance" if run["top_k"] == report["acceptance_top_k"] else ""
+        print(
+            "k={top_k:<2}{suffix}: status={status} hit@K={hit:.2f} recall@K={recall:.2f} "
+            "top1={top1:.2f} top3={top3:.2f} mrr={mrr_:.2f} avg_latency={latency:.2f}ms "
+            "issues={issues}".format(
+                top_k=run["top_k"],
+                suffix=suffix,
+                status=search["status"],
+                hit=search["case_hit_at_k"],
+                recall=search["expected_tool_recall_at_k"],
+                top1=search["top_1_hit_at_k"],
+                top3=search["top_3_hit_at_k"],
+                mrr_=search["mean_mrr"],
+                latency=search["avg_latency_ms"],
+                issues=search["issues"],
+            )
+        )
+
+
+def _normalize_top_ks(values: list[int]) -> list[int]:
+    normalized = sorted({int(value) for value in values if int(value) > 0})
+    if not normalized:
+        msg = "top-K sweep requires at least one positive integer"
+        raise ValueError(msg)
+    return normalized
+
+
+def _parse_top_ks(value: str | None) -> list[int] | None:
+    if not value:
+        return None
+    return _normalize_top_ks([int(part.strip()) for part in value.split(",") if part.strip()])
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--swagger-url", default=DEFAULT_X2BEE_SWAGGER_URL)
@@ -577,6 +818,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cases", type=Path, default=DEFAULT_X2BEE_CASES_PATH)
     parser.add_argument("--no-cases", action="store_true")
     parser.add_argument("--top-k", type=int, default=None)
+    parser.add_argument(
+        "--top-ks",
+        default=None,
+        help="Comma-separated top-K values to compare after one graph build, e.g. 3,5,10.",
+    )
+    parser.add_argument(
+        "--acceptance-top-k",
+        type=int,
+        default=None,
+        help="Top-K value whose thresholds determine sweep exit status.",
+    )
     parser.add_argument("--no-detect-dependencies", action="store_true")
     parser.add_argument("--min-confidence", type=float, default=0.7)
     parser.add_argument("--min-spec-count", type=int, default=1)
@@ -588,24 +840,42 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
-    report = run_benchmark(
-        swagger_url=args.swagger_url,
-        spec_sources=args.spec or None,
-        cases_path=None if args.no_cases else args.cases,
-        top_k=args.top_k,
-        detect_dependencies=not args.no_detect_dependencies,
-        min_confidence=args.min_confidence,
-        min_spec_count=args.min_spec_count,
-        min_unique_tools=args.min_unique_tools,
-        max_build_seconds=args.max_build_seconds,
-        max_response_bytes=args.max_response_bytes,
-        allow_private_hosts=args.allow_private_hosts,
-    )
+    if args.top_ks:
+        report = run_top_k_sweep(
+            swagger_url=args.swagger_url,
+            spec_sources=args.spec or None,
+            cases_path=None if args.no_cases else args.cases,
+            top_ks=_parse_top_ks(args.top_ks),
+            acceptance_top_k=args.acceptance_top_k,
+            detect_dependencies=not args.no_detect_dependencies,
+            min_confidence=args.min_confidence,
+            min_spec_count=args.min_spec_count,
+            min_unique_tools=args.min_unique_tools,
+            max_build_seconds=args.max_build_seconds,
+            max_response_bytes=args.max_response_bytes,
+            allow_private_hosts=args.allow_private_hosts,
+        )
+    else:
+        report = run_benchmark(
+            swagger_url=args.swagger_url,
+            spec_sources=args.spec or None,
+            cases_path=None if args.no_cases else args.cases,
+            top_k=args.top_k,
+            detect_dependencies=not args.no_detect_dependencies,
+            min_confidence=args.min_confidence,
+            min_spec_count=args.min_spec_count,
+            min_unique_tools=args.min_unique_tools,
+            max_build_seconds=args.max_build_seconds,
+            max_response_bytes=args.max_response_bytes,
+            allow_private_hosts=args.allow_private_hosts,
+        )
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
+    elif args.top_ks:
+        _print_sweep_report(report)
     else:
         _print_report(report)
     return 0 if report["status"] == "pass" else 1

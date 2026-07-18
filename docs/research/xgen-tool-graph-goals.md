@@ -72,6 +72,8 @@ XGEN target selector까지 이어지는 검증은 아직 별도 연구 대상이
 | XGEN deterministic fixture | all pass |
 | X2BEE scale acceptance | pass, `>= 1,000` unique tools |
 | X2BEE Korean smoke hit@10 | `>= 0.90` |
+| X2BEE Korean smoke hit@5 | `>= 0.95` |
+| X2BEE Korean smoke hit@3 | improve from `0.75` baseline |
 
 Required work:
 
@@ -80,6 +82,8 @@ Required work:
 - 단순 top-K 증가가 아니라 target/producers/diversity 구조로 후보를 구성한다.
 - `make research-check`와 failure subset smoke에서 개선이 먼저 보여야 한다.
 - `make xgen-scale-acceptance`로 X2BEE급 live OpenAPI가 계속 ingest/search 가능한지 확인한다.
+- `make xgen-scale-sweep`로 top-3/5/10을 같이 보고 rank-4/5에 걸린 정답을
+  top-3 안으로 당기는지 확인한다.
 
 0.26의 성공 기준은 full benchmark 숫자 하나가 아니라, 이전 hard case subset에서
 실제로 miss가 줄어든다는 증거다.
@@ -184,6 +188,8 @@ Goal: top-K를 단순히 키우지 않고 후보 구성을 좋아지게 한다.
 - near-duplicate/sibling 후보를 제어한다.
 - multi-intent query에서는 category diversity를 보장한다.
 - 복합 query에서만 adaptive expansion을 적용한다.
+- X2BEE 현재 gap은 `order_query`의 target rank 4와 page-role secondary target
+  rank 5다. top-K를 늘리지 않고 이 두 유형을 top-3으로 올리는 개선을 우선한다.
 
 ### 4. Reranking
 

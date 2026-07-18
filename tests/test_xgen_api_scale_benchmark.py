@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from benchmarks.xgen_api_scale.run import run_benchmark
+from benchmarks.xgen_api_scale.run import run_benchmark, run_top_k_sweep
 
 
 def _spec(title: str, paths: dict):
@@ -96,7 +96,12 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     assert report["scale"]["duplicate_tool_count"] == 1
     assert report["scale"]["duplicate_operation_id_count"] == 1
     assert report["search"]["case_hit_at_k"] == 1.0
+    assert report["search"]["top_1_hit_at_k"] == 1.0
+    assert report["search"]["top_3_hit_at_k"] == 1.0
+    assert report["search"]["rank_buckets"]["top_1"] == 1
     assert report["cases"][0]["expected_ranks"]["searchBrands"] == 1
+    assert report["cases"][0]["best_expected_rank"] == 1
+    assert report["cases"][0]["required_expected_found_at_k"] is True
 
 
 def test_xgen_api_scale_can_profile_without_cases():
@@ -119,3 +124,58 @@ def test_xgen_api_scale_can_profile_without_cases():
     assert report["search"]["status"] == "skipped"
     assert report["scale"]["request_body_count"] == 0
     assert report["scale"]["response_schema_count"] == 2
+
+
+def test_xgen_api_scale_top_k_sweep_uses_one_acceptance_k(tmp_path):
+    cases_path = tmp_path / "cases.json"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "name": "Tiny Sweep",
+                "top_k": 3,
+                "thresholds": {
+                    "case_hit_at_k": 1.0,
+                    "expected_tool_recall_at_k": 1.0,
+                    "max_avg_latency_ms": 50.0,
+                },
+                "cases": [
+                    {
+                        "id": "brand_and_order",
+                        "query": "brand order",
+                        "expected_tools": ["searchBrands", "listOrders"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = run_top_k_sweep(
+        spec_sources=[
+            _spec(
+                "Sweep Profile",
+                {
+                    "/brands": _operation("searchBrands", "Brand search"),
+                    "/orders": _operation("listOrders", "Order list"),
+                    "/products": _operation("searchProducts", "Product search"),
+                },
+            )
+        ],
+        cases_path=cases_path,
+        top_ks=[1, 3],
+        acceptance_top_k=3,
+        min_unique_tools=3,
+        max_build_seconds=10,
+    )
+
+    assert report["status"] == "pass"
+    assert report["methodology"] == "xgen_large_openapi_top_k_sweep"
+    assert report["top_ks"] == [1, 3]
+    assert report["acceptance_top_k"] == 3
+    k1, k3 = report["sweep"]
+    assert k1["top_k"] == 1
+    assert k1["search"]["status"] == "diagnostic"
+    assert k1["search"]["case_hit_at_k"] == 0.0
+    assert k1["search"]["thresholds_applied"] is False
+    assert k3["top_k"] == 3
+    assert k3["search"]["case_hit_at_k"] == 1.0
+    assert k3["search"]["thresholds_applied"] is True

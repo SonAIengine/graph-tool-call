@@ -583,6 +583,16 @@ make xgen-scale-acceptance \
   OUT=/tmp/gtc-x2bee-scale-acceptance.json
 ```
 
+For development, use the top-K sweep first. It builds the large graph once and
+then replays the same Korean cases at multiple K values, so ranking experiments
+can be judged without a long model run:
+
+```bash
+make xgen-scale-sweep \
+  TOP_KS=3,5,10 \
+  OUT=/tmp/gtc-x2bee-scale-sweep.json
+```
+
 Verified local result on 2026-07-19:
 
 | Metric | Value |
@@ -593,11 +603,21 @@ Verified local result on 2026-07-19:
 | Unique tools after operationId dedupe | `1,084` |
 | Duplicate tools skipped | `1,077` |
 | Graph edges | `8,599` |
-| Build time | `3.79s` |
+| Build time | `3.69s` |
 | Korean smoke hit@10 | `8/8` |
 | Expected tool recall@10 | `1.00` |
+| Top-1 hit@10 | `0.75` |
+| Top-3 hit@10 | `0.875` |
 | Mean MRR | `0.823` |
-| Average retrieval latency | `32.28ms` |
+| Average retrieval latency | `29.54ms` |
+
+Top-K sweep from the same live target on 2026-07-19:
+
+| Top-K | Hit@K | Expected recall@K | Top-1 hit | Top-3 hit | Mean MRR | Main gap |
+|---:|---:|---:|---:|---:|---:|---|
+| `3` | `0.75` | `0.8125` | `0.75` | `0.875` | `0.792` | `order_query`, secondary page-role button |
+| `5` | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | rank-4/5 compression |
+| `10` | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | acceptance baseline |
 
 This is not a model score. It verifies that graph-tool-call can discover the
 Swagger groups, dedupe umbrella/group duplicates, ingest the resulting 1k-tool

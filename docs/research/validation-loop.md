@@ -22,7 +22,7 @@ graph-tool-call search 연구는 full model benchmark를 매번 돌리면 속도
 | T0 unit | public contract와 빠른 회귀 | < 1분 | no | `make research-check-unit` | 거의 모든 수정 |
 | T1 deterministic | retrieval/graph/plan 품질 확인 | 1-3분 | no | `make research-check` | 검색/graph/fixture 수정 |
 | T2 failure subset | 이전 실패 케이스 재검증 | 5-15분 | optional | `CASE_IDS_FILE=/tmp/ids.txt make research-check-smoke` | ranking/rerank 실험 |
-| T2.5 XGEN scale | 실제 대형 OpenAPI acceptance | < 1분 | no | `make xgen-scale-acceptance` | XGEN 적용성 판단 |
+| T2.5 XGEN scale | 실제 대형 OpenAPI acceptance/sweep | < 1분 | no | `make xgen-scale-sweep` | XGEN 적용성 판단 |
 | T3 model smoke | 소량 실제 tool-call 확인 | 5-15분 | yes | `make research-check-smoke` | 후보 구성이 바뀐 경우 |
 | T4 release | publish 후보 검증 | 1-5시간 | yes/manual | `make release-check` + full BFCL commands | README/MR/release |
 
@@ -58,6 +58,10 @@ X2BEE BO처럼 Swagger UI 하나가 여러 OpenAPI group으로 나뉘고, 중복
 ```bash
 make xgen-scale-acceptance \
   OUT=/tmp/gtc-x2bee-scale-acceptance.json
+
+make xgen-scale-sweep \
+  TOP_KS=3,5,10 \
+  OUT=/tmp/gtc-x2bee-scale-sweep.json
 ```
 
 기본 URL은 X2BEE BO Swagger UI다.
@@ -73,6 +77,7 @@ https://api-bo.x2bee.com/api/bo/swagger-ui/index.html
 - requestBody/response schema coverage
 - graph edge count와 build time
 - 한국어 smoke query의 expected tool rank, hit@K, MRR, retrieval latency
+- sweep 실행 시 top-K별 hit/recall/top-1/top-3/rank bucket과 missing expected tool
 
 현재 live acceptance 기준선은 `2026-07-19` 실행 기준 다음과 같다.
 
@@ -84,11 +89,21 @@ https://api-bo.x2bee.com/api/bo/swagger-ui/index.html
 | unique tools | `1,084` |
 | duplicate tools skipped | `1,077` |
 | graph edges | `8,599` |
-| build time | `3.79s` |
+| build time | `3.69s` |
 | Korean smoke cases | `8/8 hit@10` |
 | expected tool recall@10 | `1.00` |
+| top-1 hit@10 | `0.75` |
+| top-3 hit@10 | `0.875` |
 | mean MRR | `0.823` |
-| average retrieval latency | `32.28ms` |
+| average retrieval latency | `29.54ms` |
+
+top-K sweep 기준선은 다음과 같다.
+
+| Top-K | hit@K | expected recall@K | top-1 hit | top-3 hit | 주요 gap |
+|---:|---:|---:|---:|---:|---|
+| `3` | `0.75` | `0.8125` | `0.75` | `0.875` | `order_query`, page-role secondary |
+| `5` | `1.00` | `1.00` | `0.75` | `0.875` | rank-4/5 압축 |
+| `10` | `1.00` | `1.00` | `0.75` | `0.875` | acceptance 기준 |
 
 이 수치는 live API가 바뀌면 달라질 수 있으므로 public claim으로 쓰기 전에는
 artifact 경로와 실행 날짜를 함께 남긴다.
