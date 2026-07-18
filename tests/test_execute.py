@@ -550,6 +550,163 @@ class TestBuildRequest:
         assert missing[("body", "status")]["enum"] == ["paid", "ready"]
         assert ("header", "X-Site-No") not in missing
 
+    def test_validate_request_reports_invalid_body_enum_before_network_io(self):
+        tool = _make_tool(
+            name="updateOrder",
+            method="POST",
+            path="/orders",
+            params=[ToolParam(name="status", type="string", required=True)],
+        )
+        tool.metadata["openapi"] = {
+            "request_body": {
+                "required": True,
+                "content_type": "application/json",
+                "fields": [
+                    {
+                        "field_name": "status",
+                        "json_path": "$.status",
+                        "field_type": "string",
+                        "required": True,
+                        "enum": ["paid", "ready"],
+                    }
+                ],
+            }
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {"status": "cancelled"})
+
+        assert diagnostics["valid"] is False
+        assert diagnostics["missing_required"] == []
+        assert diagnostics["invalid_arguments"] == [
+            {
+                "name": "status",
+                "location": "body",
+                "source": "request_body",
+                "reason": "enum",
+                "field_type": "string",
+                "json_path": "$.status",
+                "enum": ["paid", "ready"],
+            }
+        ]
+        with pytest.raises(OpenAPIRequestValidationError, match=r"body:status\(enum\)"):
+            executor.build_request(tool, {"status": "cancelled"})
+
+    def test_build_request_can_disable_value_validation_only(self):
+        tool = _make_tool(
+            name="updateOrder",
+            method="POST",
+            path="/orders",
+            params=[ToolParam(name="status", type="string", required=True)],
+        )
+        tool.metadata["openapi"] = {
+            "request_body": {
+                "required": True,
+                "content_type": "application/json",
+                "fields": [
+                    {
+                        "field_name": "status",
+                        "json_path": "$.status",
+                        "field_type": "string",
+                        "required": True,
+                        "enum": ["paid", "ready"],
+                    }
+                ],
+            }
+        }
+        executor = HttpExecutor("https://api.example.com", validate_values=False)
+
+        req = executor.build_request(tool, {"status": "cancelled"})
+        diagnostics = executor.validate_request(tool, {"status": "cancelled"})
+
+        assert req.data == b'{"status": "cancelled"}'
+        assert diagnostics["valid"] is False
+        assert diagnostics["invalid_arguments"][0]["reason"] == "enum"
+
+    def test_validate_request_reports_parameter_constraint_violations(self):
+        tool = _make_tool(name="listOrders", method="GET", path="/orders", params=[])
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {
+                    "name": "page",
+                    "in": "query",
+                    "field_type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                },
+                {
+                    "name": "status",
+                    "in": "query",
+                    "field_type": "string",
+                    "pattern": "^[A-Z]+$",
+                    "min_length": 2,
+                },
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {"page": "0", "status": "a"})
+
+        assert diagnostics["valid"] is False
+        assert [
+            (row["location"], row["name"], row["reason"])
+            for row in diagnostics["invalid_arguments"]
+        ] == [
+            ("query", "page", "minimum"),
+            ("query", "status", "min_length"),
+            ("query", "status", "pattern"),
+        ]
+        assert diagnostics["invalid_arguments"][0]["minimum"] == 1
+
+    def test_validate_request_accepts_compatible_stringified_scalars(self):
+        tool = _make_tool(name="listOrders", method="GET", path="/orders", params=[])
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {"name": "page", "in": "query", "field_type": "integer"},
+                {"name": "active", "in": "query", "field_type": "boolean"},
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {"page": "3", "active": "false"})
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["invalid_arguments"] == []
+
+    def test_validate_request_reports_header_and_cookie_value_constraints(self):
+        tool = _make_tool(name="listOrders", method="GET", path="/orders", params=[])
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {
+                    "name": "X-Site-No",
+                    "in": "header",
+                    "field_type": "integer",
+                    "minimum": 1,
+                },
+                {
+                    "name": "locale",
+                    "in": "cookie",
+                    "field_type": "string",
+                    "enum": ["ko", "en"],
+                },
+            ]
+        }
+        executor = HttpExecutor(
+            "https://api.example.com",
+            headers={"X-Site-No": "0", "Cookie": "locale=jp"},
+        )
+
+        diagnostics = executor.validate_request(tool, {})
+
+        assert diagnostics["valid"] is False
+        assert [
+            (row["location"], row["name"], row["reason"])
+            for row in diagnostics["invalid_arguments"]
+        ] == [
+            ("header", "X-Site-No", "minimum"),
+            ("cookie", "locale", "enum"),
+        ]
+
     def test_build_request_raises_structured_validation_error_for_missing_required(self):
         tool = _make_tool(
             name="createOrder",

@@ -195,8 +195,8 @@ catalogs, and error responses under `tool.metadata["openapi"]`. The HTTP
 executor uses those facts for parameter serialization and JSON/form/multipart
 request bodies, and returns matched response metadata for success/error
 diagnostics. `HttpExecutor.validate_request()` provides missing-required,
-missing-security, and unused-argument preflight diagnostics without network I/O; see
-[docs/api-reference.md](docs/api-reference.md#execution).
+missing-security, invalid-argument, and unused-argument preflight diagnostics
+without network I/O; see [docs/api-reference.md](docs/api-reference.md#execution).
 
 ### Workflow planning
 

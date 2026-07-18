@@ -41,11 +41,18 @@ class OpenAPIRequestValidationError(ValueError):
             for scheme in requirement.get("schemes") or []
             if isinstance(scheme, dict) and scheme.get("name")
         )
+        invalid_arguments = ", ".join(
+            f"{item.get('location', 'input')}:{item.get('name', '')}"
+            f"({item.get('reason', 'invalid')})"
+            for item in diagnostics.get("invalid_arguments") or []
+        )
         details = []
         if missing_inputs:
             details.append(f"missing inputs: {missing_inputs}")
         if missing_security:
             details.append(f"missing security: {missing_security}")
+        if invalid_arguments:
+            details.append(f"invalid arguments: {invalid_arguments}")
         message = f"Invalid OpenAPI request for tool '{tool_name}'"
         if details:
             message = f"{message}: {'; '.join(details)}"
@@ -67,6 +74,7 @@ class HttpExecutor:
         auth_token: str | None = None,
         timeout: int = 30,
         validate_required: bool = True,
+        validate_values: bool = True,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._headers = dict(headers) if headers else {}
@@ -74,6 +82,7 @@ class HttpExecutor:
             self._headers.setdefault("Authorization", f"Bearer {auth_token}")
         self._timeout = timeout
         self._validate_required = validate_required
+        self._validate_values = validate_values
 
     def build_request(
         self,
@@ -92,7 +101,10 @@ class HttpExecutor:
 
         if self._validate_required:
             diagnostics = self.validate_request(tool, arguments)
-            if not diagnostics["valid"]:
+            if _preflight_blocks_request(
+                diagnostics,
+                validate_values=self._validate_values,
+            ):
                 raise OpenAPIRequestValidationError(tool.name, diagnostics)
 
         method = metadata["method"].upper()
@@ -224,15 +236,26 @@ class HttpExecutor:
             arguments,
             headers=self._headers,
         )
+        invalid_arguments = _invalid_argument_values(
+            tool,
+            arguments,
+            api_metadata,
+            method=method,
+            path_template=path_template,
+            location_by_param=location_by_param,
+            headers=self._headers,
+            selected_content_type=selected_content_type,
+        )
         unused_arguments = [
             str(name)
             for name, value in arguments.items()
             if value is not None and str(name) not in known_name_set
         ]
         return {
-            "valid": not missing_required and not missing_security,
+            "valid": not missing_required and not missing_security and not invalid_arguments,
             "missing_required": missing_required,
             "missing_security": missing_security,
+            "invalid_arguments": invalid_arguments,
             "unused_arguments": unused_arguments,
             "used_arguments": used_by_location,
             "selected_content_type": selected_content_type,
@@ -353,6 +376,16 @@ def _iter_known_argument_names(
     for name in _security_api_key_locations(api_metadata):
         add(name)
     return names
+
+
+def _preflight_blocks_request(
+    diagnostics: dict[str, Any],
+    *,
+    validate_values: bool,
+) -> bool:
+    if diagnostics.get("missing_required") or diagnostics.get("missing_security"):
+        return True
+    return validate_values and bool(diagnostics.get("invalid_arguments"))
 
 
 def _used_arguments_by_location(
@@ -511,6 +544,260 @@ def _missing_required_inputs(
     return missing
 
 
+def _invalid_argument_values(
+    tool: ToolSchema,
+    arguments: dict[str, Any],
+    api_metadata: dict[str, Any],
+    *,
+    method: str,
+    path_template: str,
+    location_by_param: dict[str, str],
+    headers: dict[str, str],
+    selected_content_type: str,
+) -> list[dict[str, Any]]:
+    invalid: list[dict[str, Any]] = []
+    seen_contracts: set[tuple[str, str]] = set()
+
+    def add_contract(row: dict[str, Any]) -> None:
+        name = str(row.get("name") or row.get("field_name") or "")
+        location = str(row.get("location") or row.get("in") or "")
+        if not name or not location:
+            return
+        key = (location, name)
+        if key in seen_contracts:
+            return
+        seen_contracts.add(key)
+
+        present, value = _argument_value_for_validation(name, location, arguments, headers)
+        if not present:
+            return
+
+        contract: dict[str, Any] = {
+            "name": name,
+            "location": location,
+            "source": str(row.get("source") or "openapi_schema"),
+        }
+        if row.get("json_path"):
+            contract["json_path"] = row["json_path"]
+        if location == "body" and selected_content_type:
+            contract["content_type"] = selected_content_type
+        _copy_validation_hint(row, contract)
+        invalid.extend(_validation_issues(value, contract))
+
+    for row in api_metadata.get("parameters") or []:
+        if isinstance(row, dict):
+            add_contract({**row, "location": row.get("in"), "source": "openapi_parameter"})
+
+    for row in _body_rows(
+        api_metadata,
+        content_type=selected_content_type,
+        include_content_type_rows=False,
+    ):
+        if isinstance(row, dict):
+            add_contract({**row, "location": "body", "source": "request_body"})
+
+    for param in tool.parameters:
+        location = location_by_param.get(param.name)
+        if not location:
+            location = "path" if f"{{{param.name}}}" in path_template else ""
+        if not location:
+            location = "query" if method in ("GET", "DELETE", "HEAD", "OPTIONS") else "body"
+        add_contract(
+            {
+                "name": param.name,
+                "location": location,
+                "source": "tool_parameter",
+                "field_type": param.type,
+                **({"enum": list(param.enum)} if param.enum else {}),
+            }
+        )
+
+    return invalid
+
+
+def _validation_issues(value: Any, contract: dict[str, Any]) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    enum = contract.get("enum")
+    if isinstance(enum, list) and enum and not _enum_matches(value, enum):
+        issues.append(_invalid_argument_row(contract, "enum"))
+
+    expected_type = str(contract.get("field_type") or "")
+    if not _field_type_matches(
+        value,
+        expected_type,
+        location=str(contract.get("location") or ""),
+        schema_format=str(contract.get("format") or ""),
+    ):
+        issues.append(_invalid_argument_row(contract, "type", expected_type=expected_type))
+        return issues
+
+    issues.extend(_numeric_constraint_issues(value, contract))
+    issues.extend(_length_constraint_issues(value, contract))
+    issues.extend(_array_constraint_issues(value, contract))
+    issues.extend(_object_constraint_issues(value, contract))
+    return issues
+
+
+def _invalid_argument_row(
+    contract: dict[str, Any],
+    reason: str,
+    *,
+    expected_type: str = "",
+) -> dict[str, Any]:
+    row = {
+        "name": contract["name"],
+        "location": contract["location"],
+        "source": contract.get("source") or "openapi_schema",
+        "reason": reason,
+    }
+    if expected_type:
+        row["expected_type"] = expected_type
+    _copy_validation_hint(contract, row)
+    return row
+
+
+def _enum_matches(value: Any, enum: list[Any]) -> bool:
+    if value in enum:
+        return True
+    if _is_sequence(value):
+        return any(list(value) == option for option in enum)
+    if isinstance(value, dict):
+        return False
+    value_text = str(value)
+    return any(value_text == str(option) for option in enum)
+
+
+def _field_type_matches(
+    value: Any,
+    field_type: str,
+    *,
+    location: str,
+    schema_format: str = "",
+) -> bool:
+    if not field_type or value is None:
+        return True
+    if field_type == "string":
+        if schema_format.lower() == "binary" and _is_file_part_value(value):
+            return True
+        if isinstance(value, str):
+            return True
+        return location != "body" and _is_primitive(value)
+    if field_type == "integer":
+        return _integer_value(value) is not None
+    if field_type == "number":
+        return _numeric_value(value) is not None
+    if field_type == "boolean":
+        return isinstance(value, bool) or (
+            isinstance(value, str) and value.strip().lower() in {"true", "false"}
+        )
+    if field_type == "array":
+        return _is_sequence(value)
+    if field_type == "object":
+        return isinstance(value, dict)
+    return True
+
+
+def _numeric_constraint_issues(value: Any, contract: dict[str, Any]) -> list[dict[str, Any]]:
+    number = _numeric_value(value)
+    if number is None:
+        return []
+    issues: list[dict[str, Any]] = []
+    minimum = _numeric_value(contract.get("minimum"))
+    maximum = _numeric_value(contract.get("maximum"))
+    exclusive_minimum = contract.get("exclusive_minimum")
+    exclusive_maximum = contract.get("exclusive_maximum")
+
+    if isinstance(exclusive_minimum, bool) and exclusive_minimum and minimum is not None:
+        if number <= minimum:
+            issues.append(_invalid_argument_row(contract, "exclusive_minimum"))
+    elif (exclusive_minimum_value := _numeric_value(exclusive_minimum)) is not None:
+        if number <= exclusive_minimum_value:
+            issues.append(_invalid_argument_row(contract, "exclusive_minimum"))
+    elif minimum is not None and number < minimum:
+        issues.append(_invalid_argument_row(contract, "minimum"))
+
+    if isinstance(exclusive_maximum, bool) and exclusive_maximum and maximum is not None:
+        if number >= maximum:
+            issues.append(_invalid_argument_row(contract, "exclusive_maximum"))
+    elif (exclusive_maximum_value := _numeric_value(exclusive_maximum)) is not None:
+        if number >= exclusive_maximum_value:
+            issues.append(_invalid_argument_row(contract, "exclusive_maximum"))
+    elif maximum is not None and number > maximum:
+        issues.append(_invalid_argument_row(contract, "maximum"))
+
+    multiple_of = _numeric_value(contract.get("multiple_of"))
+    if multiple_of not in (None, 0.0):
+        remainder = number / multiple_of
+        if abs(remainder - round(remainder)) > 1e-9:
+            issues.append(_invalid_argument_row(contract, "multiple_of"))
+    return issues
+
+
+def _length_constraint_issues(value: Any, contract: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(value, (dict, bytes, bytearray)) or _is_sequence(value):
+        return []
+    if not any(key in contract for key in ("min_length", "max_length", "pattern")):
+        return []
+    text = str(value)
+    issues: list[dict[str, Any]] = []
+    min_length = _integer_value(contract.get("min_length"))
+    max_length = _integer_value(contract.get("max_length"))
+    if min_length is not None and len(text) < min_length:
+        issues.append(_invalid_argument_row(contract, "min_length"))
+    if max_length is not None and len(text) > max_length:
+        issues.append(_invalid_argument_row(contract, "max_length"))
+    pattern = contract.get("pattern")
+    if isinstance(pattern, str) and pattern:
+        try:
+            matches = re.search(pattern, text) is not None
+        except re.error:
+            matches = True
+        if not matches:
+            issues.append(_invalid_argument_row(contract, "pattern"))
+    return issues
+
+
+def _array_constraint_issues(value: Any, contract: dict[str, Any]) -> list[dict[str, Any]]:
+    if not _is_sequence(value):
+        return []
+    issues: list[dict[str, Any]] = []
+    min_items = _integer_value(contract.get("min_items"))
+    max_items = _integer_value(contract.get("max_items"))
+    if min_items is not None and len(value) < min_items:
+        issues.append(_invalid_argument_row(contract, "min_items"))
+    if max_items is not None and len(value) > max_items:
+        issues.append(_invalid_argument_row(contract, "max_items"))
+    return issues
+
+
+def _object_constraint_issues(value: Any, contract: dict[str, Any]) -> list[dict[str, Any]]:
+    if not isinstance(value, dict):
+        return []
+    issues: list[dict[str, Any]] = []
+    min_properties = _integer_value(contract.get("min_properties"))
+    max_properties = _integer_value(contract.get("max_properties"))
+    if min_properties is not None and len(value) < min_properties:
+        issues.append(_invalid_argument_row(contract, "min_properties"))
+    if max_properties is not None and len(value) > max_properties:
+        issues.append(_invalid_argument_row(contract, "max_properties"))
+    return issues
+
+
+def _argument_value_for_validation(
+    name: str,
+    location: str,
+    arguments: dict[str, Any],
+    headers: dict[str, str],
+) -> tuple[bool, Any]:
+    if name in arguments and arguments[name] is not None:
+        return True, arguments[name]
+    if location == "header":
+        return _header_value(headers, name)
+    if location == "cookie":
+        return _cookie_value(headers, name)
+    return False, None
+
+
 def _argument_present(
     name: str,
     location: str,
@@ -633,23 +920,38 @@ def _authorization_header_matches(headers: dict[str, str], scheme: str) -> bool:
     return False
 
 
-def _header_present(headers: dict[str, str], name: str) -> bool:
+def _header_value(headers: dict[str, str], name: str) -> tuple[bool, str | None]:
     lower_name = name.lower()
-    return any(
-        str(key).lower() == lower_name and value not in (None, "") for key, value in headers.items()
-    )
+    for key, value in headers.items():
+        if str(key).lower() == lower_name and value not in (None, ""):
+            return True, str(value)
+    return False, None
 
 
-def _cookie_present(headers: dict[str, str], name: str) -> bool:
+def _header_present(headers: dict[str, str], name: str) -> bool:
+    present, _value = _header_value(headers, name)
+    return present
+
+
+def _cookie_value(headers: dict[str, str], name: str) -> tuple[bool, str | None]:
     cookie_header = ""
     for key, value in headers.items():
         if str(key).lower() == "cookie":
             cookie_header = str(value)
             break
     if not cookie_header:
-        return False
+        return False, None
     prefix = f"{name}="
-    return any(segment.strip().startswith(prefix) for segment in cookie_header.split(";"))
+    for segment in cookie_header.split(";"):
+        segment = segment.strip()
+        if segment.startswith(prefix):
+            return True, segment[len(prefix) :]
+    return False, None
+
+
+def _cookie_present(headers: dict[str, str], name: str) -> bool:
+    present, _value = _cookie_value(headers, name)
+    return present
 
 
 def _copy_validation_hint(source: dict[str, Any], target: dict[str, Any]) -> None:
@@ -665,10 +967,15 @@ def _copy_validation_hint(source: dict[str, Any], target: dict[str, Any]) -> Non
         "pattern",
         "minimum",
         "maximum",
+        "exclusive_minimum",
+        "exclusive_maximum",
         "min_length",
         "max_length",
         "min_items",
         "max_items",
+        "min_properties",
+        "max_properties",
+        "multiple_of",
     ):
         value = source.get(key)
         if value not in (None, "", []):
@@ -1147,6 +1454,38 @@ def _object_items(value: dict[Any, Any]) -> list[str]:
 
 def _is_sequence(value: Any) -> bool:
     return isinstance(value, (list, tuple)) and not isinstance(value, (str, bytes, bytearray))
+
+
+def _is_primitive(value: Any) -> bool:
+    return isinstance(value, (str, int, float, bool))
+
+
+def _integer_value(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str) and re.fullmatch(r"[-+]?\d+", value.strip()):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _numeric_value(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    return None
 
 
 def _primitive_text(value: Any) -> str:

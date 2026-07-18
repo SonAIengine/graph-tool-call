@@ -120,25 +120,31 @@ arguments select the multipart candidate when one is declared.
 `HttpExecutor.validate_request(tool, params)` returns structured preflight
 diagnostics for XGEN popup/resume flows:
 
-- `valid`: false when required inputs or declared security credentials are
-  missing
+- `valid`: false when required inputs, declared security credentials, or
+  provided argument values fail the OpenAPI contract
 - `missing_required`: required path/query/header/cookie/body inputs with
   location, source, JSON path, enum, and schema hints when available
 - `missing_security`: unsatisfied OpenAPI security alternatives. Each row keeps
   the requirement index and missing scheme names, credential locations, and
   credential names without including runtime credential values
+- `invalid_arguments`: provided path/query/header/cookie/body values that
+  violate schema hints such as enum, type, numeric bounds, string length,
+  pattern, array item count, object property count, or multiple-of constraints
 - `unused_arguments`: provided arguments that are not part of the tool contract
 - `used_arguments`: classified path/query/header/cookie/body argument names
 - `selected_content_type`: request body media type selected from OpenAPI metadata
 
 By default, `build_request()` and `execute()` raise
-`OpenAPIRequestValidationError` before network I/O when required inputs or
-declared security credentials are missing. `apiKey` security schemes can be
-supplied through matching query/header/cookie arguments or executor headers;
-HTTP bearer/basic and OAuth/OpenID Connect schemes are validated from the
-`Authorization` header, including the `auth_token=` shortcut for bearer tokens.
-Pass `validate_required=False` to `HttpExecutor` for diagnostic-only or legacy
-partial-request behavior.
+`OpenAPIRequestValidationError` before network I/O when required inputs,
+declared security credentials, or invalid argument values would make the request
+contract-invalid. `apiKey` security schemes can be supplied through matching
+query/header/cookie arguments or executor headers; HTTP bearer/basic and
+OAuth/OpenID Connect schemes are validated from the `Authorization` header,
+including the `auth_token=` shortcut for bearer tokens. Pass
+`validate_values=False` to keep missing-required/security blocking while
+allowing server-side value coercion, or `validate_required=False` for fully
+diagnostic-only or legacy partial-request behavior. `validate_request()` still
+returns all diagnostics either way.
 
 Execution results keep the legacy `status`, `headers`, and `body` keys and add
 response diagnostics:

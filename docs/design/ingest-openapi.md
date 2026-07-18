@@ -79,13 +79,17 @@ request body는 `application/json`, `application/x-www-form-urlencoded`,
 `multipart/form-data`를 렌더링하며, binary/file-like 인자가 있고 multipart
 후보가 선언되어 있으면 multipart를 선택한다.
 `validate_request(tool, params)`는 네트워크 호출 없이 `valid`,
-`missing_required`, `missing_security`, `unused_arguments`, `used_arguments`,
-`selected_content_type`을 반환한다. 기본적으로 required input이나 선언된
-security credential이 빠져 있으면 `build_request()`/`execute()`가
-`OpenAPIRequestValidationError`를 발생시킨다. `apiKey` security scheme은
-query/header/cookie argument 또는 executor header/cookie로 충족할 수 있고,
-bearer/basic/OAuth/OpenID Connect 계열은 `Authorization` header로 판정한다.
-XGEN은 이 diagnostics를 missing-field/auth popup과 resume target에 그대로 사용할 수 있다.
+`missing_required`, `missing_security`, `invalid_arguments`,
+`unused_arguments`, `used_arguments`, `selected_content_type`을 반환한다.
+기본적으로 required input이나 선언된 security credential이 빠져 있거나,
+제공된 argument가 enum/type/범위/길이/pattern/array/object constraint를
+위반하면 `build_request()`/`execute()`가 `OpenAPIRequestValidationError`를
+발생시킨다. `apiKey` security scheme은 query/header/cookie argument 또는
+executor header/cookie로 충족할 수 있고, bearer/basic/OAuth/OpenID Connect
+계열은 `Authorization` header로 판정한다. XGEN은 이 diagnostics를
+missing-field/auth/value popup과 resume target에 그대로 사용할 수 있다.
+서버 coercion에 맡겨야 하는 기존 통합은 `validate_values=False`로 value
+blocking만 끄고, `validate_request()` diagnostics는 계속 확인할 수 있다.
 `execute()` 결과에는 기존 `status`/`headers`/`body`에 더해 `ok`,
 `content_type`, `response_metadata`, 실패 시 `error_response`가 붙는다.
 `response_metadata`는 exact status, `2XX` range, `default` 순서로
