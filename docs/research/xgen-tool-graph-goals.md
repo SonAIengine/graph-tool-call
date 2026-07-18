@@ -1,0 +1,251 @@
+# XGEN Tool Graph Search Goals
+
+이 문서는 graph-tool-call을 XGEN API Collection / Planflow의 기본 tool graph
+retrieval engine으로 끌어올리기 위한 목표 문서다. 목표는 BFCL 점수 하나를
+높이는 것이 아니라, 수백-수천 개 API에서 필요한 tool, producer chain, plan
+근거를 안정적으로 좁히는 엔진을 만드는 것이다.
+
+## North Star
+
+graph-tool-call은 XGEN에서 아래 문장을 제품적으로 말할 수 있는 수준까지 가야 한다.
+
+> 수백-수천 개 API Collection에서도 LLM에게 전체 tool을 던지지 않고,
+> graph-tool-call이 필요한 후보 tool set과 producer chain을 검색한다.
+> 검색 결과에는 왜 선택됐는지, 왜 실패했는지, 다음 개선 대상이 무엇인지가
+> 재현 가능한 evidence로 남는다.
+
+즉 목표는 "BFCL leaderboard 1등"이 아니다. 목표는 XGEN 같은 실제 제품에서
+large-scale tool retrieval + graph-based planning 앞단을 맡길 수 있는 엔진이다.
+
+## Current Baseline
+
+기준선은 qwen3.6-27B, BFCL v4 four-category local BFCL-compatible run,
+official checker 재채점 기준이다.
+
+| Metric | Current |
+|---|---:|
+| row-source exact upper bound | `0.90` |
+| graph-tool-call retrieved top-k=3 exact | `0.69` |
+| graph-tool-call retrieved top-k=5 exact | `0.764` |
+| graph-tool-call retrieved top-k=10 exact | `0.798` |
+| deterministic BFCL retrieval@5 | `0.917` |
+| deterministic BFCL MRR | `0.80` |
+| top-k=5 repeat exact mean/std | `0.764 / 0.000` |
+| weakest category | `parallel_multiple` |
+| parallel_multiple top-k=5 exact | `0.615` |
+
+현재 상태는 "감이 아니라 수치로 검증 가능한 XGEN 적용 기준선"이다. 다만
+row-source upper bound 대비 아직 10pt 이상 손실이 있고, 복합 tool set 선택에서
+retrieval miss와 candidate ambiguity가 크다.
+
+## Product Maturity Levels
+
+| Level | Meaning | Expected Use |
+|---|---|---|
+| Current | 검증 가능한 기준선 | XGEN 실험 branch, benchmark 기반 개선 |
+| 0.26 | 제품 실험에 자신 있게 붙이는 수준 | Planflow A/B, failure subset 중심 개선 |
+| 0.27 | XGEN 기본 경로 후보 | API Collection tool search 기본 엔진 후보 |
+| 0.28 | paper-ready 실험 플랫폼 | ablation, multi-dataset, 통계 반복 |
+| 0.29 | workshop/short-paper 후보 | 논문 claim을 방어할 수 있는 evidence set |
+
+## 0.26 Target
+
+0.26은 "병목을 알고 고쳤다"를 보여주는 단계다.
+
+| Metric | Target |
+|---|---:|
+| BFCL-compatible top-k=5 exact | `>= 0.82` |
+| deterministic BFCL retrieval@5 | `>= 0.95` |
+| parallel_multiple top-k=5 exact | `>= 0.70` |
+| top-k=5 retrieval_miss | `<= 70` |
+| candidate_ambiguity | current 이하 또는 증가 이유 설명 |
+| XGEN deterministic fixture | all pass |
+
+Required work:
+
+- failure corpus를 고정한다.
+- retrieval miss와 candidate ambiguity를 별도 개선한다.
+- 단순 top-K 증가가 아니라 target/producers/diversity 구조로 후보를 구성한다.
+- `make research-check`와 failure subset smoke에서 개선이 먼저 보여야 한다.
+
+0.26의 성공 기준은 full benchmark 숫자 하나가 아니라, 이전 hard case subset에서
+실제로 miss가 줄어든다는 증거다.
+
+## 0.27 Target
+
+0.27은 XGEN에서 기본 경로 후보로 밀어볼 수 있는 단계다.
+
+| Metric | Target |
+|---|---:|
+| BFCL-compatible top-k=5 exact | `>= 0.85` |
+| BFCL-compatible top-k=10 exact | `0.84 - 0.86+` |
+| deterministic BFCL retrieval@5 | `>= 0.95` |
+| parallel_multiple top-k=5 exact | `>= 0.75` |
+| XGEN multi-step plan exact | `>= 0.90` |
+| XGEN fixture coverage | 3 fixture families |
+| row-source upper-bound preservation | `>= 94%` |
+
+Interpretation:
+
+- row-source upper bound가 `0.90`이면 top-k=5 exact `0.85`는 약 94-95% 성능
+  보존이다.
+- 이 수준이면 "검색 레이어 때문에 모델 성능이 크게 깎인다"는 주장이 약해진다.
+- XGEN에서는 API Collection tool search의 기본 엔진 후보로 볼 수 있다.
+
+Required work:
+
+- XGEN-style fixture를 commerce 1종에서 최소 3종으로 확장한다.
+- producer expansion이 plan synthesis까지 실제 이득을 내는지 측정한다.
+- top-k=5를 기본 경로로 유지하되, 복합 query에서만 adaptive expansion을 쓴다.
+- 실패 event에 stage, target, selected producers, missing fields, evidence를 남긴다.
+
+## Paper-Ready Target
+
+논문급은 0.27과 다르다. 0.27은 제품 후보이고, paper-ready는 claim과 실험
+설계가 있어야 한다.
+
+Candidate title:
+
+> Graph-Guided Tool Retrieval for Large API-Collection Agents
+
+Research claim:
+
+> OpenAPI에서 추출한 IO contract와 tool graph를 이용해 candidate tool set과
+> producer chain을 검색하면, large API collection에서 token/context 비용을 크게
+> 줄이면서 tool-call 정확도를 row-source upper bound에 가깝게 보존할 수 있다.
+
+Paper-ready metric targets:
+
+| Metric | Target |
+|---|---:|
+| BFCL-compatible top-k=5 exact | `0.87 - 0.90` |
+| deterministic BFCL retrieval@5 | `>= 0.96` |
+| parallel_multiple exact | `0.78 - 0.82` |
+| XGEN multi-step plan exact | `>= 0.90` |
+| token reduction vs full tool list | `70 - 90%` |
+| retrieval latency | p50 ms 단위 |
+| repeats | `>= 3`, confidence interval 포함 |
+
+Paper-ready evidence:
+
+- BM25-only baseline
+- embedding-only baseline
+- BM25 + graph baseline
+- graph + producer expansion
+- graph + IO contract
+- graph + reranker
+- full tool list / row-source upper bound
+- ablation for clause decomposition, producer expansion, IO contract, evidence rerank
+- BFCL-derived, XGEN-style, real OpenAPI specs, Korean/English mixed queries
+- failure taxonomy and qualitative failure analysis
+
+## Workstreams
+
+### 1. Failure Corpus
+
+Goal: "어떤 실패를 고쳤는지"를 항상 재현 가능하게 만든다.
+
+- full run에서 hard case IDs를 추출한다.
+- `retrieval_miss`, `candidate_ambiguity`, `argument_name_mismatch`,
+  `call_count_mismatch`를 별도 subset으로 관리한다.
+- 각 subset은 deterministic first, model smoke second, full run last 순서로 검증한다.
+
+### 2. Search Evidence
+
+Goal: top-K 결과뿐 아니라 탈락 이유를 설명한다.
+
+- BM25, clause, name, semantic, graph, producer score를 분리한다.
+- 정답이 top-K 밖이면 rank, score gap, missing evidence를 남긴다.
+- `retrieve_graphify(include_evidence=True)`를 XGEN log/SSE에 연결 가능한 형태로 유지한다.
+
+### 3. Candidate Set Construction
+
+Goal: top-K를 단순히 키우지 않고 후보 구성을 좋아지게 한다.
+
+- target 후보와 producer 후보를 분리한다.
+- near-duplicate/sibling 후보를 제어한다.
+- multi-intent query에서는 category diversity를 보장한다.
+- 복합 query에서만 adaptive expansion을 적용한다.
+
+### 4. Reranking
+
+Goal: recall을 유지하면서 candidate ambiguity를 줄인다.
+
+- 1차: deterministic heuristic reranker
+- 2차: optional embedding rerank
+- 3차: optional small model rerank
+- 성공 기준은 top-k=5 exact 상승과 ambiguity 비증가다.
+
+### 5. XGEN Fixtures
+
+Goal: BFCL이 놓치는 실제 API Collection 문제를 포착한다.
+
+Minimum fixture families:
+
+- commerce: search/detail/order/shipping/refund
+- admin/user/auth: user, role, permission, token, audit
+- workflow update: search/detail/status-change/notification
+
+Each case should include:
+
+- natural-language query
+- expected target
+- expected producers
+- expected plan
+- required context defaults
+- user input slots
+- failure reason when plan cannot be synthesized
+
+## Validation Policy
+
+Use [`validation-loop.md`](validation-loop.md) as the execution contract.
+
+Default research flow:
+
+```bash
+make research-check
+
+poetry run python -m benchmarks.bfcl_tool_selection.failures \
+  --report /tmp/full-run.json \
+  --failure-categories retrieval_miss,candidate_ambiguity \
+  --tool-sources retrieved \
+  --top-ks 5 \
+  --output /tmp/hard-cases.txt
+
+CASE_IDS_FILE=/tmp/hard-cases.txt make research-check-deterministic
+
+CASE_IDS_FILE=/tmp/hard-cases.txt \
+MODEL=qwen3.6-27b \
+LLM_URL=http://127.0.0.1:8000/v1 \
+DISABLE_THINKING=1 \
+SMOKE_LIMIT=100 \
+make research-check-smoke
+```
+
+Full model benchmark is allowed only when:
+
+- README/docs public numbers will be updated.
+- a release candidate needs publish validation.
+- failure subset metrics show a large enough improvement to justify full distribution checks.
+
+## Non-Goals
+
+- Do not optimize for BFCL leaderboard submission before XGEN product value is proven.
+- Do not hide model weakness by changing evaluator definitions.
+- Do not put XGEN DB/auth/SSE/cookie/user-id logic into graph-tool-call.
+- Do not make top-K larger as the only fix if latency or ambiguity increases.
+- Do not add heavyweight runtime dependencies to the core package.
+
+## Decision Checklist
+
+Before promoting a research change:
+
+- Did T0/T1 pass?
+- Which failure subset improved?
+- Did candidate ambiguity stay flat or decrease?
+- Did retrieval miss decrease without large latency growth?
+- Did XGEN deterministic plan coverage stay green?
+- Is any public benchmark number backed by artifact path and exact command?
+- Is the claim product-level, local benchmark-level, or paper-level?
+
+The answer to the last question must be explicit in docs and PR summaries.

@@ -4,6 +4,9 @@ graph-tool-call search 연구는 full model benchmark를 매번 돌리면 속도
 무너진다. 이 문서는 XGEN tool graph search 고도화 작업에서 사용할 검증
 계층, 실행 명령, artifact 규칙, 승격 기준을 고정한다.
 
+목표와 milestone 기준은 [`xgen-tool-graph-goals.md`](xgen-tool-graph-goals.md)를
+따른다. 이 문서는 그 목표를 빠르게 검증하기 위한 실행 루프다.
+
 ## 목표
 
 - 일반 검색 로직 수정은 10분 안에 방향성을 판단한다.
