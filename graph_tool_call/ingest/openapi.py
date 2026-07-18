@@ -176,6 +176,11 @@ _DERIVED_FIELD_HINT_KEYS = (
     "schema_ref",
     "schema_expanded_from",
     "schema_expansion",
+    "content_type",
+    "content_types",
+    "content_schema_type",
+    "content_fields",
+    "content_top_level_fields",
     "additional_properties",
     "map_value",
     "map_key_placeholder",
@@ -365,6 +370,98 @@ def _content_type_rows(
             row["example_count"] = len(examples)
         rows.append(row)
     return rows
+
+
+def _parameter_content_schema_with_type(
+    parameter: dict[str, Any],
+) -> tuple[dict[str, Any], str | None]:
+    content = parameter.get("content")
+    if not isinstance(content, dict) or not content:
+        return {}, None
+    return _pick_content_schema_with_type(content)
+
+
+def _parameter_content_type_rows(
+    content: dict[str, Any],
+    *,
+    location: str,
+) -> list[dict[str, Any]]:
+    if not isinstance(content, dict) or not content:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for content_type, media in content.items():
+        media = media if isinstance(media, dict) else {}
+        schema = media.get("schema") if isinstance(media.get("schema"), dict) else {}
+        row: dict[str, Any] = {
+            "content_type": str(content_type),
+            "is_json": _is_json_media_type(str(content_type)),
+            "has_schema": bool(schema),
+        }
+        raw_examples = _example_rows(
+            media,
+            location=location,
+            content_type=str(content_type),
+            compact_values=False,
+        )
+        examples = _example_rows(media, location=location, content_type=str(content_type))
+        inferred_top_level_fields = example_top_level_rows(
+            raw_examples,
+            location=location,
+            source="parameter_content_example",
+        )
+        inferred_fields = example_leaf_rows(
+            raw_examples,
+            location=location,
+            source="parameter_content_example",
+        )
+        if schema:
+            row["schema_type"] = _schema_type(schema)
+            top_level_fields = _request_body_top_level_rows(schema)
+            for top_level in top_level_fields:
+                top_level["location"] = location
+            fields = _schema_field_rows(schema, location=location)
+            top_level_fields = _merge_field_rows(top_level_fields, inferred_top_level_fields)
+            fields = _merge_field_rows(fields, inferred_fields)
+            if top_level_fields:
+                row["top_level_fields"] = top_level_fields
+            if fields:
+                row["fields"] = fields
+            row["field_count"] = len(fields)
+        else:
+            if inferred_top_level_fields:
+                row["top_level_fields"] = inferred_top_level_fields
+            if inferred_fields:
+                row["fields"] = inferred_fields
+                row["field_count"] = len(inferred_fields)
+        if examples:
+            row["examples"] = examples
+            row["example_count"] = len(examples)
+        rows.append(row)
+    return rows
+
+
+def _add_parameter_content_metadata(row: dict[str, Any], parameter: dict[str, Any]) -> None:
+    location = str(row.get("in") or "")
+    content = parameter.get("content")
+    if not isinstance(content, dict) or not content:
+        return
+    schema, content_type = _parameter_content_schema_with_type(parameter)
+    content_rows = _parameter_content_type_rows(content, location=location)
+    if not content_rows:
+        return
+    if content_type:
+        row["content_type"] = content_type
+    if schema:
+        row["content_schema_type"] = _schema_type(schema)
+    for content_row in content_rows:
+        if content_row.get("content_type") == content_type:
+            content_row["selected"] = True
+            if content_row.get("fields"):
+                row["content_fields"] = copy.deepcopy(content_row["fields"])
+            if content_row.get("top_level_fields"):
+                row["content_top_level_fields"] = copy.deepcopy(content_row["top_level_fields"])
+    row["content_types"] = content_rows
 
 
 def _media_type_name_rows(media_types: list[Any], *, has_schema: bool) -> list[dict[str, Any]]:
@@ -695,6 +792,9 @@ def _extract_params_openapi3(
         if "name" not in p:
             continue  # skip malformed parameters (missing required 'name' field)
         schema = p.get("schema", {})
+        content_schema, content_type = _parameter_content_schema_with_type(p)
+        if not isinstance(schema, dict) or not schema:
+            schema = content_schema
         is_required = p.get("required", False)
         # OpenAPI 3.x: path 파라미터는 본질적으로 required (URL placeholder 채우려면 필수).
         # 많은 spec이 명시 안 해도 강제로 required 처리해야 synthesizer가 빈 entity를
@@ -715,6 +815,7 @@ def _extract_params_openapi3(
             ptype in ("object", "array")
             and p.get("in") == "query"
             and p.get("style") != "deepObject"
+            and not content_type
         ):
             wrapper_props, wrapper_required = _expandable_parameter_properties(schema, ptype)
             if wrapper_props:
@@ -1112,15 +1213,25 @@ def _openapi_parameter_rows(
         if location == "body":
             continue
         schema = p if is_swagger2 else p.get("schema") or {}
+        content_schema, content_type = (
+            ({}, None) if is_swagger2 else _parameter_content_schema_with_type(p)
+        )
         if not isinstance(schema, dict):
             schema = {}
+        if not schema and content_schema:
+            schema = content_schema
         schema = _parameter_effective_schema(schema)
         required = bool(p.get("required", location == "path"))
         if location == "path":
             required = True
         ptype = _schema_type(schema)
 
-        if ptype in ("object", "array") and location == "query" and p.get("style") != "deepObject":
+        if (
+            ptype in ("object", "array")
+            and location == "query"
+            and p.get("style") != "deepObject"
+            and not content_type
+        ):
             wrapper_props, wrapper_required = _expandable_parameter_properties(schema, ptype)
             if wrapper_props:
                 if all(prop in sibling_names for prop in wrapper_props):
@@ -1166,6 +1277,7 @@ def _openapi_parameter_rows(
             row["description"] = desc[:300]
         if isinstance(enum, list) and enum:
             row["enum"] = list(enum)
+        _add_parameter_content_metadata(row, p)
         examples = [
             *_example_rows(p, location=location),
             *_example_rows(schema, location=location),

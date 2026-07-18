@@ -122,6 +122,10 @@ OpenAPI field direction is enforced before graph/search promotion:
   If Spring/SpringDoc exposes both the wrapper and a sibling field, the wrapper
   is dropped and the sibling wins. Explicit `style=deepObject` parameters keep
   the wrapper because it is part of the wire format.
+- OpenAPI3 parameter `content` schemas are preserved for path/query/header/cookie
+  parameters. Selected JSON content parameters expose `content_type`,
+  `content_fields`, and `content_types` evidence while keeping the parameter
+  name as the wire-level input.
 - JSON Schema `additionalProperties` maps preserve map-value fields with
   `additional_properties=true`, `map_value=true`, and `map_key_placeholder="*"`.
   Object map values use paths such as `$.data.*.goodsNo`; primitive maps keep
@@ -146,8 +150,9 @@ OpenAPI field direction is enforced before graph/search promotion:
 so POST operations with query/header parameters are rendered correctly. It also
 honors common OpenAPI parameter serialization rules such as `form`,
 `spaceDelimited`, `pipeDelimited`, `deepObject`, `simple`, `label`, `matrix`,
-`explode`, and `allowReserved`. For request bodies it preserves declared media
-type candidates and can render `application/json`,
+`explode`, and `allowReserved`. JSON parameter `content` values are serialized
+as one encoded parameter value instead of exploded object fields. For request
+bodies it preserves declared media type candidates and can render `application/json`,
 `application/x-www-form-urlencoded`, and `multipart/form-data`; binary/file-like
 arguments select the multipart candidate when one is declared.
 

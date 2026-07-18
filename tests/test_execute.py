@@ -6,6 +6,7 @@ import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 
 import pytest
 
@@ -340,6 +341,50 @@ class TestBuildRequest:
         )
         assert req.headers["X-scopes"] == "read,write"
         assert req.headers["Cookie"] == "theme=dark; compact=true"
+
+    def test_openapi_json_content_parameters_serialize_as_single_values(self):
+        tool = _make_tool(
+            name="searchItems",
+            method="GET",
+            path="/items/{scope}",
+            params=[
+                ToolParam(name="scope", type="object", required=True),
+                ToolParam(name="filter", type="object"),
+                ToolParam(name="X-Filter", type="object"),
+                ToolParam(name="prefs", type="object"),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {"name": "scope", "in": "path", "content_type": "application/json"},
+                {"name": "filter", "in": "query", "content_type": "application/json"},
+                {"name": "X-Filter", "in": "header", "content_type": "application/json"},
+                {"name": "prefs", "in": "cookie", "content_type": "application/json"},
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(
+            tool,
+            {
+                "scope": {"siteNo": 10},
+                "filter": {"brandNo": "B1", "status": "SALE"},
+                "X-Filter": {"channel": "BO"},
+                "prefs": {"locale": "ko"},
+            },
+        )
+
+        parsed = urlparse(req.full_url)
+        assert parsed.path == "/items/%7B%22siteNo%22%3A10%7D"
+        assert json.loads(parse_qs(parsed.query)["filter"][0]) == {
+            "brandNo": "B1",
+            "status": "SALE",
+        }
+        headers = {name.lower(): value for name, value in req.headers.items()}
+        assert json.loads(headers["x-filter"]) == {"channel": "BO"}
+        cookie_name, cookie_value = req.headers["Cookie"].split("=", 1)
+        assert cookie_name == "prefs"
+        assert json.loads(unquote(cookie_value)) == {"locale": "ko"}
 
     def test_form_request_body_uses_urlencoding(self):
         tool = _make_tool(
@@ -744,6 +789,7 @@ class TestBuildRequest:
                 "field_type": "string",
                 "json_path": "$.status",
                 "enum": ["paid", "ready"],
+                "content_type": "application/json",
             }
         ]
         with pytest.raises(OpenAPIRequestValidationError, match=r"body:status\(enum\)"):

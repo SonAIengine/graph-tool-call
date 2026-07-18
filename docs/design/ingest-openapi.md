@@ -91,6 +91,14 @@ sibling field를 우선하고 wrapper는 제거한다. 이 규칙은 `ToolParame
 단, 명시적인 `style=deepObject` parameter는 `filter[status]=paid`처럼 wrapper
 이름이 wire format의 일부이므로 펼치지 않고 wrapper를 유지한다.
 
+OpenAPI3 Parameter Object가 `schema` 대신 `content`를 사용하는 경우에도
+선택된 media type, schema field, example field를 보존한다. JSON content
+parameter는 `content_type`, `content_schema_type`, `content_fields`,
+`content_types`를 `metadata.openapi.parameters`와 `api_contract.consumes`에
+남기며, executor는 object/list 값을 하나의 JSON 문자열 parameter로 직렬화한다.
+이 경우 parameter 이름 자체가 wire format의 입력이므로 query DTO 펼침 규칙을
+적용하지 않는다.
+
 JSON Schema `additionalProperties`는 동적 key map으로 보존한다. map value가
 object면 내부 field를 `$.data.*.goodsNo` 같은 path로 추출하고
 `additional_properties=true`, `map_value=true`, `map_key_placeholder="*"`를

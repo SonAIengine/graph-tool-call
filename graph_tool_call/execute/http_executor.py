@@ -1002,6 +1002,11 @@ def _copy_validation_hint(source: dict[str, Any], target: dict[str, Any]) -> Non
         "schema_branches",
         "required_in_branch",
         "schema_ref",
+        "content_type",
+        "content_types",
+        "content_schema_type",
+        "content_fields",
+        "content_top_level_fields",
         "discriminator_property",
         "discriminator_value",
         "discriminator_values",
@@ -1349,6 +1354,9 @@ def _same_content_type(left: str, right: str) -> bool:
 
 
 def _serialize_path_parameter(name: str, value: Any, parameter: dict[str, Any]) -> str:
+    content_text = _parameter_content_text(value, parameter)
+    if content_text is not None:
+        return _quote_path_value(content_text)
     style = str(parameter.get("style") or "simple")
     explode = _explode(parameter, style)
     if style == "label":
@@ -1376,6 +1384,9 @@ def _serialize_query_parameter(
     style = str(parameter.get("style") or "form")
     explode = _explode(parameter, style)
     allow_reserved = bool(parameter.get("allowReserved", False))
+    content_text = _parameter_content_text(value, parameter)
+    if content_text is not None:
+        return [_query_pair(name, content_text, allow_reserved=allow_reserved)]
 
     if style == "deepObject" and isinstance(value, dict):
         return [
@@ -1461,12 +1472,18 @@ def _query_pair(
 
 
 def _serialize_header_parameter(name: str, value: Any, parameter: dict[str, Any]) -> str:
+    content_text = _parameter_content_text(value, parameter)
+    if content_text is not None:
+        return content_text
     style = str(parameter.get("style") or "simple")
     explode = _explode(parameter, style)
     return _serialize_simple_text(name, value, explode=explode)
 
 
 def _cookie_segments(name: str, value: Any, parameter: dict[str, Any]) -> list[str]:
+    content_text = _parameter_content_text(value, parameter)
+    if content_text is not None:
+        return [_cookie_pair(name, content_text)]
     style = str(parameter.get("style") or "form")
     explode = _explode(parameter, style)
     if isinstance(value, dict):
@@ -1594,6 +1611,15 @@ def _primitive_text(value: Any) -> str:
 
 def _quote_path_value(value: Any) -> str:
     return urllib.parse.quote(_primitive_text(value), safe="")
+
+
+def _parameter_content_text(value: Any, parameter: dict[str, Any]) -> str | None:
+    content_type = str(parameter.get("content_type") or "")
+    if not content_type or not _is_json_content_type(content_type):
+        return None
+    if isinstance(value, dict | list):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return None
 
 
 def _explode(parameter: dict[str, Any], style: str) -> bool:

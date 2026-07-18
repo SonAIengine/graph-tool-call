@@ -546,6 +546,84 @@ class TestIngestOpenAPI30:
             "attributes": {"color": {"value": "red"}}
         }
 
+    def test_parameter_content_schema_is_preserved_for_json_query_parameter(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Parameter Content API", "version": "1.0.0"},
+            "paths": {
+                "/goods/search": {
+                    "get": {
+                        "operationId": "searchGoods",
+                        "parameters": [
+                            {
+                                "name": "filter",
+                                "in": "query",
+                                "required": True,
+                                "description": "검색 필터",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "required": ["status"],
+                                            "properties": {
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": ["SALE", "SOLD_OUT"],
+                                                },
+                                                "brandNo": {
+                                                    "type": "string",
+                                                    "description": "브랜드 번호",
+                                                },
+                                            },
+                                        },
+                                        "example": {"status": "SALE", "brandNo": "B1"},
+                                    }
+                                },
+                            }
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        openapi = tool.metadata["openapi"]
+        parameter_rows = {row["name"]: row for row in openapi["parameters"]}
+        filter_param = next(param for param in tool.parameters if param.name == "filter")
+        filter_row = parameter_rows["filter"]
+
+        assert filter_param.type == "object"
+        assert filter_param.required is True
+        assert "brandNo" in filter_param.description
+        assert filter_row["content_type"] == "application/json"
+        assert filter_row["content_schema_type"] == "object"
+        assert filter_row["content_types"][0]["selected"] is True
+        assert filter_row["content_types"][0]["examples"][0]["value"] == {
+            "status": "SALE",
+            "brandNo": "B1",
+        }
+        content_fields = {row["field_name"]: row for row in filter_row["content_fields"]}
+        assert content_fields["status"]["enum"] == ["SALE", "SOLD_OUT"]
+        assert content_fields["brandNo"]["description"] == "브랜드 번호"
+        assert openapi["input_locations"]["query"] == ["filter"]
+
+        consumes = {row["field_name"]: row for row in tool.metadata["api_contract"]["consumes"]}
+        assert consumes["filter"]["content_type"] == "application/json"
+        assert consumes["filter"]["content_fields"][0]["location"] == "query"
+
+        request = HttpExecutor("https://api.example.com").build_request(
+            tool,
+            {"filter": {"status": "SALE", "brandNo": "B1"}},
+        )
+        parsed = urlparse(request.full_url)
+        assert parsed.path == "/goods/search"
+        assert json.loads(parse_qs(parsed.query)["filter"][0]) == {
+            "brandNo": "B1",
+            "status": "SALE",
+        }
+
     def test_query_object_parameter_metadata_expands_to_inner_fields(self) -> None:
         """Query DTO wrappers should not leak into graph/Planflow contracts."""
         spec = {
