@@ -89,6 +89,17 @@ tools = tg.retrieve("create a pet", top_k=5)
 |---|---|
 | `execute(name, params, base_url=...)` | Execute an OpenAPI tool directly |
 
+OpenAPI ingest preserves execution-oriented request/response facts in each
+tool's metadata:
+
+- `metadata.openapi.parameters`: normalized path/query/header/cookie parameters
+- `metadata.openapi.request_body`: content type, schema, top-level fields, leaf fields
+- `metadata.openapi.response`: selected success status, content type, schema, leaf fields
+- `metadata.api_contract`: raw extracted produces/consumes rows for graph building
+
+`HttpExecutor` uses this metadata before falling back to method-based heuristics,
+so POST operations with query/header parameters are rendered correctly.
+
 ---
 
 ## Top-level helpers

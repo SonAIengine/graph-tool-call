@@ -318,6 +318,15 @@ def _pick_response_schema(
         content = resp.get("content") or {}
         if "application/json" in content:
             return content["application/json"].get("schema")
+        for content_type, media in content.items():
+            if isinstance(content_type, str) and content_type.endswith("+json"):
+                return media.get("schema") if isinstance(media, dict) else None
+        if "*/*" in content:
+            media = content["*/*"]
+            return media.get("schema") if isinstance(media, dict) else None
+        for media in content.values():
+            if isinstance(media, dict) and media.get("schema"):
+                return media["schema"]
     return None
 
 

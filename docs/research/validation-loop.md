@@ -89,13 +89,17 @@ https://api-bo.x2bee.com/api/bo/swagger-ui/index.html
 | unique tools | `1,084` |
 | duplicate tools skipped | `1,077` |
 | graph edges | `8,599` |
-| build time | `3.69s` |
+| contract request tools | `2,069` |
+| contract response tools | `1,615` |
+| contract consumes fields | `23,719` |
+| contract produces fields | `38,873` |
+| build time | `4.61s` |
 | Korean smoke cases | `8/8 hit@10` |
 | expected tool recall@10 | `1.00` |
 | top-1 hit@10 | `0.75` |
 | top-3 hit@10 | `0.875` |
 | mean MRR | `0.823` |
-| average retrieval latency | `29.54ms` |
+| average retrieval latency | `40.04ms` |
 
 top-K sweep 기준선은 다음과 같다.
 
@@ -104,6 +108,11 @@ top-K sweep 기준선은 다음과 같다.
 | `3` | `0.75` | `0.8125` | `0.75` | `0.875` | `order_query`, page-role secondary |
 | `5` | `1.00` | `1.00` | `0.75` | `0.875` | rank-4/5 압축 |
 | `10` | `1.00` | `1.00` | `0.75` | `0.875` | acceptance 기준 |
+
+raw OpenAPI contract는 `metadata.api_contract`와 `metadata.openapi`에 보존한다.
+단, plain ingest에서는 top-level `metadata.produces` / `metadata.consumes`로
+자동 승격하지 않는다. 대형 Swagger에서 모든 raw field를 검색 인덱스에 직접
+넣으면 `status`, `data`, `list` 같은 공통 field가 노이즈가 되기 때문이다.
 
 이 수치는 live API가 바뀌면 달라질 수 있으므로 public claim으로 쓰기 전에는
 artifact 경로와 실행 날짜를 함께 남긴다.

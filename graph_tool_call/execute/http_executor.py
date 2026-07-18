@@ -13,6 +13,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -45,10 +46,9 @@ class HttpExecutor:
     ) -> urllib.request.Request:
         """Build a ``urllib.request.Request`` from tool metadata + arguments.
 
-        Parameters are classified by location:
-        - Path params: ``{name}`` placeholders in the URL template
-        - Query params: GET/DELETE/HEAD method params
-        - Body params: POST/PUT/PATCH method params (sent as JSON)
+        Parameters are classified by OpenAPI metadata when available:
+        ``path`` / ``query`` / ``header`` / ``cookie`` / request-body fields.
+        Older tool metadata falls back to the previous method-based heuristic.
         """
         metadata = tool.metadata
         if not metadata or metadata.get("source") != "openapi":
@@ -56,26 +56,44 @@ class HttpExecutor:
 
         method = metadata["method"].upper()
         path_template: str = metadata["path"]
+        api_metadata = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
+        location_by_param = _location_by_param(api_metadata)
+        body_field_paths = _body_field_paths(api_metadata)
 
         path_params: dict[str, Any] = {}
         query_params: dict[str, Any] = {}
+        header_params: dict[str, Any] = {}
+        cookie_params: dict[str, Any] = {}
         body_params: dict[str, Any] = {}
 
-        for param in tool.parameters:
-            value = arguments.get(param.name)
+        for param_name in _iter_known_argument_names(tool, api_metadata):
+            value = arguments.get(param_name)
             if value is None:
                 continue
-            if f"{{{param.name}}}" in path_template:
-                path_params[param.name] = value
+            location = location_by_param.get(param_name)
+            if f"{{{param_name}}}" in path_template or location == "path":
+                path_params[param_name] = value
+            elif location == "query":
+                query_params[param_name] = value
+            elif location == "header":
+                header_params[param_name] = value
+            elif location == "cookie":
+                cookie_params[param_name] = value
+            elif location == "body":
+                body_params[param_name] = value
             elif method in ("GET", "DELETE", "HEAD", "OPTIONS"):
-                query_params[param.name] = value
+                query_params[param_name] = value
             else:
-                body_params[param.name] = value
+                body_params[param_name] = value
 
         # Build URL
         path = path_template
         for k, v in path_params.items():
             path = path.replace(f"{{{k}}}", urllib.parse.quote(str(v), safe=""))
+        missing_path_params = re.findall(r"{([^}/]+)}", path)
+        if missing_path_params:
+            missing = ", ".join(sorted(set(missing_path_params)))
+            raise ValueError(f"Missing path parameter(s) for tool '{tool.name}': {missing}")
 
         # tool 자체 base_url(spec.servers 유래)이 있으면 그쪽 우선 — 한 컬렉션에
         # 다른 호스트(common/product/member 등)의 source가 섞여 있을 때 source별
@@ -88,10 +106,26 @@ class HttpExecutor:
 
         # Build request
         headers = dict(self._headers)
+        for k, v in header_params.items():
+            headers[str(k)] = str(v)
+        if cookie_params:
+            cookie = "; ".join(
+                f"{urllib.parse.quote(str(k))}={urllib.parse.quote(str(v))}"
+                for k, v in cookie_params.items()
+            )
+            headers["Cookie"] = (
+                f"{headers.get('Cookie')}; {cookie}" if headers.get("Cookie") else cookie
+            )
+
         data: bytes | None = None
         if body_params and method in ("POST", "PUT", "PATCH"):
-            headers["Content-Type"] = "application/json"
-            data = json.dumps(body_params, ensure_ascii=False).encode("utf-8")
+            content_type = _request_content_type(api_metadata, metadata)
+            headers["Content-Type"] = content_type
+            if _is_form_content_type(content_type):
+                data = urllib.parse.urlencode(body_params, doseq=True).encode("utf-8")
+            else:
+                body = _build_json_body(body_params, body_field_paths)
+                data = json.dumps(body, ensure_ascii=False).encode("utf-8")
 
         return urllib.request.Request(url, data=data, headers=headers, method=method)
 
@@ -147,5 +181,103 @@ class HttpExecutor:
             "headers": dict(req.headers),
         }
         if req.data:
-            result["body"] = json.loads(req.data.decode("utf-8"))
+            content_type = req.headers.get("Content-type") or req.headers.get("Content-Type") or ""
+            if _is_form_content_type(content_type):
+                result["body"] = req.data.decode("utf-8")
+            else:
+                result["body"] = json.loads(req.data.decode("utf-8"))
         return result
+
+
+def _iter_known_argument_names(tool: ToolSchema, api_metadata: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+
+    def add(name: str) -> None:
+        if name and name not in names:
+            names.append(name)
+
+    for param in tool.parameters:
+        add(param.name)
+    for param in api_metadata.get("parameters") or []:
+        if isinstance(param, dict):
+            add(str(param.get("name") or ""))
+    request_body = api_metadata.get("request_body") or {}
+    for row in (request_body.get("top_level_fields") or []) + (request_body.get("fields") or []):
+        if isinstance(row, dict):
+            add(str(row.get("field_name") or ""))
+    return names
+
+
+def _location_by_param(api_metadata: dict[str, Any]) -> dict[str, str]:
+    locations: dict[str, str] = {}
+    for param in api_metadata.get("parameters") or []:
+        if not isinstance(param, dict):
+            continue
+        name = str(param.get("name") or "")
+        loc = str(param.get("in") or "")
+        if name and loc:
+            locations[name] = loc
+    request_body = api_metadata.get("request_body") or {}
+    for row in (request_body.get("top_level_fields") or []) + (request_body.get("fields") or []):
+        if isinstance(row, dict) and row.get("field_name"):
+            locations.setdefault(str(row["field_name"]), "body")
+    return locations
+
+
+def _body_field_paths(api_metadata: dict[str, Any]) -> dict[str, str]:
+    request_body = api_metadata.get("request_body") or {}
+    paths: dict[str, str] = {}
+    for row in (request_body.get("top_level_fields") or []) + (request_body.get("fields") or []):
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("field_name") or "")
+        json_path = str(row.get("json_path") or "")
+        if name and json_path and name not in paths:
+            paths[name] = json_path
+    return paths
+
+
+def _request_content_type(api_metadata: dict[str, Any], metadata: dict[str, Any]) -> str:
+    request_body = api_metadata.get("request_body") or {}
+    content_type = (
+        request_body.get("content_type")
+        or metadata.get("request_content_type")
+        or "application/json"
+    )
+    return "application/json" if content_type == "*/*" else str(content_type)
+
+
+def _is_form_content_type(content_type: str) -> bool:
+    return content_type.split(";", 1)[0].strip().lower() == "application/x-www-form-urlencoded"
+
+
+def _build_json_body(
+    body_params: dict[str, Any],
+    body_field_paths: dict[str, str],
+) -> dict[str, Any]:
+    body: dict[str, Any] = {}
+    for name, value in body_params.items():
+        json_path = body_field_paths.get(name)
+        if json_path and _can_assign_json_path(json_path):
+            _assign_json_path(body, json_path, value)
+        else:
+            body[name] = value
+    return body
+
+
+def _can_assign_json_path(json_path: str) -> bool:
+    return json_path.startswith("$.") and "[*]" not in json_path
+
+
+def _assign_json_path(body: dict[str, Any], json_path: str, value: Any) -> None:
+    parts = [part for part in json_path.removeprefix("$.").split(".") if part]
+    if not parts:
+        return
+    cursor = body
+    for part in parts[:-1]:
+        existing = cursor.get(part)
+        if not isinstance(existing, dict):
+            existing = {}
+            cursor[part] = existing
+        cursor = existing
+    cursor[parts[-1]] = value

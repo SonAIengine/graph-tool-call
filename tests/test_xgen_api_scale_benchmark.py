@@ -95,6 +95,11 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     assert report["scale"]["unique_tool_count"] == 3
     assert report["scale"]["duplicate_tool_count"] == 1
     assert report["scale"]["duplicate_operation_id_count"] == 1
+    assert report["scale"]["contract_request_tool_count"] == 4
+    assert report["scale"]["contract_response_tool_count"] == 4
+    assert report["scale"]["contract_consumes_field_count"] == 4
+    assert report["scale"]["contract_produces_field_count"] == 4
+    assert report["scale"]["contract_input_locations"]["query"] == 4
     assert report["search"]["case_hit_at_k"] == 1.0
     assert report["search"]["top_1_hit_at_k"] == 1.0
     assert report["search"]["top_3_hit_at_k"] == 1.0

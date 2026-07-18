@@ -603,13 +603,17 @@ Verified local result on 2026-07-19:
 | Unique tools after operationId dedupe | `1,084` |
 | Duplicate tools skipped | `1,077` |
 | Graph edges | `8,599` |
-| Build time | `3.69s` |
+| Contract request tools | `2,069` |
+| Contract response tools | `1,615` |
+| Contract consumes fields | `23,719` |
+| Contract produces fields | `38,873` |
+| Build time | `4.61s` |
 | Korean smoke hit@10 | `8/8` |
 | Expected tool recall@10 | `1.00` |
 | Top-1 hit@10 | `0.75` |
 | Top-3 hit@10 | `0.875` |
 | Mean MRR | `0.823` |
-| Average retrieval latency | `29.54ms` |
+| Average retrieval latency | `40.04ms` |
 
 Top-K sweep from the same live target on 2026-07-19:
 
@@ -618,6 +622,12 @@ Top-K sweep from the same live target on 2026-07-19:
 | `3` | `0.75` | `0.8125` | `0.75` | `0.875` | `0.792` | `order_query`, secondary page-role button |
 | `5` | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | rank-4/5 compression |
 | `10` | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | acceptance baseline |
+
+OpenAPI request/response contract is preserved under `metadata.api_contract`
+and `metadata.openapi`. It is intentionally not promoted into top-level
+`metadata.produces` / `metadata.consumes` during plain OpenAPI ingest; raw
+schema leaves are useful for execution and graph construction, but indexing all
+of them directly can add noisy common fields to large Swagger search.
 
 This is not a model score. It verifies that graph-tool-call can discover the
 Swagger groups, dedupe umbrella/group duplicates, ingest the resulting 1k-tool

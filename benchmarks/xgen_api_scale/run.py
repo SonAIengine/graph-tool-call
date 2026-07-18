@@ -375,6 +375,11 @@ def build_scale_graph(
     duplicate_tool_names: Counter[str] = Counter()
     ingested_tool_total = 0
     source_tool_counts: dict[str, int] = {}
+    contract_request_tool_count = 0
+    contract_response_tool_count = 0
+    contract_consumes_field_count = 0
+    contract_produces_field_count = 0
+    contract_input_locations: Counter[str] = Counter()
 
     for loaded in loaded_specs:
         tools, _normalized = ingest_openapi(loaded.spec)
@@ -384,6 +389,18 @@ def build_scale_graph(
             metadata = dict(tool.metadata or {})
             metadata["source_label"] = loaded.label
             metadata["source_url"] = loaded.source
+            api_contract = metadata.get("api_contract") or {}
+            consumes = api_contract.get("consumes") or []
+            produces = api_contract.get("produces") or []
+            if consumes:
+                contract_request_tool_count += 1
+                contract_consumes_field_count += len(consumes)
+            if produces:
+                contract_response_tool_count += 1
+                contract_produces_field_count += len(produces)
+            for location, names in (metadata.get("input_locations") or {}).items():
+                if isinstance(names, list):
+                    contract_input_locations[str(location)] += len(names)
             tool.metadata = metadata
             if tool.name in unique_tools:
                 duplicate_tool_names[tool.name] += 1
@@ -405,6 +422,11 @@ def build_scale_graph(
             for name, count in duplicate_tool_names.most_common(20)
         ],
         "source_tool_counts": source_tool_counts,
+        "contract_request_tool_count": contract_request_tool_count,
+        "contract_response_tool_count": contract_response_tool_count,
+        "contract_consumes_field_count": contract_consumes_field_count,
+        "contract_produces_field_count": contract_produces_field_count,
+        "contract_input_locations": dict(sorted(contract_input_locations.items())),
     }
 
 
@@ -523,6 +545,11 @@ def summarize_scale(
         "build_seconds": build_seconds,
         "source_tool_counts": ingest_summary["source_tool_counts"],
         "duplicate_tool_names": ingest_summary["duplicate_tool_names"],
+        "contract_request_tool_count": ingest_summary["contract_request_tool_count"],
+        "contract_response_tool_count": ingest_summary["contract_response_tool_count"],
+        "contract_consumes_field_count": ingest_summary["contract_consumes_field_count"],
+        "contract_produces_field_count": ingest_summary["contract_produces_field_count"],
+        "contract_input_locations": ingest_summary["contract_input_locations"],
     }
 
 
@@ -726,6 +753,15 @@ def _print_report(report: dict[str, Any]) -> None:
             params=scale["parameter_count"],
         )
     )
+    print(
+        "contract: request_tools={req_tools} response_tools={resp_tools} "
+        "consumes={consumes} produces={produces}".format(
+            req_tools=scale["contract_request_tool_count"],
+            resp_tools=scale["contract_response_tool_count"],
+            consumes=scale["contract_consumes_field_count"],
+            produces=scale["contract_produces_field_count"],
+        )
+    )
     if search["status"] != "skipped":
         print(
             "search: status={status} cases={cases} hit@K={hit:.2f} recall@K={recall:.2f} "
@@ -766,6 +802,15 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
             edges=scale["edge_count"],
             build=scale["build_seconds"],
             acceptance=report["acceptance_top_k"],
+        )
+    )
+    print(
+        "contract: request_tools={req_tools} response_tools={resp_tools} "
+        "consumes={consumes} produces={produces}".format(
+            req_tools=scale["contract_request_tool_count"],
+            resp_tools=scale["contract_response_tool_count"],
+            consumes=scale["contract_consumes_field_count"],
+            produces=scale["contract_produces_field_count"],
         )
     )
     for run in report["sweep"]:

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from graph_tool_call.core.tool import MCPAnnotations, ToolParameter, ToolSchema
+from graph_tool_call.ingest.io_contract import FieldLeaf, extract_leaves
 from graph_tool_call.ingest.normalizer import NormalizedSpec, normalize
 from graph_tool_call.net import fetch_url_text
 
@@ -131,7 +133,10 @@ _TYPE_MAP: dict[str, str] = {
 
 
 def _schema_type(schema: dict[str, Any]) -> str:
-    return _TYPE_MAP.get(schema.get("type", "string"), "string")
+    schema_type = schema.get("type", "string") if isinstance(schema, dict) else "string"
+    if isinstance(schema_type, list):
+        schema_type = next((t for t in schema_type if t and t != "null"), "string")
+    return _TYPE_MAP.get(str(schema_type or "string"), "string")
 
 
 def _pick_content_schema(content: dict[str, Any]) -> dict[str, Any]:
@@ -153,20 +158,49 @@ def _pick_content_schema(content: dict[str, Any]) -> dict[str, Any]:
     that uses the default ``*/*`` (real-world failure: x2bee Order API,
     where this caused PathSynthesizer to find zero producers).
     """
+    schema, _content_type = _pick_content_schema_with_type(content)
+    return schema
+
+
+def _pick_content_schema_with_type(content: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    """Return ``(schema, media_type)`` using the same preference as runtime ingest."""
     if not isinstance(content, dict) or not content:
-        return {}
+        return {}, None
     if "application/json" in content:
-        return (content["application/json"] or {}).get("schema") or {}
+        return (content["application/json"] or {}).get("schema") or {}, "application/json"
     for ct, val in content.items():
         if isinstance(ct, str) and ct.endswith("+json"):
-            return (val or {}).get("schema") or {}
+            return (val or {}).get("schema") or {}, ct
     if "*/*" in content:
-        return (content["*/*"] or {}).get("schema") or {}
+        return (content["*/*"] or {}).get("schema") or {}, "*/*"
     # Last resort: the first content type with a schema.
-    for val in content.values():
+    for ct, val in content.items():
         if isinstance(val, dict) and val.get("schema"):
-            return val["schema"]
-    return {}
+            return val["schema"], str(ct)
+    return {}, None
+
+
+def _merged_parameters(
+    operation: dict[str, Any],
+    path_item: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Merge path-level and operation-level parameters with operation override."""
+    merged: list[dict[str, Any]] = []
+    index_by_key: dict[tuple[str, str], int] = {}
+    for parameters in (
+        (path_item or {}).get("parameters") or [],
+        operation.get("parameters") or [],
+    ):
+        for source in parameters:
+            if not isinstance(source, dict) or "name" not in source:
+                continue
+            key = (str(source.get("in") or ""), str(source.get("name") or ""))
+            if key in index_by_key:
+                merged[index_by_key[key]] = source
+                continue
+            index_by_key[key] = len(merged)
+            merged.append(source)
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -179,10 +213,11 @@ def _extract_params_swagger2(
     resolved_spec: dict[str, Any],
     *,
     required_only: bool = False,
+    path_item: dict[str, Any] | None = None,
 ) -> list[ToolParameter]:
     """Extract parameters from a Swagger 2.0 operation."""
     params: list[ToolParameter] = []
-    for p in operation.get("parameters", []):
+    for p in _merged_parameters(operation, path_item):
         location = p.get("in", "")
         if location == "body":
             # Expand body schema properties as individual params
@@ -280,6 +315,7 @@ def _extract_params_openapi3(
     resolved_spec: dict[str, Any],
     *,
     required_only: bool = False,
+    path_item: dict[str, Any] | None = None,
 ) -> list[ToolParameter]:
     """Extract parameters from an OpenAPI 3.x operation.
 
@@ -298,7 +334,7 @@ def _extract_params_openapi3(
     """
     params: list[ToolParameter] = []
 
-    raw_parameters = list(operation.get("parameters", []))
+    raw_parameters = _merged_parameters(operation, path_item)
     # Pre-collect names from non-object parameters — used to detect when
     # a wrapper's inner property is already exposed alongside it.
     sibling_names: set[str] = {
@@ -410,6 +446,239 @@ def _extract_params_openapi3(
         )
 
     return params
+
+
+def _pick_request_body_schema_with_type(
+    operation: dict[str, Any],
+    resolved_spec: dict[str, Any],
+    *,
+    is_swagger2: bool = False,
+    path_item: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], str | None, bool]:
+    """Return ``(schema, content_type, required)`` for a request body."""
+    if is_swagger2:
+        consumes = (
+            operation.get("consumes")
+            or (path_item or {}).get("consumes")
+            or resolved_spec.get("consumes")
+            or []
+        )
+        content_type = str(consumes[0]) if consumes else None
+        for p in _merged_parameters(operation, path_item):
+            if isinstance(p, dict) and p.get("in") == "body":
+                return p.get("schema") or {}, content_type, bool(p.get("required", False))
+        return {}, content_type, False
+
+    request_body = operation.get("requestBody") or {}
+    if not isinstance(request_body, dict):
+        return {}, None, False
+    schema, content_type = _pick_content_schema_with_type(request_body.get("content") or {})
+    return schema, content_type, bool(request_body.get("required", False))
+
+
+def _pick_response_schema_with_status_and_type(
+    operation: dict[str, Any],
+    resolved_spec: dict[str, Any],
+    *,
+    is_swagger2: bool = False,
+    path_item: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], str | None, str | None]:
+    """Return the preferred success response schema with status and media type."""
+    produces = (
+        operation.get("produces")
+        or (path_item or {}).get("produces")
+        or resolved_spec.get("produces")
+        or []
+    )
+    swagger_content_type = str(produces[0]) if produces else None
+    responses = operation.get("responses", {})
+    if not isinstance(responses, dict):
+        return {}, None, None
+
+    success_codes = sorted(
+        code for code in responses if str(code).isdigit() and 200 <= int(str(code)) < 300
+    )
+    for code in [*success_codes, "default"]:
+        if code not in responses:
+            continue
+        resp = responses[code] or {}
+        if "schema" in resp and isinstance(resp.get("schema"), dict):
+            return resp["schema"], str(code), swagger_content_type
+        picked, content_type = _pick_content_schema_with_type(resp.get("content") or {})
+        if picked:
+            return picked, str(code), content_type
+    return {}, None, None
+
+
+def _openapi_parameter_rows(
+    operation: dict[str, Any],
+    *,
+    is_swagger2: bool = False,
+    path_item: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Normalize non-body OpenAPI parameters for execution/ranking metadata."""
+    rows: list[dict[str, Any]] = []
+    for p in _merged_parameters(operation, path_item):
+        if not isinstance(p, dict) or "name" not in p:
+            continue
+        location = str(p.get("in") or "")
+        if location == "body":
+            continue
+        schema = p if is_swagger2 else p.get("schema") or {}
+        if not isinstance(schema, dict):
+            schema = {}
+        required = bool(p.get("required", location == "path"))
+        if location == "path":
+            required = True
+        enum = p.get("enum") if is_swagger2 else schema.get("enum")
+        row: dict[str, Any] = {
+            "name": str(p["name"]),
+            "in": location,
+            "required": required,
+            "field_type": _schema_type(schema),
+        }
+        desc = str(p.get("description") or "").strip()
+        if desc:
+            row["description"] = desc[:300]
+        if isinstance(enum, list):
+            row["enum"] = list(enum)
+        for key in ("style", "explode"):
+            if key in p:
+                row[key] = p[key]
+        rows.append(row)
+    return rows
+
+
+def _schema_field_rows(
+    schema: dict[str, Any],
+    *,
+    location: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not isinstance(schema, dict) or not schema:
+        return rows
+    for leaf in extract_leaves(schema, base_path="$"):
+        rows.append(_leaf_row(leaf, location=location))
+    return rows
+
+
+def _request_body_top_level_rows(schema: dict[str, Any]) -> list[dict[str, Any]]:
+    if not isinstance(schema, dict) or not schema:
+        return []
+    properties = schema.get("properties") or {}
+    if not isinstance(properties, dict):
+        return []
+    required = set(schema.get("required") or [])
+    rows: list[dict[str, Any]] = []
+    for name, prop in properties.items():
+        prop = prop if isinstance(prop, dict) else {}
+        row: dict[str, Any] = {
+            "field_name": str(name),
+            "json_path": f"$.{name}",
+            "field_type": _schema_type(prop),
+            "required": name in required,
+            "location": "body",
+        }
+        desc = str(prop.get("description") or "").strip()
+        if desc:
+            row["description"] = desc[:300]
+        enum = prop.get("enum")
+        if isinstance(enum, list):
+            row["enum"] = list(enum)
+        rows.append(row)
+    return rows
+
+
+def _leaf_row(leaf: FieldLeaf, *, location: str) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "field_name": leaf.field_name,
+        "json_path": leaf.json_path,
+        "field_type": leaf.field_type,
+        "required": bool(leaf.required),
+        "location": location,
+    }
+    if leaf.description:
+        row["description"] = leaf.description
+    if leaf.enum:
+        row["enum"] = list(leaf.enum)
+    return row
+
+
+def _input_locations(
+    parameter_rows: list[dict[str, Any]],
+    body_top_level_rows: list[dict[str, Any]],
+    body_leaf_rows: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    locations: dict[str, list[str]] = {
+        "path": [],
+        "query": [],
+        "header": [],
+        "cookie": [],
+        "body": [],
+    }
+    for row in parameter_rows:
+        loc = str(row.get("in") or "")
+        name = str(row.get("name") or "")
+        if loc in locations and name and name not in locations[loc]:
+            locations[loc].append(name)
+    for row in [*body_top_level_rows, *body_leaf_rows]:
+        name = str(row.get("field_name") or "")
+        if name and name not in locations["body"]:
+            locations["body"].append(name)
+    return locations
+
+
+def _api_contract_rows(
+    *,
+    parameter_rows: list[dict[str, Any]],
+    body_leaf_rows: list[dict[str, Any]],
+    response_leaf_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    produces = []
+    for row in response_leaf_rows:
+        produces.append(
+            {
+                "field_name": row["field_name"],
+                "json_path": row["json_path"],
+                "field_type": row["field_type"],
+                **({"enum": row["enum"]} if row.get("enum") else {}),
+            }
+        )
+
+    consumes: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _add(row: dict[str, Any], *, name_key: str, location_key: str) -> None:
+        name = str(row.get(name_key) or "")
+        location = str(row.get(location_key) or "")
+        if not name:
+            return
+        key = (name, location)
+        if key in seen:
+            return
+        seen.add(key)
+        consume = {
+            "field_name": name,
+            "field_type": str(row.get("field_type") or "string"),
+            "required": bool(row.get("required", False)),
+            "location": location,
+            "kind": "data",
+        }
+        if row.get("json_path"):
+            consume["json_path"] = row["json_path"]
+        if row.get("enum"):
+            consume["enum"] = list(row["enum"])
+        consumes.append(consume)
+
+    for row in parameter_rows:
+        _add(row, name_key="name", location_key="in")
+    for row in body_leaf_rows:
+        _add(row, name_key="field_name", location_key="location")
+    return produces, consumes
+
+
+def _path_params(path: str) -> list[str]:
+    return re.findall(r"{([^}/]+)}", path)
 
 
 _ANNOTATION_BY_METHOD: dict[str, MCPAnnotations] = {
@@ -540,36 +809,90 @@ def _operation_to_tool(
     description = _enrich_description(description, method, path)
 
     if is_swagger2:
-        parameters = _extract_params_swagger2(operation, resolved_spec, required_only=required_only)
+        parameters = _extract_params_swagger2(
+            operation,
+            resolved_spec,
+            required_only=required_only,
+            path_item=path_item,
+        )
     else:
-        parameters = _extract_params_openapi3(operation, resolved_spec, required_only=required_only)
+        parameters = _extract_params_openapi3(
+            operation,
+            resolved_spec,
+            required_only=required_only,
+            path_item=path_item,
+        )
 
-    # Build response schema metadata. Walk responses in success-code order
-    # and use _pick_content_schema so we don't drop schemas declared under
-    # */*, application/*+json, or other non-JSON media types.
-    responses = operation.get("responses", {})
-    response_schema: dict[str, Any] = {}
-    for code in ("200", "201", "default"):
-        if code not in responses:
-            continue
-        resp = responses[code] or {}
-        # Swagger 2.0 puts the schema directly on the response object.
-        if "schema" in resp and isinstance(resp.get("schema"), dict):
-            response_schema = resp["schema"]
-            break
-        # OpenAPI 3.x: inspect the content map.
-        picked = _pick_content_schema(resp.get("content") or {})
-        if picked:
-            response_schema = picked
-            break
+    request_body_schema, request_content_type, request_required = (
+        _pick_request_body_schema_with_type(
+            operation,
+            resolved_spec,
+            is_swagger2=is_swagger2,
+            path_item=path_item,
+        )
+    )
+    response_schema, response_status, response_content_type = (
+        _pick_response_schema_with_status_and_type(
+            operation,
+            resolved_spec,
+            is_swagger2=is_swagger2,
+            path_item=path_item,
+        )
+    )
+    parameter_rows = _openapi_parameter_rows(
+        operation,
+        is_swagger2=is_swagger2,
+        path_item=path_item,
+    )
+    body_top_level_rows = _request_body_top_level_rows(request_body_schema)
+    body_leaf_rows = _schema_field_rows(request_body_schema, location="body")
+    response_leaf_rows = _schema_field_rows(response_schema, location="response")
+    produces, consumes = _api_contract_rows(
+        parameter_rows=parameter_rows,
+        body_leaf_rows=body_leaf_rows,
+        response_leaf_rows=response_leaf_rows,
+    )
+    input_locations = _input_locations(parameter_rows, body_top_level_rows, body_leaf_rows)
 
     metadata: dict[str, Any] = {
         "source": "openapi",
         "method": method,
         "path": path,
+        "api_contract": {
+            "produces": produces,
+            "consumes": consumes,
+        },
+        "openapi": {
+            "operation_id": operation_id,
+            "parameters": parameter_rows,
+            "path_params": _path_params(path),
+            "input_locations": input_locations,
+            "request_body": {
+                "required": request_required,
+                "content_type": request_content_type,
+                "schema": request_body_schema,
+                "top_level_fields": body_top_level_rows,
+                "fields": body_leaf_rows,
+            },
+            "response": {
+                "status": response_status,
+                "content_type": response_content_type,
+                "schema": response_schema,
+                "fields": response_leaf_rows,
+            },
+        },
+        "input_locations": input_locations,
     }
+    if request_body_schema:
+        metadata["request_body_schema"] = request_body_schema
+    if request_content_type:
+        metadata["request_content_type"] = request_content_type
     if response_schema:
         metadata["response_schema"] = response_schema
+    if response_status:
+        metadata["response_status"] = response_status
+    if response_content_type:
+        metadata["response_content_type"] = response_content_type
 
     # spec/path/operation 단위의 servers field → tool 자체 base_url 부여.
     # 한 컬렉션에 다른 host를 가진 source들이 섞여 있을 때 executor가 tool마다

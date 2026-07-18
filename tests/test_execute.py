@@ -12,6 +12,7 @@ import pytest
 from graph_tool_call.core.tool import ToolParameter as ToolParam
 from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.execute.http_executor import HttpExecutor
+from graph_tool_call.ingest.openapi import ingest_openapi
 
 # --- Fixtures ---
 
@@ -100,6 +101,153 @@ class TestBuildRequest:
         assert req.full_url == "https://api.example.com/users/42"
         body = json.loads(req.data.decode("utf-8"))
         assert body == {"name": "Bob"}
+
+    def test_openapi_locations_override_method_heuristic(self):
+        """POST operations can still have query/header params; metadata wins."""
+        tool = _make_tool(
+            name="updateOrder",
+            method="POST",
+            path="/orders/{orderId}",
+            params=[
+                ToolParam(name="orderId", type="string", required=True),
+                ToolParam(name="preview", type="boolean"),
+                ToolParam(name="X-Site-No", type="string", required=True),
+                ToolParam(name="status", type="string", required=True),
+                ToolParam(name="city", type="string"),
+            ],
+        )
+        tool.metadata["request_content_type"] = "application/json"
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {"name": "orderId", "in": "path", "required": True},
+                {"name": "preview", "in": "query", "required": False},
+                {"name": "X-Site-No", "in": "header", "required": True},
+            ],
+            "request_body": {
+                "content_type": "application/json",
+                "top_level_fields": [{"field_name": "status", "json_path": "$.status"}],
+                "fields": [
+                    {"field_name": "status", "json_path": "$.status"},
+                    {"field_name": "city", "json_path": "$.shipping.city"},
+                ],
+            },
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(
+            tool,
+            {
+                "orderId": "O/1",
+                "preview": True,
+                "X-Site-No": "10",
+                "status": "paid",
+                "city": "Seoul",
+            },
+        )
+
+        assert req.method == "POST"
+        assert req.full_url == "https://api.example.com/orders/O%2F1?preview=True"
+        assert req.headers["X-site-no"] == "10"
+        body = json.loads(req.data.decode("utf-8"))
+        assert body == {"status": "paid", "shipping": {"city": "Seoul"}}
+
+    def test_ingested_openapi_contract_drives_request_building(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Runtime API", "version": "1.0.0"},
+            "paths": {
+                "/orders/{orderId}": {
+                    "patch": {
+                        "operationId": "patchOrder",
+                        "parameters": [
+                            {
+                                "name": "orderId",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {"name": "dryRun", "in": "query", "schema": {"type": "boolean"}},
+                            {
+                                "name": "X-User-Id",
+                                "in": "header",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                        ],
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "status": {"type": "string"},
+                                            "memo": {
+                                                "type": "object",
+                                                "properties": {"text": {"type": "string"}},
+                                            },
+                                        },
+                                    }
+                                }
+                            }
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(
+            tools[0],
+            {
+                "orderId": "A 1",
+                "dryRun": False,
+                "X-User-Id": "u-1",
+                "status": "ready",
+                "text": "ship now",
+            },
+        )
+
+        assert req.method == "PATCH"
+        assert req.full_url == "https://api.example.com/orders/A%201?dryRun=False"
+        assert req.headers["X-user-id"] == "u-1"
+        assert json.loads(req.data.decode("utf-8")) == {
+            "status": "ready",
+            "memo": {"text": "ship now"},
+        }
+
+    def test_form_request_body_uses_urlencoding(self):
+        tool = _make_tool(
+            name="submitSearch",
+            method="POST",
+            path="/search",
+            params=[
+                ToolParam(name="keyword", type="string", required=True),
+                ToolParam(name="page", type="integer"),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "request_body": {
+                "content_type": "application/x-www-form-urlencoded",
+                "fields": [
+                    {"field_name": "keyword", "json_path": "$.keyword"},
+                    {"field_name": "page", "json_path": "$.page"},
+                ],
+            }
+        }
+        executor = HttpExecutor("https://api.example.com")
+        req = executor.build_request(tool, {"keyword": "상품 검색", "page": 2})
+
+        assert req.headers["Content-type"] == "application/x-www-form-urlencoded"
+        assert req.data.decode("utf-8") == "keyword=%EC%83%81%ED%92%88+%EA%B2%80%EC%83%89&page=2"
+
+    def test_missing_path_parameter_raises(self):
+        tool = _make_tool(path="/users/{userId}/orders/{orderId}")
+        executor = HttpExecutor("https://api.example.com")
+
+        with pytest.raises(ValueError, match="orderId"):
+            executor.build_request(tool, {"userId": "u1"})
 
     def test_delete_with_path_param(self):
         tool = _make_tool(name="deleteUser", method="DELETE", path="/users/{userId}")

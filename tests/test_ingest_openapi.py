@@ -85,6 +85,125 @@ class TestIngestOpenAPI30:
         name_param = next(p for p in create_user.parameters if p.name == "name")
         assert name_param.required is True
 
+    def test_rich_openapi_contract_metadata(self) -> None:
+        """Ingest preserves request/response facts needed by graph/search/execution."""
+        spec: dict = {
+            "openapi": "3.0.0",
+            "info": {"title": "Contract API", "version": "1.0.0"},
+            "paths": {
+                "/tenants/{tenantId}/orders/{orderId}": {
+                    "parameters": [
+                        {
+                            "name": "tenantId",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "post": {
+                        "operationId": "updateOrder",
+                        "summary": "주문 수정",
+                        "parameters": [
+                            {
+                                "name": "orderId",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                            {
+                                "name": "preview",
+                                "in": "query",
+                                "schema": {"type": "boolean"},
+                            },
+                            {
+                                "name": "X-Site-No",
+                                "in": "header",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            },
+                        ],
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["status"],
+                                        "properties": {
+                                            "status": {
+                                                "type": "string",
+                                                "enum": ["paid", "cancelled"],
+                                            },
+                                            "shipping": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "city": {"type": "string"},
+                                                },
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {
+                            "201": {
+                                "description": "OK",
+                                "content": {
+                                    "*/*": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "orderId": {"type": "string"},
+                                                        "status": {"type": "string"},
+                                                    },
+                                                }
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    },
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        metadata = tool.metadata
+        openapi = metadata["openapi"]
+
+        assert {p.name for p in tool.parameters} >= {
+            "tenantId",
+            "orderId",
+            "preview",
+            "X-Site-No",
+            "status",
+            "shipping",
+        }
+        assert metadata["request_content_type"] == "application/json"
+        assert metadata["response_content_type"] == "*/*"
+        assert metadata["response_status"] == "201"
+        assert openapi["path_params"] == ["tenantId", "orderId"]
+        assert openapi["input_locations"]["path"] == ["tenantId", "orderId"]
+        assert openapi["input_locations"]["query"] == ["preview"]
+        assert openapi["input_locations"]["header"] == ["X-Site-No"]
+        assert "status" in openapi["input_locations"]["body"]
+        assert openapi["request_body"]["required"] is True
+        assert openapi["request_body"]["fields"][0]["location"] == "body"
+        assert any(
+            row["json_path"] == "$.shipping.city" for row in openapi["request_body"]["fields"]
+        )
+        assert any(row["json_path"] == "$.data.orderId" for row in openapi["response"]["fields"])
+        assert any(row["field_name"] == "orderId" for row in metadata["api_contract"]["produces"])
+        assert any(
+            row["field_name"] == "preview" and row["location"] == "query"
+            for row in metadata["api_contract"]["consumes"]
+        )
+
 
 class TestIngestOpenAPI31:
     def test_ingest_openapi31(self) -> None:

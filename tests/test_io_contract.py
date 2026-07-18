@@ -157,6 +157,25 @@ def test_extract_produces_walks_response_body():
     assert "$.data.id" in paths
 
 
+def test_extract_produces_uses_wildcard_content_type():
+    operation = {
+        "responses": {
+            "200": {
+                "content": {
+                    "*/*": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {"orderId": {"type": "string"}},
+                        }
+                    }
+                }
+            }
+        }
+    }
+    leaves = extract_produces_for_operation(operation)
+    assert [leaf.field_name for leaf in leaves] == ["orderId"]
+
+
 def test_consumes_skips_optional_when_required_only():
     operation = {
         "parameters": [
