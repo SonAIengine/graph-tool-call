@@ -21,6 +21,7 @@ else
     tests/test_plan_synthesizer.py
     tests/test_tokenizer_injection.py
     tests/test_bfcl_tool_selection_benchmark.py
+    tests/test_bfcl_tool_selection_failures.py
     tests/test_bfcl_tool_selection_llm_loop.py
     tests/test_bfcl_tool_selection_sweep.py
     tests/test_xgen_tool_graph_benchmark.py

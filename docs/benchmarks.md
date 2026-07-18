@@ -1,6 +1,9 @@
 # Benchmark Results
 
 Detailed benchmark data for graph-tool-call. The README contains a 3-row summary; this document contains the full pipeline, retrieval-only, competitive, large-scale, and LangChain agent results.
+For day-to-day research iteration, follow the tiered loop in
+[`docs/research/validation-loop.md`](research/validation-loop.md) before running
+expensive full model benchmarks.
 
 - **Model used (LLM benchmarks)**: `qwen3:4b` (4-bit, Ollama), unless noted
 - **No-model benchmarks**: retrieval-only, BFCL tool-selection, and XGEN

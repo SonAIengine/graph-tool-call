@@ -350,6 +350,9 @@ poetry run python -m benchmarks.xgen_tool_graph.llm_loop \
 
 Current scores, caveats, and model-specific notes are documented in
 [docs/benchmarks.md](docs/benchmarks.md#xgen-style-tool-graph-search).
+For day-to-day research work, use the tiered validation loop in
+[docs/research/validation-loop.md](docs/research/validation-loop.md) instead of
+running full model benchmarks after every change.
 
 ---
 
