@@ -578,6 +578,87 @@ class TestBuildRequest:
             }
         ]
 
+    def test_discriminator_request_body_requires_selected_branch_fields(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Payment API", "version": "1.0.0"},
+            "components": {
+                "schemas": {
+                    "CardPayment": {
+                        "type": "object",
+                        "required": ["cardNumber"],
+                        "properties": {"cardNumber": {"type": "string"}},
+                    },
+                    "BankPayment": {
+                        "type": "object",
+                        "required": ["bankCode"],
+                        "properties": {"bankCode": {"type": "string"}},
+                    },
+                }
+            },
+            "paths": {
+                "/payments": {
+                    "post": {
+                        "operationId": "createPayment",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "oneOf": [
+                                            {"$ref": "#/components/schemas/CardPayment"},
+                                            {"$ref": "#/components/schemas/BankPayment"},
+                                        ],
+                                        "discriminator": {
+                                            "propertyName": "paymentType",
+                                            "mapping": {
+                                                "card": "#/components/schemas/CardPayment",
+                                                "bank": "#/components/schemas/BankPayment",
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tools[0], {"paymentType": "card"})
+        req = executor.build_request(
+            tools[0],
+            {"paymentType": "bank", "bankCode": "004"},
+        )
+
+        assert diagnostics["valid"] is False
+        assert diagnostics["missing_required"] == [
+            {
+                "name": "cardNumber",
+                "location": "body",
+                "source": "request_body_branch",
+                "content_type": "application/json",
+                "field_type": "string",
+                "json_path": "$.cardNumber",
+                "schema_combinator": "oneOf",
+                "schema_branch": 0,
+                "schema_branch_count": 2,
+                "schema_branches": [0],
+                "required_in_branch": True,
+                "schema_ref": "#/components/schemas/CardPayment",
+                "discriminator_property": "paymentType",
+                "discriminator_value": "card",
+                "discriminator_values": ["card"],
+            }
+        ]
+        assert json.loads(req.data.decode("utf-8")) == {
+            "paymentType": "bank",
+            "bankCode": "004",
+        }
+
     def test_validate_request_reports_missing_required_and_unused_arguments(self):
         tool = _make_tool(
             name="updateOrder",

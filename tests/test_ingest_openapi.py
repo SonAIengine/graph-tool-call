@@ -468,6 +468,77 @@ class TestIngestOpenAPI30:
         assert consumes["paymentType"]["enum"] == ["card", "bank"]
         assert consumes["cardNumber"]["required"] is False
 
+    def test_discriminator_request_body_preserves_branch_selection_hints(self) -> None:
+        """Discriminator mapping should survive $ref resolution into execution metadata."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Payment API", "version": "1.0.0"},
+            "components": {
+                "schemas": {
+                    "CardPayment": {
+                        "type": "object",
+                        "required": ["cardNumber"],
+                        "properties": {"cardNumber": {"type": "string"}},
+                    },
+                    "BankPayment": {
+                        "type": "object",
+                        "required": ["bankCode"],
+                        "properties": {"bankCode": {"type": "string"}},
+                    },
+                }
+            },
+            "paths": {
+                "/payments": {
+                    "post": {
+                        "operationId": "createPayment",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "oneOf": [
+                                            {"$ref": "#/components/schemas/CardPayment"},
+                                            {"$ref": "#/components/schemas/BankPayment"},
+                                        ],
+                                        "discriminator": {
+                                            "propertyName": "paymentType",
+                                            "mapping": {
+                                                "card": "#/components/schemas/CardPayment",
+                                                "bank": "#/components/schemas/BankPayment",
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        params = {param.name: param for param in tool.parameters}
+        fields = {
+            row["field_name"]: row for row in tool.metadata["openapi"]["request_body"]["all_fields"]
+        }
+        top_level = {
+            row["field_name"]: row
+            for row in tool.metadata["openapi"]["request_body"]["all_top_level_fields"]
+        }
+        consumes = {row["field_name"]: row for row in tool.metadata["api_contract"]["consumes"]}
+
+        assert set(params) == {"paymentType", "cardNumber", "bankCode"}
+        assert params["paymentType"].enum == ["card", "bank"]
+        assert fields["paymentType"]["discriminator_values"] == ["card", "bank"]
+        assert "discriminator_value" not in fields["paymentType"]
+        assert fields["cardNumber"]["schema_ref"] == "#/components/schemas/CardPayment"
+        assert fields["cardNumber"]["discriminator_value"] == "card"
+        assert top_level["bankCode"]["schema_ref"] == "#/components/schemas/BankPayment"
+        assert consumes["paymentType"]["enum"] == ["card", "bank"]
+        assert consumes["bankCode"]["discriminator_value"] == "bank"
+
     def test_oneof_response_exposes_all_variant_fields(self) -> None:
         """Response alternatives should contribute produces for search and graph edges."""
         spec = {

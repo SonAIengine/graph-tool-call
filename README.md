@@ -203,6 +203,9 @@ with the direction in which each field can actually travel.
 OpenAPI `oneOf` / `anyOf` request and response schemas are read as a union of
 branch fields with branch evidence preserved, so graph construction and request
 validation do not silently drop every branch after the first one.
+Discriminator mappings and JSON Schema `const` values are preserved as branch
+selection evidence; if a request chooses a discriminator value, preflight
+diagnostics can report the missing fields for that selected branch only.
 
 ### Workflow planning
 

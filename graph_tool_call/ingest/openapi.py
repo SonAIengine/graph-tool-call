@@ -109,7 +109,10 @@ def _resolve_refs(spec: dict[str, Any]) -> dict[str, Any]:
                 target = _lookup(ref, root)
                 if target is not None:
                     seen_copy = seen | {ref}
-                    return _walk(copy.deepcopy(target), root, seen_copy)
+                    resolved_target = _walk(copy.deepcopy(target), root, seen_copy)
+                    if isinstance(resolved_target, dict):
+                        resolved_target.setdefault("x-graph-tool-call-ref", ref)
+                    return resolved_target
                 return node  # unresolvable ref, leave as-is
             return {k: _walk(v, root, seen) for k, v in node.items()}
         if isinstance(node, list):
@@ -149,6 +152,7 @@ _SCHEMA_HINT_KEYS: tuple[tuple[str, str], ...] = (
     ("minProperties", "min_properties"),
     ("maxProperties", "max_properties"),
     ("multipleOf", "multiple_of"),
+    ("const", "const"),
     ("readOnly", "read_only"),
     ("writeOnly", "write_only"),
     ("deprecated", "deprecated"),
@@ -160,6 +164,10 @@ _DERIVED_FIELD_HINT_KEYS = (
     "schema_branch_count",
     "schema_branches",
     "required_in_branch",
+    "schema_ref",
+    "discriminator_property",
+    "discriminator_value",
+    "discriminator_values",
 )
 
 
@@ -168,6 +176,15 @@ def _schema_type(schema: dict[str, Any]) -> str:
     if isinstance(schema_type, list):
         schema_type = next((t for t in schema_type if t and t != "null"), "string")
     return _TYPE_MAP.get(str(schema_type or "string"), "string")
+
+
+def _schema_enum(schema: Any) -> list[Any]:
+    if not isinstance(schema, dict):
+        return []
+    values = list(schema.get("enum") or [])
+    if "const" in schema and schema.get("const") not in values:
+        values.append(schema.get("const"))
+    return values
 
 
 def _add_schema_hints(row: dict[str, Any], schema: dict[str, Any]) -> None:
@@ -466,7 +483,7 @@ def _extract_params_swagger2(
                     type=_TYPE_MAP.get(p.get("type", "string"), "string"),
                     description=p.get("description", ""),
                     required=is_required,
-                    enum=p.get("enum"),
+                    enum=_schema_enum(p) or None,
                 )
             )
     return params
@@ -612,7 +629,7 @@ def _extract_params_openapi3(
                             type=inner_type,
                             description=inner_desc,
                             required=inner_required,
-                            enum=(prop_schema or {}).get("enum"),
+                            enum=_schema_enum(prop_schema or {}) or None,
                         )
                     )
                 continue  # wrapper itself is not added
@@ -632,7 +649,7 @@ def _extract_params_openapi3(
                 type=ptype,
                 description=desc,
                 required=is_required,
-                enum=schema.get("enum"),
+                enum=_schema_enum(schema) or None,
             )
         )
 
@@ -948,7 +965,7 @@ def _openapi_parameter_rows(
         required = bool(p.get("required", location == "path"))
         if location == "path":
             required = True
-        enum = p.get("enum") if is_swagger2 else schema.get("enum")
+        enum = _schema_enum(p if is_swagger2 else schema)
         row: dict[str, Any] = {
             "name": str(p["name"]),
             "in": location,
@@ -959,7 +976,7 @@ def _openapi_parameter_rows(
         desc = str(p.get("description") or "").strip()
         if desc:
             row["description"] = desc[:300]
-        if isinstance(enum, list):
+        if isinstance(enum, list) and enum:
             row["enum"] = list(enum)
         examples = [
             *_example_rows(p, location=location),
@@ -1022,8 +1039,8 @@ def _request_body_top_level_rows(schema: dict[str, Any]) -> list[dict[str, Any]]
                 desc = (desc + "\nFields:\n" + nested).strip() if desc else f"Fields:\n{nested}"
         if desc:
             row["description"] = desc[:300]
-        enum = prop.get("enum")
-        if isinstance(enum, list):
+        enum = _schema_enum(prop)
+        if isinstance(enum, list) and enum:
             row["enum"] = list(enum)
         rows.append(row)
     return rows
@@ -1075,7 +1092,18 @@ def _alternative_top_level_rows(schema: dict[str, Any]) -> list[dict[str, Any]] 
             rows.extend(_request_body_top_level_rows(base_schema))
 
         branch_count = len(candidates)
+        discriminator_property = _discriminator_property_name(schema)
+        discriminator_values: list[Any] = []
         for index, candidate_schema in enumerate(candidates):
+            discriminator_value = _branch_discriminator_value(
+                schema,
+                candidate_schema,
+                index=index,
+                branch_count=branch_count,
+                discriminator_property=discriminator_property,
+            )
+            if discriminator_value is not None:
+                discriminator_values.append(discriminator_value)
             for row in _request_body_top_level_rows(candidate_schema):
                 row = dict(row)
                 if row.get("required"):
@@ -1085,8 +1113,106 @@ def _alternative_top_level_rows(schema: dict[str, Any]) -> list[dict[str, Any]] 
                 row["schema_branch"] = index
                 row["schema_branch_count"] = branch_count
                 row["schema_branches"] = [index]
+                if candidate_schema.get("x-graph-tool-call-ref"):
+                    row["schema_ref"] = str(candidate_schema["x-graph-tool-call-ref"])
+                if discriminator_property:
+                    row["discriminator_property"] = discriminator_property
+                if discriminator_value is not None:
+                    row["discriminator_value"] = discriminator_value
+                    row["discriminator_values"] = [discriminator_value]
                 rows.append(row)
+        if discriminator_property:
+            _apply_discriminator_row_metadata(
+                rows,
+                field_name=discriminator_property,
+                values=discriminator_values,
+                schema_combinator=key,
+                branch_count=branch_count,
+            )
         return _merge_top_level_rows(rows)
+    return None
+
+
+def _apply_discriminator_row_metadata(
+    rows: list[dict[str, Any]],
+    *,
+    field_name: str,
+    values: list[Any],
+    schema_combinator: str,
+    branch_count: int,
+) -> None:
+    matching = [row for row in rows if row.get("field_name") == field_name]
+    if not matching:
+        rows.append(
+            {
+                "field_name": field_name,
+                "json_path": f"$.{field_name}",
+                "field_type": "string",
+                "required": False,
+                "required_in_branch": True,
+                "location": "body",
+                "enum": _merge_list_values([], values),
+                "schema_combinator": schema_combinator,
+                "schema_branch_count": branch_count,
+                "schema_branches": list(range(branch_count)),
+                "discriminator_property": field_name,
+                "discriminator_values": _merge_list_values([], values),
+            }
+        )
+        return
+    for row in matching:
+        row["discriminator_property"] = field_name
+        if values:
+            row["discriminator_values"] = _merge_list_values(
+                row.get("discriminator_values") or [],
+                values,
+            )
+            row["enum"] = _merge_list_values(row.get("enum") or [], values)
+        row.setdefault("schema_combinator", schema_combinator)
+        row.setdefault("schema_branch_count", branch_count)
+        row.setdefault("schema_branches", list(range(branch_count)))
+
+
+def _discriminator_property_name(schema: dict[str, Any]) -> str:
+    discriminator = schema.get("discriminator")
+    if not isinstance(discriminator, dict):
+        return ""
+    return str(discriminator.get("propertyName") or "").strip()
+
+
+def _branch_discriminator_value(
+    schema: dict[str, Any],
+    candidate_schema: dict[str, Any],
+    *,
+    index: int,
+    branch_count: int,
+    discriminator_property: str,
+) -> Any:
+    if not discriminator_property or not isinstance(candidate_schema, dict):
+        return None
+
+    properties = candidate_schema.get("properties")
+    prop_schema = (
+        properties.get(discriminator_property)
+        if isinstance(properties, dict) and isinstance(properties.get(discriminator_property), dict)
+        else {}
+    )
+    if isinstance(prop_schema, dict):
+        if "const" in prop_schema:
+            return prop_schema.get("const")
+        enum = prop_schema.get("enum")
+        if isinstance(enum, list) and len(enum) == 1:
+            return enum[0]
+
+    discriminator = schema.get("discriminator")
+    mapping = discriminator.get("mapping") if isinstance(discriminator, dict) else {}
+    if isinstance(mapping, dict) and mapping:
+        schema_ref = str(candidate_schema.get("x-graph-tool-call-ref") or "")
+        for value, ref in mapping.items():
+            if schema_ref and str(ref) == schema_ref:
+                return value
+        if len(mapping) == branch_count:
+            return list(mapping)[index]
     return None
 
 
@@ -1113,11 +1239,20 @@ def _merge_top_level_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 row.get("schema_branches") or [],
             )
             existing.pop("schema_branch", None)
+        if row.get("discriminator_values"):
+            existing["discriminator_values"] = _merge_list_values(
+                existing.get("discriminator_values") or [],
+                row.get("discriminator_values") or [],
+            )
+            existing.pop("discriminator_value", None)
         for key in (
             *_ROW_HINT_KEYS,
             "schema_combinator",
             "schema_branch_count",
             "required_in_branch",
+            "schema_ref",
+            "discriminator_property",
+            "discriminator_values",
             "description",
             "field_type",
         ):
@@ -1155,6 +1290,7 @@ def _leaf_row(leaf: FieldLeaf, *, location: str) -> dict[str, Any]:
         ("pattern", "pattern"),
         ("minimum", "minimum"),
         ("maximum", "maximum"),
+        ("const", "const"),
         ("exclusive_minimum", "exclusive_minimum"),
         ("exclusive_maximum", "exclusive_maximum"),
         ("min_length", "min_length"),
@@ -1172,6 +1308,10 @@ def _leaf_row(leaf: FieldLeaf, *, location: str) -> dict[str, Any]:
         ("schema_branch_count", "schema_branch_count"),
         ("schema_branches", "schema_branches"),
         ("required_in_branch", "required_in_branch"),
+        ("schema_ref", "schema_ref"),
+        ("discriminator_property", "discriminator_property"),
+        ("discriminator_value", "discriminator_value"),
+        ("discriminator_values", "discriminator_values"),
     ):
         value = getattr(leaf, source_key)
         if value not in (None, "", []):

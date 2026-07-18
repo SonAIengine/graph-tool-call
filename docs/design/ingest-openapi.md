@@ -86,6 +86,11 @@ field를 union으로 추출한다. branch 안에서만 required인 field는
 `required_in_branch=true`, `schema_combinator`, `schema_branch`,
 `schema_branches` metadata를 남기되 전역 `required=true`로 승격하지 않는다.
 `allOf` 안에 들어있는 `oneOf`/`anyOf`도 공통 field와 branch field를 모두 보존한다.
+`discriminator.propertyName`과 mapping, branch-local `const`/single-value enum은
+`discriminator_property`, `discriminator_value`, `discriminator_values`,
+`schema_ref`, `const`로 보존한다. discriminator field가 branch schema에 직접
+없어도 mapping 값으로 synthetic top-level field를 만들어 request body 렌더링과
+diagnostics에서 variant 선택 근거를 잃지 않는다.
 이렇게 해야 결제수단/배송방식처럼 대안 body schema를 가진 API에서 tool graph와
 request validation이 서로 다른 branch field를 동시에 요구하지 않는다.
 
@@ -100,7 +105,9 @@ request body는 `application/json`, `application/x-www-form-urlencoded`,
 기본적으로 required input이나 선언된 security credential이 빠져 있거나,
 제공된 argument가 enum/type/범위/길이/pattern/array/object constraint를
 위반하면 `build_request()`/`execute()`가 `OpenAPIRequestValidationError`를
-발생시킨다. `apiKey` security scheme은 query/header/cookie argument 또는
+발생시킨다. discriminator 값이 제공된 request body는 선택된 branch의
+`required_in_branch` 필드만 `request_body_branch` missing diagnostic으로
+보고한다. `apiKey` security scheme은 query/header/cookie argument 또는
 executor header/cookie로 충족할 수 있고, bearer/basic/OAuth/OpenID Connect
 계열은 `Authorization` header로 판정한다. XGEN은 이 diagnostics를
 missing-field/auth/value popup과 resume target에 그대로 사용할 수 있다.

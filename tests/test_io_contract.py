@@ -91,6 +91,23 @@ def test_extract_leaves_preserves_schema_hints():
     assert by_name["quantity"].maximum == 99
 
 
+def test_extract_leaves_treats_const_as_single_value_enum():
+    schema = {
+        "type": "object",
+        "required": ["paymentType"],
+        "properties": {
+            "paymentType": {"type": "string", "const": "card"},
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    payment_type = next(leaf for leaf in leaves if leaf.field_name == "paymentType")
+
+    assert payment_type.const == "card"
+    assert payment_type.enum == ["card"]
+    assert payment_type.required is True
+
+
 def test_extract_leaves_preserves_read_write_direction_hints():
     schema = {
         "type": "object",
@@ -161,6 +178,44 @@ def test_extract_leaves_unions_oneof_branches_without_global_required():
     assert by_name["cardNumber"].required_in_branch is True
     assert by_name["cardNumber"].schema_branch == 0
     assert by_name["bankCode"].schema_branch == 1
+
+
+def test_extract_leaves_preserves_discriminator_branch_hints():
+    schema = {
+        "oneOf": [
+            {
+                "type": "object",
+                "x-graph-tool-call-ref": "#/components/schemas/CardPayment",
+                "required": ["cardNumber"],
+                "properties": {"cardNumber": {"type": "string"}},
+            },
+            {
+                "type": "object",
+                "x-graph-tool-call-ref": "#/components/schemas/BankPayment",
+                "required": ["bankCode"],
+                "properties": {"bankCode": {"type": "string"}},
+            },
+        ],
+        "discriminator": {
+            "propertyName": "paymentType",
+            "mapping": {
+                "card": "#/components/schemas/CardPayment",
+                "bank": "#/components/schemas/BankPayment",
+            },
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert set(by_name) == {"paymentType", "cardNumber", "bankCode"}
+    assert by_name["paymentType"].enum == ["card", "bank"]
+    assert by_name["paymentType"].discriminator_property == "paymentType"
+    assert by_name["paymentType"].discriminator_values == ["card", "bank"]
+    assert by_name["cardNumber"].schema_ref == "#/components/schemas/CardPayment"
+    assert by_name["cardNumber"].discriminator_value == "card"
+    assert by_name["cardNumber"].required_in_branch is True
+    assert by_name["bankCode"].schema_ref == "#/components/schemas/BankPayment"
 
 
 def test_extract_leaves_unions_anyof_array_item_branches():

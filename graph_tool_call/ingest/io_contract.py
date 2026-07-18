@@ -47,16 +47,21 @@ class FieldLeaf:
     min_properties: int | None = None
     max_properties: int | None = None
     multiple_of: Any = None
+    const: Any = None
     exclusive_minimum: Any = None
     exclusive_maximum: Any = None
     read_only: bool = False
     write_only: bool = False
     deprecated: bool = False
+    schema_ref: str = ""
     schema_combinator: str = ""
     schema_branch: int | None = None
     schema_branch_count: int | None = None
     schema_branches: list[int] = field(default_factory=list)
     required_in_branch: bool = False
+    discriminator_property: str = ""
+    discriminator_value: Any = None
+    discriminator_values: list[Any] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +86,9 @@ def extract_leaves(
     _schema_branch: int | None = None,
     _schema_branch_count: int | None = None,
     _alternative_branch: bool = False,
+    _discriminator_property: str = "",
+    _discriminator_value: Any = None,
+    _schema_ref: str = "",
 ) -> list[FieldLeaf]:
     """Recursively walk a JSON Schema, emitting leaf field info.
 
@@ -105,6 +113,7 @@ def extract_leaves(
         return []
 
     schema = _resolve_combinators(schema)
+    schema_ref = _schema_ref or str(schema.get("x-graph-tool-call-ref") or "")
     read_only = _parent_read_only or bool(schema.get("readOnly", False))
     write_only = _parent_write_only or bool(schema.get("writeOnly", False))
     deprecated = _parent_deprecated or bool(schema.get("deprecated", False))
@@ -122,6 +131,9 @@ def extract_leaves(
         schema_branch=_schema_branch,
         schema_branch_count=_schema_branch_count,
         alternative_branch=_alternative_branch,
+        discriminator_property=_discriminator_property,
+        discriminator_value=_discriminator_value,
+        schema_ref=schema_ref,
     )
     if alternative_leaves is not None:
         return alternative_leaves
@@ -142,6 +154,9 @@ def extract_leaves(
             schema_branch=_schema_branch,
             schema_branch_count=_schema_branch_count,
             alternative_branch=_alternative_branch,
+            discriminator_property=_discriminator_property,
+            discriminator_value=_discriminator_value,
+            schema_ref=schema_ref,
         )
 
     # Array: walk items with [*] suffix
@@ -160,6 +175,9 @@ def extract_leaves(
             _schema_branch=_schema_branch,
             _schema_branch_count=_schema_branch_count,
             _alternative_branch=_alternative_branch,
+            _discriminator_property=_discriminator_property,
+            _discriminator_value=_discriminator_value,
+            _schema_ref=schema_ref,
         )
 
     # Primitive: emit a single leaf using the trailing path segment as name
@@ -174,7 +192,7 @@ def extract_leaves(
             field_type=schema_type or "string",
             required=parent_required and not _alternative_branch,
             description=str(schema.get("description") or "")[:200],
-            enum=list(schema.get("enum") or []),
+            enum=_schema_enum(schema),
             format=str(schema.get("format") or ""),
             default=schema.get("default"),
             example=schema.get("example"),
@@ -182,6 +200,7 @@ def extract_leaves(
             pattern=str(schema.get("pattern") or ""),
             minimum=schema.get("minimum"),
             maximum=schema.get("maximum"),
+            const=schema.get("const"),
             exclusive_minimum=schema.get("exclusiveMinimum"),
             exclusive_maximum=schema.get("exclusiveMaximum"),
             min_length=schema.get("minLength"),
@@ -194,11 +213,17 @@ def extract_leaves(
             read_only=read_only,
             write_only=write_only,
             deprecated=deprecated,
+            schema_ref=schema_ref,
             schema_combinator=_schema_combinator,
             schema_branch=_schema_branch,
             schema_branch_count=_schema_branch_count,
             schema_branches=[_schema_branch] if _schema_branch is not None else [],
             required_in_branch=parent_required if _alternative_branch else False,
+            discriminator_property=_discriminator_property,
+            discriminator_value=_discriminator_value,
+            discriminator_values=(
+                [_discriminator_value] if _discriminator_value is not None else []
+            ),
         )
     ]
 
@@ -216,6 +241,9 @@ def _walk_object(
     schema_branch: int | None = None,
     schema_branch_count: int | None = None,
     alternative_branch: bool = False,
+    discriminator_property: str = "",
+    discriminator_value: Any = None,
+    schema_ref: str = "",
 ) -> list[FieldLeaf]:
     leaves: list[FieldLeaf] = []
     properties = schema.get("properties") or {}
@@ -239,6 +267,9 @@ def _walk_object(
             _schema_branch=schema_branch,
             _schema_branch_count=schema_branch_count,
             _alternative_branch=alternative_branch,
+            _discriminator_property=discriminator_property,
+            _discriminator_value=discriminator_value,
+            _schema_ref=schema_ref,
         )
         if child_leaves:
             leaves.extend(child_leaves)
@@ -256,9 +287,7 @@ def _walk_object(
                         if isinstance(prop_schema, dict)
                         else ""
                     ),
-                    enum=(
-                        list(prop_schema.get("enum") or []) if isinstance(prop_schema, dict) else []
-                    ),
+                    enum=_schema_enum(prop_schema),
                     format=(
                         str(prop_schema.get("format") or "")
                         if isinstance(prop_schema, dict)
@@ -278,6 +307,7 @@ def _walk_object(
                     ),
                     minimum=prop_schema.get("minimum") if isinstance(prop_schema, dict) else None,
                     maximum=prop_schema.get("maximum") if isinstance(prop_schema, dict) else None,
+                    const=prop_schema.get("const") if isinstance(prop_schema, dict) else None,
                     exclusive_minimum=(
                         prop_schema.get("exclusiveMinimum")
                         if isinstance(prop_schema, dict)
@@ -327,11 +357,22 @@ def _walk_object(
                         if isinstance(prop_schema, dict)
                         else False
                     ),
+                    schema_ref=schema_ref
+                    or (
+                        str(prop_schema.get("x-graph-tool-call-ref") or "")
+                        if isinstance(prop_schema, dict)
+                        else ""
+                    ),
                     schema_combinator=schema_combinator,
                     schema_branch=schema_branch,
                     schema_branch_count=schema_branch_count,
                     schema_branches=[schema_branch] if schema_branch is not None else [],
                     required_in_branch=is_required if alternative_branch else False,
+                    discriminator_property=discriminator_property,
+                    discriminator_value=discriminator_value,
+                    discriminator_values=(
+                        [discriminator_value] if discriminator_value is not None else []
+                    ),
                 )
             )
     return leaves
@@ -351,6 +392,9 @@ def _extract_alternative_leaves(
     schema_branch: int | None,
     schema_branch_count: int | None,
     alternative_branch: bool,
+    discriminator_property: str,
+    discriminator_value: Any,
+    schema_ref: str,
 ) -> list[FieldLeaf] | None:
     """Return unioned leaves for ``oneOf``/``anyOf`` without globalizing branch requireds."""
     for key in ("oneOf", "anyOf"):
@@ -378,11 +422,26 @@ def _extract_alternative_leaves(
                     _schema_branch=schema_branch,
                     _schema_branch_count=schema_branch_count,
                     _alternative_branch=alternative_branch,
+                    _discriminator_property="",
+                    _discriminator_value=None,
+                    _schema_ref=schema_ref,
                 )
             )
 
         branch_count = len(candidates)
+        discriminator_property = _discriminator_property_name(schema)
+        discriminator_values: list[Any] = []
         for index, candidate_schema in enumerate(candidates):
+            candidate_ref = str(candidate_schema.get("x-graph-tool-call-ref") or schema_ref)
+            discriminator_value = _branch_discriminator_value(
+                schema,
+                candidate_schema,
+                index=index,
+                branch_count=branch_count,
+                discriminator_property=discriminator_property,
+            )
+            if discriminator_value is not None:
+                discriminator_values.append(discriminator_value)
             leaves.extend(
                 extract_leaves(
                     candidate_schema,
@@ -397,9 +456,100 @@ def _extract_alternative_leaves(
                     _schema_branch=index,
                     _schema_branch_count=branch_count,
                     _alternative_branch=True,
+                    _discriminator_property=discriminator_property,
+                    _discriminator_value=discriminator_value,
+                    _schema_ref=candidate_ref,
                 )
             )
+        if discriminator_property:
+            _apply_discriminator_leaf_metadata(
+                leaves,
+                base_path=base_path,
+                field_name=discriminator_property,
+                values=discriminator_values,
+                schema_combinator=key,
+                branch_count=branch_count,
+            )
         return _merge_duplicate_leaves(leaves)
+    return None
+
+
+def _apply_discriminator_leaf_metadata(
+    leaves: list[FieldLeaf],
+    *,
+    base_path: str,
+    field_name: str,
+    values: list[Any],
+    schema_combinator: str,
+    branch_count: int,
+) -> None:
+    matching = [leaf for leaf in leaves if leaf.field_name == field_name]
+    if not matching:
+        leaves.append(
+            FieldLeaf(
+                json_path=f"{base_path}.{field_name}",
+                field_name=field_name,
+                field_type="string",
+                required=False,
+                enum=_merge_list_values([], values),
+                schema_combinator=schema_combinator,
+                schema_branch_count=branch_count,
+                schema_branches=list(range(branch_count)),
+                required_in_branch=True,
+                discriminator_property=field_name,
+                discriminator_values=_merge_list_values([], values),
+            )
+        )
+        return
+    for leaf in matching:
+        leaf.discriminator_property = field_name
+        leaf.discriminator_values = _merge_list_values(leaf.discriminator_values, values)
+        leaf.enum = _merge_list_values(leaf.enum, values)
+        if not leaf.schema_combinator:
+            leaf.schema_combinator = schema_combinator
+        if leaf.schema_branch_count is None:
+            leaf.schema_branch_count = branch_count
+        if not leaf.schema_branches:
+            leaf.schema_branches = list(range(branch_count))
+
+
+def _discriminator_property_name(schema: dict[str, Any]) -> str:
+    discriminator = schema.get("discriminator")
+    if not isinstance(discriminator, dict):
+        return ""
+    return str(discriminator.get("propertyName") or "").strip()
+
+
+def _branch_discriminator_value(
+    schema: dict[str, Any],
+    candidate_schema: dict[str, Any],
+    *,
+    index: int,
+    branch_count: int,
+    discriminator_property: str,
+) -> Any:
+    if not discriminator_property or not isinstance(candidate_schema, dict):
+        return None
+
+    prop_schema = {}
+    properties = candidate_schema.get("properties")
+    if isinstance(properties, dict) and isinstance(properties.get(discriminator_property), dict):
+        prop_schema = properties[discriminator_property]
+        if "const" in prop_schema:
+            return prop_schema.get("const")
+        enum = prop_schema.get("enum")
+        if isinstance(enum, list) and len(enum) == 1:
+            return enum[0]
+
+    discriminator = schema.get("discriminator")
+    mapping = discriminator.get("mapping") if isinstance(discriminator, dict) else {}
+    if isinstance(mapping, dict) and mapping:
+        schema_ref = str(candidate_schema.get("x-graph-tool-call-ref") or "")
+        for value, ref in mapping.items():
+            if schema_ref and str(ref) == schema_ref:
+                return value
+        if len(mapping) == branch_count:
+            return list(mapping)[index]
     return None
 
 
@@ -434,8 +584,14 @@ def _merge_duplicate_leaves(leaves: list[FieldLeaf]) -> list[FieldLeaf]:
             existing.schema_branches,
             leaf.schema_branches,
         )
+        existing.discriminator_values = _merge_list_values(
+            existing.discriminator_values,
+            leaf.discriminator_values,
+        )
         if existing.schema_branch != leaf.schema_branch:
             existing.schema_branch = None
+        if existing.discriminator_value != leaf.discriminator_value:
+            existing.discriminator_value = None
         for attr in (
             "description",
             "format",
@@ -445,6 +601,7 @@ def _merge_duplicate_leaves(leaves: list[FieldLeaf]) -> list[FieldLeaf]:
             "pattern",
             "minimum",
             "maximum",
+            "const",
             "exclusive_minimum",
             "exclusive_maximum",
             "min_length",
@@ -457,8 +614,10 @@ def _merge_duplicate_leaves(leaves: list[FieldLeaf]) -> list[FieldLeaf]:
             "read_only",
             "write_only",
             "deprecated",
+            "schema_ref",
             "schema_combinator",
             "schema_branch_count",
+            "discriminator_property",
         ):
             existing_value = getattr(existing, attr)
             leaf_value = getattr(leaf, attr)
@@ -517,6 +676,15 @@ def _normalize_type(t: Any) -> str:
     if isinstance(t, list):
         return next((x for x in t if x and x != "null"), "")
     return t or ""
+
+
+def _schema_enum(schema: Any) -> list[Any]:
+    if not isinstance(schema, dict):
+        return []
+    values = list(schema.get("enum") or [])
+    if "const" in schema and schema.get("const") not in values:
+        values.append(schema.get("const"))
+    return values
 
 
 def _schema_type(schema: Any) -> str:
@@ -584,12 +752,12 @@ def extract_consumes_for_operation(
         if is_swagger2:
             ftype = p.get("type") or "string"
             # Swagger 2.0 — enum lives directly on the parameter object.
-            enum_vals = p.get("enum") or []
+            enum_vals = _schema_enum(p)
         else:
             param_schema = p.get("schema") or {}
             ftype = _schema_type(param_schema) or "string"
             # OpenAPI 3.x — enum lives under ``schema``.
-            enum_vals = param_schema.get("enum") or [] if isinstance(param_schema, dict) else []
+            enum_vals = _schema_enum(param_schema)
         if p["name"] in seen_names:
             continue
         seen_names.add(p["name"])

@@ -104,14 +104,19 @@ _CONTRACT_HINT_KEYS = (
     "min_properties",
     "max_properties",
     "multiple_of",
+    "const",
     "read_only",
     "write_only",
     "deprecated",
+    "schema_ref",
     "schema_combinator",
     "schema_branch",
     "schema_branch_count",
     "schema_branches",
     "required_in_branch",
+    "discriminator_property",
+    "discriminator_value",
+    "discriminator_values",
 )
 
 
@@ -221,7 +226,9 @@ def build_io_contract(
             continue
         schema = p.get("schema") if isinstance(p.get("schema"), dict) else {}
         field_type = str(schema.get("type") or p.get("type") or "string")
-        enum = schema.get("enum") if "enum" in schema else p.get("enum")
+        enum = _schema_enum(schema) if isinstance(schema, dict) else p.get("enum")
+        if not enum:
+            enum = p.get("enum")
         loc = str(p.get("in") or p.get("location") or "")
         _add_consume(
             name,
@@ -673,6 +680,13 @@ def _copy_contract_hints(source: dict[str, Any], target: dict[str, Any]) -> None
         value = source.get(key)
         if value not in (None, "", []):
             target[key] = value
+
+
+def _schema_enum(schema: dict[str, Any]) -> list[Any]:
+    values = list(schema.get("enum") or [])
+    if "const" in schema and schema.get("const") not in values:
+        values.append(schema.get("const"))
+    return values
 
 
 def _consume_kind(field_name: str, *, location: str, policy: _Policy) -> str:

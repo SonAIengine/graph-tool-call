@@ -119,6 +119,10 @@ OpenAPI field direction is enforced before graph/search promotion:
 - `oneOf` / `anyOf` schemas are expanded across all object branches instead of
   only the first branch; branch-local required fields are marked with
   `required_in_branch` and do not become global request requirements
+- discriminator mappings and JSON Schema `const` values are preserved as
+  `discriminator_property`, `discriminator_value`, `discriminator_values`,
+  `schema_ref`, and `const`; when a discriminator field is omitted from branch
+  schemas, a synthetic top-level body field is still exposed for execution
 
 `HttpExecutor` uses this metadata before falling back to method-based heuristics,
 so POST operations with query/header parameters are rendered correctly. It also
@@ -140,8 +144,11 @@ diagnostics for XGEN popup/resume flows:
   the requirement index and missing scheme names, credential locations, and
   credential names without including runtime credential values
 - `invalid_arguments`: provided path/query/header/cookie/body values that
-  violate schema hints such as enum, type, numeric bounds, string length,
-  pattern, array item count, object property count, or multiple-of constraints
+  violate schema hints such as const, enum, type, numeric bounds, string
+  length, pattern, array item count, object property count, or multiple-of
+  constraints
+- branch-local missing fields are reported as `source=request_body_branch` when
+  the caller supplied a discriminator value that selects that branch
 - `unused_arguments`: provided arguments that are not part of the tool contract
 - `used_arguments`: classified path/query/header/cookie/body argument names
 - `selected_content_type`: request body media type selected from OpenAPI metadata

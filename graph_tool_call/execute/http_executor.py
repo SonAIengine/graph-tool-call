@@ -500,6 +500,13 @@ def _missing_required_inputs(
         _copy_validation_hint(row, item)
         add(item)
 
+    for item in _missing_branch_required_inputs(
+        body_rows,
+        arguments,
+        selected_content_type=selected_content_type,
+    ):
+        add(item)
+
     request_body = api_metadata.get("request_body") or {}
     if (
         method in ("POST", "PUT", "PATCH")
@@ -617,8 +624,12 @@ def _invalid_argument_values(
 
 def _validation_issues(value: Any, contract: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
+    const_failed = "const" in contract and not _const_matches(value, contract.get("const"))
+    if const_failed:
+        issues.append(_invalid_argument_row(contract, "const"))
+
     enum = contract.get("enum")
-    if isinstance(enum, list) and enum and not _enum_matches(value, enum):
+    if not const_failed and isinstance(enum, list) and enum and not _enum_matches(value, enum):
         issues.append(_invalid_argument_row(contract, "enum"))
 
     expected_type = str(contract.get("field_type") or "")
@@ -665,6 +676,14 @@ def _enum_matches(value: Any, enum: list[Any]) -> bool:
         return False
     value_text = str(value)
     return any(value_text == str(option) for option in enum)
+
+
+def _const_matches(value: Any, expected: Any) -> bool:
+    if value == expected:
+        return True
+    if isinstance(value, dict | list) or isinstance(expected, dict | list):
+        return False
+    return str(value) == str(expected)
 
 
 def _field_type_matches(
@@ -967,6 +986,7 @@ def _copy_validation_hint(source: dict[str, Any], target: dict[str, Any]) -> Non
         "pattern",
         "minimum",
         "maximum",
+        "const",
         "exclusive_minimum",
         "exclusive_maximum",
         "min_length",
@@ -981,10 +1001,78 @@ def _copy_validation_hint(source: dict[str, Any], target: dict[str, Any]) -> Non
         "schema_branch_count",
         "schema_branches",
         "required_in_branch",
+        "schema_ref",
+        "discriminator_property",
+        "discriminator_value",
+        "discriminator_values",
     ):
         value = source.get(key)
         if value not in (None, "", []):
             target[key] = list(value) if isinstance(value, list) else value
+
+
+def _missing_branch_required_inputs(
+    body_rows: list[dict[str, Any]],
+    arguments: dict[str, Any],
+    *,
+    selected_content_type: str,
+) -> list[dict[str, Any]]:
+    discriminator = _selected_discriminator(body_rows, arguments)
+    if not discriminator:
+        return []
+    property_name, value = discriminator
+    missing: list[dict[str, Any]] = []
+    for row in body_rows:
+        if not isinstance(row, dict) or not row.get("required_in_branch"):
+            continue
+        if not _branch_row_matches_discriminator(row, property_name, value):
+            continue
+        name = str(row.get("field_name") or "")
+        if not name or name == property_name:
+            continue
+        if _argument_present(name, "body", arguments, {}):
+            continue
+        item = {
+            "name": name,
+            "location": "body",
+            "source": "request_body_branch",
+        }
+        if selected_content_type:
+            item["content_type"] = selected_content_type
+        _copy_validation_hint(row, item)
+        missing.append(item)
+    return missing
+
+
+def _selected_discriminator(
+    body_rows: list[dict[str, Any]],
+    arguments: dict[str, Any],
+) -> tuple[str, Any] | None:
+    for row in body_rows:
+        if not isinstance(row, dict):
+            continue
+        property_name = str(row.get("discriminator_property") or "")
+        if not property_name or property_name not in arguments:
+            continue
+        value = arguments.get(property_name)
+        if value is not None:
+            return property_name, value
+    return None
+
+
+def _branch_row_matches_discriminator(
+    row: dict[str, Any],
+    property_name: str,
+    value: Any,
+) -> bool:
+    if str(row.get("discriminator_property") or "") != property_name:
+        return False
+    values = row.get("discriminator_values")
+    if isinstance(values, list) and values:
+        return _enum_matches(value, values)
+    if "discriminator_value" in row:
+        return _const_matches(value, row.get("discriminator_value"))
+    return False
 
 
 def _location_by_param(api_metadata: dict[str, Any]) -> dict[str, str]:

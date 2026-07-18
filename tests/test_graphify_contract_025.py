@@ -179,6 +179,41 @@ def test_build_io_contract_unions_oneof_branch_fields():
     assert by_produce["approvalNo"]["schema_combinator"] == "anyOf"
 
 
+def test_build_io_contract_preserves_discriminator_hints():
+    request_body_schema = {
+        "oneOf": [
+            {
+                "type": "object",
+                "x-graph-tool-call-ref": "#/components/schemas/CardPayment",
+                "required": ["cardNumber"],
+                "properties": {"cardNumber": {"type": "string"}},
+            },
+            {
+                "type": "object",
+                "x-graph-tool-call-ref": "#/components/schemas/BankPayment",
+                "required": ["bankCode"],
+                "properties": {"bankCode": {"type": "string"}},
+            },
+        ],
+        "discriminator": {
+            "propertyName": "paymentType",
+            "mapping": {
+                "card": "#/components/schemas/CardPayment",
+                "bank": "#/components/schemas/BankPayment",
+            },
+        },
+    }
+
+    _produces, consumes = build_io_contract(request_body_schema=request_body_schema)
+    by_consume = {row["field_name"]: row for row in consumes}
+
+    assert set(by_consume) == {"paymentType", "cardNumber", "bankCode"}
+    assert by_consume["paymentType"]["enum"] == ["card", "bank"]
+    assert by_consume["paymentType"]["discriminator_property"] == "paymentType"
+    assert by_consume["cardNumber"]["schema_ref"] == "#/components/schemas/CardPayment"
+    assert by_consume["cardNumber"]["discriminator_value"] == "card"
+
+
 def test_promote_api_contract_signals_selects_useful_fields_without_wrapper_noise():
     search = ToolSchema(
         name="searchProducts",
