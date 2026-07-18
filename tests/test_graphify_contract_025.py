@@ -316,6 +316,51 @@ def test_promote_api_contract_signals_selects_useful_fields_without_wrapper_nois
     assert stats["consumes_added"] == 5
 
 
+def test_promote_api_contract_signals_preserves_openapi_security_auth_hints():
+    tool = ToolSchema(
+        name="listOrders",
+        metadata={
+            "api_contract": {
+                "produces": [],
+                "consumes": [
+                    {
+                        "field_name": "Authorization",
+                        "field_type": "string",
+                        "required": False,
+                        "location": "header",
+                        "kind": "auth",
+                        "security_required": True,
+                        "security_scheme": "bearerAuth",
+                        "security_schemes": ["bearerAuth"],
+                        "auth_type": "http",
+                        "credential_name": "Authorization",
+                        "scheme": "bearer",
+                        "bearer_format": "JWT",
+                        "requirement_indices": [0],
+                    }
+                ],
+            }
+        },
+    )
+
+    stats = promote_api_contract_signals([tool])
+
+    assert stats["consumes_added"] == 1
+    auth = tool.metadata["consumes"][0]
+    assert auth["field_name"] == "Authorization"
+    assert auth["kind"] == "auth"
+    assert auth["required"] is False
+    assert auth["contract_source"] == "api_contract"
+    assert auth["security_required"] is True
+    assert auth["security_scheme"] == "bearerAuth"
+    assert auth["security_schemes"] == ["bearerAuth"]
+    assert auth["auth_type"] == "http"
+    assert auth["scheme"] == "bearer"
+    assert auth["bearer_format"] == "JWT"
+    assert auth["credential_name"] == "Authorization"
+    assert auth["requirement_indices"] == [0]
+
+
 def test_promote_api_contract_signals_skips_inverse_direction_fields():
     search = ToolSchema(
         name="searchUsers",

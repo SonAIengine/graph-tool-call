@@ -69,6 +69,50 @@ class TestIngestPetstoreSwagger2:
         for tool in tools:
             assert "pets" in tool.tags
 
+    def test_swagger2_basic_security_becomes_auth_contract_row(self) -> None:
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Secure Swagger API", "version": "1.0.0"},
+            "host": "api.example.test",
+            "basePath": "/v1",
+            "schemes": ["https"],
+            "securityDefinitions": {
+                "basicAuth": {
+                    "type": "basic",
+                    "description": "HTTP Basic credentials",
+                }
+            },
+            "security": [{"basicAuth": []}],
+            "paths": {
+                "/orders": {
+                    "get": {
+                        "operationId": "listOrders",
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"orderId": {"type": "string"}},
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        consumes = {
+            (row["field_name"], row["location"]): row
+            for row in tools[0].metadata["api_contract"]["consumes"]
+        }
+        auth = consumes[("Authorization", "header")]
+        assert auth["kind"] == "auth"
+        assert auth["required"] is False
+        assert auth["auth_type"] == "basic"
+        assert auth["scheme"] == "basic"
+        assert auth["security_schemes"] == ["basicAuth"]
+
 
 class TestIngestOpenAPI30:
     def test_ingest_openapi30(self) -> None:
@@ -303,6 +347,86 @@ class TestIngestOpenAPI30:
             row["field_name"] == "preview" and row["location"] == "query"
             for row in metadata["api_contract"]["consumes"]
         )
+        site_auth = next(
+            row for row in metadata["api_contract"]["consumes"] if row["field_name"] == "X-Site-No"
+        )
+        assert site_auth["kind"] == "auth"
+        assert site_auth["required"] is False
+        assert site_auth["parameter_required"] is True
+        assert site_auth["security_required"] is True
+        assert site_auth["security_scheme"] == "siteHeader"
+        assert site_auth["security_schemes"] == ["siteHeader"]
+        assert site_auth["auth_type"] == "apiKey"
+        assert site_auth["credential_name"] == "X-Site-No"
+
+    def test_security_requirements_become_auth_contract_rows(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Secure API", "version": "1.0.0"},
+            "components": {
+                "securitySchemes": {
+                    "bearerAuth": {
+                        "type": "http",
+                        "scheme": "bearer",
+                        "bearerFormat": "JWT",
+                    },
+                    "sessionCookie": {
+                        "type": "apiKey",
+                        "in": "cookie",
+                        "name": "SESSION",
+                    },
+                }
+            },
+            "security": [{"bearerAuth": []}, {"sessionCookie": []}],
+            "paths": {
+                "/orders": {
+                    "get": {
+                        "operationId": "listOrders",
+                        "parameters": [
+                            {
+                                "name": "keyword",
+                                "in": "query",
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"orderId": {"type": "string"}},
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        consumes = {
+            (row["field_name"], row["location"]): row
+            for row in tools[0].metadata["api_contract"]["consumes"]
+        }
+
+        assert consumes[("keyword", "query")]["kind"] == "data"
+        bearer = consumes[("Authorization", "header")]
+        assert bearer["kind"] == "auth"
+        assert bearer["required"] is False
+        assert bearer["security_required"] is True
+        assert bearer["security_schemes"] == ["bearerAuth"]
+        assert bearer["auth_type"] == "http"
+        assert bearer["scheme"] == "bearer"
+        assert bearer["bearer_format"] == "JWT"
+        cookie = consumes[("SESSION", "cookie")]
+        assert cookie["kind"] == "auth"
+        assert cookie["required"] is False
+        assert cookie["security_schemes"] == ["sessionCookie"]
+        assert cookie["credential_name"] == "SESSION"
 
     def test_response_envelope_aliases_are_preserved_for_execution(self) -> None:
         spec = {

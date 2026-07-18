@@ -1830,6 +1830,7 @@ def _api_contract_rows(
     parameter_rows: list[dict[str, Any]],
     body_leaf_rows: list[dict[str, Any]],
     response_leaf_rows: list[dict[str, Any]],
+    security: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     produces = []
     for row in response_leaf_rows:
@@ -1872,7 +1873,156 @@ def _api_contract_rows(
         _add(row, name_key="name", location_key="in")
     for row in body_leaf_rows:
         _add(row, name_key="field_name", location_key="location")
+    _merge_security_consumes(consumes, _api_contract_security_rows(security))
     return produces, consumes
+
+
+def _api_contract_security_rows(security: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Convert OpenAPI security requirements into ambient auth contract rows."""
+    if not isinstance(security, dict):
+        return []
+    requirements = (
+        security.get("requirements") if isinstance(security.get("requirements"), list) else []
+    )
+    schemes = security.get("schemes") if isinstance(security.get("schemes"), dict) else {}
+    if not requirements or not schemes:
+        return []
+
+    security_optional = any(
+        isinstance(requirement, dict) and not requirement for requirement in requirements
+    )
+    rows_by_identity: dict[tuple[str, str], dict[str, Any]] = {}
+    for requirement_index, requirement in enumerate(requirements):
+        if not isinstance(requirement, dict) or not requirement:
+            continue
+        for scheme_name, raw_scopes in requirement.items():
+            scheme = schemes.get(str(scheme_name))
+            if not isinstance(scheme, dict):
+                continue
+            row = _security_scheme_contract_row(
+                str(scheme_name),
+                scheme,
+                scopes=raw_scopes if isinstance(raw_scopes, list) else [],
+                requirement_index=requirement_index,
+                security_optional=security_optional,
+            )
+            if not row:
+                continue
+            identity = (str(row.get("field_name") or ""), str(row.get("location") or ""))
+            existing = rows_by_identity.get(identity)
+            if existing is None:
+                rows_by_identity[identity] = row
+                continue
+            _merge_security_row(existing, row)
+    return list(rows_by_identity.values())
+
+
+def _security_scheme_contract_row(
+    scheme_name: str,
+    scheme: dict[str, Any],
+    *,
+    scopes: list[Any],
+    requirement_index: int,
+    security_optional: bool,
+) -> dict[str, Any]:
+    auth_type = str(scheme.get("type") or "").strip()
+    auth_type_key = auth_type.lower()
+    location = str(scheme.get("in") or "").strip().lower()
+    credential_name = str(scheme.get("name") or "").strip()
+    http_scheme = str(scheme.get("scheme") or "").strip().lower()
+    if auth_type_key == "basic" and not http_scheme:
+        http_scheme = "basic"
+
+    if auth_type_key == "apikey":
+        if location not in {"query", "header", "cookie"}:
+            location = "auth"
+        field_name = credential_name or scheme_name
+    elif auth_type_key in {"http", "basic"}:
+        location = "header"
+        credential_name = "Authorization"
+        field_name = "Authorization"
+    elif auth_type_key in {"oauth2", "openidconnect"}:
+        location = "header"
+        credential_name = "Authorization"
+        field_name = "Authorization"
+    else:
+        location = "auth"
+        credential_name = credential_name or scheme_name
+        field_name = credential_name
+
+    if not field_name:
+        return {}
+
+    row: dict[str, Any] = {
+        "field_name": field_name,
+        "field_type": "string",
+        "required": False,
+        "location": location,
+        "kind": "auth",
+        "security_required": not security_optional,
+        "security_schemes": [scheme_name],
+        "security_scheme": scheme_name,
+        "auth_type": auth_type,
+        "credential_name": credential_name or field_name,
+        "requirement_indices": [requirement_index],
+    }
+    if http_scheme:
+        row["scheme"] = http_scheme
+    if scheme.get("bearer_format"):
+        row["bearer_format"] = scheme["bearer_format"]
+    if scheme.get("openIdConnectUrl"):
+        row["open_id_connect_url"] = scheme["openIdConnectUrl"]
+    if scopes:
+        row["scopes"] = [str(scope) for scope in scopes]
+    if scheme.get("description"):
+        row["description"] = str(scheme["description"])[:500]
+    return row
+
+
+def _merge_security_consumes(
+    consumes: list[dict[str, Any]],
+    security_rows: list[dict[str, Any]],
+) -> None:
+    by_identity = {
+        (str(row.get("field_name") or ""), str(row.get("location") or row.get("in") or "")): row
+        for row in consumes
+        if isinstance(row, dict)
+    }
+    for row in security_rows:
+        identity = (str(row.get("field_name") or ""), str(row.get("location") or ""))
+        existing = by_identity.get(identity)
+        if existing is None:
+            consumes.append(row)
+            by_identity[identity] = row
+            continue
+        if existing.get("required"):
+            existing["parameter_required"] = True
+        existing["required"] = False
+        existing["kind"] = "auth"
+        _merge_security_row(existing, row)
+
+
+def _merge_security_row(existing: dict[str, Any], incoming: dict[str, Any]) -> None:
+    for key in (
+        "field_type",
+        "location",
+        "kind",
+        "security_scheme",
+        "auth_type",
+        "credential_name",
+        "scheme",
+        "bearer_format",
+        "open_id_connect_url",
+        "description",
+    ):
+        value = incoming.get(key)
+        if existing.get(key) in (None, "", []) and value not in (None, "", []):
+            existing[key] = copy.deepcopy(value)
+    existing["security_required"] = bool(existing.get("security_required")) or bool(
+        incoming.get("security_required")
+    )
+    for key in ("security_schemes", "requirement_indices", "scopes"):
+        existing[key] = _merge_list_values(existing.get(key) or [], incoming.get(key) or [])
 
 
 def _api_contract_link_rows(
@@ -2128,10 +2278,12 @@ def _operation_to_tool(
         response_example_rows,
     )
     response_envelope = annotate_response_path_aliases(response_schema, response_leaf_rows)
+    security = _security_metadata(operation, resolved_spec)
     produces, consumes = _api_contract_rows(
         parameter_rows=parameter_rows,
         body_leaf_rows=all_body_leaf_rows,
         response_leaf_rows=response_leaf_rows,
+        security=security,
     )
     link_rows = _api_contract_link_rows(
         operation_id=operation_id,
@@ -2143,8 +2295,6 @@ def _operation_to_tool(
         request_body_content_types=request_body_content_type_rows,
         response_rows=response_rows,
     )
-    security = _security_metadata(operation, resolved_spec)
-
     metadata: dict[str, Any] = {
         "source": "openapi",
         "method": method,

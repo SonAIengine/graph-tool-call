@@ -42,7 +42,10 @@ The graphify package owns product-neutral collection graph logic.
 `PathSynthesizer` remains transport-agnostic. It only reads a serialized graph dict and emits a `Plan`.
 
 - `kind=data` inputs can be filled from entities, producer chains, or `user_input` slots.
-- `kind=context` and `kind=auth` inputs are ambient. They are filled from entities or context defaults when available and are never producer-chained.
+- `kind=context` and `kind=auth` inputs are ambient. They are filled from
+  entities or context defaults when available and are never producer-chained.
+  OpenAPI security schemes are represented as `kind=auth` consumes with scheme
+  metadata; runtime token/cookie/header values remain the caller's concern.
 - `PlanSynthesisError.to_dict()` exposes `stage`, `reason`, `message`, and structured details so adapters do not need to parse exception text.
 - `Plan.metadata.synthesis` records `target`, selected producers, candidate signals, and user-input fallbacks.
 

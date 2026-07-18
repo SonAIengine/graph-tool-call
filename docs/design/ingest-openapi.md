@@ -73,6 +73,15 @@ metadata["response_schema"] = {
 | `error_responses` | non-2xx response만 모은 실패 처리용 catalog |
 | `security` | OpenAPI security requirements와 static scheme 정보. runtime token/cookie 값은 보존하지 않음 |
 
+선언된 OpenAPI `security` requirement는 `metadata.openapi.security`에 원형에
+가까운 compact metadata로 남기고, 동시에 `metadata.api_contract.consumes`에는
+`kind=auth` row로 올린다. `apiKey` scheme은 선언된 query/header/cookie
+credential 이름을 사용하고, bearer/basic/OAuth/OpenID Connect 계열은
+`Authorization` credential로 표현한다. 이 row는 `required=false`,
+`security_required=true`로 유지해 Planflow가 토큰을 사용자 입력이나 producer
+chain으로 만들지 않게 하고, 실제 누락 차단은 `HttpExecutor.validate_request`와
+XGEN 실행 adapter가 담당한다.
+
 OpenAPI `readOnly`/`writeOnly` 방향성도 contract 추출 전에 반영한다.
 request body의 `readOnly` field는 tool parameter, `request_body.fields`,
 `api_contract.consumes`에서 제외하고, response의 `writeOnly` field는

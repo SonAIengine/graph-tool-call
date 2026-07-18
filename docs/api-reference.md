@@ -108,7 +108,11 @@ tool's metadata:
 - `metadata.openapi.error_responses`: non-2xx response catalog for failure UI/logs
 - `metadata.openapi.security`: declared security requirements and static scheme
   metadata, without runtime credentials
-- `metadata.api_contract`: raw extracted produces/consumes rows for graph building
+- `metadata.api_contract`: raw extracted produces/consumes rows for graph building.
+  Declared OpenAPI security requirements are also exposed as
+  `consumes[].kind=auth` rows with `security_schemes`, `auth_type`,
+  `credential_name`, and `security_required`; runtime secret values stay in the
+  caller/executor layer.
 
 OpenAPI field direction is enforced before graph/search promotion:
 
@@ -123,6 +127,11 @@ OpenAPI field direction is enforced before graph/search promotion:
   single-schema `anyOf` / `oneOf` null unions are exposed as `nullable=true`.
 - OpenAPI3 query object wrappers are expanded into their real inner fields for
   `metadata.openapi.parameters`, `input_locations`, and `api_contract.consumes`.
+- Declared OpenAPI `security` schemes are converted to ambient auth consumes.
+  `apiKey` schemes use their declared query/header/cookie credential name;
+  bearer/basic/OAuth/OpenID Connect schemes use `Authorization` as the
+  credential field. These rows are `kind=auth` and remain non-user-input plan
+  dependencies.
   If Spring/SpringDoc exposes both the wrapper and a sibling field, the wrapper
   is dropped and the sibling wins. Explicit `style=deepObject` parameters keep
   the wrapper because it is part of the wire format.
