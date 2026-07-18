@@ -105,7 +105,8 @@ tool's metadata:
   envelope metadata, and selected OpenAPI response links
 - `metadata.openapi.responses`: compact catalog of every declared response,
   including status, success flag, content types, examples, headers, links, and
-  field count
+  field count. Numeric 2xx and `2XX` status ranges are classified as success;
+  `4XX`/`5XX` ranges and `default` remain failure metadata.
 - `metadata.openapi.error_responses`: non-2xx response catalog for failure UI/logs
 - `metadata.openapi.security`: declared security requirements and static scheme
   metadata, without runtime credentials
@@ -132,6 +133,9 @@ OpenAPI field direction is enforced before graph/search promotion:
   with `location=response_header` and `json_path=$.headers.<Name>`, so cursor,
   `Location`, `ETag`, and token-like handoff headers can participate in
   graph/search/plan contracts.
+- OpenAPI response status ranges are preserved. A `2XX` response can be the
+  selected success contract for produces/Planflow, while `4XX`/`5XX` rows stay
+  in `metadata.openapi.error_responses` for failure UX and logs.
 - Declared OpenAPI `security` schemes are converted to ambient auth consumes.
   `apiKey` schemes use their declared query/header/cookie credential name;
   bearer/basic/OAuth/OpenID Connect schemes use `Authorization` as the

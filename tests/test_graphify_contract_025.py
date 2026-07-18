@@ -669,6 +669,80 @@ def test_ingest_openapi_graphify_uses_response_header_links_for_plan_binding():
     assert plan.steps[-1].args["sessionToken"] == "${s1.headers.X-Session-Token}"
 
 
+def test_ingest_openapi_graphify_promotes_status_range_response_contracts():
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Status Range API", "version": "1.0.0"},
+        "paths": {
+            "/exports": {
+                "post": {
+                    "operationId": "createExport",
+                    "summary": "내보내기 생성",
+                    "responses": {
+                        "2XX": {
+                            "description": "Any successful export response",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"exportId": {"type": "string"}},
+                                    }
+                                }
+                            },
+                        },
+                        "4XX": {
+                            "description": "Client error",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"errorCode": {"type": "string"}},
+                                    }
+                                }
+                            },
+                        },
+                    },
+                }
+            },
+            "/exports/{exportId}": {
+                "get": {
+                    "operationId": "getExport",
+                    "summary": "내보내기 조회",
+                    "parameters": [
+                        {
+                            "name": "exportId",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+        },
+    }
+
+    tools, _ = ingest_openapi(spec)
+    assert {row["status"] for row in tools[0].metadata["openapi"]["error_responses"]} == {"4XX"}
+
+    tg, stats = ingest_openapi_graphify(tools, promote_contract_signals=True)
+    edge = tg.graph.get_edge_attrs("getExport", "createExport")
+
+    assert stats["contract_signals"]["produces_added"] == 1
+    assert stats["contract_edges"]["merged"] == 1
+    assert edge["relation"] == "requires"
+    assert EVIDENCE_API_CONTRACT in edge["evidence_sources"]
+    assert edge["data_flow"]["to_field"] == "exportId"
+
+    graph_payload = {
+        "graph": tg.graph.to_dict(),
+        "tools": {name: tool.to_dict() for name, tool in tg.tools.items()},
+    }
+    plan = PathSynthesizer(graph_payload).synthesize(target="getExport", goal="내보내기 조회")
+    assert [step.tool for step in plan.steps] == ["createExport", "getExport"]
+    assert plan.steps[-1].args["exportId"] == "${s1.exportId}"
+
+
 def test_expand_candidates_with_producers_uses_required_data_only_and_action_priority():
     tools = {
         "getProductDetail": {

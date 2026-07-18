@@ -976,10 +976,7 @@ def _pick_response_schema_with_status_and_type(
     if not isinstance(responses, dict):
         return {}, None, None
 
-    success_codes = sorted(
-        code for code in responses if str(code).isdigit() and 200 <= int(str(code)) < 300
-    )
-    for code in [*success_codes, "default"]:
+    for code in [*_preferred_success_response_codes(responses), "default"]:
         if code not in responses:
             continue
         resp = responses[code] or {}
@@ -1298,13 +1295,35 @@ def _response_status_sort(status: Any) -> tuple[int, int | str]:
     text = str(status)
     if text.isdigit():
         return 0, int(text)
+    if _is_response_status_range(text):
+        return 1, text.upper()
     if text == "default":
-        return 1, text
-    return 2, text
+        return 2, text
+    return 3, text
 
 
 def _is_success_response_status(status: str) -> bool:
-    return status.isdigit() and 200 <= int(status) < 300
+    text = str(status or "").strip()
+    if text.isdigit():
+        return 200 <= int(text) < 300
+    return text.upper() == "2XX"
+
+
+def _is_response_status_range(status: str) -> bool:
+    text = str(status or "").strip().upper()
+    return len(text) == 3 and text[0] in "12345" and text[1:] == "XX"
+
+
+def _preferred_success_response_codes(responses: dict[str, Any]) -> list[Any]:
+    numeric_codes = sorted(
+        code for code in responses if str(code).isdigit() and 200 <= int(str(code)) < 300
+    )
+    range_codes = sorted(
+        code
+        for code in responses
+        if not str(code).isdigit() and _is_success_response_status(str(code))
+    )
+    return [*numeric_codes, *range_codes]
 
 
 def _operation_examples(

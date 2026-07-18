@@ -453,6 +453,71 @@ class TestIngestOpenAPI30:
         assert cookie["security_schemes"] == ["sessionCookie"]
         assert cookie["credential_name"] == "SESSION"
 
+    def test_status_range_responses_are_classified_for_contracts(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Status Range API", "version": "1.0.0"},
+            "paths": {
+                "/exports": {
+                    "post": {
+                        "operationId": "createExport",
+                        "responses": {
+                            "2XX": {
+                                "description": "Any successful export response",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "exportId": {"type": "string"},
+                                                "status": {"type": "string"},
+                                            },
+                                        }
+                                    }
+                                },
+                            },
+                            "4XX": {
+                                "description": "Client error",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"errorCode": {"type": "string"}},
+                                        }
+                                    }
+                                },
+                            },
+                            "default": {
+                                "description": "Unexpected error",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"message": {"type": "string"}},
+                                        }
+                                    }
+                                },
+                            },
+                        },
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        metadata = tools[0].metadata
+        openapi = metadata["openapi"]
+        responses = {row["status"]: row for row in openapi["responses"]}
+
+        assert metadata["response_status"] == "2XX"
+        assert openapi["response"]["status"] == "2XX"
+        assert responses["2XX"]["success"] is True
+        assert responses["4XX"]["success"] is False
+        assert responses["default"]["success"] is False
+        assert {row["status"] for row in openapi["error_responses"]} == {"4XX", "default"}
+        assert any(row["field_name"] == "exportId" for row in metadata["api_contract"]["produces"])
+        assert all(row["field_name"] != "errorCode" for row in metadata["api_contract"]["produces"])
+
     def test_response_envelope_aliases_are_preserved_for_execution(self) -> None:
         spec = {
             "openapi": "3.0.0",

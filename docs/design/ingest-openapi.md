@@ -69,7 +69,7 @@ metadata["response_schema"] = {
 | `parameters` | path/query/header/cookie parameter, `style`, `explode`, `allowReserved`, default/example/constraint |
 | `request_body` | 선택된 content type, 전체 content type 후보, 후보별 field, schema, top-level field, leaf field, body examples, example-inferred fields |
 | `response` | 선택된 2xx/default response의 status, content type, schema, description, leaf field, response header, envelope metadata |
-| `responses` | 모든 response status의 compact catalog: success flag, content types, examples, headers, field count |
+| `responses` | 모든 response status의 compact catalog: success flag, content types, examples, headers, field count. 숫자 2xx와 `2XX` range는 success, `4XX`/`5XX`와 `default`는 failure metadata로 분류 |
 | `error_responses` | non-2xx response만 모은 실패 처리용 catalog |
 | `security` | OpenAPI security requirements와 static scheme 정보. runtime token/cookie 값은 보존하지 않음 |
 
@@ -89,6 +89,12 @@ XGEN 실행 adapter가 담당한다.
 `$response.header.X-Session-Token`처럼 header 값을 다음 operation parameter로
 연결하면 graphify는 `openapi_link` evidence와 producer alias를 만들어
 Planflow가 `${s1.headers.X-Session-Token}` 형태로 바인딩할 수 있게 한다.
+
+OpenAPI status range도 contract 단계에서 보존한다. `2XX` response는 명시
+숫자 2xx response가 없을 때 selected success response로 쓰이고,
+`api_contract.produces`의 원천이 될 수 있다. `4XX`/`5XX` range와 `default`는
+`metadata.openapi.error_responses`에 남겨 XGEN 실패 UI/log가 정확한 실패
+계약을 보여줄 수 있게 한다.
 
 OpenAPI `readOnly`/`writeOnly` 방향성도 contract 추출 전에 반영한다.
 request body의 `readOnly` field는 tool parameter, `request_body.fields`,
