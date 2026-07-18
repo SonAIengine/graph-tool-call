@@ -8,6 +8,8 @@ from graph_tool_call import __version__
 from graph_tool_call.core.tool import ToolParameter, ToolSchema
 from graph_tool_call.graphify import (
     COLLECTION_GRAPH_VERSION,
+    EVIDENCE_API_CONTRACT,
+    EVIDENCE_OPENAPI_LINK,
     build_io_contract,
     derive_plan_trace_edges,
     expand_candidates_with_producers,
@@ -17,6 +19,7 @@ from graph_tool_call.graphify import (
     promote_api_contract_signals,
     retrieve_graphify,
 )
+from graph_tool_call.ingest.openapi import ingest_openapi
 from graph_tool_call.ontology.schema import RelationType
 from graph_tool_call.plan import (
     PathSynthesizer,
@@ -433,6 +436,101 @@ def test_ingest_openapi_graphify_can_promote_contracts_into_data_flow_edges():
     plan = PathSynthesizer(graph_payload).synthesize(target="getProductDetail", goal="상품 상세")
     assert [step.tool for step in plan.steps] == ["searchProducts", "getProductDetail"]
     assert plan.steps[-1].args["goodsNo"] == "${s1.items[0].goodsNo}"
+
+
+def test_ingest_openapi_graphify_uses_openapi_links_for_cross_field_data_flow():
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Linked API", "version": "1.0.0"},
+        "paths": {
+            "/signup-sessions": {
+                "post": {
+                    "operationId": "createSignupSession",
+                    "summary": "회원 가입 세션 생성",
+                    "responses": {
+                        "201": {
+                            "description": "Created",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"id": {"type": "string"}},
+                                    }
+                                }
+                            },
+                            "links": {
+                                "GetProfileByUserId": {
+                                    "operationRef": "#/paths/~1profiles~1{userId}/get",
+                                    "parameters": {"userId": "$response.body#/id"},
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/profiles/{userId}": {
+                "get": {
+                    "operationId": "getProfile",
+                    "summary": "프로필 조회",
+                    "parameters": [
+                        {
+                            "name": "userId",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+        },
+    }
+    tools, _ = ingest_openapi(spec)
+
+    tg, stats = ingest_openapi_graphify(tools, promote_contract_signals=True)
+    edge = tg.graph.get_edge_attrs("getProfile", "createSignupSession")
+    create_tool = tg.tools["createSignupSession"]
+    link_produces = [
+        row
+        for row in create_tool.metadata.get("produces", [])
+        if row.get("contract_source") == EVIDENCE_OPENAPI_LINK
+    ]
+
+    assert stats["openapi_link_signals"]["produces_added"] == 1
+    assert stats["openapi_link_edges"]["added"] == 1
+    assert stats["contract_edges"]["merged"] == 1
+    assert edge["relation"] == "requires"
+    assert edge["confidence"] == "EXTRACTED"
+    assert edge["evidence_sources"] == [EVIDENCE_OPENAPI_LINK, EVIDENCE_API_CONTRACT]
+    assert edge["data_flow"]["to_field"] == "userId"
+    assert edge["data_flow"]["from_path"] == "$.id"
+    assert edge["data_flow"]["parameters"][0]["expression"] == "$response.body#/id"
+    assert link_produces == [
+        {
+            "field_name": "userId",
+            "json_path": "$.id",
+            "field_type": "string",
+            "required": False,
+            "kind": "data",
+            "search_signal": False,
+            "contract_source": EVIDENCE_OPENAPI_LINK,
+            "openapi_link_name": "GetProfileByUserId",
+            "openapi_link_target_operation_id": None,
+            "openapi_link_target_operation_ref": "#/paths/~1profiles~1{userId}/get",
+            "openapi_link_source": "response_body",
+            "source_field_name": "id",
+            "value_path_aliases": ["$.body.id"],
+        }
+    ]
+
+    graph_payload = {
+        "graph": tg.graph.to_dict(),
+        "tools": {name: tool.to_dict() for name, tool in tg.tools.items()},
+    }
+    plan = PathSynthesizer(graph_payload).synthesize(target="getProfile", goal="프로필 조회")
+
+    assert [step.tool for step in plan.steps] == ["createSignupSession", "getProfile"]
+    assert plan.steps[-1].args["userId"] == "${s1.id}"
 
 
 def test_expand_candidates_with_producers_uses_required_data_only_and_action_priority():

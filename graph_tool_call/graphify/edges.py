@@ -19,6 +19,7 @@ EVIDENCE_RUN = "run"
 EVIDENCE_LLM_CURATED = "llm_curated"
 EVIDENCE_MANUAL = "manual"
 EVIDENCE_API_CONTRACT = "api_contract"
+EVIDENCE_OPENAPI_LINK = "openapi_link"
 
 _DATA_FLOW_RELATIONS = frozenset({"requires", "precedes", "produces_for"})
 _BINDING_RE = re.compile(r"^\$\{(\w+)\.(.+)\}$")
@@ -89,7 +90,7 @@ def merge_graph_edges(existing: dict[str, Any], incoming: dict[str, Any]) -> dic
             "conf_score": conf_score,
             "evidence_sources": sources,
             "evidence": " | ".join(evidence_notes),
-            "data_flow": right.get("data_flow") or left.get("data_flow"),
+            "data_flow": _merge_data_flow(left.get("data_flow"), right.get("data_flow")),
         }
     )
     if left.get("kind") == "data" or right.get("kind") == "data":
@@ -100,6 +101,27 @@ def merge_graph_edges(existing: dict[str, Any], incoming: dict[str, Any]) -> dic
         merged["is_manual"] = True
     if left.get("deleted_by_user") or right.get("deleted_by_user"):
         merged["deleted_by_user"] = True
+    return merged
+
+
+def _merge_data_flow(left: Any, right: Any) -> Any:
+    if not isinstance(left, dict):
+        return right if right not in (None, {}, []) else left
+    if not isinstance(right, dict):
+        return left
+    merged = dict(left)
+    for key, value in right.items():
+        if value in (None, "", [], {}):
+            continue
+        if key == "parameters" and isinstance(merged.get(key), list) and isinstance(value, list):
+            seen = {repr(item) for item in merged[key]}
+            for item in value:
+                marker = repr(item)
+                if marker not in seen:
+                    merged[key].append(item)
+                    seen.add(marker)
+            continue
+        merged[key] = value
     return merged
 
 
@@ -216,6 +238,7 @@ __all__ = [
     "EVIDENCE_LLM_CURATED",
     "EVIDENCE_MANUAL",
     "EVIDENCE_NAME_BASED",
+    "EVIDENCE_OPENAPI_LINK",
     "EVIDENCE_PROVEN",
     "EVIDENCE_RUN",
     "EVIDENCE_STRUCTURAL",

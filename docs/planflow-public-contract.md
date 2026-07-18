@@ -27,6 +27,9 @@ The graphify package owns product-neutral collection graph logic.
 - Nullable request/response fields are normalized across OpenAPI `nullable`,
   Swagger `x-nullable`, JSON Schema null type arrays, and single-schema null
   unions, then preserved as `nullable=true` contract hints.
+- OpenAPI success-response links are normalized into `api_contract.links`,
+  promoted as `openapi_link` graph evidence, and may add non-search producer
+  aliases when the response field name differs from the linked parameter name.
 - `additionalProperties` map leaves are represented additively with
   `additional_properties`, `map_value`, and `map_key_placeholder` hints; map
   value paths use `*` as a sorted-key first-value placeholder, not fan-out.

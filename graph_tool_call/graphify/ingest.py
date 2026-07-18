@@ -36,6 +36,7 @@ from graph_tool_call.analyze.dependency import (
 from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.graphify.edges import (
     EVIDENCE_API_CONTRACT,
+    EVIDENCE_OPENAPI_LINK,
     merge_graph_edges,
     normalize_graph_edge,
 )
@@ -371,6 +372,259 @@ def _apply_contract_data_flow_edges(
     return stats
 
 
+def _promote_openapi_link_signals(schemas: list[ToolSchema]) -> dict[str, int]:
+    """Expose response-link parameter mappings as producer aliases.
+
+    OpenAPI Link Objects can say ``getUser.userId = $response.body#/id``.
+    The producer's raw response field is ``id``, but the consumer field is
+    ``userId``. Adding a non-search producer alias lets Planflow bind the
+    documented mapping without guessing that ``id`` and ``userId`` are related.
+    """
+
+    stats = {
+        "links_seen": 0,
+        "produces_added": 0,
+        "skipped_no_response_source": 0,
+    }
+    for producer in schemas:
+        metadata = producer.metadata if isinstance(producer.metadata, dict) else {}
+        if producer.metadata is not metadata:
+            producer.metadata = metadata
+        produces = metadata.setdefault("produces", [])
+        if not isinstance(produces, list):
+            produces = []
+            metadata["produces"] = produces
+
+        seen = {
+            (str(row.get("field_name") or ""), str(row.get("json_path") or ""))
+            for row in produces
+            if isinstance(row, dict)
+        }
+        for link in _openapi_contract_links(producer):
+            stats["links_seen"] += 1
+            response_params = _response_link_parameters(link)
+            if not response_params:
+                stats["skipped_no_response_source"] += 1
+                continue
+            for parameter in response_params:
+                field_name = str(parameter.get("field_name") or "").strip()
+                json_path = str(parameter.get("json_path") or "").strip()
+                if not field_name or not json_path:
+                    continue
+                key = (field_name, json_path)
+                if key in seen:
+                    continue
+                produce = {
+                    "field_name": field_name,
+                    "json_path": json_path,
+                    "field_type": "string",
+                    "required": False,
+                    "kind": "data",
+                    "search_signal": False,
+                    "contract_source": EVIDENCE_OPENAPI_LINK,
+                    "openapi_link_name": link.get("name"),
+                    "openapi_link_target_operation_id": link.get("operation_id"),
+                    "openapi_link_target_operation_ref": link.get("operation_ref"),
+                    "openapi_link_source": parameter.get("source"),
+                    "source_field_name": _json_path_tail(json_path),
+                }
+                aliases = _response_body_value_aliases(
+                    json_path, str(parameter.get("source") or "")
+                )
+                if aliases:
+                    produce["value_path_aliases"] = aliases
+                produces.append(produce)
+                seen.add(key)
+                stats["produces_added"] += 1
+    return stats
+
+
+def _apply_openapi_link_edges(tg: ToolGraph, schemas: list[ToolSchema]) -> dict[str, Any]:
+    """Add graph edges from OpenAPI response links.
+
+    Direction follows Planflow's convention:
+    ``linked operation consumer --requires--> source response producer``.
+    """
+
+    stats: dict[str, Any] = {
+        "added": 0,
+        "merged": 0,
+        "skipped_unresolved": 0,
+        "skipped_self": 0,
+        "by_relation": {},
+    }
+    index = _operation_target_index(schemas)
+    for producer in schemas:
+        for link in _openapi_contract_links(producer):
+            consumer = _resolve_openapi_link_target(link, index)
+            if not consumer:
+                stats["skipped_unresolved"] += 1
+                continue
+            if consumer == producer.name:
+                stats["skipped_self"] += 1
+                continue
+            relation = (
+                RelationType.REQUIRES if _response_link_parameters(link) else RelationType.PRECEDES
+            )
+            result = _add_or_merge_openapi_link_edge(
+                tg,
+                consumer=consumer,
+                producer=producer.name,
+                link=link,
+                relation=relation,
+            )
+            stats[result] += 1
+            relation_value = relation.value
+            stats["by_relation"][relation_value] = stats["by_relation"].get(relation_value, 0) + (
+                1 if result == "added" else 0
+            )
+    return stats
+
+
+def _openapi_contract_links(schema: ToolSchema) -> list[dict[str, Any]]:
+    metadata = schema.metadata if isinstance(schema.metadata, dict) else {}
+    contract = (
+        metadata.get("api_contract") if isinstance(metadata.get("api_contract"), dict) else {}
+    )
+    links = contract.get("links") if isinstance(contract.get("links"), list) else []
+    return [
+        link for link in links if isinstance(link, dict) and link.get("success", True) is not False
+    ]
+
+
+def _response_link_parameters(link: dict[str, Any]) -> list[dict[str, Any]]:
+    params = link.get("parameters") if isinstance(link.get("parameters"), list) else []
+    return [
+        param
+        for param in params
+        if isinstance(param, dict)
+        and str(param.get("source") or "") in {"response_body", "response_header"}
+    ]
+
+
+def _operation_target_index(schemas: list[ToolSchema]) -> dict[tuple[str, str], str]:
+    index: dict[tuple[str, str], str] = {}
+    for schema in schemas:
+        metadata = schema.metadata or {}
+        openapi = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
+        operation_id = str(openapi.get("operation_id") or schema.name).strip()
+        if operation_id:
+            index[("operation_id", operation_id)] = schema.name
+        index[("operation_id", schema.name)] = schema.name
+        path = str(metadata.get("path") or "").strip()
+        method = str(metadata.get("method") or "").strip().lower()
+        if path and method:
+            index[("operation_ref", _local_operation_ref(path, method))] = schema.name
+    return index
+
+
+def _resolve_openapi_link_target(
+    link: dict[str, Any],
+    index: dict[tuple[str, str], str],
+) -> str:
+    operation_id = str(link.get("operation_id") or link.get("operationId") or "").strip()
+    if operation_id and (target := index.get(("operation_id", operation_id))):
+        return target
+    operation_ref = str(link.get("operation_ref") or link.get("operationRef") or "").strip()
+    normalized_ref = _normalize_operation_ref(operation_ref)
+    if normalized_ref and (target := index.get(("operation_ref", normalized_ref))):
+        return target
+    return ""
+
+
+def _local_operation_ref(path: str, method: str) -> str:
+    escaped_path = path.replace("~", "~0").replace("/", "~1")
+    return f"#/paths/{escaped_path}/{method.lower()}"
+
+
+def _normalize_operation_ref(operation_ref: str) -> str:
+    if not operation_ref:
+        return ""
+    if "#" in operation_ref:
+        operation_ref = "#" + operation_ref.split("#", 1)[1]
+    return operation_ref
+
+
+def _add_or_merge_openapi_link_edge(
+    tg: ToolGraph,
+    *,
+    consumer: str,
+    producer: str,
+    link: dict[str, Any],
+    relation: RelationType,
+) -> str:
+    parameters = [dict(param) for param in link.get("parameters") or [] if isinstance(param, dict)]
+    response_params = _response_link_parameters(link)
+    primary = response_params[0] if response_params else (parameters[0] if parameters else {})
+    relation_value = relation.value
+    incoming = normalize_graph_edge(
+        {
+            "source": consumer,
+            "target": producer,
+            "relation": relation,
+            "confidence": Confidence.EXTRACTED,
+            "conf_score": 0.95 if relation == RelationType.REQUIRES else 0.9,
+            "layer": 1,
+            "evidence": _openapi_link_evidence(consumer, producer, link),
+            "kind": "data" if relation == RelationType.REQUIRES else "semantic",
+            "evidence_sources": [EVIDENCE_OPENAPI_LINK],
+            "data_flow": {
+                "from_operation": producer,
+                "to_operation": consumer,
+                "link_name": link.get("name"),
+                "source_status": link.get("source_status"),
+                "from_path": primary.get("json_path") or primary.get("header") or "",
+                "from_field": primary.get("source_field_name")
+                or _json_path_tail(primary.get("json_path")),
+                "to_field": primary.get("field_name") or "",
+                "parameters": parameters,
+            },
+        },
+        default_source=EVIDENCE_OPENAPI_LINK,
+    )
+    if tg.graph.has_edge(consumer, producer):
+        existing = tg.graph.get_edge_attrs(consumer, producer)
+        merged = merge_graph_edges(
+            {"source": consumer, "target": producer, **existing},
+            incoming,
+        )
+        if relation == RelationType.REQUIRES:
+            merged["relation"] = relation_value
+        _put_edge(tg, consumer, producer, merged)
+        return "merged"
+
+    _put_edge(tg, consumer, producer, incoming)
+    return "added"
+
+
+def _openapi_link_evidence(consumer: str, producer: str, link: dict[str, Any]) -> str:
+    link_name = str(link.get("name") or "link")
+    parameters = link.get("parameters") if isinstance(link.get("parameters"), list) else []
+    mapping = ", ".join(
+        f"{param.get('field_name')}={param.get('expression') or param.get('value')}"
+        for param in parameters
+        if isinstance(param, dict) and param.get("field_name")
+    )
+    suffix = f": {mapping}" if mapping else ""
+    return f"openapi link {link_name}: {producer} -> {consumer}{suffix}"
+
+
+def _response_body_value_aliases(json_path: str, source: str) -> list[str]:
+    if source != "response_body" or not json_path.startswith("$."):
+        return []
+    return [f"$.body{json_path[1:]}"]
+
+
+def _json_path_tail(value: Any) -> str:
+    path = str(value or "")
+    if not path or path == "$":
+        return ""
+    tail = path.rsplit(".", 1)[-1]
+    if tail.endswith("]") and "[" in tail:
+        tail = tail.split("[", 1)[0]
+    return tail
+
+
 def _source_label(schema: ToolSchema) -> str:
     """Return the source label that distinguishes which OpenAPI spec a tool came from.
 
@@ -598,6 +852,8 @@ def ingest_openapi_graphify(
     else:
         contract_signal_stats = {}
 
+    openapi_link_signal_stats = _promote_openapi_link_signals(schemas)
+
     tg = ToolGraph()
     for s in schemas:
         tg.add_tool(s)
@@ -616,16 +872,23 @@ def ingest_openapi_graphify(
         "refs_preserved": 0,
         "contract_signals": contract_signal_stats,
         "contract_edges": {},
+        "openapi_link_signals": openapi_link_signal_stats,
+        "openapi_link_edges": {},
     }
 
     if len(schemas) < 2:
+        openapi_link_edge_stats = _apply_openapi_link_edges(tg, schemas)
+        stats["openapi_link_edges"] = openapi_link_edge_stats
+        stats["EXTRACTED"] += openapi_link_edge_stats.get("added", 0)
+        for relation, count in openapi_link_edge_stats.get("by_relation", {}).items():
+            stats["by_relation"][relation] = stats["by_relation"].get(relation, 0) + count
         if promote_contract_signals:
             stats["contract_edges"] = _apply_contract_data_flow_edges(
                 tg,
                 schemas,
                 max_producers_per_field=max_contract_producers_per_field,
             )
-            stats["edge_count"] = tg.graph.edge_count()
+        stats["edge_count"] = tg.graph.edge_count()
         return tg, stats
 
     # Optional: rescue layer-1 shared-schema signal that ingest_openapi inlined.
@@ -710,6 +973,12 @@ def ingest_openapi_graphify(
                 tgt_lab = label_by_name.get(tgt, "")
                 if src_lab and tgt_lab and src_lab != tgt_lab:
                     stats["cross_source"] += 1
+
+    openapi_link_edge_stats = _apply_openapi_link_edges(tg, schemas)
+    stats["openapi_link_edges"] = openapi_link_edge_stats
+    stats["EXTRACTED"] += openapi_link_edge_stats.get("added", 0)
+    for relation, count in openapi_link_edge_stats.get("by_relation", {}).items():
+        stats["by_relation"][relation] = stats["by_relation"].get(relation, 0) + count
 
     if promote_contract_signals:
         contract_edge_stats = _apply_contract_data_flow_edges(

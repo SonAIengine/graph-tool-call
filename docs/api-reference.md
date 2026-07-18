@@ -101,9 +101,10 @@ tool's metadata:
   fields, and body examples. If schema fields are missing but concrete examples
   exist, inferred fields are included with `schema_inferred_from=example`
 - `metadata.openapi.response`: selected success status, content type, schema,
-  description, leaf fields, and optional response envelope metadata
+  description, leaf fields, optional response envelope metadata, and selected
+  OpenAPI response links
 - `metadata.openapi.responses`: compact catalog of every declared response,
-  including status, success flag, content types, examples, and field count
+  including status, success flag, content types, examples, links, and field count
 - `metadata.openapi.error_responses`: non-2xx response catalog for failure UI/logs
 - `metadata.openapi.security`: declared security requirements and static scheme
   metadata, without runtime credentials
@@ -145,6 +146,10 @@ OpenAPI field direction is enforced before graph/search promotion:
   `metadata.openapi.response.envelope`; response fields and `api_contract`
   produces preserve `response_envelope_path`, `response_collection_path`,
   `response_item_path`, and `value_path_aliases`
+- OpenAPI response `links` are preserved under `metadata.openapi.responses`
+  and `metadata.api_contract.links`. Graphify turns success-response links
+  into explicit `openapi_link` evidence edges and link-derived producer aliases
+  for mappings such as `$response.body#/id -> userId`.
 - example-inferred request/response fields are additive and marked with
   `example_source`, `example_name`, `example_content_type`, and
   `example_status` when available; they are not treated as globally required
@@ -225,6 +230,8 @@ tg, stats = ingest_openapi_graphify(
 The promotion step adds high-value fields to `metadata.produces` /
 `metadata.consumes`, classifies `kind=data|context|auth`, and derives
 `consumer --requires--> producer` data-flow edges with `api_contract` evidence.
+OpenAPI response links add `openapi_link` evidence and can bridge mismatched
+field names, for example a producer response `id` feeding a consumer `userId`.
 Promoted raw contract rows set `search_signal=False` by default so target-tool
 BM25 ranking is not flooded by identifier fields. Turn indexing on only for a
 controlled experiment or a curated collection.

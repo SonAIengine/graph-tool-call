@@ -697,6 +697,75 @@ class TestIngestOpenAPI30:
             "status": None,
         }
 
+    def test_response_links_are_preserved_as_api_contract_evidence(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Linked API", "version": "1.0.0"},
+            "paths": {
+                "/signup-sessions": {
+                    "post": {
+                        "operationId": "createSignupSession",
+                        "responses": {
+                            "201": {
+                                "description": "Created",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "string"}},
+                                        }
+                                    }
+                                },
+                                "links": {
+                                    "GetProfileByUserId": {
+                                        "operationId": "getProfile",
+                                        "parameters": {
+                                            "userId": "$response.body#/id",
+                                            "traceId": "$response.header.X-Trace-Id",
+                                        },
+                                        "description": "Use the created user id.",
+                                    }
+                                },
+                            }
+                        },
+                    }
+                },
+                "/profiles/{userId}": {
+                    "get": {
+                        "operationId": "getProfile",
+                        "parameters": [
+                            {
+                                "name": "userId",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        create = {tool.name: tool for tool in tools}["createSignupSession"]
+        response_links = create.metadata["openapi"]["response"]["links"]
+        contract_links = create.metadata["api_contract"]["links"]
+
+        assert response_links[0]["operation_id"] == "getProfile"
+        assert response_links[0]["parameters"][0] == {
+            "field_name": "userId",
+            "parameter": "userId",
+            "expression": "$response.body#/id",
+            "source": "response_body",
+            "json_path": "$.id",
+        }
+        assert response_links[0]["parameters"][1]["source"] == "response_header"
+        assert response_links[0]["parameters"][1]["header"] == "X-Trace-Id"
+        assert contract_links[0]["source_operation_id"] == "createSignupSession"
+        assert contract_links[0]["source_status"] == "201"
+        assert contract_links[0]["success"] is True
+
     def test_query_object_parameter_metadata_expands_to_inner_fields(self) -> None:
         """Query DTO wrappers should not leak into graph/Planflow contracts."""
         spec = {

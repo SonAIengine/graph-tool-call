@@ -1098,8 +1098,118 @@ def _openapi_response_rows(
         if examples:
             row["examples"] = examples[:_MAX_EXAMPLES_PER_BLOCK]
             row["example_count"] = len(row["examples"])
+        links = _openapi_response_link_rows(response, status=status_text)
+        if links:
+            row["links"] = links
+            row["link_count"] = len(links)
         rows.append(row)
     return rows
+
+
+def _openapi_response_link_rows(
+    response: dict[str, Any],
+    *,
+    status: str,
+) -> list[dict[str, Any]]:
+    links = response.get("links")
+    if not isinstance(links, dict):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for link_name, link in links.items():
+        if not isinstance(link, dict):
+            continue
+        row: dict[str, Any] = {
+            "name": str(link_name),
+            "status": status,
+        }
+        operation_id = str(link.get("operationId") or "").strip()
+        operation_ref = str(link.get("operationRef") or "").strip()
+        description = str(link.get("description") or "").strip()
+        if operation_id:
+            row["operation_id"] = operation_id
+        if operation_ref:
+            row["operation_ref"] = operation_ref
+        if description:
+            row["description"] = description[:300]
+
+        parameters = link.get("parameters")
+        parameter_rows: list[dict[str, Any]] = []
+        if isinstance(parameters, dict):
+            for parameter_name, expression in parameters.items():
+                parameter_row = {
+                    "field_name": str(parameter_name),
+                    "parameter": str(parameter_name),
+                }
+                parameter_row.update(_runtime_expression_metadata(expression))
+                parameter_rows.append(parameter_row)
+        if parameter_rows:
+            row["parameters"] = parameter_rows
+            row["parameter_count"] = len(parameter_rows)
+
+        if "requestBody" in link:
+            request_body = _runtime_expression_metadata(link.get("requestBody"))
+            if request_body:
+                row["request_body"] = request_body
+
+        server = link.get("server")
+        if isinstance(server, dict) and server.get("url"):
+            row["server_url"] = str(server["url"])[:500]
+
+        if operation_id or operation_ref:
+            rows.append(row)
+    return rows
+
+
+def _runtime_expression_metadata(value: Any) -> dict[str, Any]:
+    if not isinstance(value, str):
+        return {"value": _compact_openapi_value(value)}
+
+    expression = value.strip()
+    row: dict[str, Any] = {"expression": expression}
+    if expression.startswith("$response.body#"):
+        row["source"] = "response_body"
+        row["json_path"] = _json_pointer_to_json_path(expression.removeprefix("$response.body"))
+    elif expression.startswith("$response.header."):
+        row["source"] = "response_header"
+        row["header"] = expression.removeprefix("$response.header.")
+    elif expression.startswith("$request.body#"):
+        row["source"] = "request_body"
+        row["json_path"] = _json_pointer_to_json_path(expression.removeprefix("$request.body"))
+    elif expression.startswith("$request.path."):
+        row["source"] = "request_path"
+        row["request_field"] = expression.removeprefix("$request.path.")
+    elif expression.startswith("$request.query."):
+        row["source"] = "request_query"
+        row["request_field"] = expression.removeprefix("$request.query.")
+    elif expression.startswith("$request.header."):
+        row["source"] = "request_header"
+        row["request_field"] = expression.removeprefix("$request.header.")
+    elif expression.startswith("$request.cookie."):
+        row["source"] = "request_cookie"
+        row["request_field"] = expression.removeprefix("$request.cookie.")
+    elif expression in {"$url", "$method", "$statusCode"}:
+        row["source"] = expression.removeprefix("$")
+    else:
+        row["source"] = "constant_or_expression"
+    return row
+
+
+def _json_pointer_to_json_path(pointer: str) -> str:
+    pointer = str(pointer or "")
+    if pointer.startswith("#"):
+        pointer = pointer[1:]
+    if not pointer:
+        return "$"
+    segments = [segment for segment in pointer.lstrip("/").split("/") if segment]
+    path = "$"
+    for segment in segments:
+        decoded = segment.replace("~1", "/").replace("~0", "~")
+        if decoded.isdigit():
+            path += f"[{decoded}]"
+        else:
+            path += f".{decoded}"
+    return path
 
 
 def _swagger_response_examples(
@@ -1765,6 +1875,26 @@ def _api_contract_rows(
     return produces, consumes
 
 
+def _api_contract_link_rows(
+    *,
+    operation_id: str,
+    response_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    links: list[dict[str, Any]] = []
+    for response in response_rows:
+        if not isinstance(response, dict):
+            continue
+        for link in response.get("links") or []:
+            if not isinstance(link, dict):
+                continue
+            row = copy.deepcopy(link)
+            row["source_operation_id"] = operation_id
+            row["source_status"] = response.get("status")
+            row["success"] = bool(response.get("success"))
+            links.append(row)
+    return links
+
+
 def _path_params(path: str) -> list[str]:
     return re.findall(r"{([^}/]+)}", path)
 
@@ -2003,6 +2133,10 @@ def _operation_to_tool(
         body_leaf_rows=all_body_leaf_rows,
         response_leaf_rows=response_leaf_rows,
     )
+    link_rows = _api_contract_link_rows(
+        operation_id=operation_id,
+        response_rows=response_rows,
+    )
     input_locations = _input_locations(parameter_rows, all_body_top_level_rows, all_body_leaf_rows)
     examples = _operation_examples(
         parameter_rows=parameter_rows,
@@ -2018,6 +2152,7 @@ def _operation_to_tool(
         "api_contract": {
             "produces": produces,
             "consumes": consumes,
+            "links": link_rows,
         },
         "openapi": {
             "operation_id": operation_id,
@@ -2043,6 +2178,11 @@ def _operation_to_tool(
                 "description": selected_response.get("description", ""),
                 "schema": response_schema,
                 "fields": response_leaf_rows,
+                **(
+                    {"links": selected_response.get("links")}
+                    if selected_response.get("links")
+                    else {}
+                ),
                 **({"envelope": response_envelope} if response_envelope else {}),
             },
             "responses": response_rows,
