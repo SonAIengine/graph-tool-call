@@ -98,7 +98,8 @@ tool's metadata:
   schema defaults, examples, and validation constraints
 - `metadata.openapi.request_body`: selected content type, all declared content
   type candidates, candidate-level fields, schema, top-level fields, leaf
-  fields, and body examples
+  fields, and body examples. If schema fields are missing but concrete examples
+  exist, inferred fields are included with `schema_inferred_from=example`
 - `metadata.openapi.response`: selected success status, content type, schema,
   description, leaf fields, and optional response envelope metadata
 - `metadata.openapi.responses`: compact catalog of every declared response,
@@ -127,6 +128,9 @@ OpenAPI field direction is enforced before graph/search promotion:
   `metadata.openapi.response.envelope`; response fields and `api_contract`
   produces preserve `response_envelope_path`, `response_collection_path`,
   `response_item_path`, and `value_path_aliases`
+- example-inferred request/response fields are additive and marked with
+  `example_source`, `example_name`, `example_content_type`, and
+  `example_status` when available; they are not treated as globally required
 
 `HttpExecutor` uses this metadata before falling back to method-based heuristics,
 so POST operations with query/header parameters are rendered correctly. It also

@@ -206,6 +206,9 @@ validation do not silently drop every branch after the first one.
 Discriminator mappings and JSON Schema `const` values are preserved as branch
 selection evidence; if a request chooses a discriminator value, preflight
 diagnostics can report the missing fields for that selected branch only.
+When a Swagger/OpenAPI document declares only a weak `object` schema but
+provides concrete request or response examples, ingest derives additive
+`schema_inferred_from="example"` contract rows from those examples.
 Common response envelopes such as `code/message/data` also record wrapper,
 collection, and value-path aliases, so XGEN-style adapters can recover produced
 values from either raw OpenAPI bodies or normalized `body` wrappers.

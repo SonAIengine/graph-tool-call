@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from graph_tool_call.core.tool import ToolSchema
+from graph_tool_call.execute import HttpExecutor
 from graph_tool_call.ingest.openapi import ingest_openapi
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -366,6 +367,93 @@ class TestIngestOpenAPI30:
         assert produces["goodsNo"]["response_envelope_path"] == "$.data"
         assert produces["goodsNo"]["response_collection_path"] == "$.data.items[*]"
         assert "$.body.data.items[*].goodsNo" in produces["goodsNo"]["value_path_aliases"]
+
+    def test_generic_schemas_use_examples_for_io_contract_and_body_shape(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Example Commerce API", "version": "1.0.0"},
+            "paths": {
+                "/goods/search": {
+                    "post": {
+                        "operationId": "searchGoodsByExample",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {"type": "object"},
+                                    "example": {
+                                        "keyword": "shirt",
+                                        "filters": {"brandNo": "B1"},
+                                        "memo": "x" * 2500,
+                                    },
+                                }
+                            },
+                        },
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"type": "object"},
+                                        "example": {
+                                            "code": "OK",
+                                            "message": "success",
+                                            "data": {
+                                                "items": [
+                                                    {
+                                                        "goodsNo": "G1",
+                                                        "goodsNm": "Oxford shirt",
+                                                        "largeText": "x" * 2500,
+                                                    }
+                                                ],
+                                                "totalCount": 1,
+                                            },
+                                        },
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        metadata = tool.metadata
+        param_names = {param.name for param in tool.parameters}
+
+        assert {"keyword", "filters"} <= param_names
+        request_body = metadata["openapi"]["request_body"]
+        request_fields = {row["field_name"]: row for row in request_body["fields"]}
+        assert request_fields["brandNo"]["json_path"] == "$.filters.brandNo"
+        assert request_fields["brandNo"]["schema_inferred_from"] == "example"
+        assert request_fields["brandNo"]["example_source"] == "request_body_example"
+        assert "brandNo" in metadata["openapi"]["input_locations"]["body"]
+
+        response = metadata["openapi"]["response"]
+        response_fields = {row["field_name"]: row for row in response["fields"]}
+        assert response["envelope"]["wrapper_path"] == "$.data"
+        assert response["envelope"]["collection_path"] == "$.data.items[*]"
+        assert response_fields["goodsNo"]["json_path"] == "$.data.items[*].goodsNo"
+        assert response_fields["goodsNo"]["schema_inferred_from"] == "example"
+        assert response_fields["goodsNo"]["example_status"] == "200"
+
+        produces = {row["field_name"]: row for row in metadata["api_contract"]["produces"]}
+        consumes = {row["field_name"]: row for row in metadata["api_contract"]["consumes"]}
+        assert produces["goodsNo"]["response_collection_path"] == "$.data.items[*]"
+        assert consumes["brandNo"]["json_path"] == "$.filters.brandNo"
+        assert consumes["brandNo"]["schema_inferred_from"] == "example"
+
+        request = HttpExecutor("https://api.example.com").build_request(
+            tool,
+            {"keyword": "shirt", "brandNo": "B1"},
+        )
+        assert request.full_url == "https://api.example.com/goods/search"
+        assert json.loads(request.data.decode("utf-8")) == {
+            "keyword": "shirt",
+            "filters": {"brandNo": "B1"},
+        }
 
     def test_readonly_writeonly_fields_respect_request_response_direction(self) -> None:
         """Direction-only OpenAPI fields should not pollute inverse IO contracts."""

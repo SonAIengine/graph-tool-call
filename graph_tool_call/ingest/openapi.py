@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from graph_tool_call.core.tool import MCPAnnotations, ToolParameter, ToolSchema
+from graph_tool_call.ingest.example_fields import (
+    EXAMPLE_FIELD_HINT_KEYS,
+    example_leaf_rows,
+    example_top_level_rows,
+)
 from graph_tool_call.ingest.io_contract import FieldLeaf, extract_leaves
 from graph_tool_call.ingest.normalizer import NormalizedSpec, normalize
 from graph_tool_call.ingest.response_shape import (
@@ -173,6 +178,7 @@ _DERIVED_FIELD_HINT_KEYS = (
     "discriminator_value",
     "discriminator_values",
     *RESPONSE_ENVELOPE_HINT_KEYS,
+    *EXAMPLE_FIELD_HINT_KEYS,
 )
 
 
@@ -235,6 +241,7 @@ def _example_rows(
     location: str,
     content_type: str | None = None,
     status: str | None = None,
+    compact_values: bool = True,
 ) -> list[dict[str, Any]]:
     """Normalize OpenAPI ``example`` / ``examples`` blocks into compact rows."""
     if not isinstance(container, dict):
@@ -260,7 +267,7 @@ def _example_rows(
             if source.get("externalValue"):
                 row["external_value"] = str(source["externalValue"])[:500]
         if value is not None:
-            row["value"] = _compact_openapi_value(value)
+            row["value"] = _compact_openapi_value(value) if compact_values else copy.deepcopy(value)
         if "value" in row or "external_value" in row:
             rows.append(row)
 
@@ -295,27 +302,59 @@ def _content_type_rows(
             "is_json": _is_json_media_type(str(content_type)),
             "has_schema": bool(schema),
         }
-        if schema:
-            row["schema_type"] = _schema_type(schema)
-            if location == "request_body":
-                top_level_fields = _request_body_top_level_rows(schema)
-                fields = _schema_field_rows(schema, location="body")
-                row["field_count"] = len(fields)
-                if top_level_fields:
-                    row["top_level_fields"] = top_level_fields
-                if fields:
-                    row["fields"] = fields
-            else:
-                row["field_count"] = len(_schema_field_rows(schema, location=location))
-        encoding = media.get("encoding")
-        if isinstance(encoding, dict) and encoding:
-            row["encoding"] = _encoding_rows(encoding)
+        raw_examples = _example_rows(
+            media,
+            location=location,
+            content_type=str(content_type),
+            status=status,
+            compact_values=False,
+        )
         examples = _example_rows(
             media,
             location=location,
             content_type=str(content_type),
             status=status,
         )
+        example_location = "body" if location == "request_body" else location
+        example_source = f"{location}_example"
+        inferred_top_level_fields = example_top_level_rows(
+            raw_examples,
+            location=example_location,
+            source=example_source,
+        )
+        inferred_fields = example_leaf_rows(
+            raw_examples,
+            location=example_location,
+            source=example_source,
+        )
+        if schema:
+            row["schema_type"] = _schema_type(schema)
+            if location == "request_body":
+                top_level_fields = _request_body_top_level_rows(schema)
+                fields = _schema_field_rows(schema, location="body")
+                top_level_fields = _merge_field_rows(top_level_fields, inferred_top_level_fields)
+                fields = _merge_field_rows(fields, inferred_fields)
+                if top_level_fields:
+                    row["top_level_fields"] = top_level_fields
+                if fields:
+                    row["fields"] = fields
+                row["field_count"] = len(fields)
+            else:
+                fields = _schema_field_rows(schema, location=location)
+                row["field_count"] = len(fields)
+        elif location == "request_body":
+            if inferred_top_level_fields:
+                row["top_level_fields"] = inferred_top_level_fields
+            if inferred_fields:
+                row["fields"] = inferred_fields
+            if inferred_fields:
+                row["field_count"] = len(inferred_fields)
+        if inferred_fields and location != "request_body":
+            row["example_fields"] = inferred_fields
+            row["example_field_count"] = len(inferred_fields)
+        encoding = media.get("encoding")
+        if isinstance(encoding, dict) and encoding:
+            row["encoding"] = _encoding_rows(encoding)
         if examples:
             row["examples"] = examples
             row["example_count"] = len(examples)
@@ -684,6 +723,27 @@ def _extract_params_openapi3(
                 )
             )
 
+    for content_row in _content_type_rows(content, location="request_body"):
+        for row in content_row.get("top_level_fields") or []:
+            if not isinstance(row, dict):
+                continue
+            prop_name = str(row.get("field_name") or "")
+            if not prop_name or prop_name in seen_body_props:
+                continue
+            seen_body_props.add(prop_name)
+            is_required = bool(row.get("required"))
+            if required_only and not is_required:
+                continue
+            params.append(
+                ToolParameter(
+                    name=prop_name,
+                    type=str(row.get("field_type") or "string"),
+                    description=str(row.get("description") or ""),
+                    required=is_required,
+                    enum=row.get("enum") if isinstance(row.get("enum"), list) else None,
+                )
+            )
+
     return params
 
 
@@ -814,12 +874,23 @@ def _openapi_response_rows(
 
         schema: dict[str, Any] = {}
         content_type: str | None = None
+        example_fields: list[dict[str, Any]] = []
         if is_swagger2:
             schema = response.get("schema") if isinstance(response.get("schema"), dict) else {}
             content_type = swagger_content_type if schema else None
             content_types = _media_type_name_rows(list(produces), has_schema=bool(schema))
             if content_types:
                 row["content_types"] = content_types
+            raw_examples = _swagger_response_examples(
+                response,
+                status=status_text,
+                compact_values=False,
+            )
+            example_fields = example_leaf_rows(
+                raw_examples,
+                location="response",
+                source="response_example",
+            )
             examples = _swagger_response_examples(response, status=status_text)
         else:
             content = response.get("content") or {}
@@ -830,11 +901,18 @@ def _openapi_response_rows(
             examples = []
             for content_row in content_types:
                 examples.extend(content_row.get("examples") or [])
+                for field in content_row.get("example_fields") or []:
+                    if isinstance(field, dict):
+                        example_fields.append(field)
+            example_fields = _merge_field_rows([], example_fields)
 
         if schema:
             row["content_type"] = content_type
             row["schema_type"] = _schema_type(schema)
             row["field_count"] = len(extract_leaves(schema, base_path="$"))
+        if example_fields:
+            row["example_fields"] = example_fields
+            row["example_field_count"] = len(example_fields)
         if examples:
             row["examples"] = examples[:_MAX_EXAMPLES_PER_BLOCK]
             row["example_count"] = len(row["examples"])
@@ -842,7 +920,12 @@ def _openapi_response_rows(
     return rows
 
 
-def _swagger_response_examples(response: dict[str, Any], *, status: str) -> list[dict[str, Any]]:
+def _swagger_response_examples(
+    response: dict[str, Any],
+    *,
+    status: str,
+    compact_values: bool = True,
+) -> list[dict[str, Any]]:
     examples = response.get("examples")
     if not isinstance(examples, dict):
         return []
@@ -856,7 +939,7 @@ def _swagger_response_examples(response: dict[str, Any], *, status: str) -> list
                 "location": "response",
                 "status": status,
                 "content_type": str(content_type),
-                "value": _compact_openapi_value(value),
+                "value": _compact_openapi_value(value) if compact_values else copy.deepcopy(value),
             }
         )
     return rows
@@ -1354,8 +1437,22 @@ def _merge_body_field_rows(
     *,
     field_key: str,
 ) -> list[dict[str, Any]]:
+    content_rows: list[dict[str, Any]] = []
+    for content_row in content_type_rows:
+        if not isinstance(content_row, dict):
+            continue
+        for row in content_row.get(field_key) or []:
+            if isinstance(row, dict):
+                content_rows.append(row)
+    return _merge_field_rows(primary_rows, content_rows)
+
+
+def _merge_field_rows(
+    primary_rows: list[dict[str, Any]],
+    inferred_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     merged: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    by_key: dict[tuple[str, str], dict[str, Any]] = {}
 
     def add(row: dict[str, Any]) -> None:
         name = str(row.get("field_name") or "")
@@ -1363,19 +1460,24 @@ def _merge_body_field_rows(
         if not name:
             return
         key = (name, json_path)
-        if key in seen:
+        existing = by_key.get(key)
+        if existing is None:
+            copied = copy.deepcopy(row)
+            merged.append(copied)
+            by_key[key] = copied
             return
-        seen.add(key)
-        merged.append(row)
+        _copy_row_hints(row, existing)
+        if row.get("enum") and not existing.get("enum"):
+            existing["enum"] = list(row["enum"])
+        if row.get("required"):
+            existing["required"] = True
 
     for row in primary_rows:
-        add(row)
-    for content_row in content_type_rows:
-        if not isinstance(content_row, dict):
-            continue
-        for row in content_row.get(field_key) or []:
-            if isinstance(row, dict):
-                add(row)
+        if isinstance(row, dict):
+            add(row)
+    for row in inferred_rows:
+        if isinstance(row, dict):
+            add(row)
     return merged
 
 
@@ -1620,8 +1722,21 @@ def _operation_to_tool(
         is_swagger2=is_swagger2,
         path_item=path_item,
     )
-    body_top_level_rows = _request_body_top_level_rows(request_body_schema)
-    body_leaf_rows = _schema_field_rows(request_body_schema, location="body")
+    selected_body_content_type_rows = [
+        row
+        for row in request_body_content_type_rows
+        if row.get("content_type") == request_content_type
+    ]
+    body_top_level_rows = _merge_body_field_rows(
+        _request_body_top_level_rows(request_body_schema),
+        selected_body_content_type_rows,
+        field_key="top_level_fields",
+    )
+    body_leaf_rows = _merge_body_field_rows(
+        _schema_field_rows(request_body_schema, location="body"),
+        selected_body_content_type_rows,
+        field_key="fields",
+    )
     all_body_top_level_rows = _merge_body_field_rows(
         body_top_level_rows,
         request_body_content_type_rows,
@@ -1632,7 +1747,22 @@ def _operation_to_tool(
         request_body_content_type_rows,
         field_key="fields",
     )
-    response_leaf_rows = _schema_field_rows(response_schema, location="response")
+    selected_response = next(
+        (row for row in response_rows if row.get("status") == response_status),
+        {},
+    )
+    response_example_rows = _merge_field_rows(
+        selected_response.get("example_fields") or [],
+        example_leaf_rows(
+            selected_response.get("examples") or [],
+            location="response",
+            source="response_example",
+        ),
+    )
+    response_leaf_rows = _merge_field_rows(
+        _schema_field_rows(response_schema, location="response"),
+        response_example_rows,
+    )
     response_envelope = annotate_response_path_aliases(response_schema, response_leaf_rows)
     produces, consumes = _api_contract_rows(
         parameter_rows=parameter_rows,
@@ -1640,10 +1770,6 @@ def _operation_to_tool(
         response_leaf_rows=response_leaf_rows,
     )
     input_locations = _input_locations(parameter_rows, all_body_top_level_rows, all_body_leaf_rows)
-    selected_response = next(
-        (row for row in response_rows if row.get("status") == response_status),
-        {},
-    )
     examples = _operation_examples(
         parameter_rows=parameter_rows,
         request_body_content_types=request_body_content_type_rows,

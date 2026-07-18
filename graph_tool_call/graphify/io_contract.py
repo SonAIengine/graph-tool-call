@@ -13,6 +13,7 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
+from graph_tool_call.ingest.example_fields import EXAMPLE_FIELD_HINT_KEYS
 from graph_tool_call.ingest.io_contract import extract_leaves
 from graph_tool_call.ingest.response_shape import (
     RESPONSE_ENVELOPE_HINT_KEYS,
@@ -122,6 +123,7 @@ _CONTRACT_HINT_KEYS = (
     "discriminator_value",
     "discriminator_values",
     *RESPONSE_ENVELOPE_HINT_KEYS,
+    *EXAMPLE_FIELD_HINT_KEYS,
 )
 
 
