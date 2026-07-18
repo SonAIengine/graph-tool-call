@@ -146,7 +146,7 @@ class TestBuildRequest:
         )
 
         assert req.method == "POST"
-        assert req.full_url == "https://api.example.com/orders/O%2F1?preview=True"
+        assert req.full_url == "https://api.example.com/orders/O%2F1?preview=true"
         assert req.headers["X-site-no"] == "10"
         body = json.loads(req.data.decode("utf-8"))
         assert body == {"status": "paid", "shipping": {"city": "Seoul"}}
@@ -210,12 +210,136 @@ class TestBuildRequest:
         )
 
         assert req.method == "PATCH"
-        assert req.full_url == "https://api.example.com/orders/A%201?dryRun=False"
+        assert req.full_url == "https://api.example.com/orders/A%201?dryRun=false"
         assert req.headers["X-user-id"] == "u-1"
         assert json.loads(req.data.decode("utf-8")) == {
             "status": "ready",
             "memo": {"text": "ship now"},
         }
+
+    def test_ingested_openapi_parameter_styles_drive_query_serialization(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Search API", "version": "1.0.0"},
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "searchItems",
+                        "parameters": [
+                            {
+                                "name": "ids",
+                                "in": "query",
+                                "style": "form",
+                                "explode": False,
+                                "schema": {"type": "array", "items": {"type": "string"}},
+                            },
+                            {
+                                "name": "filter",
+                                "in": "query",
+                                "style": "deepObject",
+                                "explode": True,
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"status": {"type": "string"}},
+                                },
+                            },
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(
+            tools[0],
+            {"ids": ["A", "B"], "filter": {"status": "paid"}},
+        )
+
+        assert req.full_url == "https://api.example.com/items?ids=A,B&filter[status]=paid"
+
+    def test_openapi_query_parameter_serialization_styles(self):
+        tool = _make_tool(
+            name="searchItems",
+            method="GET",
+            path="/items",
+            params=[
+                ToolParam(name="ids", type="array"),
+                ToolParam(name="tags", type="array"),
+                ToolParam(name="created", type="array"),
+                ToolParam(name="filter", type="object"),
+                ToolParam(name="q", type="string"),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {"name": "ids", "in": "query", "style": "form", "explode": False},
+                {"name": "tags", "in": "query", "style": "pipeDelimited", "explode": False},
+                {"name": "created", "in": "query", "style": "spaceDelimited", "explode": False},
+                {"name": "filter", "in": "query", "style": "deepObject", "explode": True},
+                {"name": "q", "in": "query", "allowReserved": True},
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(
+            tool,
+            {
+                "ids": ["A", "B"],
+                "tags": ["red", "blue"],
+                "created": ["2026-01-01", "2026-01-31"],
+                "filter": {"status": "paid", "siteNo": 10},
+                "q": "/goods?x=1",
+            },
+        )
+
+        assert req.full_url == (
+            "https://api.example.com/items?"
+            "ids=A,B&tags=red|blue&created=2026-01-01%202026-01-31&"
+            "filter[status]=paid&filter[siteNo]=10&q=/goods?x=1"
+        )
+
+    def test_openapi_path_header_and_cookie_serialization_styles(self):
+        tool = _make_tool(
+            name="scopedItems",
+            method="GET",
+            path="/items/{ids}/labels/{labels}/matrix/{scope}",
+            params=[
+                ToolParam(name="ids", type="array", required=True),
+                ToolParam(name="labels", type="array", required=True),
+                ToolParam(name="scope", type="object", required=True),
+                ToolParam(name="X-Scopes", type="array"),
+                ToolParam(name="prefs", type="object"),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {"name": "ids", "in": "path", "style": "simple", "explode": False},
+                {"name": "labels", "in": "path", "style": "label", "explode": True},
+                {"name": "scope", "in": "path", "style": "matrix", "explode": True},
+                {"name": "X-Scopes", "in": "header", "style": "simple", "explode": False},
+                {"name": "prefs", "in": "cookie", "style": "form", "explode": True},
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(
+            tool,
+            {
+                "ids": ["A", "B"],
+                "labels": ["red", "blue"],
+                "scope": {"site": 10, "lang": "ko"},
+                "X-Scopes": ["read", "write"],
+                "prefs": {"theme": "dark", "compact": True},
+            },
+        )
+
+        assert req.full_url == (
+            "https://api.example.com/items/A,B/labels/.red.blue/matrix/;site=10;lang=ko"
+        )
+        assert req.headers["X-scopes"] == "read,write"
+        assert req.headers["Cookie"] == "theme=dark; compact=true"
 
     def test_form_request_body_uses_urlencoding(self):
         tool = _make_tool(

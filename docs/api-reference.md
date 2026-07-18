@@ -107,7 +107,10 @@ tool's metadata:
 - `metadata.api_contract`: raw extracted produces/consumes rows for graph building
 
 `HttpExecutor` uses this metadata before falling back to method-based heuristics,
-so POST operations with query/header parameters are rendered correctly.
+so POST operations with query/header parameters are rendered correctly. It also
+honors common OpenAPI parameter serialization rules such as `form`,
+`spaceDelimited`, `pipeDelimited`, `deepObject`, `simple`, `label`, `matrix`,
+`explode`, and `allowReserved`.
 
 For graph/search use, keep raw contract and promoted signal separate. Large
 Swagger specs often repeat wrapper fields such as `status`, `data`, and `list`,

@@ -73,6 +73,9 @@ metadata["response_schema"] = {
 | `error_responses` | non-2xx response만 모은 실패 처리용 catalog |
 | `security` | OpenAPI security requirements와 static scheme 정보. runtime token/cookie 값은 보존하지 않음 |
 
+`HttpExecutor`는 이 metadata를 사용해 query/path/header/cookie parameter의
+OpenAPI serialization 규칙(`style`, `explode`, `allowReserved`)을 반영한다.
+
 `metadata["api_contract"]`는 graph/search/plan용 raw produces/consumes leaf를 보존한다.
 plain ingest 단계에서는 이 raw field들을 top-level `metadata.produces` /
 `metadata.consumes`로 직접 올리지 않는다. large Swagger에서는 `status`, `data`,

@@ -21,6 +21,8 @@ from typing import Any
 
 from graph_tool_call.core.tool import ToolSchema
 
+_RESERVED_QUERY_CHARS = ":/?#[]@!$&'()*+,;="
+
 
 class HttpExecutor:
     """Execute OpenAPI-sourced tools via HTTP."""
@@ -58,6 +60,7 @@ class HttpExecutor:
         path_template: str = metadata["path"]
         api_metadata = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
         location_by_param = _location_by_param(api_metadata)
+        parameter_metadata = _parameter_metadata_by_name(api_metadata)
         body_field_paths = _body_field_paths(api_metadata)
 
         path_params: dict[str, Any] = {}
@@ -89,7 +92,8 @@ class HttpExecutor:
         # Build URL
         path = path_template
         for k, v in path_params.items():
-            path = path.replace(f"{{{k}}}", urllib.parse.quote(str(v), safe=""))
+            serialized = _serialize_path_parameter(k, v, parameter_metadata.get(k, {}))
+            path = path.replace(f"{{{k}}}", serialized)
         missing_path_params = re.findall(r"{([^}/]+)}", path)
         if missing_path_params:
             missing = ", ".join(sorted(set(missing_path_params)))
@@ -102,17 +106,19 @@ class HttpExecutor:
         base = tool_base or self._base_url
         url = f"{base}{path}"
         if query_params:
-            url += "?" + urllib.parse.urlencode(query_params, doseq=True)
+            query_string = _serialize_query_params(query_params, parameter_metadata)
+            if query_string:
+                url += "?" + query_string
 
         # Build request
         headers = dict(self._headers)
         for k, v in header_params.items():
-            headers[str(k)] = str(v)
+            headers[str(k)] = _serialize_header_parameter(k, v, parameter_metadata.get(k, {}))
         if cookie_params:
-            cookie = "; ".join(
-                f"{urllib.parse.quote(str(k))}={urllib.parse.quote(str(v))}"
-                for k, v in cookie_params.items()
-            )
+            cookie_segments: list[str] = []
+            for k, v in cookie_params.items():
+                cookie_segments.extend(_cookie_segments(k, v, parameter_metadata.get(k, {})))
+            cookie = "; ".join(cookie_segments)
             headers["Cookie"] = (
                 f"{headers.get('Cookie')}; {cookie}" if headers.get("Cookie") else cookie
             )
@@ -224,6 +230,17 @@ def _location_by_param(api_metadata: dict[str, Any]) -> dict[str, str]:
     return locations
 
 
+def _parameter_metadata_by_name(api_metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    metadata: dict[str, dict[str, Any]] = {}
+    for param in api_metadata.get("parameters") or []:
+        if not isinstance(param, dict):
+            continue
+        name = str(param.get("name") or "")
+        if name:
+            metadata[name] = param
+    return metadata
+
+
 def _body_field_paths(api_metadata: dict[str, Any]) -> dict[str, str]:
     request_body = api_metadata.get("request_body") or {}
     paths: dict[str, str] = {}
@@ -249,6 +266,228 @@ def _request_content_type(api_metadata: dict[str, Any], metadata: dict[str, Any]
 
 def _is_form_content_type(content_type: str) -> bool:
     return content_type.split(";", 1)[0].strip().lower() == "application/x-www-form-urlencoded"
+
+
+def _serialize_path_parameter(name: str, value: Any, parameter: dict[str, Any]) -> str:
+    style = str(parameter.get("style") or "simple")
+    explode = _explode(parameter, style)
+    if style == "label":
+        return _serialize_label_path_value(value, explode=explode)
+    if style == "matrix":
+        return _serialize_matrix_path_value(name, value, explode=explode)
+    return _serialize_simple_path_value(value, explode=explode)
+
+
+def _serialize_query_params(
+    params: dict[str, Any],
+    parameter_metadata: dict[str, dict[str, Any]],
+) -> str:
+    segments: list[str] = []
+    for name, value in params.items():
+        segments.extend(_serialize_query_parameter(name, value, parameter_metadata.get(name, {})))
+    return "&".join(segments)
+
+
+def _serialize_query_parameter(
+    name: str,
+    value: Any,
+    parameter: dict[str, Any],
+) -> list[str]:
+    style = str(parameter.get("style") or "form")
+    explode = _explode(parameter, style)
+    allow_reserved = bool(parameter.get("allowReserved", False))
+
+    if style == "deepObject" and isinstance(value, dict):
+        return [
+            _query_pair(
+                f"{name}[{key}]",
+                item,
+                allow_reserved=allow_reserved,
+                name_safe_extra="[]",
+            )
+            for key, item in value.items()
+            if item is not None
+        ]
+
+    if style == "spaceDelimited" and _is_sequence(value):
+        return [
+            _query_pair(
+                name,
+                " ".join(_primitive_text(item) for item in value),
+                allow_reserved=allow_reserved,
+                plus=False,
+            )
+        ]
+
+    if style == "pipeDelimited" and _is_sequence(value):
+        return [
+            _query_pair(
+                name,
+                "|".join(_primitive_text(item) for item in value),
+                allow_reserved=allow_reserved,
+                value_safe_extra="|",
+            )
+        ]
+
+    if isinstance(value, dict):
+        if explode:
+            return [
+                _query_pair(str(key), item, allow_reserved=allow_reserved)
+                for key, item in value.items()
+                if item is not None
+            ]
+        return [
+            _query_pair(
+                name,
+                ",".join(_object_items(value)),
+                allow_reserved=allow_reserved,
+                value_safe_extra=",",
+            )
+        ]
+
+    if _is_sequence(value):
+        if explode:
+            return [
+                _query_pair(name, item, allow_reserved=allow_reserved)
+                for item in value
+                if item is not None
+            ]
+        return [
+            _query_pair(
+                name,
+                ",".join(_primitive_text(item) for item in value),
+                allow_reserved=allow_reserved,
+                value_safe_extra=",",
+            )
+        ]
+
+    return [_query_pair(name, value, allow_reserved=allow_reserved)]
+
+
+def _query_pair(
+    name: str,
+    value: Any,
+    *,
+    allow_reserved: bool = False,
+    name_safe_extra: str = "",
+    value_safe_extra: str = "",
+    plus: bool = True,
+) -> str:
+    safe = (_RESERVED_QUERY_CHARS if allow_reserved else "") + value_safe_extra
+    quote = urllib.parse.quote_plus if plus else urllib.parse.quote
+    encoded_name = urllib.parse.quote_plus(str(name), safe=name_safe_extra)
+    encoded_value = quote(_primitive_text(value), safe=safe)
+    return f"{encoded_name}={encoded_value}"
+
+
+def _serialize_header_parameter(name: str, value: Any, parameter: dict[str, Any]) -> str:
+    style = str(parameter.get("style") or "simple")
+    explode = _explode(parameter, style)
+    return _serialize_simple_text(name, value, explode=explode)
+
+
+def _cookie_segments(name: str, value: Any, parameter: dict[str, Any]) -> list[str]:
+    style = str(parameter.get("style") or "form")
+    explode = _explode(parameter, style)
+    if isinstance(value, dict):
+        if style == "form" and explode:
+            return [_cookie_pair(str(key), item) for key, item in value.items() if item is not None]
+        return [_cookie_pair(name, ",".join(_object_items(value)))]
+    if _is_sequence(value):
+        if style == "form" and explode:
+            return [_cookie_pair(name, item) for item in value if item is not None]
+        return [_cookie_pair(name, ",".join(_primitive_text(item) for item in value))]
+    return [_cookie_pair(name, _serialize_simple_text(name, value, explode=explode))]
+
+
+def _cookie_pair(name: str, value: Any) -> str:
+    encoded_name = urllib.parse.quote(str(name))
+    encoded_value = urllib.parse.quote(_primitive_text(value))
+    return f"{encoded_name}={encoded_value}"
+
+
+def _serialize_simple_path_value(value: Any, *, explode: bool) -> str:
+    if _is_sequence(value):
+        return ",".join(_quote_path_value(item) for item in value)
+    if isinstance(value, dict):
+        if explode:
+            return ",".join(
+                f"{_quote_path_value(key)}={_quote_path_value(item)}" for key, item in value.items()
+            )
+        return ",".join(_quote_path_value(item) for item in _object_items(value))
+    return _quote_path_value(value)
+
+
+def _serialize_label_path_value(value: Any, *, explode: bool) -> str:
+    if _is_sequence(value):
+        separator = "." if explode else ","
+        return "." + separator.join(_quote_path_value(item) for item in value)
+    if isinstance(value, dict):
+        separator = "." if explode else ","
+        items = (
+            (f"{key}={_primitive_text(item)}" for key, item in value.items())
+            if explode
+            else _object_items(value)
+        )
+        return "." + separator.join(_quote_path_value(item) for item in items)
+    return "." + _quote_path_value(value)
+
+
+def _serialize_matrix_path_value(name: str, value: Any, *, explode: bool) -> str:
+    encoded_name = _quote_path_value(name)
+    if _is_sequence(value):
+        if explode:
+            return "".join(f";{encoded_name}={_quote_path_value(item)}" for item in value)
+        joined = ",".join(_quote_path_value(item) for item in value)
+        return f";{encoded_name}={joined}"
+    if isinstance(value, dict):
+        if explode:
+            return "".join(
+                f";{_quote_path_value(key)}={_quote_path_value(item)}"
+                for key, item in value.items()
+            )
+        joined = ",".join(_quote_path_value(item) for item in _object_items(value))
+        return f";{encoded_name}={joined}"
+    return f";{encoded_name}={_quote_path_value(value)}"
+
+
+def _serialize_simple_text(name: str, value: Any, *, explode: bool) -> str:
+    if _is_sequence(value):
+        return ",".join(_primitive_text(item) for item in value)
+    if isinstance(value, dict):
+        if explode:
+            return ",".join(f"{key}={_primitive_text(item)}" for key, item in value.items())
+        return ",".join(_object_items(value))
+    return _primitive_text(value)
+
+
+def _object_items(value: dict[Any, Any]) -> list[str]:
+    parts: list[str] = []
+    for key, item in value.items():
+        if item is None:
+            continue
+        parts.extend([_primitive_text(key), _primitive_text(item)])
+    return parts
+
+
+def _is_sequence(value: Any) -> bool:
+    return isinstance(value, (list, tuple)) and not isinstance(value, (str, bytes, bytearray))
+
+
+def _primitive_text(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _quote_path_value(value: Any) -> str:
+    return urllib.parse.quote(_primitive_text(value), safe="")
+
+
+def _explode(parameter: dict[str, Any], style: str) -> bool:
+    if "explode" in parameter:
+        return bool(parameter["explode"])
+    return style == "form"
 
 
 def _build_json_body(
