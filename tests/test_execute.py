@@ -795,6 +795,79 @@ class TestBuildRequest:
         with pytest.raises(OpenAPIRequestValidationError, match=r"body:status\(enum\)"):
             executor.build_request(tool, {"status": "cancelled"})
 
+    def test_nullable_json_body_field_preserves_explicit_null(self):
+        tool = _make_tool(
+            name="updateOrderMemo",
+            method="PATCH",
+            path="/orders/{orderId}",
+            params=[
+                ToolParam(name="orderId", type="string", required=True),
+                ToolParam(name="memo", type="string", required=True),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [{"name": "orderId", "in": "path", "required": True}],
+            "request_body": {
+                "required": True,
+                "content_type": "application/json",
+                "fields": [
+                    {
+                        "field_name": "memo",
+                        "json_path": "$.memo",
+                        "field_type": "string",
+                        "required": True,
+                        "nullable": True,
+                    }
+                ],
+            },
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {"orderId": "O1", "memo": None})
+        req = executor.build_request(tool, {"orderId": "O1", "memo": None})
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_required"] == []
+        assert diagnostics["invalid_arguments"] == []
+        assert diagnostics["used_arguments"]["body"] == ["memo"]
+        assert json.loads(req.data.decode("utf-8")) == {"memo": None}
+
+    def test_non_nullable_json_body_null_is_invalid_not_missing(self):
+        tool = _make_tool(
+            name="updateOrderMemo",
+            method="PATCH",
+            path="/orders/{orderId}",
+            params=[
+                ToolParam(name="orderId", type="string", required=True),
+                ToolParam(name="memo", type="string", required=True),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [{"name": "orderId", "in": "path", "required": True}],
+            "request_body": {
+                "required": True,
+                "content_type": "application/json",
+                "fields": [
+                    {
+                        "field_name": "memo",
+                        "json_path": "$.memo",
+                        "field_type": "string",
+                        "required": True,
+                    }
+                ],
+            },
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {"orderId": "O1", "memo": None})
+
+        assert diagnostics["valid"] is False
+        assert diagnostics["missing_required"] == []
+        assert diagnostics["invalid_arguments"][0]["reason"] == "null"
+        assert diagnostics["invalid_arguments"][0]["name"] == "memo"
+        with pytest.raises(OpenAPIRequestValidationError, match=r"body:memo\(null\)"):
+            executor.build_request(tool, {"orderId": "O1", "memo": None})
+
     def test_build_request_can_disable_value_validation_only(self):
         tool = _make_tool(
             name="updateOrder",

@@ -117,6 +117,9 @@ OpenAPI field direction is enforced before graph/search promotion:
   as response-only hints
 - nested object/array leaves inherit parent `readOnly`, `writeOnly`, and
   `deprecated` hints
+- Nullable dialects are normalized before contract extraction. OpenAPI
+  `nullable`, Swagger `x-nullable`, JSON Schema `type: ["T", "null"]`, and
+  single-schema `anyOf` / `oneOf` null unions are exposed as `nullable=true`.
 - OpenAPI3 query object wrappers are expanded into their real inner fields for
   `metadata.openapi.parameters`, `input_locations`, and `api_contract.consumes`.
   If Spring/SpringDoc exposes both the wrapper and a sibling field, the wrapper
@@ -172,6 +175,9 @@ diagnostics for XGEN popup/resume flows:
   constraints
 - branch-local missing fields are reported as `source=request_body_branch` when
   the caller supplied a discriminator value that selects that branch
+- explicit JSON body `None` values are treated as present body fields; nullable
+  fields serialize as JSON `null`, while non-nullable fields fail with
+  `reason=null`
 - `unused_arguments`: provided arguments that are not part of the tool contract
 - `used_arguments`: classified path/query/header/cookie/body argument names
 - `selected_content_type`: request body media type selected from OpenAPI metadata

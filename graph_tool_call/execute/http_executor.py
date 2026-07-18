@@ -122,8 +122,13 @@ class HttpExecutor:
         for param_name in _iter_known_argument_names(
             tool, api_metadata, path_template=path_template
         ):
+            has_argument = param_name in arguments
             value = arguments.get(param_name)
             if value is None:
+                if not has_argument:
+                    continue
+                if location_by_param.get(param_name) == "body":
+                    body_params[param_name] = value
                 continue
             location = location_by_param.get(param_name)
             if f"{{{param_name}}}" in path_template or location == "path":
@@ -410,8 +415,11 @@ def _used_arguments_by_location(
             used[location].append(name)
 
     for name in _iter_known_argument_names(tool, api_metadata, path_template=path_template):
+        has_argument = name in arguments
         value = arguments.get(name)
         if value is None:
+            if has_argument and location_by_param.get(name) == "body":
+                add("body", name)
             continue
         location = location_by_param.get(name)
         if f"{{{name}}}" in path_template or location == "path":
@@ -447,7 +455,7 @@ def _missing_required_inputs(
         key = (location, name)
         if key in seen:
             return
-        if _argument_present(name, location, arguments, headers):
+        if _required_argument_present(name, location, arguments, headers):
             return
         seen.add(key)
         missing.append(row)
@@ -575,7 +583,7 @@ def _invalid_argument_values(
             return
         seen_contracts.add(key)
 
-        present, value = _argument_value_for_validation(name, location, arguments, headers)
+        present, value = _contract_value_for_validation(name, location, arguments, headers)
         if not present:
             return
 
@@ -624,6 +632,13 @@ def _invalid_argument_values(
 
 def _validation_issues(value: Any, contract: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
+    if value is None:
+        if contract.get("nullable"):
+            return issues
+        if str(contract.get("location") or "") == "body":
+            issues.append(_invalid_argument_row(contract, "null"))
+        return issues
+
     const_failed = "const" in contract and not _const_matches(value, contract.get("const"))
     if const_failed:
         issues.append(_invalid_argument_row(contract, "const"))
@@ -817,6 +832,17 @@ def _argument_value_for_validation(
     return False, None
 
 
+def _contract_value_for_validation(
+    name: str,
+    location: str,
+    arguments: dict[str, Any],
+    headers: dict[str, str],
+) -> tuple[bool, Any]:
+    if location == "body" and name in arguments:
+        return True, arguments[name]
+    return _argument_value_for_validation(name, location, arguments, headers)
+
+
 def _argument_present(
     name: str,
     location: str,
@@ -831,6 +857,17 @@ def _argument_present(
     if location == "cookie":
         return _cookie_present(headers, name)
     return False
+
+
+def _required_argument_present(
+    name: str,
+    location: str,
+    arguments: dict[str, Any],
+    headers: dict[str, str],
+) -> bool:
+    if location == "body" and name in arguments:
+        return True
+    return _argument_present(name, location, arguments, headers)
 
 
 def _missing_security_requirements(

@@ -24,6 +24,9 @@ The graphify package owns product-neutral collection graph logic.
 - OpenAPI3 parameter `content` schemas are carried as additive `content_type`,
   `content_fields`, and `content_types` hints so search, planning, validation,
   and execution share the same wire contract.
+- Nullable request/response fields are normalized across OpenAPI `nullable`,
+  Swagger `x-nullable`, JSON Schema null type arrays, and single-schema null
+  unions, then preserved as `nullable=true` contract hints.
 - `additionalProperties` map leaves are represented additively with
   `additional_properties`, `map_value`, and `map_key_placeholder` hints; map
   value paths use `*` as a sorted-key first-value placeholder, not fan-out.

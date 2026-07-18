@@ -116,6 +116,7 @@ def extract_leaves(
         return []
 
     schema = _resolve_combinators(schema)
+    schema = _flatten_nullable_union(schema)
     schema_ref = _schema_ref or str(schema.get("x-graph-tool-call-ref") or "")
     read_only = _parent_read_only or bool(schema.get("readOnly", False))
     write_only = _parent_write_only or bool(schema.get("writeOnly", False))
@@ -200,7 +201,7 @@ def extract_leaves(
             format=str(schema.get("format") or ""),
             default=schema.get("default"),
             example=schema.get("example"),
-            nullable=bool(schema.get("nullable", False)),
+            nullable=_schema_nullable(schema),
             pattern=str(schema.get("pattern") or ""),
             minimum=schema.get("minimum"),
             maximum=schema.get("maximum"),
@@ -300,11 +301,7 @@ def _walk_object(
                     ),
                     default=prop_schema.get("default") if isinstance(prop_schema, dict) else None,
                     example=prop_schema.get("example") if isinstance(prop_schema, dict) else None,
-                    nullable=(
-                        bool(prop_schema.get("nullable", False))
-                        if isinstance(prop_schema, dict)
-                        else False
-                    ),
+                    nullable=_schema_nullable(prop_schema),
                     pattern=(
                         str(prop_schema.get("pattern") or "")
                         if isinstance(prop_schema, dict)
@@ -456,7 +453,7 @@ def _walk_additional_properties(
                 format=str(additional.get("format") or ""),
                 default=additional.get("default"),
                 example=additional.get("example"),
-                nullable=bool(additional.get("nullable", False)),
+                nullable=_schema_nullable(additional),
                 pattern=str(additional.get("pattern") or ""),
                 minimum=additional.get("minimum"),
                 maximum=additional.get("maximum"),
@@ -528,7 +525,11 @@ def _extract_alternative_leaves(
         raw_candidates = schema.get(key)
         if not isinstance(raw_candidates, list) or not raw_candidates:
             continue
-        candidates = [candidate for candidate in raw_candidates if isinstance(candidate, dict)]
+        candidates = [
+            candidate
+            for candidate in raw_candidates
+            if isinstance(candidate, dict) and not _is_null_schema(candidate)
+        ]
         if not candidates:
             continue
 
@@ -805,11 +806,62 @@ def _resolve_combinators(schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
+def _flatten_nullable_union(schema: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return schema
+    out = dict(schema)
+    nullable = _schema_nullable(out)
+    for key in ("anyOf", "oneOf"):
+        candidates = out.get(key)
+        if not isinstance(candidates, list):
+            continue
+        non_null = [
+            candidate
+            for candidate in candidates
+            if not (isinstance(candidate, dict) and _is_null_schema(candidate))
+        ]
+        if len(non_null) == len(candidates):
+            continue
+        nullable = True
+        if len(non_null) == 1 and isinstance(non_null[0], dict):
+            merged = {
+                **{k: v for k, v in out.items() if k not in {"anyOf", "oneOf"}},
+                **non_null[0],
+            }
+            merged["nullable"] = True
+            return merged
+        out[key] = non_null
+    if nullable:
+        out["nullable"] = True
+    return out
+
+
+def _is_null_schema(schema: Any) -> bool:
+    return isinstance(schema, dict) and schema.get("type") == "null"
+
+
 def _normalize_type(t: Any) -> str:
     """JSON Schema 'type' can be str or list. Pick first non-null."""
     if isinstance(t, list):
         return next((x for x in t if x and x != "null"), "")
     return t or ""
+
+
+def _schema_nullable(schema: Any) -> bool:
+    if not isinstance(schema, dict):
+        return False
+    if schema.get("nullable") or schema.get("x-nullable"):
+        return True
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list) and "null" in schema_type:
+        return True
+    for key in ("anyOf", "oneOf"):
+        candidates = schema.get(key)
+        if isinstance(candidates, list) and any(
+            _is_null_schema(candidate) for candidate in candidates
+        ):
+            return True
+    return False
 
 
 def _schema_enum(schema: Any) -> list[Any]:

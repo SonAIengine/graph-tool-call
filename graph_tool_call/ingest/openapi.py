@@ -149,6 +149,7 @@ _SCHEMA_HINT_KEYS: tuple[tuple[str, str], ...] = (
     ("default", "default"),
     ("example", "example"),
     ("nullable", "nullable"),
+    ("x-nullable", "nullable"),
     ("pattern", "pattern"),
     ("minimum", "minimum"),
     ("maximum", "maximum"),
@@ -208,6 +209,22 @@ def _schema_enum(schema: Any) -> list[Any]:
     return values
 
 
+def _schema_nullable(schema: Any) -> bool:
+    if not isinstance(schema, dict):
+        return False
+    if schema.get("nullable") or schema.get("x-nullable"):
+        return True
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list) and "null" in schema_type:
+        return True
+    for key in ("anyOf", "oneOf"):
+        candidates = schema.get(key)
+        if isinstance(candidates, list):
+            if any(isinstance(item, dict) and item.get("type") == "null" for item in candidates):
+                return True
+    return False
+
+
 def _add_schema_hints(row: dict[str, Any], schema: dict[str, Any]) -> None:
     """Copy JSON Schema validation/example hints into compact metadata rows."""
     if not isinstance(schema, dict):
@@ -219,6 +236,8 @@ def _add_schema_hints(row: dict[str, Any], schema: dict[str, Any]) -> None:
         if value in (None, ""):
             continue
         row[row_key] = _compact_openapi_value(value)
+    if _schema_nullable(schema):
+        row["nullable"] = True
 
 
 def _copy_row_hints(source: dict[str, Any], target: dict[str, Any]) -> None:

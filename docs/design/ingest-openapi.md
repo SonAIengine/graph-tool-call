@@ -81,6 +81,13 @@ request field와 `readOnly` response field는 그대로 보존해 XGEN이 해당
 방향성을 설명하거나 로그에 남길 수 있게 한다. nested object/array leaf는
 부모의 `readOnly`/`writeOnly`/`deprecated` hint를 상속한다.
 
+nullable dialect는 contract 추출 전에 하나의 의미로 정규화한다. OpenAPI
+`nullable`, Swagger `x-nullable`, JSON Schema `type: ["T", "null"]`,
+`anyOf`/`oneOf` + `null` 단일 union은 모두 `nullable=true`로 보존한다.
+JSON body에서 사용자가 명시적으로 `None`을 준 경우 nullable field는 `null`로
+직렬화하고, non-nullable field는 missing이 아니라 `reason=null` invalid
+diagnostic으로 보고한다.
+
 Spring/SpringDoc 계열 Swagger에서 query DTO가 `searchRequest` 같은
 `type=object` parameter로 노출되는 경우, wrapper 자체를 tool input이나
 graph consume field로 쓰지 않고 내부 `brandNo`, `goodsNo`, `saleStatusCd`

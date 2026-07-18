@@ -83,6 +83,90 @@ class TestNormalize:
         # anyOf should have been flattened away
         assert "anyOf" not in note_prop
 
+    def test_normalize_nullable_dialect_variants(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Nullable API", "version": "1.0.0"},
+            "paths": {
+                "/orders": {
+                    "post": {
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "memo": {
+                                                "type": ["string", "null"],
+                                                "nullable": False,
+                                            },
+                                            "legacyCount": {
+                                                "type": "integer",
+                                                "x-nullable": True,
+                                            },
+                                            "status": {
+                                                "oneOf": [
+                                                    {"type": "string", "enum": ["READY"]},
+                                                    {"type": "null"},
+                                                ]
+                                            },
+                                        },
+                                    }
+                                }
+                            }
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "NullableFilter": {
+                        "type": "object",
+                        "properties": {
+                            "keyword": {"type": ["string", "null"]},
+                            "amount": {"type": "number", "x-nullable": True},
+                        },
+                    }
+                }
+            },
+        }
+
+        result = normalize(spec)
+        schema_props = result.schemas["NullableFilter"]["properties"]
+        body_props = result.paths["/orders"]["post"]["requestBody"]["content"]["application/json"][
+            "schema"
+        ]["properties"]
+
+        assert schema_props["keyword"] == {"type": "string", "nullable": True}
+        assert schema_props["amount"] == {"type": "number", "nullable": True}
+        assert body_props["memo"] == {"type": "string", "nullable": True}
+        assert body_props["legacyCount"] == {"type": "integer", "nullable": True}
+        assert body_props["status"]["type"] == "string"
+        assert body_props["status"]["nullable"] is True
+        assert body_props["status"]["enum"] == ["READY"]
+        assert "oneOf" not in body_props["status"]
+
+    def test_normalize_swagger20_x_nullable(self) -> None:
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Legacy API", "version": "1.0.0"},
+            "paths": {},
+            "definitions": {
+                "LegacyOrder": {
+                    "type": "object",
+                    "properties": {"memo": {"type": "string", "x-nullable": True}},
+                }
+            },
+        }
+
+        result = normalize(spec)
+
+        assert result.schemas["LegacyOrder"]["properties"]["memo"] == {
+            "type": "string",
+            "nullable": True,
+        }
+
     def test_auto_generate_operation_id(self) -> None:
         spec = _load("minimal_openapi31.json")
         result = normalize(spec)

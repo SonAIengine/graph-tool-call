@@ -624,6 +624,79 @@ class TestIngestOpenAPI30:
             "status": "SALE",
         }
 
+    def test_nullable_openapi31_body_fields_are_preserved_and_executable(self) -> None:
+        spec = {
+            "openapi": "3.1.0",
+            "info": {"title": "Nullable Order API", "version": "1.0.0"},
+            "paths": {
+                "/orders/{orderId}": {
+                    "patch": {
+                        "operationId": "updateOrderMemo",
+                        "parameters": [
+                            {
+                                "name": "orderId",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["memo", "status"],
+                                        "properties": {
+                                            "memo": {
+                                                "anyOf": [
+                                                    {"type": "string"},
+                                                    {"type": "null"},
+                                                ],
+                                                "description": "주문 메모",
+                                            },
+                                            "status": {"type": ["string", "null"]},
+                                            "legacyCount": {
+                                                "type": "integer",
+                                                "x-nullable": True,
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        tools, normalized = ingest_openapi(spec)
+        tool = tools[0]
+        consumes = {row["field_name"]: row for row in tool.metadata["api_contract"]["consumes"]}
+        params = {param.name: param for param in tool.parameters}
+
+        assert (
+            normalized.paths["/orders/{orderId}"]["patch"]["requestBody"]["content"][
+                "application/json"
+            ]["schema"]["properties"]["memo"]["nullable"]
+            is True
+        )
+        assert params["memo"].required is True
+        assert consumes["memo"]["nullable"] is True
+        assert consumes["status"]["nullable"] is True
+        assert consumes["legacyCount"]["nullable"] is True
+
+        request = HttpExecutor("https://api.example.com").build_request(
+            tool,
+            {"orderId": "O1", "memo": None, "status": None},
+        )
+
+        assert json.loads(request.data.decode("utf-8")) == {
+            "memo": None,
+            "status": None,
+        }
+
     def test_query_object_parameter_metadata_expands_to_inner_fields(self) -> None:
         """Query DTO wrappers should not leak into graph/Planflow contracts."""
         spec = {

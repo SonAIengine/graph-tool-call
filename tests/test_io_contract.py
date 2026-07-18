@@ -147,6 +147,36 @@ def test_extract_leaves_preserves_schema_hints():
     assert by_name["quantity"].maximum == 99
 
 
+def test_extract_leaves_normalizes_nullable_dialect_variants():
+    schema = {
+        "type": "object",
+        "required": ["memo", "legacyCount", "status"],
+        "properties": {
+            "memo": {"type": ["string", "null"]},
+            "legacyCount": {"type": "integer", "x-nullable": True},
+            "status": {
+                "anyOf": [
+                    {"type": "string", "enum": ["READY"]},
+                    {"type": "null"},
+                ]
+            },
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert by_name["memo"].field_type == "string"
+    assert by_name["memo"].nullable is True
+    assert by_name["memo"].required is True
+    assert by_name["legacyCount"].field_type == "integer"
+    assert by_name["legacyCount"].nullable is True
+    assert by_name["status"].field_type == "string"
+    assert by_name["status"].enum == ["READY"]
+    assert by_name["status"].nullable is True
+    assert by_name["status"].required is True
+
+
 def test_extract_leaves_treats_const_as_single_value_enum():
     schema = {
         "type": "object",
