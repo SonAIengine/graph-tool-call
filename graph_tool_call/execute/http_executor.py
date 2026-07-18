@@ -23,6 +23,7 @@ from typing import Any
 from graph_tool_call.core.tool import ToolSchema
 
 _RESERVED_QUERY_CHARS = ":/?#[]@!$&'()*+,;="
+_HTTP_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 
 
 class OpenAPIRequestValidationError(ValueError):
@@ -183,12 +184,26 @@ class HttpExecutor:
         data: bytes | None = None
         if body_params and method in ("POST", "PUT", "PATCH"):
             content_type = _request_content_type(api_metadata, metadata, body_params)
-            body_field_paths = _body_field_paths(api_metadata, content_type=content_type)
+            body_rows = _body_rows(
+                api_metadata,
+                content_type=content_type,
+                include_content_type_rows=False,
+            )
+            body_field_paths = _body_field_paths_from_rows(body_rows)
             if _is_form_content_type(content_type):
+                body_field_metadata = _body_field_metadata_from_rows(body_rows)
                 headers["Content-Type"] = content_type
-                data = _encode_urlencoded_body(body_params)
+                data = _encode_urlencoded_body(body_params, body_field_metadata)
             elif _is_multipart_content_type(content_type):
-                content_type, data = _encode_multipart_body(content_type, body_params)
+                multipart_params, multipart_metadata = _prepare_multipart_body_parts(
+                    body_params,
+                    body_rows,
+                )
+                content_type, data = _encode_multipart_body(
+                    content_type,
+                    multipart_params,
+                    multipart_metadata,
+                )
                 headers["Content-Type"] = content_type
             else:
                 headers["Content-Type"] = content_type
@@ -1078,6 +1093,12 @@ def _copy_validation_hint(source: dict[str, Any], target: dict[str, Any]) -> Non
         "content_schema_type",
         "content_fields",
         "content_top_level_fields",
+        "encoding_content_type",
+        "encoding_style",
+        "encoding_explode",
+        "encoding_allow_reserved",
+        "encoding_headers",
+        "encoding_field_name",
         "discriminator_property",
         "discriminator_value",
         "discriminator_values",
@@ -1208,8 +1229,14 @@ def _body_field_paths(
     *,
     content_type: str | None = None,
 ) -> dict[str, str]:
+    return _body_field_paths_from_rows(
+        _body_rows(api_metadata, content_type=content_type, include_content_type_rows=False)
+    )
+
+
+def _body_field_paths_from_rows(body_rows: list[dict[str, Any]]) -> dict[str, str]:
     paths: dict[str, str] = {}
-    for row in _body_rows(api_metadata, content_type=content_type, include_content_type_rows=False):
+    for row in body_rows:
         if not isinstance(row, dict):
             continue
         if row.get("map_value") and not _is_request_body_root_row(row):
@@ -1219,6 +1246,17 @@ def _body_field_paths(
         if name and json_path and name not in paths:
             paths[name] = json_path
     return paths
+
+
+def _body_field_metadata_from_rows(body_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    metadata: dict[str, dict[str, Any]] = {}
+    for row in body_rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("field_name") or "")
+        if name and name not in metadata:
+            metadata[name] = row
+    return metadata
 
 
 def _raw_body_argument_present(
@@ -1751,10 +1789,18 @@ def _explode(parameter: dict[str, Any], style: str) -> bool:
     return style == "form"
 
 
-def _encode_urlencoded_body(body_params: dict[str, Any]) -> bytes:
+def _encode_urlencoded_body(
+    body_params: dict[str, Any],
+    body_field_metadata: dict[str, dict[str, Any]] | None = None,
+) -> bytes:
+    segments: list[str] = []
     pairs: list[tuple[str, str]] = []
     for name, value in body_params.items():
         if value is None:
+            continue
+        field_metadata = (body_field_metadata or {}).get(str(name), {})
+        if _has_form_encoding_metadata(field_metadata):
+            segments.extend(_serialize_form_body_field(str(name), value, field_metadata))
             continue
         if _is_sequence(value):
             pairs.extend((str(name), _primitive_text(item)) for item in value if item is not None)
@@ -1762,30 +1808,222 @@ def _encode_urlencoded_body(body_params: dict[str, Any]) -> bytes:
             pairs.append((str(name), json.dumps(value, ensure_ascii=False)))
         else:
             pairs.append((str(name), _primitive_text(value)))
-    return urllib.parse.urlencode(pairs, doseq=True).encode("utf-8")
+    if pairs:
+        segments.append(urllib.parse.urlencode(pairs, doseq=True))
+    return "&".join(segment for segment in segments if segment).encode("utf-8")
+
+
+def _has_form_encoding_metadata(field_metadata: dict[str, Any]) -> bool:
+    return any(
+        key in field_metadata
+        for key in (
+            "encoding_content_type",
+            "encoding_style",
+            "encoding_explode",
+            "encoding_allow_reserved",
+        )
+    )
+
+
+def _serialize_form_body_field(
+    name: str,
+    value: Any,
+    field_metadata: dict[str, Any],
+) -> list[str]:
+    parameter = {
+        "style": field_metadata.get("encoding_style") or "form",
+        "content_type": field_metadata.get("encoding_content_type") or "",
+    }
+    if "encoding_explode" in field_metadata:
+        parameter["explode"] = bool(field_metadata["encoding_explode"])
+    if "encoding_allow_reserved" in field_metadata:
+        parameter["allowReserved"] = bool(field_metadata["encoding_allow_reserved"])
+    return _serialize_query_parameter(name, value, parameter)
+
+
+def _prepare_multipart_body_parts(
+    body_params: dict[str, Any],
+    body_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    field_rows = _body_field_metadata_from_rows(body_rows)
+    top_level_rows = _top_level_multipart_rows(body_rows)
+    direct_names = {str(name) for name in body_params}
+    part_values: dict[str, Any] = {}
+    part_metadata: dict[str, dict[str, Any]] = {}
+    grouped_values: dict[str, Any] = {}
+
+    for name, value in body_params.items():
+        field_name = str(name)
+        row = field_rows.get(field_name, {})
+        parent_row = _multipart_parent_part_row(row, top_level_rows)
+        parent_name = str(parent_row.get("field_name") or "") if parent_row else ""
+        if (
+            parent_row
+            and parent_name
+            and parent_name != field_name
+            and parent_name not in direct_names
+            and not _is_file_part_value(value)
+        ):
+            parent_type = str(parent_row.get("field_type") or "")
+            relative_path = _relative_json_path(
+                str(row.get("json_path") or ""),
+                str(parent_row.get("json_path") or ""),
+            )
+            grouped_values[parent_name] = _assign_multipart_group_value(
+                grouped_values.get(parent_name),
+                parent_type,
+                relative_path,
+                value,
+            )
+            part_metadata[parent_name] = parent_row
+            continue
+
+        part_values[field_name] = value
+        if row:
+            part_metadata[field_name] = row
+
+    for name, value in grouped_values.items():
+        if name not in part_values:
+            part_values[name] = value
+            if name not in part_metadata and name in field_rows:
+                part_metadata[name] = field_rows[name]
+    return part_values, part_metadata
+
+
+def _top_level_multipart_rows(body_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in body_rows:
+        if not isinstance(row, dict):
+            continue
+        json_path = str(row.get("json_path") or "")
+        if _top_level_body_json_path(json_path):
+            rows.append(row)
+    return rows
+
+
+def _top_level_body_json_path(json_path: str) -> bool:
+    if not json_path.startswith("$."):
+        return False
+    rest = json_path.removeprefix("$.")
+    return bool(rest) and "." not in rest and "[" not in rest
+
+
+def _multipart_parent_part_row(
+    row: dict[str, Any],
+    top_level_rows: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    json_path = str(row.get("json_path") or "")
+    if not json_path:
+        return None
+    for parent in top_level_rows:
+        parent_path = str(parent.get("json_path") or "")
+        if parent_path == json_path:
+            return None
+        parent_type = str(parent.get("field_type") or "")
+        if parent_type not in {"object", "array"}:
+            continue
+        if _json_path_descends_from(json_path, parent_path):
+            return parent
+    return None
+
+
+def _relative_json_path(json_path: str, parent_path: str) -> str:
+    if not json_path or not parent_path:
+        return ""
+    if json_path == parent_path:
+        return "$"
+    if json_path.startswith(f"{parent_path}."):
+        return "$" + json_path.removeprefix(parent_path)
+    if json_path.startswith(f"{parent_path}[*]"):
+        return "$" + json_path.removeprefix(parent_path)
+    return ""
+
+
+def _assign_multipart_group_value(
+    existing: Any,
+    parent_type: str,
+    relative_path: str,
+    value: Any,
+) -> Any:
+    if relative_path in {"", "$"}:
+        return value
+    if parent_type == "array":
+        return _assign_multipart_array_part(existing, relative_path, value)
+
+    body = existing if isinstance(existing, dict) else {}
+    if _assign_json_body_value(body, relative_path, value):
+        return body
+    body[_multipart_fallback_field_name(relative_path)] = value
+    return body
+
+
+def _assign_multipart_array_part(existing: Any, relative_path: str, value: Any) -> Any:
+    if not relative_path.startswith("$[*]"):
+        return value
+    suffix = relative_path.removeprefix("$[*]")
+    if not suffix:
+        return list(value) if _is_sequence(value) else [value]
+    if not suffix.startswith("."):
+        return existing if isinstance(existing, list) else []
+
+    items = existing if isinstance(existing, list) else []
+    if items and isinstance(items[0], dict):
+        item = items[0]
+    else:
+        item = {}
+        if items:
+            items[0] = item
+        else:
+            items.append(item)
+    if not _assign_json_body_value(item, "$" + suffix, value):
+        item[_multipart_fallback_field_name("$" + suffix)] = value
+    return items
+
+
+def _multipart_fallback_field_name(relative_path: str) -> str:
+    path = relative_path.removeprefix("$.").removeprefix("$[*].")
+    if not path:
+        return "value"
+    return path.rsplit(".", 1)[-1].removesuffix("[*]")
 
 
 def _encode_multipart_body(
     content_type: str,
     body_params: dict[str, Any],
+    body_field_metadata: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[str, bytes]:
     boundary = _multipart_boundary(content_type) or f"----graph-tool-call-{uuid.uuid4().hex}"
     header_content_type = content_type
     if "boundary=" not in content_type.lower():
         header_content_type = f"{content_type}; boundary={boundary}"
-    body = _multipart_bytes(body_params, boundary=boundary)
+    body = _multipart_bytes(
+        body_params,
+        boundary=boundary,
+        body_field_metadata=body_field_metadata or {},
+    )
     return header_content_type, body
 
 
-def _multipart_bytes(body_params: dict[str, Any], *, boundary: str) -> bytes:
+def _multipart_bytes(
+    body_params: dict[str, Any],
+    *,
+    boundary: str,
+    body_field_metadata: dict[str, dict[str, Any]],
+) -> bytes:
     chunks: list[bytes] = []
     boundary_bytes = boundary.encode("ascii")
     for name, value in body_params.items():
         if value is None:
             continue
+        field_metadata = body_field_metadata.get(str(name), {})
         for item in _iter_multipart_values(value):
             chunks.append(b"--" + boundary_bytes + b"\r\n")
-            file_part = _file_part(item, field_name=str(name))
+            file_part = _file_part(
+                item,
+                field_name=str(name),
+                default_content_type=_multipart_part_content_type(field_metadata),
+            )
+            extra_headers = _multipart_part_headers(field_metadata)
             if file_part:
                 filename, part_content_type, payload = file_part
                 chunks.append(
@@ -1795,6 +2033,7 @@ def _multipart_bytes(body_params: dict[str, Any], *, boundary: str) -> bytes:
                         f'filename="{_quote_multipart_header_value(filename)}"\r\n'
                     ).encode()
                 )
+                chunks.extend(_multipart_header_chunks(extra_headers))
                 chunks.append(f"Content-Type: {part_content_type}\r\n\r\n".encode())
                 chunks.append(payload)
                 chunks.append(b"\r\n")
@@ -1803,10 +2042,15 @@ def _multipart_bytes(body_params: dict[str, Any], *, boundary: str) -> bytes:
             chunks.append(
                 (
                     "Content-Disposition: form-data; "
-                    f'name="{_quote_multipart_header_value(str(name))}"\r\n\r\n'
+                    f'name="{_quote_multipart_header_value(str(name))}"\r\n'
                 ).encode()
             )
-            chunks.append(_multipart_text(item).encode("utf-8"))
+            part_content_type = _multipart_part_content_type(field_metadata)
+            if part_content_type:
+                chunks.append(f"Content-Type: {part_content_type}\r\n".encode())
+            chunks.extend(_multipart_header_chunks(extra_headers))
+            chunks.append(b"\r\n")
+            chunks.append(_multipart_text(item, content_type=part_content_type).encode("utf-8"))
             chunks.append(b"\r\n")
     chunks.append(b"--" + boundary_bytes + b"--\r\n")
     return b"".join(chunks)
@@ -1841,14 +2085,20 @@ def _is_file_part_value(value: Any) -> bool:
     return hasattr(value, "read")
 
 
-def _file_part(value: Any, *, field_name: str) -> tuple[str, str, bytes] | None:
+def _file_part(
+    value: Any,
+    *,
+    field_name: str,
+    default_content_type: str = "",
+) -> tuple[str, str, bytes] | None:
+    fallback_content_type = default_content_type or "application/octet-stream"
     if isinstance(value, bytes | bytearray):
-        return field_name, "application/octet-stream", bytes(value)
+        return field_name, fallback_content_type, bytes(value)
 
     if isinstance(value, tuple) and len(value) in (2, 3) and isinstance(value[0], str):
         filename = value[0]
         payload = _file_payload(value[1])
-        content_type = str(value[2]) if len(value) == 3 and value[2] else "application/octet-stream"
+        content_type = str(value[2]) if len(value) == 3 and value[2] else fallback_content_type
         return filename, content_type, payload
 
     if isinstance(value, dict):
@@ -1862,14 +2112,14 @@ def _file_part(value: Any, *, field_name: str) -> tuple[str, str, bytes] | None:
         ):
             filename = str(value.get("filename") or value.get("name") or field_name)
             content_type = str(
-                value.get("content_type") or value.get("contentType") or "application/octet-stream"
+                value.get("content_type") or value.get("contentType") or fallback_content_type
             )
             return filename, content_type, _file_payload(payload_source)
 
     if hasattr(value, "read"):
         raw = value.read()
         filename = str(getattr(value, "name", field_name) or field_name).rsplit("/", 1)[-1]
-        return filename, "application/octet-stream", _file_payload(raw)
+        return filename, fallback_content_type, _file_payload(raw)
 
     return None
 
@@ -1886,10 +2136,79 @@ def _file_payload(value: Any) -> bytes:
     return str(value).encode("utf-8")
 
 
-def _multipart_text(value: Any) -> str:
+def _multipart_text(value: Any, *, content_type: str = "") -> str:
     if isinstance(value, dict | list):
+        compact = _is_json_content_type(content_type)
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":") if compact else None,
+        )
+    if _is_json_content_type(content_type) and isinstance(value, str | int | float | bool):
         return json.dumps(value, ensure_ascii=False)
     return _primitive_text(value)
+
+
+def _multipart_part_content_type(field_metadata: dict[str, Any]) -> str:
+    return str(field_metadata.get("encoding_content_type") or "")
+
+
+def _multipart_part_headers(field_metadata: dict[str, Any]) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for row in _iter_multipart_encoding_header_rows(field_metadata.get("encoding_headers")):
+        name = str(row.get("name") or row.get("field_name") or "")
+        if not name or name.lower() == "content-type":
+            continue
+        header_value = _encoding_header_static_value(row)
+        if header_value is not None:
+            headers[name] = _primitive_text(header_value)
+    return headers
+
+
+def _iter_multipart_encoding_header_rows(headers: Any) -> list[dict[str, Any]]:
+    if isinstance(headers, list):
+        return [row for row in headers if isinstance(row, dict)]
+    if not isinstance(headers, dict):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for name, value in headers.items():
+        if isinstance(value, dict):
+            rows.append({"name": str(name), **value})
+        elif value is not None:
+            rows.append({"name": str(name), "default": value})
+    return rows
+
+
+def _encoding_header_static_value(row: dict[str, Any]) -> Any:
+    for key in ("const", "default", "example"):
+        if key in row:
+            return row[key]
+    examples = row.get("examples")
+    if isinstance(examples, list):
+        for example in examples:
+            if isinstance(example, dict) and "value" in example:
+                return example["value"]
+    return None
+
+
+def _multipart_header_chunks(headers: dict[str, str]) -> list[bytes]:
+    chunks: list[bytes] = []
+    for name, value in headers.items():
+        header_name = _safe_multipart_header_name(name)
+        if header_name:
+            header_value = _safe_multipart_header_value(value)
+            chunks.append(f"{header_name}: {header_value}\r\n".encode())
+    return chunks
+
+
+def _safe_multipart_header_name(value: str) -> str:
+    name = value.strip().replace("\r", "").replace("\n", "")
+    return name if _HTTP_HEADER_NAME_RE.fullmatch(name) else ""
+
+
+def _safe_multipart_header_value(value: str) -> str:
+    return value.replace("\r", "").replace("\n", "")
 
 
 def _multipart_boundary(content_type: str) -> str | None:

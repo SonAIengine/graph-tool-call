@@ -210,7 +210,13 @@ honors common OpenAPI parameter serialization rules such as `form`,
 as one encoded parameter value instead of exploded object fields. For request
 bodies it preserves declared media type candidates and can render `application/json`,
 `application/x-www-form-urlencoded`, and `multipart/form-data`; binary/file-like
-arguments select the multipart candidate when one is declared.
+arguments select the multipart candidate when one is declared. OpenAPI
+`requestBody.content[media].encoding` is preserved as field-level
+`encoding_*` metadata; urlencoded fields honor explicit `style` / `explode` /
+`allowReserved` hints, and multipart parts use declared part `contentType` and
+static/default/example part headers when available. For multipart object parts,
+nested leaf arguments can be grouped back into the encoded top-level part, e.g.
+`title` / `category` under `$.metadata.*` become one `metadata` JSON part.
 
 `HttpExecutor.validate_request(tool, params)` returns structured preflight
 diagnostics for XGEN popup/resume flows:

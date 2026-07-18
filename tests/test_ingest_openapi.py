@@ -390,6 +390,88 @@ class TestIngestOpenAPI30:
         assert site_auth["auth_type"] == "apiKey"
         assert site_auth["credential_name"] == "X-Site-No"
 
+    def test_request_body_encoding_metadata_is_attached_to_body_fields(self) -> None:
+        """OpenAPI requestBody.encoding should survive into executable field rows."""
+        spec: dict = {
+            "openapi": "3.0.0",
+            "info": {"title": "Multipart API", "version": "1.0.0"},
+            "paths": {
+                "/assets": {
+                    "post": {
+                        "operationId": "uploadAsset",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "multipart/form-data": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["file", "metadata"],
+                                        "properties": {
+                                            "file": {"type": "string", "format": "binary"},
+                                            "metadata": {
+                                                "type": "object",
+                                                "required": ["title"],
+                                                "properties": {
+                                                    "title": {"type": "string"},
+                                                    "category": {"type": "string"},
+                                                },
+                                            },
+                                        },
+                                    },
+                                    "encoding": {
+                                        "file": {"contentType": "image/png"},
+                                        "metadata": {
+                                            "contentType": "application/json",
+                                            "headers": {
+                                                "X-Part-Kind": {
+                                                    "schema": {
+                                                        "type": "string",
+                                                        "default": "metadata",
+                                                    }
+                                                }
+                                            },
+                                        },
+                                    },
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        request_body = tools[0].metadata["openapi"]["request_body"]
+        content_row = request_body["content_types"][0]
+        top_level = {row["field_name"]: row for row in content_row["top_level_fields"]}
+        leaves = {row["field_name"]: row for row in content_row["fields"]}
+        consumes = {row["field_name"]: row for row in tools[0].metadata["api_contract"]["consumes"]}
+
+        assert content_row["encoding"] == [
+            {"field_name": "file", "content_type": "image/png"},
+            {
+                "field_name": "metadata",
+                "content_type": "application/json",
+                "headers": [
+                    {
+                        "name": "X-Part-Kind",
+                        "field_name": "X-Part-Kind",
+                        "field_type": "string",
+                        "required": False,
+                        "location": "request_body_part_header",
+                        "default": "metadata",
+                    }
+                ],
+            },
+        ]
+        assert top_level["file"]["encoding_content_type"] == "image/png"
+        assert top_level["metadata"]["encoding_content_type"] == "application/json"
+        assert top_level["metadata"]["encoding_headers"][0]["name"] == "X-Part-Kind"
+        assert leaves["title"]["encoding_field_name"] == "metadata"
+        assert leaves["title"]["encoding_content_type"] == "application/json"
+        assert consumes["title"]["encoding_content_type"] == "application/json"
+
     def test_security_requirements_become_auth_contract_rows(self) -> None:
         spec = {
             "openapi": "3.0.0",

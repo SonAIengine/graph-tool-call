@@ -189,6 +189,12 @@ _DERIVED_FIELD_HINT_KEYS = (
     "discriminator_property",
     "discriminator_value",
     "discriminator_values",
+    "encoding_content_type",
+    "encoding_style",
+    "encoding_explode",
+    "encoding_allow_reserved",
+    "encoding_headers",
+    "encoding_field_name",
     *RESPONSE_ENVELOPE_HINT_KEYS,
     *EXAMPLE_FIELD_HINT_KEYS,
 )
@@ -328,6 +334,7 @@ def _content_type_rows(
     for content_type, media in content.items():
         media = media if isinstance(media, dict) else {}
         schema = media.get("schema") if isinstance(media.get("schema"), dict) else {}
+        encoding_rows = _encoding_rows(media.get("encoding") or {})
         row: dict[str, Any] = {
             "content_type": str(content_type),
             "is_json": _is_json_media_type(str(content_type)),
@@ -368,6 +375,9 @@ def _content_type_rows(
                 fields = _schema_field_rows(schema, location="body")
                 top_level_fields = _merge_field_rows(top_level_fields, inferred_top_level_fields)
                 fields = _merge_field_rows(fields, inferred_fields)
+                if encoding_rows:
+                    _apply_request_body_encoding(top_level_fields, encoding_rows)
+                    _apply_request_body_encoding(fields, encoding_rows)
                 if top_level_fields:
                     row["top_level_fields"] = top_level_fields
                 if fields:
@@ -377,6 +387,9 @@ def _content_type_rows(
                 fields = _schema_field_rows(schema, location=location)
                 row["field_count"] = len(fields)
         elif location == "request_body":
+            if encoding_rows:
+                _apply_request_body_encoding(inferred_top_level_fields, encoding_rows)
+                _apply_request_body_encoding(inferred_fields, encoding_rows)
             if inferred_top_level_fields:
                 row["top_level_fields"] = inferred_top_level_fields
             if inferred_fields:
@@ -386,9 +399,8 @@ def _content_type_rows(
         if inferred_fields and location != "request_body":
             row["example_fields"] = inferred_fields
             row["example_field_count"] = len(inferred_fields)
-        encoding = media.get("encoding")
-        if isinstance(encoding, dict) and encoding:
-            row["encoding"] = _encoding_rows(encoding)
+        if encoding_rows:
+            row["encoding"] = encoding_rows
         if examples:
             row["examples"] = examples
             row["example_count"] = len(examples)
@@ -504,7 +516,9 @@ def _media_type_name_rows(media_types: list[Any], *, has_schema: bool) -> list[d
     return rows
 
 
-def _encoding_rows(encoding: dict[str, Any]) -> list[dict[str, Any]]:
+def _encoding_rows(encoding: Any) -> list[dict[str, Any]]:
+    if not isinstance(encoding, dict):
+        return []
     rows: list[dict[str, Any]] = []
     for field_name, enc in encoding.items():
         if not isinstance(enc, dict):
@@ -514,9 +528,88 @@ def _encoding_rows(encoding: dict[str, Any]) -> list[dict[str, Any]]:
             if key in enc:
                 row_key = "content_type" if key == "contentType" else key
                 row[row_key] = enc[key]
+        headers = _encoding_header_rows(enc.get("headers") or {})
+        if headers:
+            row["headers"] = headers
         if len(row) > 1:
             rows.append(row)
     return rows
+
+
+def _encoding_header_rows(headers: Any) -> list[dict[str, Any]]:
+    if not isinstance(headers, dict):
+        return []
+    rows: list[dict[str, Any]] = []
+    for header_name, header in headers.items():
+        if not isinstance(header, dict):
+            continue
+        schema = header.get("schema") if isinstance(header.get("schema"), dict) else {}
+        row: dict[str, Any] = {
+            "name": str(header_name),
+            "field_name": str(header_name),
+            "field_type": _schema_type(schema),
+            "required": bool(header.get("required", False)),
+            "location": "request_body_part_header",
+        }
+        _add_schema_hints(row, schema)
+        desc = _merge_description(str(header.get("description") or ""), _schema_description(schema))
+        if desc:
+            row["description"] = desc[:300]
+        enum = _schema_enum(schema)
+        if enum:
+            row["enum"] = list(enum)
+        examples = [
+            *_example_rows(header, location="request_body_part_header"),
+            *_example_rows(schema, location="request_body_part_header"),
+        ]
+        if examples:
+            row["examples"] = examples[:_MAX_EXAMPLES_PER_BLOCK]
+            row["example_count"] = len(row["examples"])
+        rows.append(row)
+    return rows
+
+
+def _apply_request_body_encoding(
+    rows: list[dict[str, Any]],
+    encoding_rows: list[dict[str, Any]],
+) -> None:
+    if not rows or not encoding_rows:
+        return
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        field_name = str(row.get("field_name") or "")
+        json_path = str(row.get("json_path") or "")
+        if not field_name:
+            continue
+        for encoding in encoding_rows:
+            encoded_field = str(encoding.get("field_name") or "")
+            if not encoded_field:
+                continue
+            if field_name != encoded_field and not _json_path_belongs_to_top_level_field(
+                json_path,
+                encoded_field,
+            ):
+                continue
+            row["encoding_field_name"] = encoded_field
+            if encoding.get("content_type"):
+                row["encoding_content_type"] = encoding["content_type"]
+            if encoding.get("style"):
+                row["encoding_style"] = encoding["style"]
+            if "explode" in encoding:
+                row["encoding_explode"] = bool(encoding["explode"])
+            if "allowReserved" in encoding:
+                row["encoding_allow_reserved"] = bool(encoding["allowReserved"])
+            if encoding.get("headers"):
+                row["encoding_headers"] = copy.deepcopy(encoding["headers"])
+            break
+
+
+def _json_path_belongs_to_top_level_field(json_path: str, field_name: str) -> bool:
+    if not json_path or not field_name:
+        return False
+    prefix = f"$.{field_name}"
+    return json_path.startswith(f"{prefix}.") or json_path.startswith(f"{prefix}[")
 
 
 def _pick_content_schema(content: dict[str, Any]) -> dict[str, Any]:

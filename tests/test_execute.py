@@ -687,6 +687,46 @@ class TestBuildRequest:
         assert req.headers["Content-type"] == "application/x-www-form-urlencoded"
         assert req.data.decode("utf-8") == "keyword=%EC%83%81%ED%92%88+%EA%B2%80%EC%83%89&page=2"
 
+    def test_form_request_body_uses_field_encoding_serialization(self):
+        tool = _make_tool(
+            name="submitSearch",
+            method="POST",
+            path="/search",
+            params=[
+                ToolParam(name="ids", type="array"),
+                ToolParam(name="filter", type="object"),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "request_body": {
+                "content_type": "application/x-www-form-urlencoded",
+                "fields": [
+                    {
+                        "field_name": "ids",
+                        "json_path": "$.ids",
+                        "encoding_style": "form",
+                        "encoding_explode": False,
+                    },
+                    {
+                        "field_name": "filter",
+                        "json_path": "$.filter",
+                        "encoding_content_type": "application/json",
+                    },
+                ],
+            }
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(
+            tool,
+            {"ids": ["A", "B"], "filter": {"status": "SALE", "siteNo": 10}},
+        )
+
+        assert req.headers["Content-type"] == "application/x-www-form-urlencoded"
+        parsed = parse_qs(req.data.decode("utf-8"))
+        assert parsed["ids"] == ["A,B"]
+        assert json.loads(parsed["filter"][0]) == {"status": "SALE", "siteNo": 10}
+
     def test_ingested_multipart_request_body_uses_candidate_schema(self):
         spec = {
             "openapi": "3.0.0",
@@ -781,6 +821,80 @@ class TestBuildRequest:
         assert req.headers["Content-type"].startswith("multipart/form-data; boundary=")
         assert 'name="file"; filename="file"' in body
         assert "abc" in body
+
+    def test_multipart_request_body_uses_encoding_and_groups_nested_leaf_arguments(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Asset API", "version": "1.0.0"},
+            "paths": {
+                "/assets": {
+                    "post": {
+                        "operationId": "uploadAsset",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "multipart/form-data": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["file", "metadata"],
+                                        "properties": {
+                                            "file": {"type": "string", "format": "binary"},
+                                            "metadata": {
+                                                "type": "object",
+                                                "required": ["title"],
+                                                "properties": {
+                                                    "title": {"type": "string"},
+                                                    "category": {"type": "string"},
+                                                },
+                                            },
+                                        },
+                                    },
+                                    "encoding": {
+                                        "file": {"contentType": "image/png"},
+                                        "metadata": {
+                                            "contentType": "application/json",
+                                            "headers": {
+                                                "X-Part-Kind": {
+                                                    "schema": {
+                                                        "type": "string",
+                                                        "default": "metadata",
+                                                    }
+                                                }
+                                            },
+                                        },
+                                    },
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(
+            tools[0],
+            {"file": b"PNGDATA", "title": "대표 이미지", "category": "banner"},
+        )
+        req = executor.build_request(
+            tools[0],
+            {"file": b"PNGDATA", "title": "대표 이미지", "category": "banner"},
+        )
+        body = req.data.decode("utf-8", errors="replace")
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_required"] == []
+        assert req.headers["Content-type"].startswith("multipart/form-data; boundary=")
+        assert 'name="file"; filename="file"' in body
+        assert "Content-Type: image/png" in body
+        assert 'name="metadata"' in body
+        assert 'name="title"' not in body
+        assert 'name="category"' not in body
+        assert "Content-Type: application/json" in body
+        assert "X-Part-Kind: metadata" in body
+        assert '{"title":"대표 이미지","category":"banner"}' in body
 
     def test_form_candidate_is_selected_when_arguments_match_that_schema(self):
         spec = {
