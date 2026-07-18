@@ -67,7 +67,7 @@ metadata["response_schema"] = {
 | 키 | 의미 |
 |---|---|
 | `parameters` | path/query/header/cookie parameter, `style`, `explode`, `allowReserved`, default/example/constraint |
-| `request_body` | 선택된 content type, 전체 content type 후보, schema, top-level field, leaf field, body examples |
+| `request_body` | 선택된 content type, 전체 content type 후보, 후보별 field, schema, top-level field, leaf field, body examples |
 | `response` | 선택된 2xx/default response의 status, content type, schema, description, leaf field |
 | `responses` | 모든 response status의 compact catalog: success flag, content types, examples, field count |
 | `error_responses` | non-2xx response만 모은 실패 처리용 catalog |
@@ -75,6 +75,9 @@ metadata["response_schema"] = {
 
 `HttpExecutor`는 이 metadata를 사용해 query/path/header/cookie parameter의
 OpenAPI serialization 규칙(`style`, `explode`, `allowReserved`)을 반영한다.
+request body는 `application/json`, `application/x-www-form-urlencoded`,
+`multipart/form-data`를 렌더링하며, binary/file-like 인자가 있고 multipart
+후보가 선언되어 있으면 multipart를 선택한다.
 
 `metadata["api_contract"]`는 graph/search/plan용 raw produces/consumes leaf를 보존한다.
 plain ingest 단계에서는 이 raw field들을 top-level `metadata.produces` /

@@ -366,6 +366,142 @@ class TestBuildRequest:
         assert req.headers["Content-type"] == "application/x-www-form-urlencoded"
         assert req.data.decode("utf-8") == "keyword=%EC%83%81%ED%92%88+%EA%B2%80%EC%83%89&page=2"
 
+    def test_ingested_multipart_request_body_uses_candidate_schema(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Asset API", "version": "1.0.0"},
+            "paths": {
+                "/assets": {
+                    "post": {
+                        "operationId": "uploadAsset",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {},
+                                "multipart/form-data": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["file"],
+                                        "properties": {
+                                            "file": {
+                                                "type": "string",
+                                                "format": "binary",
+                                                "description": "Asset file",
+                                            },
+                                            "title": {"type": "string"},
+                                        },
+                                    }
+                                },
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(
+            tool,
+            {"file": ("asset.png", b"PNGDATA", "image/png"), "title": "대표 이미지"},
+        )
+        body = req.data.decode("utf-8", errors="replace")
+
+        assert {param.name for param in tool.parameters} >= {"file", "title"}
+        assert tool.metadata["request_content_type"] == "multipart/form-data"
+        assert req.headers["Content-type"].startswith("multipart/form-data; boundary=")
+        assert 'name="file"; filename="asset.png"' in body
+        assert "Content-Type: image/png" in body
+        assert "PNGDATA" in body
+        assert 'name="title"' in body
+        assert "대표 이미지" in body
+
+    def test_multipart_candidate_is_selected_for_binary_argument(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Asset API", "version": "1.0.0"},
+            "paths": {
+                "/assets": {
+                    "post": {
+                        "operationId": "createAsset",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"title": {"type": "string"}},
+                                    }
+                                },
+                                "multipart/form-data": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "title": {"type": "string"},
+                                            "file": {"type": "string", "format": "binary"},
+                                        },
+                                    }
+                                },
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(tools[0], {"title": "banner", "file": b"abc"})
+        body = req.data.decode("utf-8", errors="replace")
+
+        assert tools[0].metadata["request_content_type"] == "application/json"
+        assert req.headers["Content-type"].startswith("multipart/form-data; boundary=")
+        assert 'name="file"; filename="file"' in body
+        assert "abc" in body
+
+    def test_form_candidate_is_selected_when_arguments_match_that_schema(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Search API", "version": "1.0.0"},
+            "paths": {
+                "/search": {
+                    "post": {
+                        "operationId": "submitSearch",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"payload": {"type": "object"}},
+                                    }
+                                },
+                                "application/x-www-form-urlencoded": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "keyword": {"type": "string"},
+                                            "page": {"type": "integer"},
+                                        },
+                                    }
+                                },
+                            },
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(tools[0], {"keyword": "상품", "page": 1})
+
+        assert tools[0].metadata["request_content_type"] == "application/json"
+        assert req.headers["Content-type"] == "application/x-www-form-urlencoded"
+        assert req.data.decode("utf-8") == "keyword=%EC%83%81%ED%92%88&page=1"
+
     def test_missing_path_parameter_raises(self):
         tool = _make_tool(path="/users/{userId}/orders/{orderId}")
         executor = HttpExecutor("https://api.example.com")

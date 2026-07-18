@@ -190,8 +190,10 @@ result = tg.execute(
 ```
 
 OpenAPI ingest keeps execution metadata such as parameter locations, content
-types, examples, security schemes, response catalogs, and error responses under
-`tool.metadata["openapi"]`; see [docs/api-reference.md](docs/api-reference.md#execution).
+types, candidate request-body fields, examples, security schemes, response
+catalogs, and error responses under `tool.metadata["openapi"]`. The HTTP
+executor uses those facts for parameter serialization and JSON/form/multipart
+request bodies; see [docs/api-reference.md](docs/api-reference.md#execution).
 
 ### Workflow planning
 

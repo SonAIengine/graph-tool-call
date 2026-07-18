@@ -277,6 +277,8 @@ class TestIngestOpenAPI30:
         ]
         assert body_content_types[0]["selected"] is True
         assert body_content_types[0]["examples"][0]["value"]["status"] == "paid"
+        assert any(row["field_name"] == "city" for row in body_content_types[0]["fields"])
+        assert body_content_types[1]["top_level_fields"][0]["field_name"] == "status"
         city = next(row for row in openapi["request_body"]["fields"] if row["field_name"] == "city")
         assert city["min_length"] == 2
         assert city["pattern"] == "^[A-Za-z ]+$"

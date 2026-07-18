@@ -17,6 +17,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from typing import Any
 
 from graph_tool_call.core.tool import ToolSchema
@@ -61,7 +62,6 @@ class HttpExecutor:
         api_metadata = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
         location_by_param = _location_by_param(api_metadata)
         parameter_metadata = _parameter_metadata_by_name(api_metadata)
-        body_field_paths = _body_field_paths(api_metadata)
 
         path_params: dict[str, Any] = {}
         query_params: dict[str, Any] = {}
@@ -125,11 +125,16 @@ class HttpExecutor:
 
         data: bytes | None = None
         if body_params and method in ("POST", "PUT", "PATCH"):
-            content_type = _request_content_type(api_metadata, metadata)
-            headers["Content-Type"] = content_type
+            content_type = _request_content_type(api_metadata, metadata, body_params)
+            body_field_paths = _body_field_paths(api_metadata, content_type=content_type)
             if _is_form_content_type(content_type):
-                data = urllib.parse.urlencode(body_params, doseq=True).encode("utf-8")
+                headers["Content-Type"] = content_type
+                data = _encode_urlencoded_body(body_params)
+            elif _is_multipart_content_type(content_type):
+                content_type, data = _encode_multipart_body(content_type, body_params)
+                headers["Content-Type"] = content_type
             else:
+                headers["Content-Type"] = content_type
                 body = _build_json_body(body_params, body_field_paths)
                 data = json.dumps(body, ensure_ascii=False).encode("utf-8")
 
@@ -190,8 +195,13 @@ class HttpExecutor:
             content_type = req.headers.get("Content-type") or req.headers.get("Content-Type") or ""
             if _is_form_content_type(content_type):
                 result["body"] = req.data.decode("utf-8")
+            elif _is_multipart_content_type(content_type):
+                result["body"] = req.data.decode("utf-8", errors="replace")
             else:
-                result["body"] = json.loads(req.data.decode("utf-8"))
+                try:
+                    result["body"] = json.loads(req.data.decode("utf-8"))
+                except json.JSONDecodeError:
+                    result["body"] = req.data.decode("utf-8", errors="replace")
         return result
 
 
@@ -207,8 +217,7 @@ def _iter_known_argument_names(tool: ToolSchema, api_metadata: dict[str, Any]) -
     for param in api_metadata.get("parameters") or []:
         if isinstance(param, dict):
             add(str(param.get("name") or ""))
-    request_body = api_metadata.get("request_body") or {}
-    for row in (request_body.get("top_level_fields") or []) + (request_body.get("fields") or []):
+    for row in _body_rows(api_metadata):
         if isinstance(row, dict):
             add(str(row.get("field_name") or ""))
     return names
@@ -223,8 +232,7 @@ def _location_by_param(api_metadata: dict[str, Any]) -> dict[str, str]:
         loc = str(param.get("in") or "")
         if name and loc:
             locations[name] = loc
-    request_body = api_metadata.get("request_body") or {}
-    for row in (request_body.get("top_level_fields") or []) + (request_body.get("fields") or []):
+    for row in _body_rows(api_metadata):
         if isinstance(row, dict) and row.get("field_name"):
             locations.setdefault(str(row["field_name"]), "body")
     return locations
@@ -241,10 +249,13 @@ def _parameter_metadata_by_name(api_metadata: dict[str, Any]) -> dict[str, dict[
     return metadata
 
 
-def _body_field_paths(api_metadata: dict[str, Any]) -> dict[str, str]:
-    request_body = api_metadata.get("request_body") or {}
+def _body_field_paths(
+    api_metadata: dict[str, Any],
+    *,
+    content_type: str | None = None,
+) -> dict[str, str]:
     paths: dict[str, str] = {}
-    for row in (request_body.get("top_level_fields") or []) + (request_body.get("fields") or []):
+    for row in _body_rows(api_metadata, content_type=content_type, include_content_type_rows=False):
         if not isinstance(row, dict):
             continue
         name = str(row.get("field_name") or "")
@@ -254,18 +265,148 @@ def _body_field_paths(api_metadata: dict[str, Any]) -> dict[str, str]:
     return paths
 
 
-def _request_content_type(api_metadata: dict[str, Any], metadata: dict[str, Any]) -> str:
+def _body_rows(
+    api_metadata: dict[str, Any],
+    *,
+    content_type: str | None = None,
+    include_content_type_rows: bool = True,
+) -> list[dict[str, Any]]:
     request_body = api_metadata.get("request_body") or {}
-    content_type = (
-        request_body.get("content_type")
-        or metadata.get("request_content_type")
-        or "application/json"
+    if not isinstance(request_body, dict):
+        return []
+    rows: list[dict[str, Any]] = []
+
+    def extend(source: dict[str, Any]) -> None:
+        for row in (source.get("top_level_fields") or []) + (source.get("fields") or []):
+            if isinstance(row, dict):
+                rows.append(row)
+
+    if content_type:
+        for candidate in request_body.get("content_types") or []:
+            if not isinstance(candidate, dict):
+                continue
+            if _same_content_type(str(candidate.get("content_type") or ""), content_type):
+                extend(candidate)
+                break
+
+    extend(request_body)
+
+    if include_content_type_rows:
+        for candidate in request_body.get("content_types") or []:
+            if isinstance(candidate, dict):
+                extend(candidate)
+
+    return rows
+
+
+def _request_content_type(
+    api_metadata: dict[str, Any],
+    metadata: dict[str, Any],
+    body_params: dict[str, Any] | None = None,
+) -> str:
+    request_body = api_metadata.get("request_body") or {}
+    declared = _request_content_type_candidates(request_body)
+    selected = request_body.get("content_type") or metadata.get("request_content_type")
+    if selected:
+        selected = str(selected)
+    if selected and selected not in declared:
+        declared.insert(0, selected)
+
+    if body_params and _body_has_file_value(body_params):
+        multipart = next((ct for ct in declared if _is_multipart_content_type(ct)), None)
+        if multipart:
+            return multipart
+
+    best = (
+        _best_matching_content_type(request_body, body_params) if body_params and declared else None
     )
+    if selected and selected != "*/*":
+        if best and not _same_content_type(best, selected):
+            selected_score = _content_type_match_score(request_body, selected, body_params or {})
+            best_score = _content_type_match_score(request_body, best, body_params or {})
+            if best_score > selected_score:
+                return best
+        return selected
+
+    if best:
+        return best
+
+    json_candidate = next((ct for ct in declared if _is_json_content_type(ct)), None)
+    if json_candidate:
+        return json_candidate
+
+    content_type = declared[0] if declared else selected or "application/json"
     return "application/json" if content_type == "*/*" else str(content_type)
+
+
+def _request_content_type_candidates(request_body: Any) -> list[str]:
+    if not isinstance(request_body, dict):
+        return []
+    candidates: list[str] = []
+    for row in request_body.get("content_types") or []:
+        if not isinstance(row, dict):
+            continue
+        content_type = str(row.get("content_type") or "")
+        if content_type and content_type not in candidates:
+            candidates.append(content_type)
+    return candidates
+
+
+def _best_matching_content_type(
+    request_body: dict[str, Any],
+    body_params: dict[str, Any],
+) -> str | None:
+    best: tuple[int, int, str] | None = None
+    for index, row in enumerate(request_body.get("content_types") or []):
+        if not isinstance(row, dict):
+            continue
+        content_type = str(row.get("content_type") or "")
+        if not content_type or content_type == "*/*":
+            continue
+        matches = _content_type_match_score(request_body, content_type, body_params)
+        if matches == 0:
+            continue
+        candidate = (matches, -index, content_type)
+        if best is None or candidate > best:
+            best = candidate
+    return best[2] if best else None
+
+
+def _content_type_match_score(
+    request_body: dict[str, Any],
+    content_type: str,
+    body_params: dict[str, Any],
+) -> int:
+    keys = {str(key) for key, value in body_params.items() if value is not None}
+    for row in request_body.get("content_types") or []:
+        if not isinstance(row, dict):
+            continue
+        if not _same_content_type(str(row.get("content_type") or ""), content_type):
+            continue
+        fields = {
+            str(field.get("field_name") or "")
+            for field in (row.get("top_level_fields") or []) + (row.get("fields") or [])
+            if isinstance(field, dict)
+        }
+        return len(keys & fields)
+    return 0
 
 
 def _is_form_content_type(content_type: str) -> bool:
     return content_type.split(";", 1)[0].strip().lower() == "application/x-www-form-urlencoded"
+
+
+def _is_multipart_content_type(content_type: str) -> bool:
+    return content_type.split(";", 1)[0].strip().lower() == "multipart/form-data"
+
+
+def _is_json_content_type(content_type: str) -> bool:
+    media = content_type.split(";", 1)[0].strip().lower()
+    return media == "application/json" or media.endswith("+json") or media == "*/*"
+
+
+def _same_content_type(left: str, right: str) -> bool:
+    return left.split(";", 1)[0].strip().lower() == right.split(";", 1)[0].strip().lower()
 
 
 def _serialize_path_parameter(name: str, value: Any, parameter: dict[str, Any]) -> str:
@@ -488,6 +629,159 @@ def _explode(parameter: dict[str, Any], style: str) -> bool:
     if "explode" in parameter:
         return bool(parameter["explode"])
     return style == "form"
+
+
+def _encode_urlencoded_body(body_params: dict[str, Any]) -> bytes:
+    pairs: list[tuple[str, str]] = []
+    for name, value in body_params.items():
+        if value is None:
+            continue
+        if _is_sequence(value):
+            pairs.extend((str(name), _primitive_text(item)) for item in value if item is not None)
+        elif isinstance(value, dict):
+            pairs.append((str(name), json.dumps(value, ensure_ascii=False)))
+        else:
+            pairs.append((str(name), _primitive_text(value)))
+    return urllib.parse.urlencode(pairs, doseq=True).encode("utf-8")
+
+
+def _encode_multipart_body(
+    content_type: str,
+    body_params: dict[str, Any],
+) -> tuple[str, bytes]:
+    boundary = _multipart_boundary(content_type) or f"----graph-tool-call-{uuid.uuid4().hex}"
+    header_content_type = content_type
+    if "boundary=" not in content_type.lower():
+        header_content_type = f"{content_type}; boundary={boundary}"
+    body = _multipart_bytes(body_params, boundary=boundary)
+    return header_content_type, body
+
+
+def _multipart_bytes(body_params: dict[str, Any], *, boundary: str) -> bytes:
+    chunks: list[bytes] = []
+    boundary_bytes = boundary.encode("ascii")
+    for name, value in body_params.items():
+        if value is None:
+            continue
+        for item in _iter_multipart_values(value):
+            chunks.append(b"--" + boundary_bytes + b"\r\n")
+            file_part = _file_part(item, field_name=str(name))
+            if file_part:
+                filename, part_content_type, payload = file_part
+                chunks.append(
+                    (
+                        "Content-Disposition: form-data; "
+                        f'name="{_quote_multipart_header_value(str(name))}"; '
+                        f'filename="{_quote_multipart_header_value(filename)}"\r\n'
+                    ).encode()
+                )
+                chunks.append(f"Content-Type: {part_content_type}\r\n\r\n".encode())
+                chunks.append(payload)
+                chunks.append(b"\r\n")
+                continue
+
+            chunks.append(
+                (
+                    "Content-Disposition: form-data; "
+                    f'name="{_quote_multipart_header_value(str(name))}"\r\n\r\n'
+                ).encode()
+            )
+            chunks.append(_multipart_text(item).encode("utf-8"))
+            chunks.append(b"\r\n")
+    chunks.append(b"--" + boundary_bytes + b"--\r\n")
+    return b"".join(chunks)
+
+
+def _iter_multipart_values(value: Any) -> list[Any]:
+    if _is_file_part_value(value):
+        return [value]
+    if _is_sequence(value):
+        return [item for item in value if item is not None]
+    return [value]
+
+
+def _body_has_file_value(body_params: dict[str, Any]) -> bool:
+    for value in body_params.values():
+        if _is_file_part_value(value):
+            return True
+        if _is_sequence(value) and any(_is_file_part_value(item) for item in value):
+            return True
+    return False
+
+
+def _is_file_part_value(value: Any) -> bool:
+    if isinstance(value, bytes | bytearray):
+        return True
+    if isinstance(value, tuple) and len(value) in (2, 3) and isinstance(value[0], str):
+        return True
+    if isinstance(value, dict):
+        has_payload = any(key in value for key in ("content", "data", "bytes"))
+        has_file_metadata = any(key in value for key in ("filename", "content_type", "contentType"))
+        return has_payload and has_file_metadata
+    return hasattr(value, "read")
+
+
+def _file_part(value: Any, *, field_name: str) -> tuple[str, str, bytes] | None:
+    if isinstance(value, bytes | bytearray):
+        return field_name, "application/octet-stream", bytes(value)
+
+    if isinstance(value, tuple) and len(value) in (2, 3) and isinstance(value[0], str):
+        filename = value[0]
+        payload = _file_payload(value[1])
+        content_type = str(value[2]) if len(value) == 3 and value[2] else "application/octet-stream"
+        return filename, content_type, payload
+
+    if isinstance(value, dict):
+        payload_source = None
+        for key in ("content", "data", "bytes"):
+            if key in value:
+                payload_source = value[key]
+                break
+        if payload_source is not None and (
+            "filename" in value or "content_type" in value or "contentType" in value
+        ):
+            filename = str(value.get("filename") or value.get("name") or field_name)
+            content_type = str(
+                value.get("content_type") or value.get("contentType") or "application/octet-stream"
+            )
+            return filename, content_type, _file_payload(payload_source)
+
+    if hasattr(value, "read"):
+        raw = value.read()
+        filename = str(getattr(value, "name", field_name) or field_name).rsplit("/", 1)[-1]
+        return filename, "application/octet-stream", _file_payload(raw)
+
+    return None
+
+
+def _file_payload(value: Any) -> bytes:
+    if hasattr(value, "read"):
+        return _file_payload(value.read())
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    return str(value).encode("utf-8")
+
+
+def _multipart_text(value: Any) -> str:
+    if isinstance(value, dict | list):
+        return json.dumps(value, ensure_ascii=False)
+    return _primitive_text(value)
+
+
+def _multipart_boundary(content_type: str) -> str | None:
+    for segment in content_type.split(";")[1:]:
+        name, separator, value = segment.strip().partition("=")
+        if separator and name.lower() == "boundary":
+            return value.strip().strip('"') or None
+    return None
+
+
+def _quote_multipart_header_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "").replace("\n", "")
 
 
 def _build_json_body(

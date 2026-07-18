@@ -96,7 +96,8 @@ tool's metadata:
   including serialization hints such as `style`, `explode`, `allowReserved`,
   schema defaults, examples, and validation constraints
 - `metadata.openapi.request_body`: selected content type, all declared content
-  type candidates, schema, top-level fields, leaf fields, and body examples
+  type candidates, candidate-level fields, schema, top-level fields, leaf
+  fields, and body examples
 - `metadata.openapi.response`: selected success status, content type, schema,
   description, and leaf fields
 - `metadata.openapi.responses`: compact catalog of every declared response,
@@ -110,7 +111,10 @@ tool's metadata:
 so POST operations with query/header parameters are rendered correctly. It also
 honors common OpenAPI parameter serialization rules such as `form`,
 `spaceDelimited`, `pipeDelimited`, `deepObject`, `simple`, `label`, `matrix`,
-`explode`, and `allowReserved`.
+`explode`, and `allowReserved`. For request bodies it preserves declared media
+type candidates and can render `application/json`,
+`application/x-www-form-urlencoded`, and `multipart/form-data`; binary/file-like
+arguments select the multipart candidate when one is declared.
 
 For graph/search use, keep raw contract and promoted signal separate. Large
 Swagger specs often repeat wrapper fields such as `status`, `data`, and `list`,

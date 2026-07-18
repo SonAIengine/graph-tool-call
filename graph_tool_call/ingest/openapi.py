@@ -269,6 +269,13 @@ def _content_type_rows(
         if schema:
             row["schema_type"] = _schema_type(schema)
             row["field_count"] = len(extract_leaves(schema, base_path="$"))
+            if location == "request_body":
+                top_level_fields = _request_body_top_level_rows(schema)
+                fields = _schema_field_rows(schema, location="body")
+                if top_level_fields:
+                    row["top_level_fields"] = top_level_fields
+                if fields:
+                    row["fields"] = fields
         encoding = media.get("encoding")
         if isinstance(encoding, dict) and encoding:
             row["encoding"] = _encoding_rows(encoding)
@@ -343,18 +350,42 @@ def _pick_content_schema_with_type(content: dict[str, Any]) -> tuple[dict[str, A
     """Return ``(schema, media_type)`` using the same preference as runtime ingest."""
     if not isinstance(content, dict) or not content:
         return {}, None
-    if "application/json" in content:
+    if "application/json" in content and (content["application/json"] or {}).get("schema"):
         return (content["application/json"] or {}).get("schema") or {}, "application/json"
     for ct, val in content.items():
-        if isinstance(ct, str) and ct.endswith("+json"):
+        if isinstance(ct, str) and ct.endswith("+json") and (val or {}).get("schema"):
             return (val or {}).get("schema") or {}, ct
-    if "*/*" in content:
+    if "*/*" in content and (content["*/*"] or {}).get("schema"):
         return (content["*/*"] or {}).get("schema") or {}, "*/*"
     # Last resort: the first content type with a schema.
     for ct, val in content.items():
         if isinstance(val, dict) and val.get("schema"):
             return val["schema"], str(ct)
+    if "application/json" in content:
+        return {}, "application/json"
     return {}, None
+
+
+def _iter_request_body_schemas(content: dict[str, Any]) -> list[tuple[str | None, dict[str, Any]]]:
+    """Return request body schemas in execution preference order, without duplicates."""
+    if not isinstance(content, dict) or not content:
+        return []
+    selected_schema, selected_content_type = _pick_content_schema_with_type(content)
+    rows: list[tuple[str | None, dict[str, Any]]] = []
+    seen: set[str] = set()
+    if selected_schema:
+        rows.append((selected_content_type, selected_schema))
+        if selected_content_type:
+            seen.add(selected_content_type)
+    for content_type, media in content.items():
+        if not isinstance(media, dict):
+            continue
+        schema = media.get("schema") if isinstance(media.get("schema"), dict) else {}
+        if not schema or str(content_type) in seen:
+            continue
+        rows.append((str(content_type), schema))
+        seen.add(str(content_type))
+    return rows
 
 
 def _merged_parameters(
@@ -601,26 +632,30 @@ def _extract_params_openapi3(
     # (Spring/SpringDoc commonly emits */* — see _pick_content_schema notes).
     request_body = operation.get("requestBody", {})
     content = request_body.get("content", {})
-    body_schema = _pick_content_schema(content)
-    body_required = set(body_schema.get("required", []))
-    for prop_name, prop_schema in body_schema.get("properties", {}).items():
-        is_required = prop_name in body_required
-        if required_only and not is_required:
-            continue
-        desc = prop_schema.get("description") or ""
-        # nested object/array는 한 단계 더 펼치기
-        if _schema_type(prop_schema) in ("object", "array"):
-            nested = _summarize_object_schema(prop_schema)
-            if nested:
-                desc = (desc + "\nFields:\n" + nested).strip() if desc else f"Fields:\n{nested}"
-        params.append(
-            ToolParameter(
-                name=prop_name,
-                type=_schema_type(prop_schema),
-                description=desc,
-                required=is_required,
+    seen_body_props: set[str] = set()
+    for _content_type, body_schema in _iter_request_body_schemas(content):
+        body_required = set(body_schema.get("required", []))
+        for prop_name, prop_schema in body_schema.get("properties", {}).items():
+            if prop_name in seen_body_props:
+                continue
+            seen_body_props.add(prop_name)
+            is_required = prop_name in body_required
+            if required_only and not is_required:
+                continue
+            desc = prop_schema.get("description") or ""
+            # nested object/array는 한 단계 더 펼치기
+            if _schema_type(prop_schema) in ("object", "array"):
+                nested = _summarize_object_schema(prop_schema)
+                if nested:
+                    desc = (desc + "\nFields:\n" + nested).strip() if desc else f"Fields:\n{nested}"
+            params.append(
+                ToolParameter(
+                    name=prop_name,
+                    type=_schema_type(prop_schema),
+                    description=desc,
+                    required=is_required,
+                )
             )
-        )
 
     return params
 
@@ -1030,6 +1065,37 @@ def _input_locations(
     return locations
 
 
+def _merge_body_field_rows(
+    primary_rows: list[dict[str, Any]],
+    content_type_rows: list[dict[str, Any]],
+    *,
+    field_key: str,
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(row: dict[str, Any]) -> None:
+        name = str(row.get("field_name") or "")
+        json_path = str(row.get("json_path") or "")
+        if not name:
+            return
+        key = (name, json_path)
+        if key in seen:
+            return
+        seen.add(key)
+        merged.append(row)
+
+    for row in primary_rows:
+        add(row)
+    for content_row in content_type_rows:
+        if not isinstance(content_row, dict):
+            continue
+        for row in content_row.get(field_key) or []:
+            if isinstance(row, dict):
+                add(row)
+    return merged
+
+
 def _api_contract_rows(
     *,
     parameter_rows: list[dict[str, Any]],
@@ -1273,13 +1339,23 @@ def _operation_to_tool(
     )
     body_top_level_rows = _request_body_top_level_rows(request_body_schema)
     body_leaf_rows = _schema_field_rows(request_body_schema, location="body")
+    all_body_top_level_rows = _merge_body_field_rows(
+        body_top_level_rows,
+        request_body_content_type_rows,
+        field_key="top_level_fields",
+    )
+    all_body_leaf_rows = _merge_body_field_rows(
+        body_leaf_rows,
+        request_body_content_type_rows,
+        field_key="fields",
+    )
     response_leaf_rows = _schema_field_rows(response_schema, location="response")
     produces, consumes = _api_contract_rows(
         parameter_rows=parameter_rows,
-        body_leaf_rows=body_leaf_rows,
+        body_leaf_rows=all_body_leaf_rows,
         response_leaf_rows=response_leaf_rows,
     )
-    input_locations = _input_locations(parameter_rows, body_top_level_rows, body_leaf_rows)
+    input_locations = _input_locations(parameter_rows, all_body_top_level_rows, all_body_leaf_rows)
     selected_response = next(
         (row for row in response_rows if row.get("status") == response_status),
         {},
@@ -1314,6 +1390,8 @@ def _operation_to_tool(
                 "schema": request_body_schema,
                 "top_level_fields": body_top_level_rows,
                 "fields": body_leaf_rows,
+                "all_top_level_fields": all_body_top_level_rows,
+                "all_fields": all_body_leaf_rows,
             },
             "response": {
                 "status": response_status,
