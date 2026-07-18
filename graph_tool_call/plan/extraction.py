@@ -13,9 +13,10 @@ Two jobs, one shared BFS core:
     synthesis as entities.
 
 Both are deterministic and stdlib-only. Matching prefers the declared
-``json_path`` (precise), then falls back to a breadth-first search keyed on
-``field_name`` — exact key first, then the loose separator/case-folded form
-shared with the synthesizer (:func:`_normalize_field_name`).
+``json_path`` (precise), then response shape aliases derived during ingest,
+then falls back to a breadth-first search keyed on ``field_name`` — exact key
+first, then the loose separator/case-folded form shared with the synthesizer
+(:func:`_normalize_field_name`).
 """
 
 from __future__ import annotations
@@ -146,11 +147,11 @@ def extract_produced_entities(tool_meta: dict[str, Any], output: Any) -> dict[st
     """Pull ``{semantic_tag: value, field_name: value}`` from *output*.
 
     Iterates the tool's ``produces`` schema. For each entry it first tries the
-    declared ``json_path`` (precise), then falls back to a field-name BFS.
-    Every located value is registered under **both** its ``semantic_tag`` and
-    ``field_name`` so the repairer's re-synthesis — which matches entities by
-    semantic first, field second — resolves either way. First value wins per
-    key (no clobber).
+    declared ``json_path`` (precise), then any additive ``value_path_aliases``,
+    then falls back to a field-name BFS. Every located value is registered
+    under **both** its ``semantic_tag`` and ``field_name`` so the repairer's
+    re-synthesis — which matches entities by semantic first, field second —
+    resolves either way. First value wins per key (no clobber).
     """
     produces = (tool_meta or {}).get("produces") or []
     entities: dict[str, Any] = {}
@@ -159,9 +160,12 @@ def extract_produced_entities(tool_meta: dict[str, Any], output: Any) -> dict[st
             continue
         field_name = p.get("field_name") or ""
         semantic = p.get("semantic_tag") or ""
-        json_path = p.get("json_path") or ""
 
-        value = _resolve_json_path(output, json_path)
+        value = None
+        for json_path in _candidate_json_paths(p):
+            value = _resolve_json_path(output, json_path)
+            if value is not None:
+                break
         if value is None and field_name:
             cands = find_value_paths(
                 output,
@@ -184,6 +188,22 @@ def extract_produced_entities(tool_meta: dict[str, Any], output: Any) -> dict[st
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+
+def _candidate_json_paths(produce: dict[str, Any]) -> list[str]:
+    paths: list[str] = []
+
+    def add(raw: Any) -> None:
+        path = str(raw or "")
+        if path and path not in paths:
+            paths.append(path)
+
+    add(produce.get("json_path"))
+    aliases = produce.get("value_path_aliases") or []
+    if isinstance(aliases, list):
+        for alias in aliases:
+            add(alias)
+    return paths
 
 
 def _resolve_json_path(output: Any, raw: str) -> Any:

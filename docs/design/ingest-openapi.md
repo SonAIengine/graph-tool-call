@@ -68,7 +68,7 @@ metadata["response_schema"] = {
 |---|---|
 | `parameters` | path/query/header/cookie parameter, `style`, `explode`, `allowReserved`, default/example/constraint |
 | `request_body` | 선택된 content type, 전체 content type 후보, 후보별 field, schema, top-level field, leaf field, body examples |
-| `response` | 선택된 2xx/default response의 status, content type, schema, description, leaf field |
+| `response` | 선택된 2xx/default response의 status, content type, schema, description, leaf field, envelope metadata |
 | `responses` | 모든 response status의 compact catalog: success flag, content types, examples, field count |
 | `error_responses` | non-2xx response만 모은 실패 처리용 catalog |
 | `security` | OpenAPI security requirements와 static scheme 정보. runtime token/cookie 값은 보존하지 않음 |
@@ -93,6 +93,16 @@ field를 union으로 추출한다. branch 안에서만 required인 field는
 diagnostics에서 variant 선택 근거를 잃지 않는다.
 이렇게 해야 결제수단/배송방식처럼 대안 body schema를 가진 API에서 tool graph와
 request validation이 서로 다른 branch field를 동시에 요구하지 않는다.
+
+응답 schema가 `code/message/data`, `status/result`, `payload` 같은 wrapper를
+가진 경우 `metadata.openapi.response.envelope`에 `wrapper_path`,
+`collection_path`, `item_path`, `metadata_fields`를 기록한다. 각 response field와
+`api_contract.produces` row에는 `response_envelope_path`,
+`response_collection_path`, `response_item_path`, `value_path_aliases`를 additive로
+붙인다. canonical `json_path`는 OpenAPI schema 기준으로 유지하고,
+`value_path_aliases`는 runtime adapter가 raw body, `{"body": ...}` wrapper,
+혹은 envelope-unwrapped item/list를 반환할 때 produced value를 회수하기 위한
+fallback 경로로만 사용한다.
 
 `HttpExecutor`는 이 metadata를 사용해 query/path/header/cookie parameter의
 OpenAPI serialization 규칙(`style`, `explode`, `allowReserved`)을 반영한다.

@@ -206,6 +206,9 @@ validation do not silently drop every branch after the first one.
 Discriminator mappings and JSON Schema `const` values are preserved as branch
 selection evidence; if a request chooses a discriminator value, preflight
 diagnostics can report the missing fields for that selected branch only.
+Common response envelopes such as `code/message/data` also record wrapper,
+collection, and value-path aliases, so XGEN-style adapters can recover produced
+values from either raw OpenAPI bodies or normalized `body` wrappers.
 
 ### Workflow planning
 

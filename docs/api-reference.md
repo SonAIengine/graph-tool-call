@@ -100,7 +100,7 @@ tool's metadata:
   type candidates, candidate-level fields, schema, top-level fields, leaf
   fields, and body examples
 - `metadata.openapi.response`: selected success status, content type, schema,
-  description, and leaf fields
+  description, leaf fields, and optional response envelope metadata
 - `metadata.openapi.responses`: compact catalog of every declared response,
   including status, success flag, content types, examples, and field count
 - `metadata.openapi.error_responses`: non-2xx response catalog for failure UI/logs
@@ -123,6 +123,10 @@ OpenAPI field direction is enforced before graph/search promotion:
   `discriminator_property`, `discriminator_value`, `discriminator_values`,
   `schema_ref`, and `const`; when a discriminator field is omitted from branch
   schemas, a synthetic top-level body field is still exposed for execution
+- common response envelopes such as `code/message/data` are detected as
+  `metadata.openapi.response.envelope`; response fields and `api_contract`
+  produces preserve `response_envelope_path`, `response_collection_path`,
+  `response_item_path`, and `value_path_aliases`
 
 `HttpExecutor` uses this metadata before falling back to method-based heuristics,
 so POST operations with query/header parameters are rendered correctly. It also

@@ -96,6 +96,31 @@ def test_extract_produced_entities_bfs_fallback_when_shape_differs():
     assert ents["aId"] == "X1"
 
 
+def test_extract_produced_entities_tries_value_path_aliases_before_bfs():
+    tool_meta = {
+        "produces": [
+            {
+                "field_name": "goodsNo",
+                "json_path": "$.data.items[*].goodsNo",
+                "semantic_tag": "goods.id",
+                "value_path_aliases": [
+                    "$.body.data.items[*].goodsNo",
+                    "$.items[*].goodsNo",
+                ],
+            },
+        ]
+    }
+    output = {
+        "goodsNo": "WRONG",
+        "body": {"data": {"items": [{"goodsNo": "G1"}]}},
+    }
+
+    ents = extract_produced_entities(tool_meta, output)
+
+    assert ents["goods.id"] == "G1"
+    assert ents["goodsNo"] == "G1"
+
+
 def test_extract_produced_entities_skips_unlocatable():
     tool_meta = {"produces": [{"field_name": "missing", "json_path": "$.nope"}]}
     ents = extract_produced_entities(tool_meta, {"other": 1})

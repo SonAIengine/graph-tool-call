@@ -11,6 +11,10 @@ from typing import Any
 from graph_tool_call.core.tool import MCPAnnotations, ToolParameter, ToolSchema
 from graph_tool_call.ingest.io_contract import FieldLeaf, extract_leaves
 from graph_tool_call.ingest.normalizer import NormalizedSpec, normalize
+from graph_tool_call.ingest.response_shape import (
+    RESPONSE_ENVELOPE_HINT_KEYS,
+    annotate_response_path_aliases,
+)
 from graph_tool_call.net import fetch_url_text
 
 # ---------------------------------------------------------------------------
@@ -168,6 +172,7 @@ _DERIVED_FIELD_HINT_KEYS = (
     "discriminator_property",
     "discriminator_value",
     "discriminator_values",
+    *RESPONSE_ENVELOPE_HINT_KEYS,
 )
 
 
@@ -1628,6 +1633,7 @@ def _operation_to_tool(
         field_key="fields",
     )
     response_leaf_rows = _schema_field_rows(response_schema, location="response")
+    response_envelope = annotate_response_path_aliases(response_schema, response_leaf_rows)
     produces, consumes = _api_contract_rows(
         parameter_rows=parameter_rows,
         body_leaf_rows=all_body_leaf_rows,
@@ -1677,6 +1683,7 @@ def _operation_to_tool(
                 "description": selected_response.get("description", ""),
                 "schema": response_schema,
                 "fields": response_leaf_rows,
+                **({"envelope": response_envelope} if response_envelope else {}),
             },
             "responses": response_rows,
             "error_responses": [row for row in response_rows if not row.get("success")],

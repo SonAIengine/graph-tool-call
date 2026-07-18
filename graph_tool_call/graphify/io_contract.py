@@ -14,6 +14,10 @@ from collections.abc import Callable
 from typing import Any
 
 from graph_tool_call.ingest.io_contract import extract_leaves
+from graph_tool_call.ingest.response_shape import (
+    RESPONSE_ENVELOPE_HINT_KEYS,
+    annotate_response_path_aliases,
+)
 
 FieldPredicate = Callable[[str], bool]
 
@@ -117,6 +121,7 @@ _CONTRACT_HINT_KEYS = (
     "discriminator_property",
     "discriminator_value",
     "discriminator_values",
+    *RESPONSE_ENVELOPE_HINT_KEYS,
 )
 
 
@@ -147,6 +152,7 @@ def build_io_contract(
     """
 
     produces = _build_produces(response_schema)
+    annotate_response_path_aliases(response_schema, produces)
 
     body_required, body_types, body_enums = _request_body_maps(request_body_schema)
     consumes: list[dict[str, Any]] = []

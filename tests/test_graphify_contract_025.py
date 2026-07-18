@@ -88,6 +88,8 @@ def test_build_io_contract_preserves_kind_required_enum_and_semantics():
     by_produce = {p["field_name"]: p for p in produces}
     by_consume = {c["field_name"]: c for c in consumes}
     assert by_produce["goodsNo"]["semantic_tag"] == "product_id"
+    assert by_produce["goodsNo"]["response_collection_path"] == "$.items[*]"
+    assert "$.goodsNo" in by_produce["goodsNo"]["value_path_aliases"]
     assert by_consume["goodsNo"]["required"] is True
     assert by_consume["goodsNo"]["kind"] == "data"
     assert by_consume["goodsNo"]["semantic_tag"] == "product_id"
@@ -226,6 +228,9 @@ def test_promote_api_contract_signals_selects_useful_fields_without_wrapper_nois
                         "field_name": "goodsNo",
                         "json_path": "$.data.items[*].goodsNo",
                         "field_type": "string",
+                        "response_envelope_path": "$.data",
+                        "response_collection_path": "$.data.items[*]",
+                        "value_path_aliases": ["$.body.data.items[*].goodsNo"],
                     },
                     {
                         "field_name": "goodsNm",
@@ -294,6 +299,9 @@ def test_promote_api_contract_signals_selects_useful_fields_without_wrapper_nois
     assert produces["goodsNo"]["semantic_tag"] == "goods_no"
     assert produces["goodsNo"]["semantic_inferred_from"] == "field_name"
     assert produces["goodsNo"]["search_signal"] is False
+    assert produces["goodsNo"]["response_envelope_path"] == "$.data"
+    assert produces["goodsNo"]["response_collection_path"] == "$.data.items[*]"
+    assert produces["goodsNo"]["value_path_aliases"] == ["$.body.data.items[*].goodsNo"]
     assert consumes["goodsNo"]["kind"] == "data"
     assert consumes["goodsNo"]["required"] is True
     assert consumes["goodsNo"]["search_signal"] is False

@@ -302,6 +302,71 @@ class TestIngestOpenAPI30:
             for row in metadata["api_contract"]["consumes"]
         )
 
+    def test_response_envelope_aliases_are_preserved_for_execution(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Commerce API", "version": "1.0.0"},
+            "paths": {
+                "/goods/search": {
+                    "get": {
+                        "operationId": "searchGoods",
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "code": {"type": "string"},
+                                                "message": {"type": "string"},
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "items": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "goodsNo": {"type": "string"},
+                                                                    "goodsNm": {"type": "string"},
+                                                                },
+                                                            },
+                                                        },
+                                                        "totalCount": {"type": "integer"},
+                                                    },
+                                                },
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        metadata = tools[0].metadata
+        response = metadata["openapi"]["response"]
+
+        assert response["envelope"]["wrapper_path"] == "$.data"
+        assert response["envelope"]["collection_path"] == "$.data.items[*]"
+        assert response["envelope"]["metadata_fields"] == ["code", "message"]
+        fields = {row["field_name"]: row for row in response["fields"]}
+        goods_no = fields["goodsNo"]
+        assert goods_no["response_envelope_path"] == "$.data"
+        assert goods_no["response_collection_path"] == "$.data.items[*]"
+        assert "$.body.data.items[*].goodsNo" in goods_no["value_path_aliases"]
+        assert "$.items[*].goodsNo" in goods_no["value_path_aliases"]
+        assert "$.goodsNo" in goods_no["value_path_aliases"]
+
+        produces = {row["field_name"]: row for row in metadata["api_contract"]["produces"]}
+        assert produces["goodsNo"]["response_envelope_path"] == "$.data"
+        assert produces["goodsNo"]["response_collection_path"] == "$.data.items[*]"
+        assert "$.body.data.items[*].goodsNo" in produces["goodsNo"]["value_path_aliases"]
+
     def test_readonly_writeonly_fields_respect_request_response_direction(self) -> None:
         """Direction-only OpenAPI fields should not pollute inverse IO contracts."""
         spec = {
