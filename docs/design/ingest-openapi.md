@@ -91,6 +91,10 @@ root JSON array, primitive body, opaque map/object body처럼 top-level property
 남긴다. executor는 root array body에서 `{"body": [...]}`를 raw JSON으로
 전송하고, 단일 item 실행 편의를 위해 `$[*].field` leaf argument만 주어져도
 `[{"field": value}]` 형태로 조립한다.
+object body 안의 required container field도 leaf argument로 채워질 수 있다.
+예를 들어 `items`가 required array이고 `$.items[*].goodsNo`,
+`$.items[*].quantity` leaf만 들어오면 preflight는 `items`를 누락으로 보지 않고,
+executor는 `{"items": [{"goodsNo": "...", "quantity": 1}]}` 형태로 전송한다.
 
 OpenAPI server URL은 실행 정확도에 직접 영향을 준다. `servers[].variables`가
 있으면 `default` 값을 적용한 URL을 `metadata.base_url`로 사용하고, 원본

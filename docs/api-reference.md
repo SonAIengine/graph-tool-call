@@ -149,6 +149,10 @@ OpenAPI field direction is enforced before graph/search promotion:
   `{"body": [...]}` or, for a single array item, by passing the extracted item
   leaf arguments; the executor emits the array body instead of inventing an
   object wrapper.
+- Nested object/array request fields can also be satisfied by extracted leaf
+  arguments. For example `$.items[*].goodsNo` plus `$.items[*].quantity` is
+  rendered as `{"items": [{"goodsNo": "...", "quantity": 1}]}`, and required
+  container fields are not reported missing when their leaf fields are present.
 - Declared success-response headers are exposed as `api_contract.produces` rows
   with `location=response_header` and `json_path=$.headers.<Name>`, so cursor,
   `Location`, `ETag`, and token-like handoff headers can participate in

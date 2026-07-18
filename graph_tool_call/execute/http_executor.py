@@ -492,6 +492,11 @@ def _missing_required_inputs(
         content_type=selected_content_type,
         include_content_type_rows=False,
     )
+    satisfied_body_containers = _body_container_fields_satisfied_by_leaf_args(
+        body_rows,
+        arguments,
+    )
+    satisfied_body_container_names = {name for name, _path in satisfied_body_containers}
     has_body_argument = bool(
         _used_arguments_by_location(
             tool,
@@ -507,6 +512,8 @@ def _missing_required_inputs(
             continue
         name = str(row.get("field_name") or "")
         if not name:
+            continue
+        if (name, str(row.get("json_path") or "")) in satisfied_body_containers:
             continue
         if _is_request_body_root_row(row):
             if has_body_argument:
@@ -560,6 +567,8 @@ def _missing_required_inputs(
             location = "path" if f"{{{param.name}}}" in path_template else ""
         if not location:
             location = "query" if method in ("GET", "DELETE", "HEAD", "OPTIONS") else "body"
+        if location == "body" and param.name in satisfied_body_container_names:
+            continue
         if (
             location == "body"
             and has_body_argument
@@ -1225,6 +1234,41 @@ def _raw_body_argument_present(
     return False
 
 
+def _body_container_fields_satisfied_by_leaf_args(
+    body_rows: list[dict[str, Any]],
+    arguments: dict[str, Any],
+) -> set[tuple[str, str]]:
+    present_paths: list[str] = []
+    for row in body_rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("field_name") or "")
+        json_path = str(row.get("json_path") or "")
+        if name and json_path and name in arguments:
+            present_paths.append(json_path)
+
+    satisfied: set[tuple[str, str]] = set()
+    for row in body_rows:
+        if not isinstance(row, dict) or not row.get("required"):
+            continue
+        field_type = str(row.get("field_type") or "")
+        if field_type not in {"array", "object"}:
+            continue
+        name = str(row.get("field_name") or "")
+        json_path = str(row.get("json_path") or "")
+        if not name or not json_path or name in arguments:
+            continue
+        if any(_json_path_descends_from(candidate, json_path) for candidate in present_paths):
+            satisfied.add((name, json_path))
+    return satisfied
+
+
+def _json_path_descends_from(candidate: str, parent: str) -> bool:
+    if not candidate or not parent or candidate == parent:
+        return False
+    return candidate.startswith(f"{parent}.") or candidate.startswith(f"{parent}[")
+
+
 def _is_request_body_root_row(row: dict[str, Any]) -> bool:
     return bool(row.get("request_body_root")) and str(row.get("json_path") or "") == "$"
 
@@ -1878,11 +1922,64 @@ def _build_json_body(
     body: dict[str, Any] = {}
     for name, value in body_params.items():
         json_path = body_field_paths.get(name)
-        if json_path and _can_assign_json_path(json_path):
-            _assign_json_path(body, json_path, value)
-        else:
-            body[name] = value
+        if json_path and _assign_json_body_value(body, json_path, value):
+            continue
+        body[name] = value
     return body
+
+
+def _assign_json_body_value(body: dict[str, Any], json_path: str, value: Any) -> bool:
+    if _can_assign_json_path(json_path):
+        _assign_json_path(body, json_path, value)
+        return True
+    if _can_assign_single_array_json_path(json_path):
+        _assign_single_array_json_path(body, json_path, value)
+        return True
+    return False
+
+
+def _can_assign_single_array_json_path(json_path: str) -> bool:
+    return json_path.startswith("$.") and json_path.count("[*]") == 1 and ".*" not in json_path
+
+
+def _assign_single_array_json_path(body: dict[str, Any], json_path: str, value: Any) -> None:
+    parts = [part for part in json_path.removeprefix("$.").split(".") if part]
+    if not parts:
+        return
+
+    cursor = body
+    for index, part in enumerate(parts):
+        if not part.endswith("[*]"):
+            if index == len(parts) - 1:
+                cursor[part] = value
+                return
+            existing = cursor.get(part)
+            if not isinstance(existing, dict):
+                existing = {}
+                cursor[part] = existing
+            cursor = existing
+            continue
+
+        array_name = part.removesuffix("[*]")
+        if not array_name:
+            return
+        if index == len(parts) - 1:
+            cursor[array_name] = list(value) if _is_sequence(value) else [value]
+            return
+
+        existing_array = cursor.get(array_name)
+        if not isinstance(existing_array, list):
+            existing_array = []
+            cursor[array_name] = existing_array
+        if existing_array and isinstance(existing_array[0], dict):
+            array_item = existing_array[0]
+        else:
+            array_item = {}
+            if existing_array:
+                existing_array[0] = array_item
+            else:
+                existing_array.append(array_item)
+        cursor = array_item
 
 
 _NO_RAW_BODY = object()

@@ -353,6 +353,147 @@ class TestBuildRequest:
         assert invalid["valid"] is False
         assert invalid["invalid_arguments"][0]["reason"] == "min_length"
 
+    def test_nested_array_request_body_can_build_single_item_from_leaf_arguments(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Nested Bulk API", "version": "1.0.0"},
+            "paths": {
+                "/batches": {
+                    "post": {
+                        "operationId": "createBatch",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": ["goodsNo", "quantity"],
+                                                    "properties": {
+                                                        "goodsNo": {"type": "string"},
+                                                        "quantity": {"type": "integer"},
+                                                        "detail": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "brandName": {"type": "string"}
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                            "memo": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(
+            tools[0],
+            {
+                "goodsNo": "G-1",
+                "quantity": 2,
+                "brandName": "Acme",
+                "memo": "first batch",
+            },
+        )
+        req = executor.build_request(
+            tools[0],
+            {
+                "goodsNo": "G-1",
+                "quantity": 2,
+                "brandName": "Acme",
+                "memo": "first batch",
+            },
+        )
+        partial = executor.validate_request(tools[0], {"goodsNo": "G-1"})
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_required"] == []
+        assert set(diagnostics["used_arguments"]["body"]) == {
+            "memo",
+            "brandName",
+            "goodsNo",
+            "quantity",
+        }
+        assert json.loads(req.data.decode("utf-8")) == {
+            "items": [{"goodsNo": "G-1", "quantity": 2, "detail": {"brandName": "Acme"}}],
+            "memo": "first batch",
+        }
+        assert partial["valid"] is False
+        assert len(partial["missing_required"]) == 1
+        assert partial["missing_required"][0]["name"] == "quantity"
+        assert partial["missing_required"][0]["json_path"] == "$.items[*].quantity"
+
+    def test_required_object_container_is_satisfied_by_nested_leaf_arguments(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Memo API", "version": "1.0.0"},
+            "paths": {
+                "/orders/{orderId}/memo": {
+                    "patch": {
+                        "operationId": "updateOrderMemo",
+                        "parameters": [
+                            {
+                                "name": "orderId",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["memo"],
+                                        "properties": {
+                                            "memo": {
+                                                "type": "object",
+                                                "required": ["text"],
+                                                "properties": {
+                                                    "text": {"type": "string", "minLength": 2}
+                                                },
+                                            }
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(
+            tools[0],
+            {"orderId": "O-1", "text": "ship"},
+        )
+        req = executor.build_request(
+            tools[0],
+            {"orderId": "O-1", "text": "ship"},
+        )
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_required"] == []
+        assert json.loads(req.data.decode("utf-8")) == {"memo": {"text": "ship"}}
+
     def test_ingested_openapi_parameter_styles_drive_query_serialization(self):
         spec = {
             "openapi": "3.0.0",
