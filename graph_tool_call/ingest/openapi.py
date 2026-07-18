@@ -174,6 +174,8 @@ _DERIVED_FIELD_HINT_KEYS = (
     "schema_branches",
     "required_in_branch",
     "schema_ref",
+    "schema_expanded_from",
+    "schema_expansion",
     "discriminator_property",
     "discriminator_value",
     "discriminator_values",
@@ -481,6 +483,75 @@ def _merged_parameters(
     return merged
 
 
+def _parameter_sibling_names(
+    raw_parameters: list[dict[str, Any]],
+    *,
+    is_swagger2: bool = False,
+) -> set[str]:
+    """Names that are already exposed as direct non-object parameters."""
+    names: set[str] = set()
+    for p in raw_parameters:
+        if not isinstance(p, dict):
+            continue
+        schema = p if is_swagger2 else p.get("schema") or {}
+        schema = _parameter_effective_schema(schema)
+        if _schema_type(schema) != "object":
+            name = str(p.get("name") or "")
+            if name:
+                names.add(name)
+    return names
+
+
+def _parameter_effective_schema(schema: Any) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return {}
+    return _flatten_top_level_allof(schema)
+
+
+def _expandable_parameter_properties(
+    schema: dict[str, Any],
+    ptype: str,
+) -> tuple[dict[str, Any], set[str]]:
+    """Return object-wrapper properties that can be exposed as real inputs."""
+    if not isinstance(schema, dict):
+        return {}, set()
+    schema = _parameter_effective_schema(schema)
+    if ptype == "object":
+        props = schema.get("properties") or {}
+        return (props if isinstance(props, dict) else {}), set(schema.get("required") or [])
+    if ptype == "array":
+        items = schema.get("items") or {}
+        if isinstance(items, dict) and items.get("type") == "object":
+            props = items.get("properties") or {}
+            return (props if isinstance(props, dict) else {}), set(items.get("required") or [])
+    return {}, set()
+
+
+def _schema_description(schema: dict[str, Any]) -> str:
+    if not isinstance(schema, dict):
+        return ""
+    desc = str(schema.get("description") or "").strip()
+    if _schema_type(schema) in ("object", "array"):
+        nested = _summarize_object_schema(schema)
+        if nested:
+            desc = (desc + "\nFields:\n" + nested).strip() if desc else f"Fields:\n{nested}"
+    return desc
+
+
+def _merge_description(existing: str, schema_description: str) -> str:
+    existing = str(existing or "").strip()
+    schema_description = str(schema_description or "").strip()
+    if not schema_description:
+        return existing
+    if not existing:
+        return schema_description
+    if schema_description in existing:
+        return existing
+    if existing in schema_description:
+        return schema_description
+    return f"{existing}\n{schema_description}"
+
+
 # ---------------------------------------------------------------------------
 # Operation -> ToolSchema
 # ---------------------------------------------------------------------------
@@ -614,11 +685,7 @@ def _extract_params_openapi3(
     raw_parameters = _merged_parameters(operation, path_item)
     # Pre-collect names from non-object parameters — used to detect when
     # a wrapper's inner property is already exposed alongside it.
-    sibling_names: set[str] = {
-        str(p.get("name") or "")
-        for p in raw_parameters
-        if isinstance(p, dict) and _schema_type(p.get("schema", {}) or {}) not in ("object",)
-    }
+    sibling_names = _parameter_sibling_names(raw_parameters)
 
     # Path / query / header / cookie parameters
     for p in raw_parameters:
@@ -631,6 +698,7 @@ def _extract_params_openapi3(
         # UnsatisfiableFieldError로 raise → question.required popup으로 사용자에게 묻는다.
         if p.get("in") == "path":
             is_required = True
+        schema = _parameter_effective_schema(schema)
         ptype = _schema_type(schema)
 
         # Wrapper-object/array query parameter handling.
@@ -640,18 +708,12 @@ def _extract_params_openapi3(
         # element schema's properties. Primitive arrays (array of integers /
         # strings) are real list inputs and are NOT expanded here — those
         # belong to the caller as a single multi-value field.
-        if ptype in ("object", "array") and p.get("in") == "query":
-            wrapper_props: dict[str, Any] = {}
-            wrapper_required: set[str] = set()
-            if ptype == "object":
-                wrapper_props = (schema.get("properties") or {}) if isinstance(schema, dict) else {}
-                wrapper_required = set(schema.get("required") or [])
-            else:  # array
-                items = (schema.get("items") or {}) if isinstance(schema, dict) else {}
-                if isinstance(items, dict) and items.get("type") == "object":
-                    wrapper_props = items.get("properties") or {}
-                    wrapper_required = set(items.get("required") or [])
-                # else: primitive-element array — don't expand, treat as real input
+        if (
+            ptype in ("object", "array")
+            and p.get("in") == "query"
+            and p.get("style") != "deepObject"
+        ):
+            wrapper_props, wrapper_required = _expandable_parameter_properties(schema, ptype)
             if wrapper_props:
                 # If every inner property is already a sibling parameter,
                 # drop the wrapper entirely (deduplication).
@@ -665,15 +727,15 @@ def _extract_params_openapi3(
                     inner_required = prop_name in wrapper_required
                     if required_only and not inner_required:
                         continue
-                    inner_type = _schema_type(prop_schema or {})
-                    inner_desc = (prop_schema or {}).get("description", "") or ""
+                    prop_schema = prop_schema if isinstance(prop_schema, dict) else {}
+                    inner_type = _schema_type(prop_schema)
                     params.append(
                         ToolParameter(
                             name=prop_name,
                             type=inner_type,
-                            description=inner_desc,
+                            description=_schema_description(prop_schema),
                             required=inner_required,
-                            enum=_schema_enum(prop_schema or {}) or None,
+                            enum=_schema_enum(prop_schema) or None,
                         )
                     )
                 continue  # wrapper itself is not added
@@ -683,10 +745,7 @@ def _extract_params_openapi3(
         desc = p.get("description", "") or ""
         # object/array 타입이면 nested fields를 description에 펼쳐서
         # LLM이 정확한 필드명(예: searchWord)을 알 수 있게 한다.
-        if ptype in ("object", "array"):
-            nested = _summarize_object_schema(schema)
-            if nested:
-                desc = (desc + "\nFields:\n" + nested).strip() if desc else f"Fields:\n{nested}"
+        desc = _merge_description(desc, _schema_description(schema))
         params.append(
             ToolParameter(
                 name=p["name"],
@@ -1041,7 +1100,9 @@ def _openapi_parameter_rows(
 ) -> list[dict[str, Any]]:
     """Normalize non-body OpenAPI parameters for execution/ranking metadata."""
     rows: list[dict[str, Any]] = []
-    for p in _merged_parameters(operation, path_item):
+    raw_parameters = _merged_parameters(operation, path_item)
+    sibling_names = _parameter_sibling_names(raw_parameters, is_swagger2=is_swagger2)
+    for p in raw_parameters:
         if not isinstance(p, dict) or "name" not in p:
             continue
         location = str(p.get("in") or "")
@@ -1050,18 +1111,54 @@ def _openapi_parameter_rows(
         schema = p if is_swagger2 else p.get("schema") or {}
         if not isinstance(schema, dict):
             schema = {}
+        schema = _parameter_effective_schema(schema)
         required = bool(p.get("required", location == "path"))
         if location == "path":
             required = True
+        ptype = _schema_type(schema)
+
+        if ptype in ("object", "array") and location == "query" and p.get("style") != "deepObject":
+            wrapper_props, wrapper_required = _expandable_parameter_properties(schema, ptype)
+            if wrapper_props:
+                if all(prop in sibling_names for prop in wrapper_props):
+                    continue
+                for prop_name, prop_schema in wrapper_props.items():
+                    if prop_name in sibling_names:
+                        continue
+                    prop_schema = prop_schema if isinstance(prop_schema, dict) else {}
+                    row = {
+                        "name": str(prop_name),
+                        "in": location,
+                        "required": prop_name in wrapper_required,
+                        "field_type": _schema_type(prop_schema),
+                        "schema_expanded_from": str(p["name"]),
+                        "schema_expansion": "query_object_parameter",
+                    }
+                    _add_schema_hints(row, prop_schema)
+                    desc = _schema_description(prop_schema)
+                    if desc:
+                        row["description"] = desc[:300]
+                    enum = _schema_enum(prop_schema)
+                    if isinstance(enum, list) and enum:
+                        row["enum"] = list(enum)
+                    examples = _example_rows(prop_schema, location=location)
+                    if examples:
+                        row["examples"] = examples[:_MAX_EXAMPLES_PER_BLOCK]
+                    for key in ("style", "explode", "allowReserved", "deprecated"):
+                        if key in p:
+                            row[key] = p[key]
+                    rows.append(row)
+                continue
+
         enum = _schema_enum(p if is_swagger2 else schema)
         row: dict[str, Any] = {
             "name": str(p["name"]),
             "in": location,
             "required": required,
-            "field_type": _schema_type(schema),
+            "field_type": ptype,
         }
         _add_schema_hints(row, schema)
-        desc = str(p.get("description") or "").strip()
+        desc = _merge_description(str(p.get("description") or ""), _schema_description(schema))
         if desc:
             row["description"] = desc[:300]
         if isinstance(enum, list) and enum:

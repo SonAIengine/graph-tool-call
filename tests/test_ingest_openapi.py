@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -454,6 +455,193 @@ class TestIngestOpenAPI30:
             "keyword": "shirt",
             "filters": {"brandNo": "B1"},
         }
+
+    def test_query_object_parameter_metadata_expands_to_inner_fields(self) -> None:
+        """Query DTO wrappers should not leak into graph/Planflow contracts."""
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Commerce BO API", "version": "1.0.0"},
+            "paths": {
+                "/goods/search": {
+                    "get": {
+                        "operationId": "searchGoods",
+                        "parameters": [
+                            {
+                                "name": "searchRequest",
+                                "in": "query",
+                                "style": "form",
+                                "explode": True,
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "brandNo": {
+                                            "type": "string",
+                                            "description": "브랜드 번호",
+                                            "example": "B1",
+                                        },
+                                        "goodsNo": {
+                                            "type": "string",
+                                            "description": "상품 번호",
+                                        },
+                                        "saleStatusCd": {
+                                            "type": "string",
+                                            "enum": ["SALE", "SOLD_OUT"],
+                                        },
+                                    },
+                                },
+                            },
+                            {
+                                "name": "goodsNo",
+                                "in": "query",
+                                "schema": {"type": "string"},
+                            },
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        openapi = tool.metadata["openapi"]
+
+        assert {param.name for param in tool.parameters} == {
+            "brandNo",
+            "goodsNo",
+            "saleStatusCd",
+        }
+        parameter_rows = {row["name"]: row for row in openapi["parameters"]}
+        assert "searchRequest" not in parameter_rows
+        assert parameter_rows["brandNo"]["in"] == "query"
+        assert parameter_rows["brandNo"]["schema_expanded_from"] == "searchRequest"
+        assert parameter_rows["brandNo"]["schema_expansion"] == "query_object_parameter"
+        assert parameter_rows["brandNo"]["description"] == "브랜드 번호"
+        assert parameter_rows["saleStatusCd"]["enum"] == ["SALE", "SOLD_OUT"]
+        assert openapi["input_locations"]["query"] == ["brandNo", "saleStatusCd", "goodsNo"]
+
+        consumes = {
+            (row["field_name"], row["location"]): row
+            for row in tool.metadata["api_contract"]["consumes"]
+        }
+        assert ("searchRequest", "query") not in consumes
+        assert consumes[("brandNo", "query")]["schema_expanded_from"] == "searchRequest"
+        assert consumes[("saleStatusCd", "query")]["enum"] == ["SALE", "SOLD_OUT"]
+
+        request = HttpExecutor("https://api.example.com").build_request(
+            tool,
+            {"brandNo": "B1", "goodsNo": "G1"},
+        )
+        parsed = urlparse(request.full_url)
+        assert parsed.scheme == "https"
+        assert parsed.netloc == "api.example.com"
+        assert parsed.path == "/goods/search"
+        assert parse_qs(parsed.query) == {"brandNo": ["B1"], "goodsNo": ["G1"]}
+
+    def test_query_object_parameter_allof_metadata_expands_to_inner_fields(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Commerce BO API", "version": "1.0.0"},
+            "paths": {
+                "/goods/search": {
+                    "get": {
+                        "operationId": "searchGoods",
+                        "parameters": [
+                            {
+                                "name": "searchRequest",
+                                "in": "query",
+                                "style": "form",
+                                "explode": True,
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "type": "object",
+                                            "required": ["brandNo"],
+                                            "properties": {
+                                                "brandNo": {
+                                                    "type": "string",
+                                                    "description": "브랜드 번호",
+                                                }
+                                            },
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "goodsNm": {
+                                                    "type": "string",
+                                                    "description": "상품명",
+                                                }
+                                            },
+                                        },
+                                    ]
+                                },
+                            }
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        openapi = tool.metadata["openapi"]
+
+        params = {param.name: param for param in tool.parameters}
+        assert set(params) == {"brandNo", "goodsNm"}
+        assert params["brandNo"].required is True
+        parameter_rows = {row["name"]: row for row in openapi["parameters"]}
+        assert "searchRequest" not in parameter_rows
+        assert parameter_rows["brandNo"]["required"] is True
+        assert parameter_rows["goodsNm"]["schema_expanded_from"] == "searchRequest"
+
+        consumes = {row["field_name"]: row for row in tool.metadata["api_contract"]["consumes"]}
+        assert set(consumes) == {"brandNo", "goodsNm"}
+        assert consumes["brandNo"]["required"] is True
+
+    def test_deepobject_query_parameter_keeps_wrapper_contract(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Search API", "version": "1.0.0"},
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "searchItems",
+                        "parameters": [
+                            {
+                                "name": "filter",
+                                "in": "query",
+                                "style": "deepObject",
+                                "explode": True,
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"status": {"type": "string"}},
+                                },
+                            }
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        openapi = tool.metadata["openapi"]
+
+        assert [param.name for param in tool.parameters] == ["filter"]
+        assert [row["name"] for row in openapi["parameters"]] == ["filter"]
+        assert openapi["parameters"][0]["style"] == "deepObject"
+        assert openapi["input_locations"]["query"] == ["filter"]
+        assert tool.metadata["api_contract"]["consumes"][0]["field_name"] == "filter"
+
+        request = HttpExecutor("https://api.example.com").build_request(
+            tool,
+            {"filter": {"status": "paid"}},
+        )
+        parsed = urlparse(request.full_url)
+        assert parsed.path == "/items"
+        assert parse_qs(parsed.query) == {"filter[status]": ["paid"]}
 
     def test_readonly_writeonly_fields_respect_request_response_direction(self) -> None:
         """Direction-only OpenAPI fields should not pollute inverse IO contracts."""

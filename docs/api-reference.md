@@ -117,6 +117,11 @@ OpenAPI field direction is enforced before graph/search promotion:
   as response-only hints
 - nested object/array leaves inherit parent `readOnly`, `writeOnly`, and
   `deprecated` hints
+- OpenAPI3 query object wrappers are expanded into their real inner fields for
+  `metadata.openapi.parameters`, `input_locations`, and `api_contract.consumes`.
+  If Spring/SpringDoc exposes both the wrapper and a sibling field, the wrapper
+  is dropped and the sibling wins. Explicit `style=deepObject` parameters keep
+  the wrapper because it is part of the wire format.
 - `oneOf` / `anyOf` schemas are expanded across all object branches instead of
   only the first branch; branch-local required fields are marked with
   `required_in_branch` and do not become global request requirements

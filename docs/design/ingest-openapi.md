@@ -81,6 +81,16 @@ request field와 `readOnly` response field는 그대로 보존해 XGEN이 해당
 방향성을 설명하거나 로그에 남길 수 있게 한다. nested object/array leaf는
 부모의 `readOnly`/`writeOnly`/`deprecated` hint를 상속한다.
 
+Spring/SpringDoc 계열 Swagger에서 query DTO가 `searchRequest` 같은
+`type=object` parameter로 노출되는 경우, wrapper 자체를 tool input이나
+graph consume field로 쓰지 않고 내부 `brandNo`, `goodsNo`, `saleStatusCd`
+같은 실제 query field로 펼친다. wrapper와 sibling field가 함께 노출되면
+sibling field를 우선하고 wrapper는 제거한다. 이 규칙은 `ToolParameter`,
+`metadata.openapi.parameters`, `input_locations`, `api_contract.consumes`에
+동일하게 적용되어 검색/Planflow/executor가 같은 field universe를 보게 한다.
+단, 명시적인 `style=deepObject` parameter는 `filter[status]=paid`처럼 wrapper
+이름이 wire format의 일부이므로 펼치지 않고 wrapper를 유지한다.
+
 `oneOf`/`anyOf` schema는 첫 번째 branch만 선택하지 않고 모든 object branch의
 field를 union으로 추출한다. branch 안에서만 required인 field는
 `required_in_branch=true`, `schema_combinator`, `schema_branch`,
