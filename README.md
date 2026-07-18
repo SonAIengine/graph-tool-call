@@ -193,7 +193,8 @@ OpenAPI ingest keeps execution metadata such as parameter locations, content
 types, candidate request-body fields, examples, security schemes, response
 catalogs, and error responses under `tool.metadata["openapi"]`. The HTTP
 executor uses those facts for parameter serialization and JSON/form/multipart
-request bodies; see [docs/api-reference.md](docs/api-reference.md#execution).
+request bodies, and returns matched response metadata for success/error
+diagnostics; see [docs/api-reference.md](docs/api-reference.md#execution).
 
 ### Workflow planning
 

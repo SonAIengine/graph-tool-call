@@ -116,6 +116,15 @@ type candidates and can render `application/json`,
 `application/x-www-form-urlencoded`, and `multipart/form-data`; binary/file-like
 arguments select the multipart candidate when one is declared.
 
+Execution results keep the legacy `status`, `headers`, and `body` keys and add
+response diagnostics:
+
+- `ok`: HTTP 2xx boolean
+- `content_type`: response media type without parameters
+- `response_metadata`: the matched OpenAPI response catalog row, using exact
+  status, `2XX`-style range, then `default`
+- `error_response`: the matched non-success response row for HTTP errors
+
 For graph/search use, keep raw contract and promoted signal separate. Large
 Swagger specs often repeat wrapper fields such as `status`, `data`, and `list`,
 so plain ingest does not index every leaf. Use graphify promotion when you want

@@ -643,6 +643,12 @@ class _MockHandler(BaseHTTPRequestHandler):
     """Minimal HTTP handler for testing."""
 
     def do_GET(self):  # noqa: N802
+        if self.path.startswith("/missing"):
+            self.send_response(404)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"code": "NOT_FOUND", "message": "Missing"}).encode())
+            return
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -682,8 +688,39 @@ class TestExecuteReal:
         result = executor.execute(tool, {"userId": "42"})
 
         assert result["status"] == 200
+        assert result["ok"] is True
+        assert result["content_type"] == "application/json"
         assert result["body"]["path"] == "/users/42"
         assert result["body"]["method"] == "GET"
+
+    def test_success_response_metadata_matches_openapi_catalog(self, mock_server):
+        tool = _make_tool(path="/users/{userId}")
+        tool.metadata["openapi"] = {
+            "responses": [
+                {
+                    "status": "200",
+                    "success": True,
+                    "description": "User details",
+                    "content_type": "application/json",
+                    "content_types": [
+                        {
+                            "content_type": "application/json",
+                            "is_json": True,
+                            "has_schema": True,
+                        }
+                    ],
+                }
+            ]
+        }
+        executor = HttpExecutor(mock_server)
+
+        result = executor.execute(tool, {"userId": "42"})
+
+        assert result["ok"] is True
+        assert result["response_metadata"]["status"] == "200"
+        assert result["response_metadata"]["description"] == "User details"
+        assert result["response_metadata"]["matched_content_type"] == "application/json"
+        assert result["response_metadata"]["content_metadata"]["is_json"] is True
 
     def test_post_success(self, mock_server):
         tool = _make_tool(
@@ -696,7 +733,26 @@ class TestExecuteReal:
         result = executor.execute(tool, {"name": "Alice"})
 
         assert result["status"] == 201
+        assert result["ok"] is True
         assert result["body"]["received"] == {"name": "Alice"}
+
+    def test_success_response_metadata_matches_range_status(self, mock_server):
+        tool = _make_tool(
+            name="createUser",
+            method="POST",
+            path="/users",
+            params=[ToolParam(name="name", type="string", description="N", required=True)],
+        )
+        tool.metadata["openapi"] = {
+            "responses": [{"status": "2XX", "success": True, "description": "Any success"}]
+        }
+        executor = HttpExecutor(mock_server)
+
+        result = executor.execute(tool, {"name": "Alice"})
+
+        assert result["status"] == 201
+        assert result["response_metadata"]["status"] == "2XX"
+        assert result["response_metadata"]["description"] == "Any success"
 
     def test_delete_no_body(self, mock_server):
         tool = _make_tool(name="deleteUser", method="DELETE", path="/users/{userId}")
@@ -704,6 +760,39 @@ class TestExecuteReal:
         result = executor.execute(tool, {"userId": "99"})
 
         assert result["status"] == 204
+        assert result["ok"] is True
+
+    def test_http_error_response_metadata_matches_error_catalog(self, mock_server):
+        tool = _make_tool(name="getMissing", path="/missing/{userId}")
+        tool.metadata["openapi"] = {
+            "responses": [
+                {"status": "200", "success": True, "description": "OK"},
+                {
+                    "status": "404",
+                    "success": False,
+                    "description": "User was not found",
+                    "content_type": "application/json",
+                    "content_types": [
+                        {
+                            "content_type": "application/json",
+                            "is_json": True,
+                            "has_schema": True,
+                        }
+                    ],
+                },
+                {"status": "default", "success": False, "description": "Unexpected error"},
+            ]
+        }
+        executor = HttpExecutor(mock_server)
+
+        result = executor.execute(tool, {"userId": "404"})
+
+        assert result["status"] == 404
+        assert result["ok"] is False
+        assert result["content_type"] == "application/json"
+        assert result["body"]["code"] == "NOT_FOUND"
+        assert result["response_metadata"]["status"] == "404"
+        assert result["error_response"]["description"] == "User was not found"
 
     def test_http_error_returns_error_dict(self):
         """HTTP errors should return status + error, not raise."""

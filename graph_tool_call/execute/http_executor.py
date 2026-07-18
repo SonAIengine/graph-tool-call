@@ -151,29 +151,53 @@ class HttpExecutor:
         On HTTP errors, returns ``status``, ``error``, and ``body``.
         """
         req = self.build_request(tool, arguments)
+        api_metadata = (
+            tool.metadata.get("openapi") if isinstance(tool.metadata.get("openapi"), dict) else {}
+        )
 
         try:
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
+                content_type = _response_content_type(dict(resp.headers))
                 try:
                     body: Any = json.loads(raw)
                 except json.JSONDecodeError:
                     body = raw
+                response_metadata = _match_response_metadata(
+                    api_metadata,
+                    status=resp.status,
+                    content_type=content_type,
+                )
                 return {
                     "status": resp.status,
+                    "ok": 200 <= resp.status < 300,
                     "headers": dict(resp.headers),
+                    "content_type": content_type,
                     "body": body,
+                    "response_metadata": response_metadata,
                 }
         except urllib.error.HTTPError as e:
             raw_body = e.read().decode("utf-8", errors="replace")
+            headers = dict(e.headers or {})
+            content_type = _response_content_type(headers)
             try:
                 err_body: Any = json.loads(raw_body)
             except json.JSONDecodeError:
                 err_body = raw_body
+            response_metadata = _match_response_metadata(
+                api_metadata,
+                status=e.code,
+                content_type=content_type,
+            )
             return {
                 "status": e.code,
+                "ok": False,
+                "headers": headers,
+                "content_type": content_type,
                 "error": e.reason,
                 "body": err_body,
+                "response_metadata": response_metadata,
+                "error_response": response_metadata if not response_metadata.get("success") else {},
             }
 
     def dry_run(
@@ -350,6 +374,65 @@ def _request_content_type_candidates(request_body: Any) -> list[str]:
         if content_type and content_type not in candidates:
             candidates.append(content_type)
     return candidates
+
+
+def _response_content_type(headers: dict[str, Any]) -> str:
+    for name, value in headers.items():
+        if str(name).lower() == "content-type":
+            return str(value).split(";", 1)[0].strip()
+    return ""
+
+
+def _match_response_metadata(
+    api_metadata: dict[str, Any],
+    *,
+    status: int,
+    content_type: str = "",
+) -> dict[str, Any]:
+    responses = api_metadata.get("responses") or []
+    if not isinstance(responses, list):
+        return {}
+
+    status_text = str(status)
+    fallback_default: dict[str, Any] | None = None
+    fallback_range: dict[str, Any] | None = None
+    for row in responses:
+        if not isinstance(row, dict):
+            continue
+        declared_status = str(row.get("status") or "")
+        if declared_status == "default":
+            fallback_default = row
+            continue
+        if declared_status == status_text:
+            return _response_metadata_with_content(row, content_type)
+        if _status_range_matches(declared_status, status):
+            fallback_range = row
+
+    if fallback_range:
+        return _response_metadata_with_content(fallback_range, content_type)
+    if fallback_default:
+        return _response_metadata_with_content(fallback_default, content_type)
+    return {}
+
+
+def _response_metadata_with_content(row: dict[str, Any], content_type: str) -> dict[str, Any]:
+    metadata = dict(row)
+    if content_type:
+        metadata["matched_content_type"] = content_type
+    for candidate in row.get("content_types") or []:
+        if not isinstance(candidate, dict):
+            continue
+        if _same_content_type(str(candidate.get("content_type") or ""), content_type):
+            metadata["content_metadata"] = dict(candidate)
+            break
+    return metadata
+
+
+def _status_range_matches(declared_status: str, status: int) -> bool:
+    text = declared_status.upper()
+    return (
+        len(text) == 3 and text[0].isdigit() and text[1:] == "XX" and status // 100 == int(text[0])
+    )
 
 
 def _best_matching_content_type(
