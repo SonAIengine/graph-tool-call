@@ -25,6 +25,26 @@ from graph_tool_call.core.tool import ToolSchema
 _RESERVED_QUERY_CHARS = ":/?#[]@!$&'()*+,;="
 
 
+class OpenAPIRequestValidationError(ValueError):
+    """Raised when OpenAPI request arguments miss required inputs."""
+
+    def __init__(self, tool_name: str, diagnostics: dict[str, Any]) -> None:
+        self.tool_name = tool_name
+        self.diagnostics = diagnostics
+        missing = ", ".join(
+            f"{item.get('location', 'input')}:{item.get('name', '')}"
+            for item in diagnostics.get("missing_required") or []
+        )
+        message = f"Missing required argument(s) for tool '{tool_name}'"
+        if missing:
+            message = f"{message}: {missing}"
+        super().__init__(message)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return structured diagnostics for UI/log forwarding."""
+        return dict(self.diagnostics)
+
+
 class HttpExecutor:
     """Execute OpenAPI-sourced tools via HTTP."""
 
@@ -35,12 +55,14 @@ class HttpExecutor:
         headers: dict[str, str] | None = None,
         auth_token: str | None = None,
         timeout: int = 30,
+        validate_required: bool = True,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._headers = dict(headers) if headers else {}
         if auth_token:
             self._headers.setdefault("Authorization", f"Bearer {auth_token}")
         self._timeout = timeout
+        self._validate_required = validate_required
 
     def build_request(
         self,
@@ -57,6 +79,11 @@ class HttpExecutor:
         if not metadata or metadata.get("source") != "openapi":
             raise ValueError(f"Tool '{tool.name}' is not an OpenAPI tool")
 
+        if self._validate_required:
+            diagnostics = self.validate_request(tool, arguments)
+            if not diagnostics["valid"]:
+                raise OpenAPIRequestValidationError(tool.name, diagnostics)
+
         method = metadata["method"].upper()
         path_template: str = metadata["path"]
         api_metadata = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
@@ -69,7 +96,9 @@ class HttpExecutor:
         cookie_params: dict[str, Any] = {}
         body_params: dict[str, Any] = {}
 
-        for param_name in _iter_known_argument_names(tool, api_metadata):
+        for param_name in _iter_known_argument_names(
+            tool, api_metadata, path_template=path_template
+        ):
             value = arguments.get(param_name)
             if value is None:
                 continue
@@ -139,6 +168,58 @@ class HttpExecutor:
                 data = json.dumps(body, ensure_ascii=False).encode("utf-8")
 
         return urllib.request.Request(url, data=data, headers=headers, method=method)
+
+    def validate_request(
+        self,
+        tool: ToolSchema,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return request preflight diagnostics without building or sending HTTP."""
+        metadata = tool.metadata
+        if not metadata or metadata.get("source") != "openapi":
+            raise ValueError(f"Tool '{tool.name}' is not an OpenAPI tool")
+
+        method = str(metadata["method"]).upper()
+        path_template = str(metadata["path"])
+        api_metadata = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
+        location_by_param = _location_by_param(api_metadata)
+        known_names = _iter_known_argument_names(tool, api_metadata, path_template=path_template)
+        known_name_set = set(known_names)
+        used_by_location = _used_arguments_by_location(
+            tool,
+            arguments,
+            api_metadata,
+            method=method,
+            path_template=path_template,
+        )
+        body_params = {name: arguments[name] for name in used_by_location["body"]}
+        selected_content_type = (
+            _request_content_type(api_metadata, metadata, body_params)
+            if method in ("POST", "PUT", "PATCH")
+            else ""
+        )
+        missing_required = _missing_required_inputs(
+            tool,
+            arguments,
+            api_metadata,
+            method=method,
+            path_template=path_template,
+            location_by_param=location_by_param,
+            headers=self._headers,
+            selected_content_type=selected_content_type,
+        )
+        unused_arguments = [
+            str(name)
+            for name, value in arguments.items()
+            if value is not None and str(name) not in known_name_set
+        ]
+        return {
+            "valid": not missing_required,
+            "missing_required": missing_required,
+            "unused_arguments": unused_arguments,
+            "used_arguments": used_by_location,
+            "selected_content_type": selected_content_type,
+        }
 
     def execute(
         self,
@@ -214,6 +295,7 @@ class HttpExecutor:
             "method": req.method,
             "url": req.full_url,
             "headers": dict(req.headers),
+            "preflight": self.validate_request(tool, arguments),
         }
         if req.data:
             content_type = req.headers.get("Content-type") or req.headers.get("Content-Type") or ""
@@ -229,13 +311,20 @@ class HttpExecutor:
         return result
 
 
-def _iter_known_argument_names(tool: ToolSchema, api_metadata: dict[str, Any]) -> list[str]:
+def _iter_known_argument_names(
+    tool: ToolSchema,
+    api_metadata: dict[str, Any],
+    *,
+    path_template: str = "",
+) -> list[str]:
     names: list[str] = []
 
     def add(name: str) -> None:
         if name and name not in names:
             names.append(name)
 
+    for name in re.findall(r"{([^}/]+)}", path_template):
+        add(name)
     for param in tool.parameters:
         add(param.name)
     for param in api_metadata.get("parameters") or []:
@@ -245,6 +334,220 @@ def _iter_known_argument_names(tool: ToolSchema, api_metadata: dict[str, Any]) -
         if isinstance(row, dict):
             add(str(row.get("field_name") or ""))
     return names
+
+
+def _used_arguments_by_location(
+    tool: ToolSchema,
+    arguments: dict[str, Any],
+    api_metadata: dict[str, Any],
+    *,
+    method: str,
+    path_template: str,
+) -> dict[str, list[str]]:
+    location_by_param = _location_by_param(api_metadata)
+    used: dict[str, list[str]] = {
+        "path": [],
+        "query": [],
+        "header": [],
+        "cookie": [],
+        "body": [],
+    }
+
+    def add(location: str, name: str) -> None:
+        if location in used and name not in used[location]:
+            used[location].append(name)
+
+    for name in _iter_known_argument_names(tool, api_metadata, path_template=path_template):
+        value = arguments.get(name)
+        if value is None:
+            continue
+        location = location_by_param.get(name)
+        if f"{{{name}}}" in path_template or location == "path":
+            add("path", name)
+        elif location in used:
+            add(location, name)
+        elif method in ("GET", "DELETE", "HEAD", "OPTIONS"):
+            add("query", name)
+        else:
+            add("body", name)
+    return used
+
+
+def _missing_required_inputs(
+    tool: ToolSchema,
+    arguments: dict[str, Any],
+    api_metadata: dict[str, Any],
+    *,
+    method: str,
+    path_template: str,
+    location_by_param: dict[str, str],
+    headers: dict[str, str],
+    selected_content_type: str,
+) -> list[dict[str, Any]]:
+    missing: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(row: dict[str, Any]) -> None:
+        name = str(row.get("name") or "")
+        location = str(row.get("location") or "")
+        if not name or not location:
+            return
+        key = (location, name)
+        if key in seen:
+            return
+        if _argument_present(name, location, arguments, headers):
+            return
+        seen.add(key)
+        missing.append(row)
+
+    for name in re.findall(r"{([^}/]+)}", path_template):
+        add({"name": name, "location": "path", "source": "path_template"})
+
+    for row in api_metadata.get("parameters") or []:
+        if not isinstance(row, dict) or not row.get("required"):
+            continue
+        name = str(row.get("name") or "")
+        location = str(row.get("in") or "")
+        if not name or not location:
+            continue
+        item: dict[str, Any] = {
+            "name": name,
+            "location": location,
+            "source": "openapi_parameter",
+        }
+        _copy_validation_hint(row, item)
+        add(item)
+
+    body_rows = _body_rows(
+        api_metadata,
+        content_type=selected_content_type,
+        include_content_type_rows=False,
+    )
+    has_body_argument = bool(
+        _used_arguments_by_location(
+            tool,
+            arguments,
+            api_metadata,
+            method=method,
+            path_template=path_template,
+        )["body"]
+    )
+    for row in body_rows:
+        if not isinstance(row, dict) or not row.get("required"):
+            continue
+        name = str(row.get("field_name") or "")
+        if not name:
+            continue
+        item = {
+            "name": name,
+            "location": "body",
+            "source": "request_body",
+        }
+        if selected_content_type:
+            item["content_type"] = selected_content_type
+        _copy_validation_hint(row, item)
+        add(item)
+
+    request_body = api_metadata.get("request_body") or {}
+    if (
+        method in ("POST", "PUT", "PATCH")
+        and isinstance(request_body, dict)
+        and request_body.get("required")
+        and not body_rows
+        and not has_body_argument
+    ):
+        add(
+            {
+                "name": "body",
+                "location": "body",
+                "source": "request_body",
+                **({"content_type": selected_content_type} if selected_content_type else {}),
+            }
+        )
+
+    parameter_required = {
+        (str(row.get("in") or ""), str(row.get("name") or ""))
+        for row in api_metadata.get("parameters") or []
+        if isinstance(row, dict)
+    }
+    for param in tool.parameters:
+        if not param.required:
+            continue
+        location = location_by_param.get(param.name)
+        if not location:
+            location = "path" if f"{{{param.name}}}" in path_template else ""
+        if not location:
+            location = "query" if method in ("GET", "DELETE", "HEAD", "OPTIONS") else "body"
+        if (location, param.name) in parameter_required:
+            continue
+        item = {
+            "name": param.name,
+            "location": location,
+            "source": "tool_parameter",
+            "field_type": param.type,
+        }
+        if param.enum:
+            item["enum"] = list(param.enum)
+        add(item)
+    return missing
+
+
+def _argument_present(
+    name: str,
+    location: str,
+    arguments: dict[str, Any],
+    headers: dict[str, str],
+) -> bool:
+    value = arguments.get(name)
+    if value is not None:
+        return True
+    if location == "header":
+        return _header_present(headers, name)
+    if location == "cookie":
+        return _cookie_present(headers, name)
+    return False
+
+
+def _header_present(headers: dict[str, str], name: str) -> bool:
+    lower_name = name.lower()
+    return any(
+        str(key).lower() == lower_name and value not in (None, "") for key, value in headers.items()
+    )
+
+
+def _cookie_present(headers: dict[str, str], name: str) -> bool:
+    cookie_header = ""
+    for key, value in headers.items():
+        if str(key).lower() == "cookie":
+            cookie_header = str(value)
+            break
+    if not cookie_header:
+        return False
+    prefix = f"{name}="
+    return any(segment.strip().startswith(prefix) for segment in cookie_header.split(";"))
+
+
+def _copy_validation_hint(source: dict[str, Any], target: dict[str, Any]) -> None:
+    for key in (
+        "field_type",
+        "json_path",
+        "enum",
+        "description",
+        "format",
+        "default",
+        "example",
+        "nullable",
+        "pattern",
+        "minimum",
+        "maximum",
+        "min_length",
+        "max_length",
+        "min_items",
+        "max_items",
+    ):
+        value = source.get(key)
+        if value not in (None, "", []):
+            target[key] = list(value) if isinstance(value, list) else value
 
 
 def _location_by_param(api_metadata: dict[str, Any]) -> dict[str, str]:

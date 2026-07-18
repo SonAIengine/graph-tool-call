@@ -11,7 +11,7 @@ import pytest
 
 from graph_tool_call.core.tool import ToolParameter as ToolParam
 from graph_tool_call.core.tool import ToolSchema
-from graph_tool_call.execute.http_executor import HttpExecutor
+from graph_tool_call.execute.http_executor import HttpExecutor, OpenAPIRequestValidationError
 from graph_tool_call.ingest.openapi import ingest_openapi
 
 # --- Fixtures ---
@@ -501,6 +501,98 @@ class TestBuildRequest:
         assert tools[0].metadata["request_content_type"] == "application/json"
         assert req.headers["Content-type"] == "application/x-www-form-urlencoded"
         assert req.data.decode("utf-8") == "keyword=%EC%83%81%ED%92%88&page=1"
+
+    def test_validate_request_reports_missing_required_and_unused_arguments(self):
+        tool = _make_tool(
+            name="updateOrder",
+            method="POST",
+            path="/tenants/{tenantId}/orders",
+            params=[
+                ToolParam(name="tenantId", type="string", required=True),
+                ToolParam(name="page", type="integer", required=True),
+                ToolParam(name="X-Site-No", type="string", required=True),
+                ToolParam(name="status", type="string", required=True),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {"name": "tenantId", "in": "path", "required": True, "field_type": "string"},
+                {"name": "page", "in": "query", "required": True, "field_type": "integer"},
+                {"name": "X-Site-No", "in": "header", "required": True, "field_type": "string"},
+            ],
+            "request_body": {
+                "required": True,
+                "content_type": "application/json",
+                "fields": [
+                    {
+                        "field_name": "status",
+                        "json_path": "$.status",
+                        "field_type": "string",
+                        "required": True,
+                        "enum": ["paid", "ready"],
+                    }
+                ],
+            },
+        }
+        executor = HttpExecutor("https://api.example.com", headers={"X-Site-No": "10"})
+
+        diagnostics = executor.validate_request(tool, {"tenantId": "t1", "extra": "ignored"})
+
+        assert diagnostics["valid"] is False
+        assert diagnostics["selected_content_type"] == "application/json"
+        assert diagnostics["used_arguments"]["path"] == ["tenantId"]
+        assert diagnostics["unused_arguments"] == ["extra"]
+        missing = {(row["location"], row["name"]): row for row in diagnostics["missing_required"]}
+        assert ("query", "page") in missing
+        assert missing[("query", "page")]["field_type"] == "integer"
+        assert ("body", "status") in missing
+        assert missing[("body", "status")]["json_path"] == "$.status"
+        assert missing[("body", "status")]["enum"] == ["paid", "ready"]
+        assert ("header", "X-Site-No") not in missing
+
+    def test_build_request_raises_structured_validation_error_for_missing_required(self):
+        tool = _make_tool(
+            name="createOrder",
+            method="POST",
+            path="/orders",
+            params=[ToolParam(name="status", type="string", required=True)],
+        )
+        tool.metadata["openapi"] = {
+            "request_body": {
+                "required": True,
+                "content_type": "application/json",
+                "fields": [
+                    {
+                        "field_name": "status",
+                        "json_path": "$.status",
+                        "field_type": "string",
+                        "required": True,
+                    }
+                ],
+            }
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        with pytest.raises(OpenAPIRequestValidationError, match="body:status") as exc:
+            executor.build_request(tool, {})
+
+        assert exc.value.to_dict()["valid"] is False
+        assert exc.value.to_dict()["missing_required"][0]["name"] == "status"
+
+    def test_build_request_can_disable_required_validation_for_diagnostics_only(self):
+        tool = _make_tool(
+            name="searchOrders",
+            method="GET",
+            path="/orders",
+            params=[ToolParam(name="q", type="string", required=True)],
+        )
+        tool.metadata["openapi"] = {"parameters": [{"name": "q", "in": "query", "required": True}]}
+        executor = HttpExecutor("https://api.example.com", validate_required=False)
+
+        req = executor.build_request(tool, {})
+
+        assert req.full_url == "https://api.example.com/orders"
+        assert executor.validate_request(tool, {})["missing_required"][0]["name"] == "q"
 
     def test_missing_path_parameter_raises(self):
         tool = _make_tool(path="/users/{userId}/orders/{orderId}")

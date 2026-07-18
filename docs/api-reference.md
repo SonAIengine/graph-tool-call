@@ -88,6 +88,7 @@ tools = tg.retrieve("create a pet", top_k=5)
 | Method | Description |
 |---|---|
 | `execute(name, params, base_url=...)` | Execute an OpenAPI tool directly |
+| `HttpExecutor.validate_request(tool, params)` | Preflight an OpenAPI request without network I/O |
 
 OpenAPI ingest preserves execution-oriented request/response facts in each
 tool's metadata:
@@ -115,6 +116,21 @@ honors common OpenAPI parameter serialization rules such as `form`,
 type candidates and can render `application/json`,
 `application/x-www-form-urlencoded`, and `multipart/form-data`; binary/file-like
 arguments select the multipart candidate when one is declared.
+
+`HttpExecutor.validate_request(tool, params)` returns structured preflight
+diagnostics for XGEN popup/resume flows:
+
+- `valid`: false when required inputs are missing
+- `missing_required`: required path/query/header/cookie/body inputs with
+  location, source, JSON path, enum, and schema hints when available
+- `unused_arguments`: provided arguments that are not part of the tool contract
+- `used_arguments`: classified path/query/header/cookie/body argument names
+- `selected_content_type`: request body media type selected from OpenAPI metadata
+
+By default, `build_request()` and `execute()` raise
+`OpenAPIRequestValidationError` before network I/O when required inputs are
+missing. Pass `validate_required=False` to `HttpExecutor` for diagnostic-only
+or legacy partial-request behavior.
 
 Execution results keep the legacy `status`, `headers`, and `body` keys and add
 response diagnostics:
