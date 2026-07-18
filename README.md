@@ -301,6 +301,56 @@ python -m benchmarks.run_benchmark                                # retrieval on
 python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b    # full pipeline
 ```
 
+### Optional BFCL-derived retrieval check
+
+For a public-data sanity check, graph-tool-call can also run a deterministic
+retrieval benchmark over the official BFCL v4 function-calling JSONL files. This
+is **not** the BFCL leaderboard model AST score; it only asks whether the
+ground-truth function names land in the retrieved top-K.
+
+```bash
+make bfcl-benchmark
+```
+
+An experimental native tool-call loop is also available when you want to attach
+a real model to BFCL data through graph-tool-call retrieval:
+
+```bash
+make bfcl-llm-benchmark
+```
+
+It can optionally use the official `bfcl-eval` AST checker when that package is
+installed in an isolated benchmark environment, and a sweep runner is available
+for row-vs-retrieved / top-K comparisons. Full model-in-the-loop runs support
+case caching, repeat-safe cache namespaces, concurrency, progress output, and
+BFCL-compatible result JSONL export for local official-checker reruns. Current
+qwen3.6 full numbers are local BFCL-compatible evidence, not a BFCL leaderboard
+claim.
+Detailed methodology, commands, limitations, and current numbers live in
+[docs/benchmarks.md](docs/benchmarks.md#bfcl-official-tool-selection).
+
+### XGEN-style quality checks
+
+For API Collection / Planflow work, there are two focused checks: a deterministic
+engine benchmark and a BFCL-style model-in-the-loop benchmark.
+
+| Benchmark | Model used | What it evaluates |
+|---|---|---|
+| `make xgen-benchmark` | none | graph-tool-call engine search, producer expansion, plan synthesis |
+| `make xgen-llm-benchmark` | CLI `--model` value | whether that model actually calls `search_tools` and selects the right plan |
+
+```bash
+make xgen-benchmark
+make xgen-llm-benchmark
+poetry run python -m benchmarks.xgen_tool_graph.llm_loop \
+  --model qwen3.6-27b \
+  --llm-url http://127.0.0.1:8000/v1 \
+  --disable-thinking
+```
+
+Current scores, caveats, and model-specific notes are documented in
+[docs/benchmarks.md](docs/benchmarks.md#xgen-style-tool-graph-search).
+
 ---
 
 ## Advanced Features

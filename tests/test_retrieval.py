@@ -73,3 +73,115 @@ def test_retrieve_empty_query():
     results = tg.retrieve("", top_k=5)
     # Empty query may return no results or all tools depending on implementation
     assert isinstance(results, list)
+
+
+def test_retrieve_math_synonym_hypotenuse_matches_hypot_operation():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "math.hypot",
+                "description": "Compute the Euclidean norm from two or more numeric components.",
+            },
+            {
+                "name": "calculate_triangle_area",
+                "description": "Calculate triangle area from base and height.",
+            },
+            {
+                "name": "geometry.area_triangle",
+                "description": "Return area of a triangle.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+
+    names = [
+        tool.name
+        for tool in tg.retrieve(
+            "Calculate the hypotenuse of a right triangle with sides 4 and 5.",
+            top_k=3,
+        )
+    ]
+
+    assert "math.hypot" in names
+
+
+def test_retrieve_boosts_explicit_dotted_tool_name_inside_long_query():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "geodistance.find",
+                "description": "Find distance between two locations.",
+            },
+            {
+                "name": "cell_biology.function_lookup",
+                "description": "Lookup biological cell functions and related concepts.",
+            },
+            {
+                "name": "flights.search",
+                "description": "Search available flights for travel planning.",
+            },
+            {
+                "name": "calculate_area_under_curve",
+                "description": "Calculate an integral for a mathematical function.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+
+    names = [
+        tool.name
+        for tool in tg.retrieve(
+            "Plan a trip: use the 'geodistance.find' function for New York to London, "
+            "then search flights and calculate the total itinerary.",
+            top_k=3,
+        )
+    ]
+
+    assert names[0] == "geodistance.find"
+
+
+def test_retrieve_keeps_clause_level_tools_for_multi_intent_query():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "traffic_estimate",
+                "description": "Estimate weekday traffic between two addresses.",
+            },
+            {
+                "name": "calculate_distance",
+                "description": "Calculate distance between two locations.",
+            },
+            {
+                "name": "weather_forecast",
+                "description": "Get weather forecast for a city.",
+            },
+            {
+                "name": "weather_forecast_humidity",
+                "description": "Get humidity forecast for a city.",
+            },
+            {
+                "name": "weather_forecast_temperature",
+                "description": "Get temperature forecast for a city.",
+            },
+            {
+                "name": "event_finder.find_upcoming",
+                "description": "Find upcoming events in a city.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+
+    names = [
+        tool.name
+        for tool in tg.retrieve(
+            "I need to know the estimated traffic from San Francisco to Palo Alto. "
+            "Also, I am curious about the distance between these two locations. "
+            "Furthermore, I need the weather forecast for the weekend.",
+            top_k=3,
+        )
+    ]
+
+    assert {"traffic_estimate", "calculate_distance", "weather_forecast"}.issubset(names)

@@ -1,0 +1,111 @@
+{
+  "name": "XGEN Commerce Tool Graph Search",
+  "description": "Deterministic XGEN-style benchmark for OpenAPI extraction, graph search, producer expansion, and plan synthesis.",
+  "top_k": 5,
+  "token_budget": 2000,
+  "context_defaults": {
+    "siteNo": "10001",
+    "userId": "user-100"
+  },
+  "thresholds": {
+    "target_recall_at_k": 1.0,
+    "mean_target_mrr": 0.7,
+    "producer_recall": 0.9,
+    "candidate_plan_coverage": 0.95,
+    "candidate_binding_support": 0.9,
+    "plan_exact_match": 0.8,
+    "plan_step_recall": 0.95,
+    "binding_accuracy": 0.9,
+    "user_input_slot_recall": 1.0,
+    "evidence_coverage": 1.0,
+    "max_avg_latency_ms": 50.0,
+    "max_avg_token_budget_used": 900
+  },
+  "cases": [
+    {
+      "id": "product_detail_ko",
+      "query": "상품명으로 검색해서 상품 상세를 보여줘",
+      "entities": {
+        "q": "셔츠"
+      },
+      "expected_target": "getProductDetail",
+      "expected_producers": ["searchProducts"],
+      "expected_plan": ["searchProducts", "getProductDetail"],
+      "expected_bindings": {
+        "getProductDetail.productId": "searchProducts"
+      }
+    },
+    {
+      "id": "inventory_chain_ko",
+      "query": "상품 sku 재고 수량 확인해줘",
+      "entities": {
+        "q": "후드"
+      },
+      "expected_target": "getInventory",
+      "expected_producers": ["getProductDetail"],
+      "expected_plan": ["searchProducts", "getProductDetail", "getInventory"],
+      "expected_bindings": {
+        "getProductDetail.productId": "searchProducts",
+        "getInventory.skuId": "getProductDetail"
+      }
+    },
+    {
+      "id": "add_cart_chain_ko",
+      "query": "장바구니에 상품 하나 담아줘",
+      "entities": {
+        "q": "운동화",
+        "quantity": 1
+      },
+      "expected_target": "addCartItem",
+      "expected_producers": ["getProductDetail"],
+      "expected_plan": ["searchProducts", "getProductDetail", "addCartItem"],
+      "expected_bindings": {
+        "getProductDetail.productId": "searchProducts",
+        "addCartItem.skuId": "getProductDetail"
+      }
+    },
+    {
+      "id": "coupon_checkout_ko",
+      "query": "쿠폰 적용해서 장바구니 결제 진행",
+      "entities": {
+        "couponCode": "WELCOME20",
+        "paymentMethod": "card"
+      },
+      "expected_target": "checkoutCart",
+      "expected_producers": ["getCart", "validateCoupon"],
+      "expected_plan": ["getCart", "validateCoupon", "checkoutCart"],
+      "expected_bindings": {
+        "checkoutCart.cartId": "getCart",
+        "checkoutCart.couponValidationId": "validateCoupon"
+      }
+    },
+    {
+      "id": "shipment_tracking_ko",
+      "query": "주문한 상품 배송 추적 상태 알려줘",
+      "entities": {
+        "customerEmail": "buyer@example.com"
+      },
+      "expected_target": "getShipmentTracking",
+      "expected_producers": ["getOrderDetail"],
+      "expected_plan": ["findOrders", "getOrderDetail", "getShipmentTracking"],
+      "expected_bindings": {
+        "getOrderDetail.orderNo": "findOrders",
+        "getShipmentTracking.shipmentId": "getOrderDetail"
+      }
+    },
+    {
+      "id": "review_user_slots_ko",
+      "query": "구매한 상품 리뷰 작성할래",
+      "entities": {
+        "q": "백팩"
+      },
+      "expected_target": "createProductReview",
+      "expected_producers": ["searchProducts"],
+      "expected_plan": ["searchProducts", "createProductReview"],
+      "expected_bindings": {
+        "createProductReview.productId": "searchProducts"
+      },
+      "expected_user_input_slots": ["rating", "comment"]
+    }
+  ]
+}

@@ -1,0 +1,686 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "XGEN Commerce Tool Graph Benchmark API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/products/search": {
+      "get": {
+        "operationId": "searchProducts",
+        "summary": "상품 검색 Search products by keyword",
+        "tags": ["products"],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "siteNo",
+            "in": "query",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "productId": {"type": "string"},
+                          "productName": {"type": "string"},
+                          "skuId": {"type": "string"},
+                          "price": {"type": "number"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "context_field_names": ["siteNo"],
+          "ai_metadata": {
+            "one_line_summary": "상품명이나 키워드로 상품을 검색하고 productId를 찾는다",
+            "when_to_use": "사용자가 상품 이름, 키워드, 검색어로 상품 후보를 찾을 때 사용",
+            "primary_resource": "product",
+            "canonical_action": "search",
+            "produces_semantics": [
+              {"json_path": "$.items[*].productId", "semantic": "product_id"},
+              {"json_path": "$.items[*].productName", "semantic": "product_name"},
+              {"json_path": "$.items[*].skuId", "semantic": "sku_id"}
+            ],
+            "consumes_semantics": [
+              {"field": "q", "semantic": "search_keyword", "kind": "data"},
+              {"field": "siteNo", "semantic": "site_id", "kind": "context"}
+            ]
+          }
+        }
+      }
+    },
+    "/products/{productId}": {
+      "get": {
+        "operationId": "getProductDetail",
+        "summary": "상품 상세 조회 Get product details by productId",
+        "tags": ["products"],
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "siteNo",
+            "in": "query",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "productId": {"type": "string"},
+                    "productName": {"type": "string"},
+                    "skuOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "skuId": {"type": "string"},
+                          "stockQty": {"type": "integer"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "context_field_names": ["siteNo"],
+          "ai_metadata": {
+            "one_line_summary": "상품 ID로 상품 상세와 SKU 옵션을 조회한다",
+            "when_to_use": "상품 상세, 옵션, SKU 정보가 필요할 때 사용",
+            "primary_resource": "sku",
+            "canonical_action": "read",
+            "pairs_well_with": [
+              {
+                "tool": "searchProducts",
+                "reason": "searchProducts discovers productId from a keyword",
+                "source": "auto"
+              }
+            ],
+            "produces_semantics": [
+              {"json_path": "$.productId", "semantic": "product_id"},
+              {"json_path": "$.productName", "semantic": "product_name"},
+              {"json_path": "$.skuOptions[*].skuId", "semantic": "sku_id"}
+            ],
+            "consumes_semantics": [
+              {"field": "productId", "semantic": "product_id", "kind": "data"},
+              {"field": "siteNo", "semantic": "site_id", "kind": "context"}
+            ]
+          }
+        }
+      }
+    },
+    "/inventory/{skuId}": {
+      "get": {
+        "operationId": "getInventory",
+        "summary": "재고 수량 조회 Check inventory by SKU",
+        "tags": ["inventory"],
+        "parameters": [
+          {
+            "name": "skuId",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "siteNo",
+            "in": "query",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skuId": {"type": "string"},
+                    "stockQty": {"type": "integer"},
+                    "available": {"type": "boolean"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "context_field_names": ["siteNo"],
+          "ai_metadata": {
+            "one_line_summary": "SKU 기준으로 재고 수량과 구매 가능 여부를 확인한다",
+            "when_to_use": "상품 옵션의 재고, stock, availability를 확인할 때 사용",
+            "primary_resource": "inventory",
+            "canonical_action": "read",
+            "pairs_well_with": [
+              {
+                "tool": "getProductDetail",
+                "reason": "getProductDetail discovers skuId for a product",
+                "source": "auto"
+              }
+            ],
+            "produces_semantics": [
+              {"json_path": "$.skuId", "semantic": "sku_id"},
+              {"json_path": "$.stockQty", "semantic": "stock_quantity"}
+            ],
+            "consumes_semantics": [
+              {"field": "skuId", "semantic": "sku_id", "kind": "data"},
+              {"field": "siteNo", "semantic": "site_id", "kind": "context"}
+            ]
+          }
+        }
+      }
+    },
+    "/cart": {
+      "get": {
+        "operationId": "getCart",
+        "summary": "장바구니 조회 View cart for current user",
+        "tags": ["cart"],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cartId": {"type": "string"},
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "skuId": {"type": "string"},
+                          "quantity": {"type": "integer"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "context_field_names": ["userId"],
+          "ai_metadata": {
+            "one_line_summary": "현재 사용자의 장바구니와 cartId를 조회한다",
+            "when_to_use": "결제 전에 현재 장바구니 ID나 담긴 상품을 확인할 때 사용",
+            "primary_resource": "cart",
+            "canonical_action": "read",
+            "produces_semantics": [
+              {"json_path": "$.cartId", "semantic": "cart_id"},
+              {"json_path": "$.items[*].skuId", "semantic": "sku_id"}
+            ],
+            "consumes_semantics": [
+              {"field": "userId", "semantic": "user_id", "kind": "context"}
+            ]
+          }
+        }
+      }
+    },
+    "/cart/items": {
+      "post": {
+        "operationId": "addCartItem",
+        "summary": "장바구니 상품 추가 Add SKU to cart",
+        "tags": ["cart"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["userId", "skuId", "quantity"],
+                "properties": {
+                  "userId": {"type": "string"},
+                  "skuId": {"type": "string"},
+                  "quantity": {"type": "integer"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cartItemId": {"type": "string"},
+                    "skuId": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "context_field_names": ["userId"],
+          "ai_metadata": {
+            "one_line_summary": "SKU와 수량을 받아 장바구니에 상품을 담는다",
+            "when_to_use": "사용자가 상품을 장바구니에 추가하거나 담으려고 할 때 사용",
+            "primary_resource": "cart",
+            "canonical_action": "action",
+            "pairs_well_with": [
+              {
+                "tool": "getProductDetail",
+                "reason": "getProductDetail discovers skuId for cart insertion",
+                "source": "auto"
+              }
+            ],
+            "produces_semantics": [
+              {"json_path": "$.cartItemId", "semantic": "cart_item_id"},
+              {"json_path": "$.skuId", "semantic": "sku_id"}
+            ],
+            "consumes_semantics": [
+              {"field": "userId", "semantic": "user_id", "kind": "context"},
+              {"field": "skuId", "semantic": "sku_id", "kind": "data"},
+              {"field": "quantity", "semantic": "quantity", "kind": "data"}
+            ]
+          }
+        }
+      }
+    },
+    "/coupons/validate": {
+      "get": {
+        "operationId": "validateCoupon",
+        "summary": "쿠폰 코드 검증 Validate coupon code",
+        "tags": ["coupons"],
+        "parameters": [
+          {
+            "name": "couponCode",
+            "in": "query",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "couponValidationId": {"type": "string"},
+                    "couponCode": {"type": "string"},
+                    "discountAmount": {"type": "number"},
+                    "eligible": {"type": "boolean"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "ai_metadata": {
+            "one_line_summary": "쿠폰 코드가 유효한지 검증하고 couponValidationId를 반환한다",
+            "when_to_use": "결제 전에 쿠폰, 할인 코드, voucher를 확인할 때 사용",
+            "primary_resource": "coupon",
+            "canonical_action": "read",
+            "produces_semantics": [
+              {
+                "json_path": "$.couponValidationId",
+                "semantic": "coupon_validation_id"
+              },
+              {"json_path": "$.couponCode", "semantic": "coupon_code"}
+            ],
+            "consumes_semantics": [
+              {"field": "couponCode", "semantic": "coupon_code", "kind": "data"}
+            ]
+          }
+        }
+      }
+    },
+    "/checkout": {
+      "post": {
+        "operationId": "checkoutCart",
+        "summary": "장바구니 결제 Checkout cart with payment method",
+        "tags": ["checkout"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["cartId", "couponValidationId", "paymentMethod"],
+                "properties": {
+                  "cartId": {"type": "string"},
+                  "couponValidationId": {"type": "string"},
+                  "paymentMethod": {
+                    "type": "string",
+                    "enum": ["card", "bank_transfer", "point"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orderNo": {"type": "string"},
+                    "paymentId": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "ai_metadata": {
+            "one_line_summary": "cartId와 결제수단으로 장바구니 결제를 완료한다",
+            "when_to_use": "장바구니 checkout, 결제 진행, 쿠폰 적용 결제를 할 때 사용",
+            "primary_resource": "checkout",
+            "canonical_action": "action",
+            "pairs_well_with": [
+              {
+                "tool": "getCart",
+                "reason": "getCart supplies cartId for checkout",
+                "source": "auto"
+              },
+              {
+                "tool": "validateCoupon",
+                "reason": "validateCoupon supplies couponValidationId",
+                "source": "auto"
+              }
+            ],
+            "produces_semantics": [
+              {"json_path": "$.orderNo", "semantic": "order_no"},
+              {"json_path": "$.paymentId", "semantic": "payment_id"}
+            ],
+            "consumes_semantics": [
+              {"field": "cartId", "semantic": "cart_id", "kind": "data"},
+              {
+                "field": "couponValidationId",
+                "semantic": "coupon_validation_id",
+                "kind": "data"
+              },
+              {"field": "paymentMethod", "semantic": "payment_method", "kind": "data"}
+            ]
+          }
+        }
+      }
+    },
+    "/orders/search": {
+      "get": {
+        "operationId": "findOrders",
+        "summary": "주문 검색 Find orders by customer email",
+        "tags": ["orders"],
+        "parameters": [
+          {
+            "name": "customerEmail",
+            "in": "query",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orders": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "orderNo": {"type": "string"},
+                          "status": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "ai_metadata": {
+            "one_line_summary": "고객 이메일로 주문 목록을 검색하고 orderNo를 찾는다",
+            "when_to_use": "사용자의 주문번호를 모를 때 주문 목록이나 주문 이력을 찾는 데 사용",
+            "primary_resource": "order",
+            "canonical_action": "search",
+            "produces_semantics": [
+              {"json_path": "$.orders[*].orderNo", "semantic": "order_no"}
+            ],
+            "consumes_semantics": [
+              {"field": "customerEmail", "semantic": "customer_email", "kind": "data"}
+            ]
+          }
+        }
+      }
+    },
+    "/orders/{orderNo}": {
+      "get": {
+        "operationId": "getOrderDetail",
+        "summary": "주문 상세 조회 Get order detail by orderNo",
+        "tags": ["orders"],
+        "parameters": [
+          {
+            "name": "orderNo",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orderNo": {"type": "string"},
+                    "shipmentId": {"type": "string"},
+                    "status": {"type": "string"},
+                    "totalAmount": {"type": "number"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "ai_metadata": {
+            "one_line_summary": "orderNo로 주문 상세와 shipmentId를 조회한다",
+            "when_to_use": "주문번호 기준 상세, 배송 연결 정보가 필요할 때 사용",
+            "primary_resource": "shipment",
+            "canonical_action": "read",
+            "pairs_well_with": [
+              {
+                "tool": "findOrders",
+                "reason": "findOrders discovers orderNo from customer information",
+                "source": "auto"
+              }
+            ],
+            "produces_semantics": [
+              {"json_path": "$.orderNo", "semantic": "order_no"},
+              {"json_path": "$.shipmentId", "semantic": "shipment_id"}
+            ],
+            "consumes_semantics": [
+              {"field": "orderNo", "semantic": "order_no", "kind": "data"}
+            ]
+          }
+        }
+      }
+    },
+    "/shipments/{shipmentId}/tracking": {
+      "get": {
+        "operationId": "getShipmentTracking",
+        "summary": "배송 추적 조회 Track shipment status",
+        "tags": ["shipments"],
+        "parameters": [
+          {
+            "name": "shipmentId",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shipmentId": {"type": "string"},
+                    "trackingStatus": {"type": "string"},
+                    "eta": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "ai_metadata": {
+            "one_line_summary": "shipmentId로 배송 추적 상태와 도착 예정일을 조회한다",
+            "when_to_use": "배송 추적, 운송장, shipment 상태를 알고 싶을 때 사용",
+            "primary_resource": "shipment",
+            "canonical_action": "read",
+            "pairs_well_with": [
+              {
+                "tool": "getOrderDetail",
+                "reason": "getOrderDetail supplies shipmentId from orderNo",
+                "source": "auto"
+              }
+            ],
+            "produces_semantics": [
+              {"json_path": "$.shipmentId", "semantic": "shipment_id"},
+              {"json_path": "$.trackingStatus", "semantic": "tracking_status"}
+            ],
+            "consumes_semantics": [
+              {"field": "shipmentId", "semantic": "shipment_id", "kind": "data"}
+            ]
+          }
+        }
+      }
+    },
+    "/products/{productId}/reviews": {
+      "post": {
+        "operationId": "createProductReview",
+        "summary": "상품 리뷰 작성 Submit product review",
+        "tags": ["reviews"],
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["userId", "rating", "comment"],
+                "properties": {
+                  "userId": {"type": "string"},
+                  "rating": {"type": "integer"},
+                  "comment": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reviewId": {"type": "string"},
+                    "productId": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "context_field_names": ["userId"],
+          "ai_metadata": {
+            "one_line_summary": "상품 ID와 리뷰 내용을 받아 구매 후기나 평점을 작성한다",
+            "when_to_use": "상품 리뷰, 후기, 평점을 등록하거나 작성할 때 사용",
+            "primary_resource": "review",
+            "canonical_action": "action",
+            "pairs_well_with": [
+              {
+                "tool": "searchProducts",
+                "reason": "searchProducts discovers productId for review creation",
+                "source": "auto"
+              }
+            ],
+            "produces_semantics": [
+              {"json_path": "$.reviewId", "semantic": "review_id"},
+              {"json_path": "$.productId", "semantic": "product_id"}
+            ],
+            "consumes_semantics": [
+              {"field": "productId", "semantic": "product_id", "kind": "data"},
+              {"field": "userId", "semantic": "user_id", "kind": "context"},
+              {"field": "rating", "semantic": "rating", "kind": "data"},
+              {"field": "comment", "semantic": "comment", "kind": "data"}
+            ]
+          }
+        }
+      }
+    }
+  }
+}
