@@ -218,6 +218,141 @@ class TestBuildRequest:
             "memo": {"text": "ship now"},
         }
 
+    def test_root_array_request_body_accepts_raw_body_argument(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Bulk API", "version": "1.0.0"},
+            "paths": {
+                "/bulk-products": {
+                    "post": {
+                        "operationId": "bulkCreateProducts",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "items": {
+                                            "type": "object",
+                                            "required": ["goodsNo", "quantity"],
+                                            "properties": {
+                                                "goodsNo": {"type": "string"},
+                                                "quantity": {"type": "integer"},
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(
+            tools[0],
+            {"body": [{"goodsNo": "G-1", "quantity": 2}]},
+        )
+        req = executor.build_request(
+            tools[0],
+            {"body": [{"goodsNo": "G-1", "quantity": 2}]},
+        )
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_required"] == []
+        assert diagnostics["used_arguments"]["body"] == ["body"]
+        assert json.loads(req.data.decode("utf-8")) == [{"goodsNo": "G-1", "quantity": 2}]
+
+    def test_root_array_request_body_can_build_single_item_from_leaf_arguments(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Bulk API", "version": "1.0.0"},
+            "paths": {
+                "/bulk-products": {
+                    "post": {
+                        "operationId": "bulkCreateProducts",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "required": ["goodsNo", "quantity"],
+                                            "properties": {
+                                                "goodsNo": {"type": "string"},
+                                                "quantity": {"type": "integer"},
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(
+            tools[0],
+            {"goodsNo": "G-1", "quantity": 2},
+        )
+        req = executor.build_request(
+            tools[0],
+            {"goodsNo": "G-1", "quantity": 2},
+        )
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_required"] == []
+        assert diagnostics["used_arguments"]["body"] == ["goodsNo", "quantity"]
+        assert json.loads(req.data.decode("utf-8")) == [{"goodsNo": "G-1", "quantity": 2}]
+
+    def test_root_primitive_request_body_accepts_raw_body_argument(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Echo API", "version": "1.0.0"},
+            "paths": {
+                "/echo": {
+                    "post": {
+                        "operationId": "echoText",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "description": "Raw message",
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tools[0], {"body": "hello"})
+        req = executor.build_request(tools[0], {"body": "hello"})
+        invalid = executor.validate_request(tools[0], {"body": "hi"})
+
+        assert tools[0].parameters[0].name == "body"
+        assert diagnostics["valid"] is True
+        assert json.loads(req.data.decode("utf-8")) == "hello"
+        assert invalid["valid"] is False
+        assert invalid["invalid_arguments"][0]["reason"] == "min_length"
+
     def test_ingested_openapi_parameter_styles_drive_query_serialization(self):
         spec = {
             "openapi": "3.0.0",

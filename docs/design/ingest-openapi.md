@@ -84,6 +84,14 @@ metadata["response_schema"] = {
 | `server` | operation/path/spec 우선순위로 선택된 OpenAPI server metadata. variables default를 확장한 URL과 raw URL template, enum/default 정보를 함께 보존 |
 | `security` | OpenAPI security requirements와 static scheme 정보. runtime token/cookie 값은 보존하지 않음 |
 
+root JSON array, primitive body, opaque map/object body처럼 top-level property가
+없는 request body는 synthetic `body` slot으로 노출한다.
+`metadata.openapi.request_body.root.request_body_root=true`와 `json_path="$"`를
+기록하고, array item leaf는 `$[*].field` 형태로 graph/plan contract에 계속
+남긴다. executor는 root array body에서 `{"body": [...]}`를 raw JSON으로
+전송하고, 단일 item 실행 편의를 위해 `$[*].field` leaf argument만 주어져도
+`[{"field": value}]` 형태로 조립한다.
+
 OpenAPI server URL은 실행 정확도에 직접 영향을 준다. `servers[].variables`가
 있으면 `default` 값을 적용한 URL을 `metadata.base_url`로 사용하고, 원본
 template과 variable enum/default/description은 `metadata.openapi.server`에

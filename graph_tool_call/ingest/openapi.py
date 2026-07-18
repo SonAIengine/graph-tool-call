@@ -144,6 +144,7 @@ _TYPE_MAP: dict[str, str] = {
 }
 _MAX_EXAMPLES_PER_BLOCK = 5
 _MAX_EXAMPLE_CHARS = 2_000
+_ROOT_REQUEST_BODY_FIELD_NAME = "body"
 _SCHEMA_HINT_KEYS: tuple[tuple[str, str], ...] = (
     ("format", "format"),
     ("default", "default"),
@@ -318,6 +319,7 @@ def _content_type_rows(
     *,
     location: str,
     status: str | None = None,
+    request_required: bool = False,
 ) -> list[dict[str, Any]]:
     """Summarize every declared OpenAPI media type without duplicating schemas."""
     if not isinstance(content, dict) or not content:
@@ -360,6 +362,9 @@ def _content_type_rows(
             row["schema_type"] = _schema_type(schema)
             if location == "request_body":
                 top_level_fields = _request_body_top_level_rows(schema)
+                root_row = _request_body_root_row(schema, required=request_required)
+                if root_row and not top_level_fields:
+                    top_level_fields = [root_row]
                 fields = _schema_field_rows(schema, location="body")
                 top_level_fields = _merge_field_rows(top_level_fields, inferred_top_level_fields)
                 fields = _merge_field_rows(fields, inferred_fields)
@@ -690,7 +695,11 @@ def _extract_params_swagger2(
         if location == "body":
             # Expand body schema properties as individual params
             body_schema = p.get("schema", {})
-            for row in _request_body_top_level_rows(body_schema):
+            rows = _request_body_top_level_rows(body_schema)
+            root_row = _request_body_root_row(body_schema, required=bool(p.get("required", False)))
+            if root_row and not rows:
+                rows = [root_row]
+            for row in rows:
                 if required_only and not row.get("required"):
                     continue
                 params.append(
@@ -884,8 +893,13 @@ def _extract_params_openapi3(
     request_body = operation.get("requestBody", {})
     content = request_body.get("content", {})
     seen_body_props: set[str] = set()
+    request_required = bool(request_body.get("required", False))
     for _content_type, body_schema in _iter_request_body_schemas(content):
-        for row in _request_body_top_level_rows(body_schema):
+        body_rows = _request_body_top_level_rows(body_schema)
+        root_row = _request_body_root_row(body_schema, required=request_required)
+        if root_row and not body_rows:
+            body_rows = [root_row]
+        for row in body_rows:
             prop_name = str(row.get("field_name") or "")
             if not prop_name:
                 continue
@@ -905,7 +919,11 @@ def _extract_params_openapi3(
                 )
             )
 
-    for content_row in _content_type_rows(content, location="request_body"):
+    for content_row in _content_type_rows(
+        content,
+        location="request_body",
+        request_required=request_required,
+    ):
         for row in content_row.get("top_level_fields") or []:
             if not isinstance(row, dict):
                 continue
@@ -1013,7 +1031,11 @@ def _request_body_content_types(
     request_body = operation.get("requestBody") or {}
     if not isinstance(request_body, dict):
         return []
-    return _content_type_rows(request_body.get("content") or {}, location="request_body")
+    return _content_type_rows(
+        request_body.get("content") or {},
+        location="request_body",
+        request_required=bool(request_body.get("required", False)),
+    )
 
 
 def _openapi_response_rows(
@@ -1552,6 +1574,78 @@ def _request_body_top_level_rows(schema: dict[str, Any]) -> list[dict[str, Any]]
             row["enum"] = list(enum)
         rows.append(row)
     return rows
+
+
+def _request_body_root_row(schema: dict[str, Any], *, required: bool) -> dict[str, Any]:
+    """Return a synthetic root slot for non-property JSON request bodies.
+
+    Object request bodies with named properties are already represented as
+    top-level fields. Root arrays, primitive payloads, and opaque map/object
+    bodies need a stable executable slot so function-call adapters can pass the
+    exact JSON body without inventing a wrapper object.
+    """
+    if not _needs_request_body_root_slot(schema):
+        return {}
+
+    row: dict[str, Any] = {
+        "field_name": _ROOT_REQUEST_BODY_FIELD_NAME,
+        "json_path": "$",
+        "field_type": _schema_type(schema),
+        "required": required,
+        "location": "body",
+        "request_body_root": True,
+    }
+    _add_schema_hints(row, schema)
+    enum = _schema_enum(schema)
+    if enum:
+        row["enum"] = list(enum)
+    desc = _schema_description(schema)
+    if desc:
+        row["description"] = desc[:300]
+
+    if _schema_type(schema) == "array":
+        items = schema.get("items") if isinstance(schema.get("items"), dict) else {}
+        if items:
+            row["item_type"] = _schema_type(items)
+            item_ref = str(items.get("x-graph-tool-call-ref") or "")
+            if item_ref:
+                row["item_schema_ref"] = item_ref
+            item_fields = _request_body_top_level_rows(items)
+            if item_fields:
+                row["item_top_level_fields"] = item_fields
+                row["item_field_count"] = len(item_fields)
+    elif (
+        _schema_type(schema) == "object"
+        and isinstance(schema.get("additionalProperties"), dict)
+        and schema["additionalProperties"]
+    ):
+        row["additional_properties"] = True
+        row["map_value"] = True
+        row["map_key_placeholder"] = "*"
+        row["value_type"] = _schema_type(schema["additionalProperties"])
+
+    return row
+
+
+def _needs_request_body_root_slot(schema: dict[str, Any]) -> bool:
+    if not isinstance(schema, dict) or not schema:
+        return False
+
+    schema = _flatten_top_level_allof(schema)
+    alternative_rows = _alternative_top_level_rows(schema)
+    if alternative_rows:
+        return False
+
+    schema_type = _schema_type(schema)
+    if schema_type == "array":
+        return True
+    if schema_type != "object":
+        return True
+
+    properties = schema.get("properties")
+    if isinstance(properties, dict) and properties:
+        return False
+    return True
 
 
 def _flatten_top_level_allof(schema: dict[str, Any]) -> dict[str, Any]:
@@ -2451,11 +2545,14 @@ def _operation_to_tool(
         for row in request_body_content_type_rows
         if row.get("content_type") == request_content_type
     ]
+    request_body_root = _request_body_root_row(request_body_schema, required=request_required)
     body_top_level_rows = _merge_body_field_rows(
         _request_body_top_level_rows(request_body_schema),
         selected_body_content_type_rows,
         field_key="top_level_fields",
     )
+    if request_body_root and not body_top_level_rows:
+        body_top_level_rows = [request_body_root]
     body_leaf_rows = _merge_body_field_rows(
         _schema_field_rows(request_body_schema, location="body"),
         selected_body_content_type_rows,
@@ -2466,6 +2563,8 @@ def _operation_to_tool(
         request_body_content_type_rows,
         field_key="top_level_fields",
     )
+    if request_body_root and not all_body_top_level_rows:
+        all_body_top_level_rows = [request_body_root]
     all_body_leaf_rows = _merge_body_field_rows(
         body_leaf_rows,
         request_body_content_type_rows,
@@ -2529,6 +2628,7 @@ def _operation_to_tool(
                 "content_type": request_content_type,
                 "content_types": request_body_content_type_rows,
                 "schema": request_body_schema,
+                **({"root": request_body_root} if request_body_root else {}),
                 "top_level_fields": body_top_level_rows,
                 "fields": body_leaf_rows,
                 "all_top_level_fields": all_body_top_level_rows,

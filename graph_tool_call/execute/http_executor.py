@@ -192,7 +192,16 @@ class HttpExecutor:
                 headers["Content-Type"] = content_type
             else:
                 headers["Content-Type"] = content_type
-                body = _build_json_body(body_params, body_field_paths)
+                request_body = (
+                    api_metadata.get("request_body")
+                    if isinstance(api_metadata.get("request_body"), dict)
+                    else {}
+                )
+                body = _build_json_body(
+                    body_params,
+                    body_field_paths,
+                    request_body=request_body,
+                )
                 data = json.dumps(body, ensure_ascii=False).encode("utf-8")
 
         return urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -492,11 +501,17 @@ def _missing_required_inputs(
             path_template=path_template,
         )["body"]
     )
+    has_raw_body_argument = _raw_body_argument_present(body_rows, arguments)
     for row in body_rows:
         if not isinstance(row, dict) or not row.get("required"):
             continue
         name = str(row.get("field_name") or "")
         if not name:
+            continue
+        if _is_request_body_root_row(row):
+            if has_body_argument:
+                continue
+        elif has_raw_body_argument:
             continue
         item = {
             "name": name,
@@ -545,6 +560,16 @@ def _missing_required_inputs(
             location = "path" if f"{{{param.name}}}" in path_template else ""
         if not location:
             location = "query" if method in ("GET", "DELETE", "HEAD", "OPTIONS") else "body"
+        if (
+            location == "body"
+            and has_body_argument
+            and any(
+                _is_request_body_root_row(row) and str(row.get("field_name") or "") == param.name
+                for row in body_rows
+                if isinstance(row, dict)
+            )
+        ):
+            continue
         if (location, param.name) in parameter_required:
             continue
         item = {
@@ -1178,13 +1203,30 @@ def _body_field_paths(
     for row in _body_rows(api_metadata, content_type=content_type, include_content_type_rows=False):
         if not isinstance(row, dict):
             continue
-        if row.get("map_value"):
+        if row.get("map_value") and not _is_request_body_root_row(row):
             continue
         name = str(row.get("field_name") or "")
         json_path = str(row.get("json_path") or "")
         if name and json_path and name not in paths:
             paths[name] = json_path
     return paths
+
+
+def _raw_body_argument_present(
+    body_rows: list[dict[str, Any]],
+    arguments: dict[str, Any],
+) -> bool:
+    for row in body_rows:
+        if not isinstance(row, dict) or not _is_request_body_root_row(row):
+            continue
+        name = str(row.get("field_name") or "")
+        if name and name in arguments:
+            return True
+    return False
+
+
+def _is_request_body_root_row(row: dict[str, Any]) -> bool:
+    return bool(row.get("request_body_root")) and str(row.get("json_path") or "") == "$"
 
 
 def _body_rows(
@@ -1821,7 +1863,18 @@ def _quote_multipart_header_value(value: str) -> str:
 def _build_json_body(
     body_params: dict[str, Any],
     body_field_paths: dict[str, str],
-) -> dict[str, Any]:
+    *,
+    request_body: dict[str, Any] | None = None,
+) -> Any:
+    raw_body = _raw_json_body(body_params, body_field_paths)
+    if raw_body is not _NO_RAW_BODY:
+        return raw_body
+
+    if _request_body_schema_type(request_body) == "array":
+        array_body = _build_root_array_json_body(body_params, body_field_paths)
+        if array_body is not None:
+            return array_body
+
     body: dict[str, Any] = {}
     for name, value in body_params.items():
         json_path = body_field_paths.get(name)
@@ -1830,6 +1883,54 @@ def _build_json_body(
         else:
             body[name] = value
     return body
+
+
+_NO_RAW_BODY = object()
+
+
+def _raw_json_body(body_params: dict[str, Any], body_field_paths: dict[str, str]) -> Any:
+    for name, value in body_params.items():
+        if body_field_paths.get(name) == "$":
+            return value
+    return _NO_RAW_BODY
+
+
+def _request_body_schema_type(request_body: dict[str, Any] | None) -> str:
+    if not isinstance(request_body, dict):
+        return ""
+    root = request_body.get("root")
+    if isinstance(root, dict):
+        field_type = str(root.get("field_type") or "")
+        if field_type:
+            return field_type
+    schema = request_body.get("schema")
+    if isinstance(schema, dict):
+        schema_type = schema.get("type")
+        if isinstance(schema_type, list):
+            return str(next((item for item in schema_type if item and item != "null"), ""))
+        return str(schema_type or "")
+    return ""
+
+
+def _build_root_array_json_body(
+    body_params: dict[str, Any],
+    body_field_paths: dict[str, str],
+) -> list[Any] | None:
+    item: dict[str, Any] = {}
+    for name, value in body_params.items():
+        json_path = body_field_paths.get(name)
+        if not json_path or not json_path.startswith("$[*]"):
+            return None
+        suffix = json_path.removeprefix("$[*]")
+        if not suffix:
+            return list(value) if _is_sequence(value) else [value]
+        if not suffix.startswith("."):
+            return None
+        item_path = "$" + suffix
+        if not _can_assign_json_path(item_path):
+            return None
+        _assign_json_path(item, item_path, value)
+    return [item] if item else None
 
 
 def _can_assign_json_path(json_path: str) -> bool:

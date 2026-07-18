@@ -637,6 +637,66 @@ class TestIngestOpenAPI30:
         assert second["operation_id_duplicate_index"] == 1
         assert second["operation_id_deduped_name"] == "findOrder__get_orders_by_orderId"
 
+    def test_root_array_request_body_is_preserved_as_executable_body_slot(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Bulk API", "version": "1.0.0"},
+            "paths": {
+                "/bulk-products": {
+                    "post": {
+                        "operationId": "bulkCreateProducts",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "items": {
+                                            "type": "object",
+                                            "required": ["goodsNo", "quantity"],
+                                            "properties": {
+                                                "goodsNo": {
+                                                    "type": "string",
+                                                    "description": "상품 번호",
+                                                },
+                                                "quantity": {
+                                                    "type": "integer",
+                                                    "minimum": 1,
+                                                },
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        params = {param.name: param for param in tool.parameters}
+        request_body = tool.metadata["openapi"]["request_body"]
+        root = request_body["root"]
+        fields = {row["field_name"]: row for row in request_body["fields"]}
+        consumes = {row["field_name"]: row for row in tool.metadata["api_contract"]["consumes"]}
+
+        assert params["body"].type == "array"
+        assert params["body"].required is True
+        assert "goodsNo" in params["body"].description
+        assert root["field_name"] == "body"
+        assert root["json_path"] == "$"
+        assert root["field_type"] == "array"
+        assert root["request_body_root"] is True
+        assert root["min_items"] == 1
+        assert root["item_type"] == "object"
+        assert root["item_field_count"] == 2
+        assert fields["goodsNo"]["json_path"] == "$[*].goodsNo"
+        assert consumes["quantity"]["json_path"] == "$[*].quantity"
+
     def test_response_envelope_aliases_are_preserved_for_execution(self) -> None:
         spec = {
             "openapi": "3.0.0",

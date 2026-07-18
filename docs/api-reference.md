@@ -107,7 +107,11 @@ tool's metadata:
 - `metadata.openapi.request_body`: selected content type, all declared content
   type candidates, candidate-level fields, schema, top-level fields, leaf
   fields, and body examples. If schema fields are missing but concrete examples
-  exist, inferred fields are included with `schema_inferred_from=example`
+  exist, inferred fields are included with `schema_inferred_from=example`.
+  Non-property JSON bodies such as root arrays, primitive payloads, and opaque
+  map bodies also include `root` with `request_body_root=true` and a synthetic
+  executable `body` slot, while leaf fields remain available for graph/plan
+  contracts.
 - `metadata.openapi.response`: selected success status, content type, schema,
   description, leaf fields, declared response headers, optional response
   envelope metadata, and selected OpenAPI response links
@@ -141,6 +145,10 @@ OpenAPI field direction is enforced before graph/search promotion:
   single-schema `anyOf` / `oneOf` null unions are exposed as `nullable=true`.
 - OpenAPI3 query object wrappers are expanded into their real inner fields for
   `metadata.openapi.parameters`, `input_locations`, and `api_contract.consumes`.
+- Root JSON array request bodies can be executed either by passing raw
+  `{"body": [...]}` or, for a single array item, by passing the extracted item
+  leaf arguments; the executor emits the array body instead of inventing an
+  object wrapper.
 - Declared success-response headers are exposed as `api_contract.produces` rows
   with `location=response_header` and `json_path=$.headers.<Name>`, so cursor,
   `Location`, `ETag`, and token-like handoff headers can participate in
