@@ -108,6 +108,10 @@ tool's metadata:
   field count. Numeric 2xx and `2XX` status ranges are classified as success;
   `4XX`/`5XX` ranges and `default` remain failure metadata.
 - `metadata.openapi.error_responses`: non-2xx response catalog for failure UI/logs
+- `metadata.openapi.server`: effective OpenAPI server metadata, preserving
+  the raw URL template, default-expanded URL, variable defaults/enums, selected
+  source (`operation`, `path`, `spec`, or `swagger2`), and same-scope server
+  candidates
 - `metadata.openapi.security`: declared security requirements and static scheme
   metadata, without runtime credentials
 - `metadata.api_contract`: raw extracted produces/consumes rows for graph building.
@@ -136,6 +140,12 @@ OpenAPI field direction is enforced before graph/search promotion:
 - OpenAPI response status ranges are preserved. A `2XX` response can be the
   selected success contract for produces/Planflow, while `4XX`/`5XX` rows stay
   in `metadata.openapi.error_responses` for failure UX and logs.
+- OpenAPI `servers[].variables` are expanded with their declared defaults for
+  `metadata.base_url`, while the raw template and variable enum/default
+  metadata remain under `metadata.openapi.server`. Server priority follows
+  OpenAPI rules: operation-level, then path-level, then spec-level. Link Object
+  `server` entries use the same default expansion and are preserved on the link
+  row.
 - Declared OpenAPI `security` schemes are converted to ambient auth consumes.
   `apiKey` schemes use their declared query/header/cookie credential name;
   bearer/basic/OAuth/OpenID Connect schemes use `Authorization` as the

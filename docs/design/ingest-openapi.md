@@ -71,7 +71,15 @@ metadata["response_schema"] = {
 | `response` | 선택된 2xx/default response의 status, content type, schema, description, leaf field, response header, envelope metadata |
 | `responses` | 모든 response status의 compact catalog: success flag, content types, examples, headers, field count. 숫자 2xx와 `2XX` range는 success, `4XX`/`5XX`와 `default`는 failure metadata로 분류 |
 | `error_responses` | non-2xx response만 모은 실패 처리용 catalog |
+| `server` | operation/path/spec 우선순위로 선택된 OpenAPI server metadata. variables default를 확장한 URL과 raw URL template, enum/default 정보를 함께 보존 |
 | `security` | OpenAPI security requirements와 static scheme 정보. runtime token/cookie 값은 보존하지 않음 |
+
+OpenAPI server URL은 실행 정확도에 직접 영향을 준다. `servers[].variables`가
+있으면 `default` 값을 적용한 URL을 `metadata.base_url`로 사용하고, 원본
+template과 variable enum/default/description은 `metadata.openapi.server`에
+남긴다. 우선순위는 OpenAPI 규칙대로 operation `servers` → path item
+`servers` → spec-level `servers`이며, Swagger 2.0은 `schemes + host +
+basePath`를 같은 server metadata shape로 정규화한다.
 
 선언된 OpenAPI `security` requirement는 `metadata.openapi.security`에 원형에
 가까운 compact metadata로 남기고, 동시에 `metadata.api_contract.consumes`에는

@@ -102,6 +102,12 @@ class TestIngestPetstoreSwagger2:
         }
 
         tools, _ = ingest_openapi(spec)
+        server = tools[0].metadata["openapi"]["server"]
+        assert tools[0].metadata["base_url"] == "https://api.example.test/v1"
+        assert server["source"] == "swagger2"
+        assert server["scheme"] == "https"
+        assert server["host"] == "api.example.test"
+        assert server["base_path"] == "/v1"
         consumes = {
             (row["field_name"], row["location"]): row
             for row in tools[0].metadata["api_contract"]["consumes"]
@@ -517,6 +523,71 @@ class TestIngestOpenAPI30:
         assert {row["status"] for row in openapi["error_responses"]} == {"4XX", "default"}
         assert any(row["field_name"] == "exportId" for row in metadata["api_contract"]["produces"])
         assert all(row["field_name"] != "errorCode" for row in metadata["api_contract"]["produces"])
+
+    def test_server_variables_are_expanded_and_preserved(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Server Variable API", "version": "1.0.0"},
+            "servers": [
+                {
+                    "url": "https://{stage}.example.com/{basePath}",
+                    "description": "Spec server",
+                    "variables": {
+                        "stage": {
+                            "default": "dev",
+                            "enum": ["dev", "stage", "prod"],
+                            "description": "Deployment stage",
+                        },
+                        "basePath": {"default": "api"},
+                    },
+                }
+            ],
+            "paths": {
+                "/items": {
+                    "servers": [
+                        {
+                            "url": "https://path.example.com/{basePath}",
+                            "variables": {"basePath": {"default": "v2"}},
+                        }
+                    ],
+                    "get": {
+                        "operationId": "listItems",
+                        "servers": [
+                            {
+                                "url": "https://{tenant}.example.com/{basePath}",
+                                "description": "Operation server",
+                                "variables": {
+                                    "tenant": {
+                                        "default": "acme",
+                                        "enum": ["acme", "demo"],
+                                    },
+                                    "basePath": {"default": "admin"},
+                                },
+                            },
+                            {"url": "https://fallback.example.com"},
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    },
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        metadata = tools[0].metadata
+        server = metadata["openapi"]["server"]
+
+        assert metadata["base_url"] == "https://acme.example.com/admin"
+        assert server["source"] == "operation"
+        assert server["url"] == "https://acme.example.com/admin"
+        assert server["raw_url"] == "https://{tenant}.example.com/{basePath}"
+        assert [row["url"] for row in server["servers"]] == [
+            "https://acme.example.com/admin",
+            "https://fallback.example.com",
+        ]
+        variables = {row["name"]: row for row in server["variables"]}
+        assert variables["tenant"]["default"] == "acme"
+        assert variables["tenant"]["enum"] == ["acme", "demo"]
+        assert variables["basePath"]["default"] == "admin"
 
     def test_response_envelope_aliases_are_preserved_for_execution(self) -> None:
         spec = {
@@ -938,6 +1009,15 @@ class TestIngestOpenAPI30:
                                             "traceId": "$response.header.X-Trace-Id",
                                         },
                                         "description": "Use the created user id.",
+                                        "server": {
+                                            "url": "https://{tenant}.example.com/profile",
+                                            "variables": {
+                                                "tenant": {
+                                                    "default": "acme",
+                                                    "enum": ["acme", "demo"],
+                                                }
+                                            },
+                                        },
                                     }
                                 },
                             }
@@ -976,6 +1056,9 @@ class TestIngestOpenAPI30:
         }
         assert response_links[0]["parameters"][1]["source"] == "response_header"
         assert response_links[0]["parameters"][1]["header"] == "X-Trace-Id"
+        assert response_links[0]["server_url"] == "https://acme.example.com/profile"
+        assert response_links[0]["server"]["raw_url"] == "https://{tenant}.example.com/profile"
+        assert response_links[0]["server"]["variables"][0]["default"] == "acme"
         assert contract_links[0]["source_operation_id"] == "createSignupSession"
         assert contract_links[0]["source_status"] == "201"
         assert contract_links[0]["success"] is True

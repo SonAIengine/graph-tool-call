@@ -1207,8 +1207,11 @@ def _openapi_response_link_rows(
                 row["request_body"] = request_body
 
         server = link.get("server")
-        if isinstance(server, dict) and server.get("url"):
-            row["server_url"] = str(server["url"])[:500]
+        if isinstance(server, dict):
+            server_rows = _server_rows([server], source="link")
+            if server_rows:
+                row["server"] = server_rows[0]
+                row["server_url"] = server_rows[0]["url"]
 
         if operation_id or operation_ref:
             rows.append(row)
@@ -2228,21 +2231,130 @@ def _resolve_server_url(
 
     Swagger 2.0은 ``host`` + ``basePath`` + ``schemes`` 조합으로 base_url 구성.
     """
+    server = _server_metadata(
+        operation,
+        path_item,
+        spec,
+        is_swagger2=is_swagger2,
+    )
+    url = server.get("url") if isinstance(server, dict) else None
+    return str(url) if url else None
+
+
+def _server_metadata(
+    operation: dict[str, Any],
+    path_item: dict[str, Any] | None,
+    spec: dict[str, Any],
+    *,
+    is_swagger2: bool = False,
+) -> dict[str, Any]:
+    """Return effective server metadata with OpenAPI variables expanded."""
     if is_swagger2:
         host = spec.get("host")
         if not host:
-            return None
+            return {}
         scheme = (spec.get("schemes") or ["https"])[0]
         base_path = spec.get("basePath") or ""
-        return f"{scheme}://{host}{base_path}".rstrip("/")
+        url = _trim_server_url(f"{scheme}://{host}{base_path}")
+        return {
+            "source": "swagger2",
+            "url": url,
+            "raw_url": url,
+            "scheme": str(scheme),
+            "host": str(host),
+            "base_path": str(base_path),
+            "servers": [{"source": "swagger2", "url": url, "raw_url": url}],
+        }
 
-    for source in (operation, path_item or {}, spec):
+    for source_name, source in (
+        ("operation", operation),
+        ("path", path_item or {}),
+        ("spec", spec),
+    ):
         servers = source.get("servers") if isinstance(source, dict) else None
-        if servers and isinstance(servers, list) and servers:
-            url = (servers[0] or {}).get("url")
-            if url:
-                return str(url).rstrip("/")
-    return None
+        rows = _server_rows(servers, source=source_name)
+        if rows:
+            selected = dict(rows[0])
+            selected["servers"] = rows
+            return selected
+    return {}
+
+
+_SERVER_VARIABLE_RE = re.compile(r"{([^{}]+)}")
+
+
+def _server_rows(servers: Any, *, source: str) -> list[dict[str, Any]]:
+    if not isinstance(servers, list):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for server in servers:
+        if not isinstance(server, dict):
+            continue
+        raw_url = str(server.get("url") or "").strip()
+        if not raw_url:
+            continue
+        variables = _server_variable_rows(server.get("variables") or {})
+        expanded_url, unresolved = _expand_server_url(raw_url, variables)
+        row: dict[str, Any] = {
+            "source": source,
+            "url": _trim_server_url(expanded_url),
+            "raw_url": raw_url,
+        }
+        description = str(server.get("description") or "").strip()
+        if description:
+            row["description"] = description[:300]
+        if variables:
+            row["variables"] = variables
+        if unresolved:
+            row["unresolved_variables"] = unresolved
+        rows.append(row)
+    return rows
+
+
+def _server_variable_rows(variables: Any) -> list[dict[str, Any]]:
+    if not isinstance(variables, dict):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for name, variable in variables.items():
+        if not isinstance(variable, dict):
+            continue
+        row: dict[str, Any] = {"name": str(name)}
+        if "default" in variable:
+            row["default"] = str(variable["default"])
+        enum = variable.get("enum")
+        if isinstance(enum, list) and enum:
+            row["enum"] = [str(value) for value in enum if value is not None]
+        description = str(variable.get("description") or "").strip()
+        if description:
+            row["description"] = description[:300]
+        rows.append(row)
+    return rows
+
+
+def _expand_server_url(raw_url: str, variables: list[dict[str, Any]]) -> tuple[str, list[str]]:
+    defaults = {
+        str(row.get("name")): str(row.get("default"))
+        for row in variables
+        if row.get("name") and row.get("default") not in (None, "")
+    }
+    unresolved: list[str] = []
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if name in defaults:
+            return defaults[name]
+        if name not in unresolved:
+            unresolved.append(name)
+        return match.group(0)
+
+    return _SERVER_VARIABLE_RE.sub(replace, raw_url), unresolved
+
+
+def _trim_server_url(url: str) -> str:
+    url = str(url or "").strip()
+    return url.rstrip("/") if len(url) > 1 else url
 
 
 def _operation_to_tool(
@@ -2457,9 +2569,10 @@ def _operation_to_tool(
     # spec/path/operation 단위의 servers field → tool 자체 base_url 부여.
     # 한 컬렉션에 다른 host를 가진 source들이 섞여 있을 때 executor가 tool마다
     # 알맞은 base_url로 호출할 수 있게 한다.
-    server_url = _resolve_server_url(operation, path_item, resolved_spec, is_swagger2=is_swagger2)
-    if server_url:
-        metadata["base_url"] = server_url
+    server = _server_metadata(operation, path_item, resolved_spec, is_swagger2=is_swagger2)
+    if server:
+        metadata["openapi"]["server"] = server
+        metadata["base_url"] = server["url"]
 
     return ToolSchema(
         name=operation_id,
