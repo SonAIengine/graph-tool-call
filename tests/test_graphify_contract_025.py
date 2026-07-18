@@ -177,15 +177,18 @@ def test_promote_api_contract_signals_selects_useful_fields_without_wrapper_nois
     consumes = {row["field_name"]: row for row in detail.metadata["consumes"]}
     assert "status" not in produces
     assert "data" not in produces
+    assert "goodsNm" not in produces
     assert produces["goodsNo"]["semantic_tag"] == "goods_no"
     assert produces["goodsNo"]["semantic_inferred_from"] == "field_name"
+    assert produces["goodsNo"]["search_signal"] is False
     assert consumes["goodsNo"]["kind"] == "data"
     assert consumes["goodsNo"]["required"] is True
+    assert consumes["goodsNo"]["search_signal"] is False
     assert consumes["siteNo"]["kind"] == "context"
     assert consumes["siteNo"]["required"] is False
     assert consumes["pageNo"]["kind"] == "context"
     assert consumes["giftMessage"]["required"] is True
-    assert stats["produces_added"] == 2
+    assert stats["produces_added"] == 1
     assert stats["consumes_added"] == 5
 
 
@@ -409,6 +412,31 @@ def test_retrieve_with_scores_indexes_ai_metadata_and_io_contract_terms():
 
     assert results[0].tool.name == "opaque001"
     assert results[0].keyword_score > 0
+
+
+def test_retrieve_with_scores_skips_raw_contract_fields_without_search_signal():
+    tg = ToolGraph()
+    tg.add_tool(
+        ToolSchema(
+            name="source001",
+            description="",
+            metadata={
+                "produces": [
+                    {
+                        "field_name": "opaqueTokenId",
+                        "semantic_tag": "opaque_token_id",
+                        "contract_source": "api_contract",
+                        "search_signal": False,
+                    }
+                ]
+            },
+        )
+    )
+    tg.add_tool(ToolSchema(name="control001", description="opaque token id visible"))
+
+    results = tg.retrieve_with_scores("opaque token id", top_k=1)
+
+    assert results[0].tool.name == "control001"
 
 
 def test_plan_synthesis_diagnostics_and_runner_event_metadata():

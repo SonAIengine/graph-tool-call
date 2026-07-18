@@ -519,6 +519,11 @@ class BM25Scorer:
             for field in metadata.get(key) or []:
                 if not isinstance(field, dict):
                     continue
+                if (
+                    field.get("contract_source") == "api_contract"
+                    and field.get("search_signal") is False
+                ):
+                    continue
                 for field_key in ("field_name", "semantic_tag", "json_path", "field_type", "kind"):
                     value = field.get(field_key)
                     if value:

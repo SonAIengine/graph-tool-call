@@ -233,6 +233,8 @@ def promote_api_contract_signals(
     paging_detector: FieldPredicate | None = None,
     search_filter_detector: FieldPredicate | None = None,
     infer_semantic_tags: bool = True,
+    promote_rare_produces: bool = False,
+    index_promoted_contract_fields: bool = False,
 ) -> dict[str, int]:
     """Promote selected raw OpenAPI contract rows into graph/search IO signals.
 
@@ -283,6 +285,8 @@ def promote_api_contract_signals(
                 produce_freq=produce_freq,
                 max_field_frequency=max_field_frequency,
                 infer_semantic_tags=infer_semantic_tags,
+                promote_rare_produces=promote_rare_produces,
+                search_signal=index_promoted_contract_fields,
             )
             if promoted is None:
                 stats["produces_skipped"] += 1
@@ -297,6 +301,7 @@ def promote_api_contract_signals(
                 row,
                 policy=policy,
                 infer_semantic_tags=infer_semantic_tags,
+                search_signal=index_promoted_contract_fields,
             )
             if promoted is None:
                 stats["consumes_skipped"] += 1
@@ -318,6 +323,8 @@ def promote_api_contract_signals(
                     "max_field_frequency_ratio": max_field_frequency_ratio,
                     "max_field_frequency": max_field_frequency,
                     "infer_semantic_tags": infer_semantic_tags,
+                    "promote_rare_produces": promote_rare_produces,
+                    "index_promoted_contract_fields": index_promoted_contract_fields,
                 }
             )
             schema.metadata = metadata
@@ -509,6 +516,8 @@ def _promote_produce_row(
     produce_freq: Counter[str],
     max_field_frequency: int,
     infer_semantic_tags: bool,
+    promote_rare_produces: bool,
+    search_signal: bool,
 ) -> dict[str, Any] | None:
     if not isinstance(row, dict):
         return None
@@ -521,11 +530,12 @@ def _promote_produce_row(
     identifier = _is_identifier_like(field_name)
     rare = produce_freq.get(field_key, 0) <= max_field_frequency
     semantic = str(row.get("semantic_tag") or "").strip()
-    if not (semantic or identifier or rare):
+    if not (semantic or identifier or (promote_rare_produces and rare)):
         return None
 
     promoted = _copy_contract_field(row)
     promoted["contract_source"] = "api_contract"
+    promoted["search_signal"] = bool(search_signal)
     promoted["signal_score"] = _produce_signal_score(
         promoted,
         identifier=identifier,
@@ -542,6 +552,7 @@ def _promote_consume_row(
     *,
     policy: _Policy,
     infer_semantic_tags: bool,
+    search_signal: bool,
 ) -> dict[str, Any] | None:
     if not isinstance(row, dict):
         return None
@@ -574,6 +585,7 @@ def _promote_consume_row(
     promoted["required"] = required
     promoted["kind"] = kind
     promoted["contract_source"] = "api_contract"
+    promoted["search_signal"] = bool(search_signal)
     promoted["signal_score"] = _consume_signal_score(promoted)
     if infer_semantic_tags and not promoted.get("semantic_tag") and kind == "data":
         promoted["semantic_tag"] = _semantic_tag(field_name)
@@ -626,6 +638,7 @@ def _merge_rows(metadata: dict[str, Any], key: str, incoming: list[dict[str, Any
             "json_path",
             "enum",
             "contract_source",
+            "search_signal",
             "signal_score",
         ):
             if merge_key in row and not existing.get(merge_key):

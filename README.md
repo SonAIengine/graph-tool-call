@@ -340,12 +340,14 @@ model-in-the-loop benchmark.
 | `make xgen-benchmark` | none | graph-tool-call engine search, producer expansion, plan synthesis |
 | `make xgen-scale-acceptance` | none | X2BEE-scale Swagger UI discovery, dedupe, ingest, graph build, Korean search smoke |
 | `make xgen-scale-sweep` | none | one X2BEE-scale graph build, then top-K compression diagnostics for `k=3,5,10` |
+| `make xgen-scale-contract-ablation` | none | one X2BEE-scale spec load, then baseline vs promoted OpenAPI contract signal comparison |
 | `make xgen-llm-benchmark` | CLI `--model` value | whether that model actually calls `search_tools` and selects the right plan |
 
 ```bash
 make xgen-benchmark
 make xgen-scale-acceptance
 make xgen-scale-sweep
+make xgen-scale-contract-ablation
 make xgen-llm-benchmark
 poetry run python -m benchmarks.xgen_tool_graph.llm_loop \
   --model qwen3.6-27b \

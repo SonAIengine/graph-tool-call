@@ -62,7 +62,17 @@ make xgen-scale-acceptance \
 make xgen-scale-sweep \
   TOP_KS=3,5,10 \
   OUT=/tmp/gtc-x2bee-scale-sweep.json
+
+make xgen-scale-contract-ablation \
+  CONTEXT_FIELDS=siteNo,langCd,sysGbCd \
+  OUT=/tmp/gtc-x2bee-scale-contract-ablation.json
 ```
+
+`xgen-scale-contract-ablation`은 같은 live spec 로드 결과에서 baseline과
+contract-promoted graph를 비교한다. 기본 promoted row는 `search_signal=False`
+라서 target search ranking을 오염시키지 않고, producer expansion / plan
+synthesis 쪽에서만 쓰인다. raw field를 BM25에도 넣어보는 실험은
+`--index-promoted-contract-fields`를 직접 켜서 별도 artifact로 남긴다.
 
 기본 URL은 X2BEE BO Swagger UI다.
 

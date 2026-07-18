@@ -103,7 +103,7 @@ so POST operations with query/header parameters are rendered correctly.
 For graph/search use, keep raw contract and promoted signal separate. Large
 Swagger specs often repeat wrapper fields such as `status`, `data`, and `list`,
 so plain ingest does not index every leaf. Use graphify promotion when you want
-selected contract fields to participate in retrieval and plan synthesis:
+selected contract fields to participate in producer expansion and plan synthesis:
 
 ```python
 from graph_tool_call.graphify import ingest_openapi_graphify
@@ -122,6 +122,9 @@ tg, stats = ingest_openapi_graphify(
 The promotion step adds high-value fields to `metadata.produces` /
 `metadata.consumes`, classifies `kind=data|context|auth`, and derives
 `consumer --requires--> producer` data-flow edges with `api_contract` evidence.
+Promoted raw contract rows set `search_signal=False` by default so target-tool
+BM25 ranking is not flooded by identifier fields. Turn indexing on only for a
+controlled experiment or a curated collection.
 
 ---
 

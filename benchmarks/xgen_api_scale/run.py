@@ -20,6 +20,7 @@ from urllib.parse import unquote
 
 from benchmarks.metrics import mrr, recall_at_k
 from graph_tool_call import ToolGraph, __version__
+from graph_tool_call.graphify import promote_api_contract_signals
 from graph_tool_call.ingest.openapi import _load_spec, ingest_openapi
 from graph_tool_call.tool_graph import _discover_spec_urls
 
@@ -100,6 +101,8 @@ def run_benchmark(
     max_build_seconds: float = 30.0,
     max_response_bytes: int = 5_000_000,
     allow_private_hosts: bool = False,
+    promote_contract_signals: bool = False,
+    contract_signal_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the scale acceptance benchmark and return a JSON-serializable report."""
     prepared = prepare_scale_graph(
@@ -109,6 +112,8 @@ def run_benchmark(
         allow_private_hosts=allow_private_hosts,
         detect_dependencies=detect_dependencies,
         min_confidence=min_confidence,
+        promote_contract_signals=promote_contract_signals,
+        contract_signal_options=contract_signal_options,
     )
 
     cases_doc = load_cases(cases_path)
@@ -142,6 +147,7 @@ def run_benchmark(
         "top_k": selected_top_k,
         "detect_dependencies": detect_dependencies,
         "min_confidence": min_confidence,
+        "promote_contract_signals": promote_contract_signals,
         "status": status,
         "scale": scale_summary,
         "search": search_summary,
@@ -164,6 +170,8 @@ def run_top_k_sweep(
     max_build_seconds: float = 30.0,
     max_response_bytes: int = 5_000_000,
     allow_private_hosts: bool = False,
+    promote_contract_signals: bool = False,
+    contract_signal_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run one large graph build and compare multiple retrieval top-K settings."""
     prepared = prepare_scale_graph(
@@ -173,6 +181,8 @@ def run_top_k_sweep(
         allow_private_hosts=allow_private_hosts,
         detect_dependencies=detect_dependencies,
         min_confidence=min_confidence,
+        promote_contract_signals=promote_contract_signals,
+        contract_signal_options=contract_signal_options,
     )
     cases_doc = load_cases(cases_path)
     selected_top_ks = _normalize_top_ks(top_ks or [3, 5, int(cases_doc.get("top_k") or 10)])
@@ -234,10 +244,105 @@ def run_top_k_sweep(
         "acceptance_top_k": selected_acceptance_top_k,
         "detect_dependencies": detect_dependencies,
         "min_confidence": min_confidence,
+        "promote_contract_signals": promote_contract_signals,
         "status": status,
         "scale": scale_summary,
         "sweep": sweep,
         "specs": [asdict(profile) for profile in prepared.profiles],
+    }
+
+
+def run_contract_signal_ablation(
+    *,
+    swagger_url: str = DEFAULT_X2BEE_SWAGGER_URL,
+    spec_sources: list[str | dict[str, Any]] | None = None,
+    cases_path: Path | None = DEFAULT_X2BEE_CASES_PATH,
+    top_k: int | None = None,
+    detect_dependencies: bool = True,
+    min_confidence: float = 0.7,
+    min_spec_count: int = 1,
+    min_unique_tools: int = 1000,
+    max_build_seconds: float = 30.0,
+    max_response_bytes: int = 5_000_000,
+    allow_private_hosts: bool = False,
+    contract_signal_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compare large-OpenAPI retrieval with and without contract promotion.
+
+    Specs are loaded once, then two graphs are built from the same input:
+    baseline raw OpenAPI metadata and promoted contract metadata. This keeps
+    the experiment cheap enough for day-to-day ranking work and makes deltas
+    attributable to the promotion policy rather than live Swagger drift.
+    """
+    load_started = time.perf_counter()
+    loaded_specs = load_specs(
+        swagger_url=swagger_url,
+        spec_sources=spec_sources,
+        max_response_bytes=max_response_bytes,
+        allow_private_hosts=allow_private_hosts,
+    )
+    load_seconds = round(time.perf_counter() - load_started, 3)
+    profiles = [profile_spec(loaded) for loaded in loaded_specs]
+    cases_doc = load_cases(cases_path)
+    selected_top_k = int(top_k or cases_doc.get("top_k") or 10)
+    thresholds = cases_doc.get("thresholds") or {}
+
+    variants: list[dict[str, Any]] = []
+    for name, promote in (("baseline", False), ("promoted", True)):
+        build_started = time.perf_counter()
+        graph, ingest_summary = build_scale_graph(
+            loaded_specs,
+            detect_dependencies=detect_dependencies,
+            min_confidence=min_confidence,
+            promote_contract_signals=promote,
+            contract_signal_options=contract_signal_options if promote else None,
+        )
+        build_seconds = round(time.perf_counter() - build_started, 3)
+        scale_summary = summarize_scale(
+            profiles,
+            loaded_specs=loaded_specs,
+            ingest_summary=ingest_summary,
+            graph=graph,
+            build_seconds=build_seconds,
+            min_spec_count=min_spec_count,
+            min_unique_tools=min_unique_tools,
+            max_build_seconds=max_build_seconds,
+        )
+        cases = [
+            evaluate_search_case(case, tg=graph, top_k=selected_top_k)
+            for case in cases_doc.get("cases", [])
+        ]
+        search_summary = summarize_search(cases, thresholds=thresholds)
+        variant_status = "pass" if scale_summary["status"] == "pass" else "fail"
+        if cases and search_summary.get("status") != "pass":
+            variant_status = "fail"
+        variants.append(
+            {
+                "name": name,
+                "promote_contract_signals": promote,
+                "status": variant_status,
+                "scale": scale_summary,
+                "search": search_summary,
+                "cases": [asdict(case) for case in cases],
+            }
+        )
+
+    promoted = next(v for v in variants if v["name"] == "promoted")
+    return {
+        "benchmark": cases_doc.get("name") or "XGEN API Scale Acceptance",
+        "description": cases_doc.get("description") or "",
+        "methodology": "xgen_large_openapi_contract_signal_ablation",
+        "model": "none",
+        "graph_tool_call_version": __version__,
+        "source_url": swagger_url,
+        "top_k": selected_top_k,
+        "detect_dependencies": detect_dependencies,
+        "min_confidence": min_confidence,
+        "load_seconds": load_seconds,
+        "status": promoted["status"],
+        "comparison": _compare_contract_signal_variants(variants),
+        "variants": variants,
+        "specs": [asdict(profile) for profile in profiles],
     }
 
 
@@ -249,6 +354,8 @@ def prepare_scale_graph(
     allow_private_hosts: bool,
     detect_dependencies: bool,
     min_confidence: float,
+    promote_contract_signals: bool = False,
+    contract_signal_options: dict[str, Any] | None = None,
 ) -> PreparedScaleGraph:
     """Load, profile, ingest, and graph a large OpenAPI collection once."""
     started = time.perf_counter()
@@ -263,6 +370,8 @@ def prepare_scale_graph(
         loaded_specs,
         detect_dependencies=detect_dependencies,
         min_confidence=min_confidence,
+        promote_contract_signals=promote_contract_signals,
+        contract_signal_options=contract_signal_options,
     )
     return PreparedScaleGraph(
         loaded_specs=loaded_specs,
@@ -369,6 +478,8 @@ def build_scale_graph(
     *,
     detect_dependencies: bool,
     min_confidence: float,
+    promote_contract_signals: bool = False,
+    contract_signal_options: dict[str, Any] | None = None,
 ) -> tuple[ToolGraph, dict[str, Any]]:
     """Ingest all specs, dedupe by tool name, and build one large ToolGraph."""
     unique_tools: dict[str, Any] = {}
@@ -407,9 +518,26 @@ def build_scale_graph(
                 continue
             unique_tools[tool.name] = tool
 
+    unique_tool_list = list(unique_tools.values())
+    contract_signal_promotion: dict[str, Any] = {
+        "enabled": bool(promote_contract_signals),
+        "tools_promoted": 0,
+        "produces_added": 0,
+        "consumes_added": 0,
+        "produces_skipped": 0,
+        "consumes_skipped": 0,
+    }
+    if promote_contract_signals:
+        contract_signal_promotion.update(
+            promote_api_contract_signals(
+                unique_tool_list,
+                **(contract_signal_options or {}),
+            )
+        )
+
     tg = ToolGraph()
     registered = tg.add_tools(
-        list(unique_tools.values()),
+        unique_tool_list,
         detect_dependencies=detect_dependencies,
         min_confidence=min_confidence,
     )
@@ -427,6 +555,7 @@ def build_scale_graph(
         "contract_consumes_field_count": contract_consumes_field_count,
         "contract_produces_field_count": contract_produces_field_count,
         "contract_input_locations": dict(sorted(contract_input_locations.items())),
+        "contract_signal_promotion": contract_signal_promotion,
     }
 
 
@@ -550,6 +679,7 @@ def summarize_scale(
         "contract_consumes_field_count": ingest_summary["contract_consumes_field_count"],
         "contract_produces_field_count": ingest_summary["contract_produces_field_count"],
         "contract_input_locations": ingest_summary["contract_input_locations"],
+        "contract_signal_promotion": ingest_summary["contract_signal_promotion"],
     }
 
 
@@ -592,6 +722,37 @@ def summarize_search(
     else:
         summary["status"] = "pass"
     return summary
+
+
+def _compare_contract_signal_variants(variants: list[dict[str, Any]]) -> dict[str, Any]:
+    by_name = {variant["name"]: variant for variant in variants}
+    baseline = by_name.get("baseline") or {}
+    promoted = by_name.get("promoted") or {}
+    base_search = baseline.get("search") or {}
+    promoted_search = promoted.get("search") or {}
+    metric_names = [
+        "case_hit_at_k",
+        "expected_tool_recall_at_k",
+        "top_1_hit_at_k",
+        "top_3_hit_at_k",
+        "mean_mrr",
+        "avg_latency_ms",
+        "p50_latency_ms",
+    ]
+    deltas = {
+        f"{metric}_delta": round(
+            float(promoted_search.get(metric) or 0.0) - float(base_search.get(metric) or 0.0),
+            6,
+        )
+        for metric in metric_names
+    }
+    promoted_scale = promoted.get("scale") or {}
+    return {
+        **deltas,
+        "baseline_status": baseline.get("status", "missing"),
+        "promoted_status": promoted.get("status", "missing"),
+        "contract_signal_promotion": promoted_scale.get("contract_signal_promotion") or {},
+    }
 
 
 def _iter_operations(spec: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
@@ -762,6 +923,7 @@ def _print_report(report: dict[str, Any]) -> None:
             produces=scale["contract_produces_field_count"],
         )
     )
+    _print_contract_promotion(scale)
     if search["status"] != "skipped":
         print(
             "search: status={status} cases={cases} hit@K={hit:.2f} recall@K={recall:.2f} "
@@ -813,6 +975,7 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
             produces=scale["contract_produces_field_count"],
         )
     )
+    _print_contract_promotion(scale)
     for run in report["sweep"]:
         search = run["search"]
         if search["status"] == "skipped":
@@ -837,6 +1000,65 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
         )
 
 
+def _print_ablation_report(report: dict[str, Any]) -> None:
+    print(report["benchmark"])
+    print(
+        "status={status} methodology={methodology} load={load:.2f}s top_k={top_k}".format(
+            status=report["status"],
+            methodology=report["methodology"],
+            load=report["load_seconds"],
+            top_k=report["top_k"],
+        )
+    )
+    for variant in report["variants"]:
+        scale = variant["scale"]
+        search = variant["search"]
+        print(
+            "[{name}] status={status} promote={promote} edges={edges} build={build:.2f}s".format(
+                name=variant["name"],
+                status=variant["status"],
+                promote=variant["promote_contract_signals"],
+                edges=scale["edge_count"],
+                build=scale["build_seconds"],
+            )
+        )
+        _print_contract_promotion(scale)
+        if search["status"] != "skipped":
+            print(
+                "  search: hit@K={hit:.2f} recall@K={recall:.2f} top1={top1:.2f} "
+                "top3={top3:.2f} mrr={mrr_:.2f} avg_latency={latency:.2f}ms".format(
+                    hit=search["case_hit_at_k"],
+                    recall=search["expected_tool_recall_at_k"],
+                    top1=search["top_1_hit_at_k"],
+                    top3=search["top_3_hit_at_k"],
+                    mrr_=search["mean_mrr"],
+                    latency=search["avg_latency_ms"],
+                )
+            )
+    comparison = report["comparison"]
+    print("Deltas promoted-baseline:")
+    for key, value in comparison.items():
+        if key == "contract_signal_promotion":
+            continue
+        print(f"  {key}: {value}")
+
+
+def _print_contract_promotion(scale: dict[str, Any]) -> None:
+    promotion = scale.get("contract_signal_promotion") or {}
+    if not promotion.get("enabled"):
+        return
+    print(
+        "promotion: tools={tools} produces_added={produces} consumes_added={consumes} "
+        "skipped_produces={skipped_p} skipped_consumes={skipped_c}".format(
+            tools=promotion.get("tools_promoted", 0),
+            produces=promotion.get("produces_added", 0),
+            consumes=promotion.get("consumes_added", 0),
+            skipped_p=promotion.get("produces_skipped", 0),
+            skipped_c=promotion.get("consumes_skipped", 0),
+        )
+    )
+
+
 def _normalize_top_ks(values: list[int]) -> list[int]:
     normalized = sorted({int(value) for value in values if int(value) > 0})
     if not normalized:
@@ -851,6 +1073,27 @@ def _parse_top_ks(value: str | None) -> list[int] | None:
     return _normalize_top_ks([int(part.strip()) for part in value.split(",") if part.strip()])
 
 
+def _parse_csv_set(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    return {part.strip() for part in value.split(",") if part.strip()}
+
+
+def _contract_signal_options_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    options = {
+        "user_input_field_names": _parse_csv_set(args.user_input_fields),
+        "context_field_names": _parse_csv_set(args.context_fields),
+        "auth_field_names": _parse_csv_set(args.auth_fields),
+        "paging_field_names": _parse_csv_set(args.paging_fields),
+        "search_filter_field_names": _parse_csv_set(args.search_filter_fields),
+    }
+    if args.promote_rare_produces:
+        options["promote_rare_produces"] = True
+    if args.index_promoted_contract_fields:
+        options["index_promoted_contract_fields"] = True
+    return {key: value for key, value in options.items() if value}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--swagger-url", default=DEFAULT_X2BEE_SWAGGER_URL)
@@ -863,6 +1106,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cases", type=Path, default=DEFAULT_X2BEE_CASES_PATH)
     parser.add_argument("--no-cases", action="store_true")
     parser.add_argument("--top-k", type=int, default=None)
+    parser.add_argument(
+        "--promote-contract-signals",
+        action="store_true",
+        help="Promote selected OpenAPI contract fields into retrieval metadata before graphing.",
+    )
+    parser.add_argument(
+        "--compare-contract-signals",
+        action="store_true",
+        help="Build baseline/promoted graphs from the same loaded specs and compare search deltas.",
+    )
     parser.add_argument(
         "--top-ks",
         default=None,
@@ -881,11 +1134,62 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-build-seconds", type=float, default=30.0)
     parser.add_argument("--max-response-bytes", type=int, default=5_000_000)
     parser.add_argument("--allow-private-hosts", action="store_true")
+    parser.add_argument(
+        "--context-fields",
+        default=None,
+        help="Comma-separated field names to classify as ambient context during promotion.",
+    )
+    parser.add_argument(
+        "--auth-fields",
+        default=None,
+        help="Comma-separated field names to classify as auth during promotion.",
+    )
+    parser.add_argument(
+        "--paging-fields",
+        default=None,
+        help="Comma-separated paging field names for promotion.",
+    )
+    parser.add_argument(
+        "--search-filter-fields",
+        default=None,
+        help="Comma-separated optional search/filter field names for promotion.",
+    )
+    parser.add_argument(
+        "--user-input-fields",
+        default=None,
+        help="Comma-separated optional fields that should remain user-provided data.",
+    )
+    parser.add_argument(
+        "--promote-rare-produces",
+        action="store_true",
+        help="Also promote rare non-identifier response fields. Diagnostic; may add noise.",
+    )
+    parser.add_argument(
+        "--index-promoted-contract-fields",
+        action="store_true",
+        help="Index promoted raw contract fields in BM25. Diagnostic; may add target-search noise.",
+    )
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+    contract_signal_options = _contract_signal_options_from_args(args)
 
-    if args.top_ks:
+    if args.compare_contract_signals:
+        report = run_contract_signal_ablation(
+            swagger_url=args.swagger_url,
+            spec_sources=args.spec or None,
+            cases_path=None if args.no_cases else args.cases,
+            top_k=args.top_k,
+            detect_dependencies=not args.no_detect_dependencies,
+            min_confidence=args.min_confidence,
+            min_spec_count=args.min_spec_count,
+            min_unique_tools=args.min_unique_tools,
+            max_build_seconds=args.max_build_seconds,
+            max_response_bytes=args.max_response_bytes,
+            allow_private_hosts=args.allow_private_hosts,
+            contract_signal_options=contract_signal_options,
+        )
+    elif args.top_ks:
         report = run_top_k_sweep(
             swagger_url=args.swagger_url,
             spec_sources=args.spec or None,
@@ -899,6 +1203,8 @@ def main(argv: list[str] | None = None) -> int:
             max_build_seconds=args.max_build_seconds,
             max_response_bytes=args.max_response_bytes,
             allow_private_hosts=args.allow_private_hosts,
+            promote_contract_signals=args.promote_contract_signals,
+            contract_signal_options=contract_signal_options,
         )
     else:
         report = run_benchmark(
@@ -913,12 +1219,16 @@ def main(argv: list[str] | None = None) -> int:
             max_build_seconds=args.max_build_seconds,
             max_response_bytes=args.max_response_bytes,
             allow_private_hosts=args.allow_private_hosts,
+            promote_contract_signals=args.promote_contract_signals,
+            contract_signal_options=contract_signal_options,
         )
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
+    elif args.compare_contract_signals:
+        _print_ablation_report(report)
     elif args.top_ks:
         _print_sweep_report(report)
     else:

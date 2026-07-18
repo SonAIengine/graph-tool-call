@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-acceptance xgen-scale-sweep bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-failure-subset bfcl-inspect-failures release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-acceptance xgen-scale-sweep xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-failure-subset bfcl-inspect-failures release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -41,6 +41,13 @@ xgen-scale-sweep:
 		--top-ks "$${TOP_KS:-3,5,10}" \
 		--acceptance-top-k "$${ACCEPTANCE_TOP_K:-10}" \
 		--output "$${OUT:-/tmp/gtc-xgen-scale-sweep.json}"
+
+xgen-scale-contract-ablation:
+	poetry run python -m benchmarks.xgen_api_scale.run \
+		--swagger-url "$${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}" \
+		--compare-contract-signals \
+		--context-fields "$${CONTEXT_FIELDS:-siteNo,langCd,sysGbCd}" \
+		--output "$${OUT:-/tmp/gtc-xgen-scale-contract-ablation.json}"
 
 bfcl-benchmark:
 	poetry run python -m benchmarks.bfcl_tool_selection.run --limit 50

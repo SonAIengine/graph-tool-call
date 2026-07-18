@@ -593,6 +593,37 @@ make xgen-scale-sweep \
   OUT=/tmp/gtc-x2bee-scale-sweep.json
 ```
 
+When changing OpenAPI contract extraction or field-ranking policy, run the
+contract-signal ablation before any model loop. It loads the live Swagger specs
+once, builds two graphs from the same input, and reports promoted-minus-baseline
+search deltas:
+
+```bash
+make xgen-scale-contract-ablation \
+  CONTEXT_FIELDS=siteNo,langCd,sysGbCd \
+  OUT=/tmp/gtc-x2bee-scale-contract-ablation.json
+```
+
+The promoted variant uses `metadata.api_contract` selectively: wrapper fields
+such as `status`, `data`, and `list` stay out of the promoted contract, while
+identifier-like response fields, required inputs, enums, context/auth fields,
+and search filters can enter `metadata.produces` / `metadata.consumes`.
+Promoted raw contract rows are planning/producer signals by default
+(`search_signal=False`) so target-tool BM25 ranking is not flooded by common
+identifier fields. Use `--index-promoted-contract-fields` only as a diagnostic
+or after a collection-specific curation pass.
+
+Latest local contract-signal ablation on 2026-07-19:
+
+| Variant | Hit@10 | Recall@10 | Top-1 | Top-3 | MRR | Avg latency |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | `31.77ms` |
+| promoted contract, no BM25 field indexing | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | `28.07ms` |
+
+The same diagnostic previously showed that indexing all promoted raw contract
+fields degraded target ranking on X2BEE, which is why the default keeps
+contract fields available for planning without adding them directly to BM25.
+
 Verified local result on 2026-07-19:
 
 | Metric | Value |
