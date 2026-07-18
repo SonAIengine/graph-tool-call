@@ -331,16 +331,19 @@ Detailed methodology, commands, limitations, and current numbers live in
 
 ### XGEN-style quality checks
 
-For API Collection / Planflow work, there are two focused checks: a deterministic
-engine benchmark and a BFCL-style model-in-the-loop benchmark.
+For API Collection / Planflow work, there are three focused checks: a deterministic
+engine benchmark, a live large-OpenAPI scale acceptance check, and a BFCL-style
+model-in-the-loop benchmark.
 
 | Benchmark | Model used | What it evaluates |
 |---|---|---|
 | `make xgen-benchmark` | none | graph-tool-call engine search, producer expansion, plan synthesis |
+| `make xgen-scale-acceptance` | none | X2BEE-scale Swagger UI discovery, dedupe, ingest, graph build, Korean search smoke |
 | `make xgen-llm-benchmark` | CLI `--model` value | whether that model actually calls `search_tools` and selects the right plan |
 
 ```bash
 make xgen-benchmark
+make xgen-scale-acceptance
 make xgen-llm-benchmark
 poetry run python -m benchmarks.xgen_tool_graph.llm_loop \
   --model qwen3.6-27b \

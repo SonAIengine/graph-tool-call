@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-failure-subset bfcl-inspect-failures release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-acceptance bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-failure-subset bfcl-inspect-failures release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -29,6 +29,11 @@ xgen-benchmark:
 
 xgen-llm-benchmark:
 	poetry run python -m benchmarks.xgen_tool_graph.llm_loop --model qwen3:4b
+
+xgen-scale-acceptance:
+	poetry run python -m benchmarks.xgen_api_scale.run \
+		--swagger-url "$${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}" \
+		--output "$${OUT:-/tmp/gtc-xgen-scale-acceptance.json}"
 
 bfcl-benchmark:
 	poetry run python -m benchmarks.bfcl_tool_selection.run --limit 50

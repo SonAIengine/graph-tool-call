@@ -243,6 +243,11 @@ OPENAI_API_KEY=dummy QWEN_API_KEY=dummy /tmp/gtc-bfcl-eval/bin/python \
 make xgen-benchmark
 poetry run python -m benchmarks.xgen_tool_graph.run --json
 
+# XGEN large OpenAPI acceptance (live X2BEE-scale Swagger UI, no LLM)
+make xgen-scale-acceptance
+poetry run python -m benchmarks.xgen_api_scale.run \
+  --output /tmp/gtc-x2bee-scale-acceptance.json
+
 # BFCL-style model-in-the-loop tool search
 make xgen-llm-benchmark
 poetry run python -m benchmarks.xgen_tool_graph.llm_loop \
@@ -557,6 +562,48 @@ quality improved or regressed with deterministic numbers. The default runner
 compares `target_only` with `graph_with_producers` and fails when the graph
 pipeline misses quality thresholds or exceeds latency/token budgets recorded in
 `cases.json`.
+
+### XGEN Scale Acceptance
+
+[`benchmarks/xgen_api_scale/`](../benchmarks/xgen_api_scale/) is the opt-in
+large-OpenAPI acceptance check for XGEN. It is separate from the deterministic
+fixture above because it hits a live Swagger UI and profiles a real API
+collection at X2BEE BO scale.
+
+Default target:
+
+```text
+https://api-bo.x2bee.com/api/bo/swagger-ui/index.html
+```
+
+Run:
+
+```bash
+make xgen-scale-acceptance \
+  OUT=/tmp/gtc-x2bee-scale-acceptance.json
+```
+
+Verified local result on 2026-07-19:
+
+| Metric | Value |
+|---|---:|
+| Swagger spec groups | `15` |
+| Raw operations | `2,173` |
+| Ingested tools | `2,161` |
+| Unique tools after operationId dedupe | `1,084` |
+| Duplicate tools skipped | `1,077` |
+| Graph edges | `8,599` |
+| Build time | `3.79s` |
+| Korean smoke hit@10 | `8/8` |
+| Expected tool recall@10 | `1.00` |
+| Mean MRR | `0.823` |
+| Average retrieval latency | `32.28ms` |
+
+This is not a model score. It verifies that graph-tool-call can discover the
+Swagger groups, dedupe umbrella/group duplicates, ingest the resulting 1k-tool
+collection, build the graph, and retrieve expected tools for Korean BO queries.
+Use it before XGEN integration changes and before claiming product-level
+readiness.
 
 ### BFCL-style LLM Loop
 

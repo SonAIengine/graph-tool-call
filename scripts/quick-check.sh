@@ -25,6 +25,7 @@ else
     tests/test_bfcl_tool_selection_inspect.py
     tests/test_bfcl_tool_selection_llm_loop.py
     tests/test_bfcl_tool_selection_sweep.py
+    tests/test_xgen_api_scale_benchmark.py
     tests/test_xgen_tool_graph_benchmark.py
     tests/test_xgen_tool_graph_llm_loop.py
   )
