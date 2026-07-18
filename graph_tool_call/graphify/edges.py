@@ -87,6 +87,7 @@ def merge_graph_edges(existing: dict[str, Any], incoming: dict[str, Any]) -> dic
     merged = dict(left)
     merged.update(
         {
+            "confidence": _stronger_confidence(left.get("confidence"), right.get("confidence")),
             "conf_score": conf_score,
             "evidence_sources": sources,
             "evidence": " | ".join(evidence_notes),
@@ -102,6 +103,15 @@ def merge_graph_edges(existing: dict[str, Any], incoming: dict[str, Any]) -> dic
     if left.get("deleted_by_user") or right.get("deleted_by_user"):
         merged["deleted_by_user"] = True
     return merged
+
+
+def _stronger_confidence(left: Any, right: Any) -> str:
+    left_value = _confidence_value(left or "EXTRACTED")
+    right_value = _confidence_value(right or "EXTRACTED")
+    rank = {"AMBIGUOUS": 1, "INFERRED": 2, "EXTRACTED": 3}
+    if rank.get(right_value, 0) > rank.get(left_value, 0):
+        return right_value
+    return left_value
 
 
 def _merge_data_flow(left: Any, right: Any) -> Any:

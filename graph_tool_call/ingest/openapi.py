@@ -2367,8 +2367,12 @@ def _operation_to_tool(
     is_swagger2: bool = False,
     required_only: bool = False,
     path_item: dict[str, Any] | None = None,
+    tool_name: str | None = None,
+    operation_id_duplicate_count: int = 1,
+    operation_id_duplicate_index: int = 0,
 ) -> ToolSchema:
     """Convert a single OpenAPI operation into a ToolSchema."""
+    tool_name = tool_name or operation_id
     description = operation.get("summary") or operation.get("description", "")
     tags = operation.get("tags", [])
 
@@ -2512,6 +2516,7 @@ def _operation_to_tool(
             "links": link_rows,
         },
         "openapi": {
+            "tool_name": tool_name,
             "operation_id": operation_id,
             "summary": operation.get("summary") or "",
             "description": operation.get("description") or "",
@@ -2553,6 +2558,13 @@ def _operation_to_tool(
         },
         "input_locations": input_locations,
     }
+    if operation_id_duplicate_count > 1:
+        metadata["openapi"]["operation_id_duplicate"] = True
+        metadata["openapi"]["operation_id_duplicate_count"] = operation_id_duplicate_count
+        metadata["openapi"]["operation_id_duplicate_index"] = operation_id_duplicate_index
+        metadata["openapi"]["operation_id_original"] = operation_id
+        if tool_name != operation_id:
+            metadata["openapi"]["operation_id_deduped_name"] = tool_name
     if security:
         metadata["openapi"]["security"] = security
     if request_body_schema:
@@ -2575,7 +2587,7 @@ def _operation_to_tool(
         metadata["base_url"] = server["url"]
 
     return ToolSchema(
-        name=operation_id,
+        name=tool_name,
         description=description,
         parameters=parameters,
         tags=tags,
@@ -2619,6 +2631,57 @@ def _auto_categorize(
 _METHODS = ("get", "post", "put", "patch", "delete", "head", "options", "trace")
 
 
+def _operation_id_counts(paths: dict[str, Any], *, skip_deprecated: bool) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for _path, path_item in paths.items():
+        if not isinstance(path_item, dict):
+            continue
+        for method in _METHODS:
+            operation = path_item.get(method)
+            if not isinstance(operation, dict):
+                continue
+            if skip_deprecated and operation.get("deprecated", False):
+                continue
+            operation_id = str(operation.get("operationId") or "").strip()
+            if operation_id:
+                counts[operation_id] = counts.get(operation_id, 0) + 1
+    return counts
+
+
+def _unique_operation_name(
+    operation_id: str,
+    *,
+    method: str,
+    path: str,
+    used_names: set[str],
+    duplicate_index: int,
+) -> str:
+    """Return a stable ToolSchema.name, preserving unique operationIds."""
+    if operation_id not in used_names:
+        used_names.add(operation_id)
+        return operation_id
+
+    suffix = _operation_name_suffix(method, path)
+    base = f"{operation_id}__{suffix}" if suffix else f"{operation_id}__{duplicate_index + 1}"
+    candidate = base
+    counter = duplicate_index + 1
+    while candidate in used_names:
+        counter += 1
+        candidate = f"{base}_{counter}"
+    used_names.add(candidate)
+    return candidate
+
+
+def _operation_name_suffix(method: str, path: str) -> str:
+    stripped = str(path or "").strip("/")
+    if not stripped:
+        return method.lower()
+    stripped = re.sub(r"\{([^}/]+)\}", r"by_\1", stripped)
+    slug = re.sub(r"[^A-Za-z0-9_]+", "_", stripped)
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return f"{method.lower()}_{slug}" if slug else method.lower()
+
+
 def ingest_openapi(
     source: dict[str, Any] | str,
     *,
@@ -2656,6 +2719,12 @@ def ingest_openapi(
     resolved_spec = normalize(resolved_raw)
 
     tools: list[ToolSchema] = []
+    operation_counts = _operation_id_counts(
+        resolved_spec.paths,
+        skip_deprecated=skip_deprecated,
+    )
+    operation_seen: dict[str, int] = {}
+    used_tool_names: set[str] = set()
     for path, path_item in resolved_spec.paths.items():
         if not isinstance(path_item, dict):
             continue
@@ -2668,6 +2737,16 @@ def ingest_openapi(
             operation_id = operation.get("operationId", "")
             if not operation_id:
                 continue  # should not happen after normalization
+            operation_id = str(operation_id).strip()
+            duplicate_index = operation_seen.get(operation_id, 0)
+            operation_seen[operation_id] = duplicate_index + 1
+            tool_name = _unique_operation_name(
+                operation_id,
+                method=method,
+                path=path,
+                used_names=used_tool_names,
+                duplicate_index=duplicate_index,
+            )
             tool = _operation_to_tool(
                 operation_id,
                 operation,
@@ -2677,6 +2756,9 @@ def ingest_openapi(
                 is_swagger2=is_swagger2,
                 required_only=required_only,
                 path_item=path_item,
+                tool_name=tool_name,
+                operation_id_duplicate_count=operation_counts.get(operation_id, 1),
+                operation_id_duplicate_index=duplicate_index,
             )
             tools.append(tool)
 

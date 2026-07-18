@@ -25,11 +25,21 @@
 
 ```
 우선순위:
-1. operationId 있으면 → 그대로 사용
-2. 없으면 → "{method}_{path_slug}" 생성
-   예: GET /pets/{petId} → "get_pets_petId"
-3. 충돌 시 → 숫자 접미사 "_2", "_3"
+1. operationId 있으면 → unique할 때 그대로 ToolSchema.name으로 사용
+2. 없으면 → normalizer가 "{method}_{path_slug}"를 생성
+   예: GET /pets/{petId} → "get_pets_by_petId"
+3. 같은 operationId가 여러 번 나오면 → 첫 번째는 원래 이름 유지, 이후는
+   deterministic method/path suffix 부여
+   예: findOrder, findOrder__get_orders_by_orderId
 ```
+
+원본 OpenAPI `operationId`는 항상 `metadata.openapi.operation_id`에 보존한다.
+dedupe된 경우 `metadata.openapi.operation_id_duplicate=true`,
+`operation_id_duplicate_count`, `operation_id_duplicate_index`,
+`operation_id_deduped_name`을 함께 기록한다. OpenAPI Link Object에서
+duplicate `operationId`를 직접 가리키면 ambiguous하므로 graphify는 안전하게
+연결하지 않는다. 같은 duplicate group 안의 정확한 target은 `operationRef`로
+해결한다.
 
 ### parameters 매핑
 

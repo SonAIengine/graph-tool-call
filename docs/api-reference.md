@@ -93,6 +93,14 @@ tools = tg.retrieve("create a pet", top_k=5)
 OpenAPI ingest preserves execution-oriented request/response facts in each
 tool's metadata:
 
+- `ToolSchema.name`: unique executable/search tool name. OpenAPI `operationId`
+  is preserved as-is when unique; duplicate `operationId` values are deduped
+  with a deterministic method/path suffix such as
+  `findOrder__get_orders_by_orderId`.
+- `metadata.openapi.operation_id`: original OpenAPI operationId, even when
+  `ToolSchema.name` was deduped. Duplicate groups include
+  `operation_id_duplicate_count`, `operation_id_duplicate_index`, and
+  `operation_id_deduped_name` when applicable.
 - `metadata.openapi.parameters`: normalized path/query/header/cookie parameters,
   including serialization hints such as `style`, `explode`, `allowReserved`,
   schema defaults, examples, and validation constraints

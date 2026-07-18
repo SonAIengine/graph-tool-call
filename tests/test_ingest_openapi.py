@@ -589,6 +589,54 @@ class TestIngestOpenAPI30:
         assert variables["tenant"]["enum"] == ["acme", "demo"]
         assert variables["basePath"]["default"] == "admin"
 
+    def test_duplicate_operation_ids_get_stable_unique_tool_names(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Duplicate Operation API", "version": "1.0.0"},
+            "paths": {
+                "/orders": {
+                    "get": {
+                        "operationId": "findOrder",
+                        "summary": "주문 목록 조회",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
+                "/orders/{orderId}": {
+                    "get": {
+                        "operationId": "findOrder",
+                        "summary": "주문 단건 조회",
+                        "parameters": [
+                            {
+                                "name": "orderId",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        by_name = {tool.name: tool for tool in tools}
+
+        assert list(by_name) == ["findOrder", "findOrder__get_orders_by_orderId"]
+        assert len(by_name) == 2
+        first = by_name["findOrder"].metadata["openapi"]
+        second = by_name["findOrder__get_orders_by_orderId"].metadata["openapi"]
+        assert first["operation_id"] == "findOrder"
+        assert first["operation_id_duplicate"] is True
+        assert first["operation_id_duplicate_count"] == 2
+        assert first["operation_id_duplicate_index"] == 0
+        assert first["tool_name"] == "findOrder"
+        assert second["operation_id"] == "findOrder"
+        assert second["operation_id_duplicate"] is True
+        assert second["operation_id_duplicate_count"] == 2
+        assert second["operation_id_duplicate_index"] == 1
+        assert second["operation_id_deduped_name"] == "findOrder__get_orders_by_orderId"
+
     def test_response_envelope_aliases_are_preserved_for_execution(self) -> None:
         spec = {
             "openapi": "3.0.0",

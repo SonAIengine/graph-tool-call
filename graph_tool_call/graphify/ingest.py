@@ -521,13 +521,25 @@ def _response_link_source_field_name(parameter: dict[str, Any], json_path: str) 
 
 def _operation_target_index(schemas: list[ToolSchema]) -> dict[tuple[str, str], str]:
     index: dict[tuple[str, str], str] = {}
+    operation_names: dict[str, list[str]] = {}
     for schema in schemas:
         metadata = schema.metadata or {}
         openapi = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
         operation_id = str(openapi.get("operation_id") or schema.name).strip()
         if operation_id:
+            operation_names.setdefault(operation_id, []).append(schema.name)
+    ambiguous_operation_ids = {
+        operation_id for operation_id, names in operation_names.items() if len(set(names)) > 1
+    }
+
+    for schema in schemas:
+        metadata = schema.metadata or {}
+        openapi = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
+        operation_id = str(openapi.get("operation_id") or schema.name).strip()
+        if operation_id and operation_id not in ambiguous_operation_ids:
             index[("operation_id", operation_id)] = schema.name
-        index[("operation_id", schema.name)] = schema.name
+        if schema.name != operation_id or operation_id not in ambiguous_operation_ids:
+            index[("operation_id", schema.name)] = schema.name
         path = str(metadata.get("path") or "").strip()
         method = str(metadata.get("method") or "").strip().lower()
         if path and method:

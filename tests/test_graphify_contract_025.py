@@ -743,6 +743,93 @@ def test_ingest_openapi_graphify_promotes_status_range_response_contracts():
     assert plan.steps[-1].args["exportId"] == "${s1.exportId}"
 
 
+def test_ingest_openapi_graphify_resolves_duplicate_operation_ids_by_operation_ref():
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Duplicate Link API", "version": "1.0.0"},
+        "paths": {
+            "/tokens": {
+                "post": {
+                    "operationId": "createToken",
+                    "summary": "토큰 생성",
+                    "responses": {
+                        "201": {
+                            "description": "Created",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"id": {"type": "string"}},
+                                    }
+                                }
+                            },
+                            "links": {
+                                "AmbiguousReadThing": {
+                                    "operationId": "readThing",
+                                    "parameters": {"tokenId": "$response.body#/id"},
+                                },
+                                "ReadSpecialThing": {
+                                    "operationRef": "#/paths/~1things~1special/get",
+                                    "parameters": {"tokenId": "$response.body#/id"},
+                                },
+                            },
+                        }
+                    },
+                }
+            },
+            "/things/{thingId}": {
+                "get": {
+                    "operationId": "readThing",
+                    "summary": "일반 대상 조회",
+                    "parameters": [
+                        {
+                            "name": "thingId",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+            "/things/special": {
+                "get": {
+                    "operationId": "readThing",
+                    "summary": "특수 대상 조회",
+                    "parameters": [
+                        {
+                            "name": "tokenId",
+                            "in": "query",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+        },
+    }
+
+    tools, _ = ingest_openapi(spec)
+    assert {tool.name for tool in tools} == {
+        "createToken",
+        "readThing",
+        "readThing__get_things_special",
+    }
+
+    tg, stats = ingest_openapi_graphify(tools, promote_contract_signals=True)
+
+    assert stats["openapi_link_edges"]["skipped_unresolved"] == 1
+    assert stats["openapi_link_edges"]["merged"] == 1
+    edge = tg.graph.get_edge_attrs("readThing__get_things_special", "createToken")
+    assert edge["relation"] == "requires"
+    assert edge["confidence"] == "EXTRACTED"
+    assert EVIDENCE_OPENAPI_LINK in edge["evidence_sources"]
+    assert edge["data_flow"]["link_name"] == "ReadSpecialThing"
+    assert edge["data_flow"]["to_field"] == "tokenId"
+    assert not tg.graph.has_edge("readThing", "createToken")
+
+
 def test_expand_candidates_with_producers_uses_required_data_only_and_action_priority():
     tools = {
         "getProductDetail": {
