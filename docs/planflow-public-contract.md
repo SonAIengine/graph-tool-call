@@ -46,6 +46,9 @@ The graphify package owns product-neutral collection graph logic.
   entities or context defaults when available and are never producer-chained.
   OpenAPI security schemes are represented as `kind=auth` consumes with scheme
   metadata; runtime token/cookie/header values remain the caller's concern.
+- OpenAPI success-response headers can appear as producer rows with
+  `location=response_header` and `json_path=$.headers.<Name>`. Header-based
+  OpenAPI links therefore bind as `${sN.headers.<Name>}`.
 - `PlanSynthesisError.to_dict()` exposes `stage`, `reason`, `message`, and structured details so adapters do not need to parse exception text.
 - `Plan.metadata.synthesis` records `target`, selected producers, candidate signals, and user-input fallbacks.
 

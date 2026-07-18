@@ -68,8 +68,8 @@ metadata["response_schema"] = {
 |---|---|
 | `parameters` | path/query/header/cookie parameter, `style`, `explode`, `allowReserved`, default/example/constraint |
 | `request_body` | 선택된 content type, 전체 content type 후보, 후보별 field, schema, top-level field, leaf field, body examples, example-inferred fields |
-| `response` | 선택된 2xx/default response의 status, content type, schema, description, leaf field, envelope metadata |
-| `responses` | 모든 response status의 compact catalog: success flag, content types, examples, field count |
+| `response` | 선택된 2xx/default response의 status, content type, schema, description, leaf field, response header, envelope metadata |
+| `responses` | 모든 response status의 compact catalog: success flag, content types, examples, headers, field count |
 | `error_responses` | non-2xx response만 모은 실패 처리용 catalog |
 | `security` | OpenAPI security requirements와 static scheme 정보. runtime token/cookie 값은 보존하지 않음 |
 
@@ -81,6 +81,14 @@ credential 이름을 사용하고, bearer/basic/OAuth/OpenID Connect 계열은
 `security_required=true`로 유지해 Planflow가 토큰을 사용자 입력이나 producer
 chain으로 만들지 않게 하고, 실제 누락 차단은 `HttpExecutor.validate_request`와
 XGEN 실행 adapter가 담당한다.
+
+성공 response의 선언된 header는 `metadata.openapi.responses[].headers`와
+선택된 `metadata.openapi.response.headers`에 보존하고, graph/search/plan용
+`metadata.api_contract.produces`에는 `location=response_header`,
+`json_path=$.headers.<Name>` row로 추가한다. OpenAPI Link Object가
+`$response.header.X-Session-Token`처럼 header 값을 다음 operation parameter로
+연결하면 graphify는 `openapi_link` evidence와 producer alias를 만들어
+Planflow가 `${s1.headers.X-Session-Token}` 형태로 바인딩할 수 있게 한다.
 
 OpenAPI `readOnly`/`writeOnly` 방향성도 contract 추출 전에 반영한다.
 request body의 `readOnly` field는 tool parameter, `request_body.fields`,

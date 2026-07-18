@@ -130,6 +130,8 @@ _CONTRACT_HINT_KEYS = (
     "additional_properties",
     "map_value",
     "map_key_placeholder",
+    "header",
+    "status",
     "security_required",
     "security_scheme",
     "security_schemes",

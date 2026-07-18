@@ -234,6 +234,19 @@ class TestIngestOpenAPI30:
                         "responses": {
                             "201": {
                                 "description": "OK",
+                                "headers": {
+                                    "Location": {
+                                        "description": "Created order URL",
+                                        "schema": {"type": "string", "format": "uri"},
+                                    },
+                                    "X-Next-Cursor": {
+                                        "schema": {
+                                            "type": "string",
+                                            "nullable": True,
+                                        },
+                                        "example": "cursor-2",
+                                    },
+                                },
                                 "content": {
                                     "*/*": {
                                         "schema": {
@@ -333,6 +346,12 @@ class TestIngestOpenAPI30:
         responses = {row["status"]: row for row in openapi["responses"]}
         assert responses["201"]["success"] is True
         assert responses["201"]["selected"] is True
+        assert responses["201"]["header_count"] == 2
+        assert responses["201"]["headers"][0]["field_name"] == "Location"
+        assert responses["201"]["headers"][0]["json_path"] == "$.headers.Location"
+        assert responses["201"]["headers"][0]["format"] == "uri"
+        assert responses["201"]["headers"][1]["nullable"] is True
+        assert openapi["response"]["headers"][0]["field_name"] == "Location"
         assert responses["400"]["success"] is False
         assert responses["400"]["field_count"] == 2
         assert openapi["error_responses"][0]["status"] == "400"
@@ -346,6 +365,12 @@ class TestIngestOpenAPI30:
         assert any(
             row["field_name"] == "preview" and row["location"] == "query"
             for row in metadata["api_contract"]["consumes"]
+        )
+        assert any(
+            row["field_name"] == "Location"
+            and row["location"] == "response_header"
+            and row["json_path"] == "$.headers.Location"
+            for row in metadata["api_contract"]["produces"]
         )
         site_auth = next(
             row for row in metadata["api_contract"]["consumes"] if row["field_name"] == "X-Site-No"

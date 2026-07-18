@@ -101,10 +101,11 @@ tool's metadata:
   fields, and body examples. If schema fields are missing but concrete examples
   exist, inferred fields are included with `schema_inferred_from=example`
 - `metadata.openapi.response`: selected success status, content type, schema,
-  description, leaf fields, optional response envelope metadata, and selected
-  OpenAPI response links
+  description, leaf fields, declared response headers, optional response
+  envelope metadata, and selected OpenAPI response links
 - `metadata.openapi.responses`: compact catalog of every declared response,
-  including status, success flag, content types, examples, links, and field count
+  including status, success flag, content types, examples, headers, links, and
+  field count
 - `metadata.openapi.error_responses`: non-2xx response catalog for failure UI/logs
 - `metadata.openapi.security`: declared security requirements and static scheme
   metadata, without runtime credentials
@@ -127,6 +128,10 @@ OpenAPI field direction is enforced before graph/search promotion:
   single-schema `anyOf` / `oneOf` null unions are exposed as `nullable=true`.
 - OpenAPI3 query object wrappers are expanded into their real inner fields for
   `metadata.openapi.parameters`, `input_locations`, and `api_contract.consumes`.
+- Declared success-response headers are exposed as `api_contract.produces` rows
+  with `location=response_header` and `json_path=$.headers.<Name>`, so cursor,
+  `Location`, `ETag`, and token-like handoff headers can participate in
+  graph/search/plan contracts.
 - Declared OpenAPI `security` schemes are converted to ambient auth consumes.
   `apiKey` schemes use their declared query/header/cookie credential name;
   bearer/basic/OAuth/OpenID Connect schemes use `Authorization` as the
@@ -240,7 +245,8 @@ The promotion step adds high-value fields to `metadata.produces` /
 `metadata.consumes`, classifies `kind=data|context|auth`, and derives
 `consumer --requires--> producer` data-flow edges with `api_contract` evidence.
 OpenAPI response links add `openapi_link` evidence and can bridge mismatched
-field names, for example a producer response `id` feeding a consumer `userId`.
+field names, for example a producer response `id` or response header
+`X-Session-Token` feeding a consumer `userId` or `sessionToken`.
 Promoted raw contract rows set `search_signal=False` by default so target-tool
 BM25 ranking is not flooded by identifier fields. Turn indexing on only for a
 controlled experiment or a curated collection.

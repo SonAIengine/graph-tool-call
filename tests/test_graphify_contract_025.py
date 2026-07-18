@@ -578,6 +578,97 @@ def test_ingest_openapi_graphify_uses_openapi_links_for_cross_field_data_flow():
     assert plan.steps[-1].args["userId"] == "${s1.id}"
 
 
+def test_ingest_openapi_graphify_uses_response_header_links_for_plan_binding():
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Header Linked API", "version": "1.0.0"},
+        "paths": {
+            "/sessions": {
+                "post": {
+                    "operationId": "createSession",
+                    "summary": "세션 생성",
+                    "responses": {
+                        "201": {
+                            "description": "Created",
+                            "headers": {
+                                "X-Session-Token": {
+                                    "description": "Temporary session token",
+                                    "schema": {"type": "string"},
+                                }
+                            },
+                            "links": {
+                                "GetSession": {
+                                    "operationId": "getSession",
+                                    "parameters": {
+                                        "sessionToken": "$response.header.X-Session-Token"
+                                    },
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/sessions/current": {
+                "get": {
+                    "operationId": "getSession",
+                    "summary": "현재 세션 조회",
+                    "parameters": [
+                        {
+                            "name": "sessionToken",
+                            "in": "query",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            },
+        },
+    }
+
+    tools, _ = ingest_openapi(spec)
+    tg, stats = ingest_openapi_graphify(tools, promote_contract_signals=True)
+    create_tool = tg.tools["createSession"]
+    link_produces = [
+        row
+        for row in create_tool.metadata.get("produces", [])
+        if row.get("contract_source") == EVIDENCE_OPENAPI_LINK
+    ]
+
+    assert stats["openapi_link_signals"]["produces_added"] == 1
+    assert link_produces == [
+        {
+            "field_name": "sessionToken",
+            "json_path": "$.headers.X-Session-Token",
+            "field_type": "string",
+            "required": False,
+            "kind": "data",
+            "search_signal": False,
+            "contract_source": EVIDENCE_OPENAPI_LINK,
+            "openapi_link_name": "GetSession",
+            "openapi_link_target_operation_id": "getSession",
+            "openapi_link_target_operation_ref": None,
+            "openapi_link_source": "response_header",
+            "source_field_name": "X-Session-Token",
+        }
+    ]
+    edge = tg.graph.get_edge_attrs("getSession", "createSession")
+    assert edge["relation"] == "requires"
+    assert EVIDENCE_OPENAPI_LINK in edge["evidence_sources"]
+    assert EVIDENCE_API_CONTRACT in edge["evidence_sources"]
+    assert edge["data_flow"]["from_path"] == "$.headers.X-Session-Token"
+    assert edge["data_flow"]["from_field"] == "X-Session-Token"
+    assert edge["data_flow"]["to_field"] == "sessionToken"
+
+    graph_payload = {
+        "graph": tg.graph.to_dict(),
+        "tools": {name: tool.to_dict() for name, tool in tg.tools.items()},
+    }
+    plan = PathSynthesizer(graph_payload).synthesize(target="getSession", goal="세션 조회")
+    assert [step.tool for step in plan.steps] == ["createSession", "getSession"]
+    assert plan.steps[-1].args["sessionToken"] == "${s1.headers.X-Session-Token}"
+
+
 def test_expand_candidates_with_producers_uses_required_data_only_and_action_priority():
     tools = {
         "getProductDetail": {

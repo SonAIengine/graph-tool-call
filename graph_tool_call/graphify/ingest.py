@@ -408,7 +408,7 @@ def _promote_openapi_link_signals(schemas: list[ToolSchema]) -> dict[str, int]:
                 continue
             for parameter in response_params:
                 field_name = str(parameter.get("field_name") or "").strip()
-                json_path = str(parameter.get("json_path") or "").strip()
+                json_path = _response_link_parameter_json_path(parameter)
                 if not field_name or not json_path:
                     continue
                 key = (field_name, json_path)
@@ -426,7 +426,7 @@ def _promote_openapi_link_signals(schemas: list[ToolSchema]) -> dict[str, int]:
                     "openapi_link_target_operation_id": link.get("operation_id"),
                     "openapi_link_target_operation_ref": link.get("operation_ref"),
                     "openapi_link_source": parameter.get("source"),
-                    "source_field_name": _json_path_tail(json_path),
+                    "source_field_name": _response_link_source_field_name(parameter, json_path),
                 }
                 aliases = _response_body_value_aliases(
                     json_path, str(parameter.get("source") or "")
@@ -502,6 +502,23 @@ def _response_link_parameters(link: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _response_link_parameter_json_path(parameter: dict[str, Any]) -> str:
+    json_path = str(parameter.get("json_path") or "").strip()
+    if json_path:
+        return json_path
+    if str(parameter.get("source") or "") == "response_header":
+        header = str(parameter.get("header") or "").strip()
+        if header:
+            return f"$.headers.{header}"
+    return ""
+
+
+def _response_link_source_field_name(parameter: dict[str, Any], json_path: str) -> str:
+    if str(parameter.get("source") or "") == "response_header":
+        return str(parameter.get("header") or "").strip()
+    return _json_path_tail(json_path)
+
+
 def _operation_target_index(schemas: list[ToolSchema]) -> dict[tuple[str, str], str]:
     index: dict[tuple[str, str], str] = {}
     for schema in schemas:
@@ -556,6 +573,7 @@ def _add_or_merge_openapi_link_edge(
     parameters = [dict(param) for param in link.get("parameters") or [] if isinstance(param, dict)]
     response_params = _response_link_parameters(link)
     primary = response_params[0] if response_params else (parameters[0] if parameters else {})
+    primary_path = _response_link_parameter_json_path(primary) if primary else ""
     relation_value = relation.value
     incoming = normalize_graph_edge(
         {
@@ -573,9 +591,9 @@ def _add_or_merge_openapi_link_edge(
                 "to_operation": consumer,
                 "link_name": link.get("name"),
                 "source_status": link.get("source_status"),
-                "from_path": primary.get("json_path") or primary.get("header") or "",
+                "from_path": primary_path,
                 "from_field": primary.get("source_field_name")
-                or _json_path_tail(primary.get("json_path")),
+                or _response_link_source_field_name(primary, primary_path),
                 "to_field": primary.get("field_name") or "",
                 "parameters": parameters,
             },

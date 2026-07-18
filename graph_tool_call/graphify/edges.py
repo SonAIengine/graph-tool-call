@@ -110,6 +110,7 @@ def _merge_data_flow(left: Any, right: Any) -> Any:
     if not isinstance(right, dict):
         return left
     merged = dict(left)
+    keep_explicit_link_source = bool(merged.get("link_name")) and not right.get("link_name")
     for key, value in right.items():
         if value in (None, "", [], {}):
             continue
@@ -120,6 +121,12 @@ def _merge_data_flow(left: Any, right: Any) -> Any:
                 if marker not in seen:
                     merged[key].append(item)
                     seen.add(marker)
+            continue
+        if (
+            keep_explicit_link_source
+            and key in {"from_path", "from_field"}
+            and merged.get(key) not in (None, "", [], {})
+        ):
             continue
         merged[key] = value
     return merged

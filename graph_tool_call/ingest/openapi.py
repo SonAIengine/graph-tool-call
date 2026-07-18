@@ -1053,6 +1053,14 @@ def _openapi_response_rows(
         description = str(response.get("description") or "").strip()
         if description:
             row["description"] = description[:300]
+        header_rows = _openapi_response_header_rows(
+            response,
+            status=status_text,
+            is_swagger2=is_swagger2,
+        )
+        if header_rows:
+            row["headers"] = header_rows
+            row["header_count"] = len(header_rows)
 
         schema: dict[str, Any] = {}
         content_type: str | None = None
@@ -1102,6 +1110,55 @@ def _openapi_response_rows(
         if links:
             row["links"] = links
             row["link_count"] = len(links)
+        rows.append(row)
+    return rows
+
+
+def _openapi_response_header_rows(
+    response: dict[str, Any],
+    *,
+    status: str,
+    is_swagger2: bool,
+) -> list[dict[str, Any]]:
+    headers = response.get("headers")
+    if not isinstance(headers, dict):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for name, header in headers.items():
+        if not isinstance(header, dict):
+            continue
+        schema = header if is_swagger2 else header.get("schema")
+        schema = _parameter_effective_schema(schema if isinstance(schema, dict) else {})
+        field_name = str(name)
+        row: dict[str, Any] = {
+            "name": field_name,
+            "field_name": field_name,
+            "json_path": f"$.headers.{field_name}",
+            "field_type": _schema_type(schema),
+            "required": False,
+            "location": "response_header",
+            "status": status,
+        }
+        _add_schema_hints(row, schema)
+        desc = _merge_description(str(header.get("description") or ""), _schema_description(schema))
+        if desc:
+            row["description"] = desc[:300]
+        enum = _schema_enum(header if is_swagger2 else schema)
+        if isinstance(enum, list) and enum:
+            row["enum"] = list(enum)
+        if not is_swagger2:
+            _add_parameter_content_metadata(row, header)
+        examples = [
+            *_example_rows(header, location="response_header"),
+            *_example_rows(schema, location="response_header"),
+        ]
+        if examples:
+            row["examples"] = examples[:_MAX_EXAMPLES_PER_BLOCK]
+            row["example_count"] = len(row["examples"])
+        for key in ("style", "explode", "deprecated"):
+            if key in header:
+                row[key] = header[key]
         rows.append(row)
     return rows
 
@@ -1830,6 +1887,7 @@ def _api_contract_rows(
     parameter_rows: list[dict[str, Any]],
     body_leaf_rows: list[dict[str, Any]],
     response_leaf_rows: list[dict[str, Any]],
+    response_header_rows: list[dict[str, Any]] | None = None,
     security: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     produces = []
@@ -1840,6 +1898,23 @@ def _api_contract_rows(
             "field_type": row["field_type"],
             **({"enum": row["enum"]} if row.get("enum") else {}),
         }
+        _copy_row_hints(row, produce)
+        produces.append(produce)
+    for row in response_header_rows or []:
+        field_name = str(row.get("field_name") or row.get("name") or "").strip()
+        if not field_name:
+            continue
+        produce = {
+            "field_name": field_name,
+            "json_path": row.get("json_path") or f"$.headers.{field_name}",
+            "field_type": str(row.get("field_type") or "string"),
+            "required": False,
+            "location": "response_header",
+            "kind": "data",
+            "header": field_name,
+        }
+        if row.get("enum"):
+            produce["enum"] = list(row["enum"])
         _copy_row_hints(row, produce)
         produces.append(produce)
 
@@ -2283,6 +2358,7 @@ def _operation_to_tool(
         parameter_rows=parameter_rows,
         body_leaf_rows=all_body_leaf_rows,
         response_leaf_rows=response_leaf_rows,
+        response_header_rows=selected_response.get("headers") or [],
         security=security,
     )
     link_rows = _api_contract_link_rows(
@@ -2328,6 +2404,11 @@ def _operation_to_tool(
                 "description": selected_response.get("description", ""),
                 "schema": response_schema,
                 "fields": response_leaf_rows,
+                **(
+                    {"headers": selected_response.get("headers")}
+                    if selected_response.get("headers")
+                    else {}
+                ),
                 **(
                     {"links": selected_response.get("links")}
                     if selected_response.get("links")
