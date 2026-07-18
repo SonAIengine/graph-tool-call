@@ -12,6 +12,18 @@ Public API:
   - render_subgraph_text(tg, nodes, edges, budget) -> str
 """
 
+from graph_tool_call.graphify.catalog import expand_candidates_with_producers
+from graph_tool_call.graphify.edges import (
+    EVIDENCE_LLM_CURATED,
+    EVIDENCE_MANUAL,
+    EVIDENCE_NAME_BASED,
+    EVIDENCE_PROVEN,
+    EVIDENCE_RUN,
+    EVIDENCE_STRUCTURAL,
+    derive_plan_trace_edges,
+    merge_graph_edges,
+    normalize_graph_edge,
+)
 from graph_tool_call.graphify.ingest import (
     DEFAULT_CONF_AMBIGUOUS,
     DEFAULT_CONF_EXTRACTED,
@@ -21,6 +33,7 @@ from graph_tool_call.graphify.ingest import (
     ingest_openapi_graphify,
     preserve_refs_for_detection,
 )
+from graph_tool_call.graphify.io_contract import build_io_contract
 from graph_tool_call.graphify.metadata import (
     COLLECTION_GRAPH_VERSION,
     annotate_graphify_metadata,
@@ -36,11 +49,22 @@ __all__ = [
     "DEFAULT_CONF_AMBIGUOUS",
     "DEFAULT_CONF_EXTRACTED",
     "DEFAULT_CONF_INFERRED",
+    "EVIDENCE_LLM_CURATED",
+    "EVIDENCE_MANUAL",
+    "EVIDENCE_NAME_BASED",
+    "EVIDENCE_PROVEN",
+    "EVIDENCE_RUN",
+    "EVIDENCE_STRUCTURAL",
     "_apply_pair_hints",
     "annotate_graphify_metadata",
     "bucket_confidence",
+    "build_io_contract",
+    "derive_plan_trace_edges",
     "detect_enrichment_status",
+    "expand_candidates_with_producers",
     "ingest_openapi_graphify",
+    "merge_graph_edges",
+    "normalize_graph_edge",
     "preserve_refs_for_detection",
     "render_subgraph_text",
     "retrieve_graphify",

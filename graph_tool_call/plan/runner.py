@@ -43,35 +43,50 @@ class PlanStarted:
     plan_id: str = ""
     goal: str = ""
     step_count: int = 0
+    stage: str = "runner"
+    graph_tool_call_version: str = ""
+    trace_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class StepStarted:
     type: str = "step.started"
+    plan_id: str = ""
     step_id: str = ""
     tool: str = ""
     args_resolved: dict[str, Any] = field(default_factory=dict)
     index: int = 0
     total: int = 0
+    stage: str = "runner"
+    graph_tool_call_version: str = ""
+    trace_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class StepCompleted:
     type: str = "step.completed"
+    plan_id: str = ""
     step_id: str = ""
     tool: str = ""
     duration_ms: int = 0
     output_preview: Any = None  # truncated output for UI
     output_size: int = 0
+    stage: str = "runner"
+    graph_tool_call_version: str = ""
+    trace_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class StepFailed:
     type: str = "step.failed"
+    plan_id: str = ""
     step_id: str = ""
     tool: str = ""
     error: dict[str, Any] = field(default_factory=dict)
     duration_ms: int = 0
+    stage: str = "runner"
+    graph_tool_call_version: str = ""
+    trace_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -82,6 +97,9 @@ class PlanCompleted:
     total_duration_ms: int = 0
     # 누적 step traces — 비-스트리밍 ``run()`` 이 ExecutionTrace.steps 채울 때 사용.
     trace_steps: list[StepTrace] = field(default_factory=list)
+    stage: str = "runner"
+    graph_tool_call_version: str = ""
+    trace_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -92,6 +110,9 @@ class PlanAborted:
     error: dict[str, Any] = field(default_factory=dict)
     total_duration_ms: int = 0
     trace_steps: list[StepTrace] = field(default_factory=list)
+    stage: str = "runner"
+    graph_tool_call_version: str = ""
+    trace_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # --- recovery events (additive; only emitted in retry/recover modes) --------
@@ -102,12 +123,16 @@ class StepRetrying:
     """A step's tool call failed and is about to be retried after a backoff."""
 
     type: str = "step.retrying"
+    plan_id: str = ""
     step_id: str = ""
     tool: str = ""
     attempt: int = 0  # 1-based index of the retry about to run
     max_attempts: int = 0
     delay_ms: int = 0
     error: dict[str, Any] = field(default_factory=dict)
+    stage: str = "runner"
+    graph_tool_call_version: str = ""
+    trace_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -115,10 +140,14 @@ class StepSkipped:
     """A failed step whose output nothing downstream consumes — safely skipped."""
 
     type: str = "step.skipped"
+    plan_id: str = ""
     step_id: str = ""
     tool: str = ""
     reason: str = ""
     error: dict[str, Any] = field(default_factory=dict)
+    stage: str = "runner"
+    graph_tool_call_version: str = ""
+    trace_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -126,11 +155,15 @@ class PlanRepaired:
     """The plan was re-synthesized around a failed step (execution continues)."""
 
     type: str = "plan.repaired"
+    plan_id: str = ""
     old_plan_id: str = ""
     new_plan_id: str = ""
     failed_step: str = ""
     excluded_tools: list[str] = field(default_factory=list)
     step_count: int = 0
+    stage: str = "runner"
+    graph_tool_call_version: str = ""
+    trace_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -139,10 +172,14 @@ class BindingRepaired:
     source's response (opt-in ``binding_recovery``)."""
 
     type: str = "binding.repaired"
+    plan_id: str = ""
     step_id: str = ""
     field_name: str = ""
     recovered_path: str = ""
     value_preview: Any = None
+    stage: str = "runner"
+    graph_tool_call_version: str = ""
+    trace_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -151,10 +188,14 @@ class ArgsCoerced:
     (opt-in ``validate_args='coerce'``)."""
 
     type: str = "args.coerced"
+    plan_id: str = ""
     step_id: str = ""
     tool: str = ""
     changes: list[dict[str, Any]] = field(default_factory=list)
     unresolved: list[str] = field(default_factory=list)
+    stage: str = "runner"
+    graph_tool_call_version: str = ""
+    trace_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 PlanEvent = (
@@ -259,6 +300,7 @@ class PlanRunner:
         plan: Plan,
         *,
         input_context: dict[str, Any] | None = None,
+        trace_metadata: dict[str, Any] | None = None,
     ) -> Iterator[PlanEvent]:
         """Execute *plan* and yield events as each step progresses.
 
@@ -270,11 +312,13 @@ class PlanRunner:
         parser) plus any operator-supplied seed values.
         """
         plan_start = time.monotonic()
+        event_meta = _event_meta(trace_metadata)
 
         yield PlanStarted(
             plan_id=plan.id,
             goal=plan.goal,
             step_count=len(plan.steps),
+            **event_meta,
         )
 
         # step_id -> output (runtime context for binding resolution).
@@ -316,10 +360,12 @@ class PlanRunner:
                     step_trace.duration_ms = _ms_since(step_start)
                     trace_steps.append(step_trace)
                     yield StepFailed(
+                        plan_id=plan.id,
                         step_id=step.id,
                         tool=step.tool,
                         error=err,
                         duration_ms=step_trace.duration_ms,
+                        **event_meta,
                     )
                     yield PlanAborted(
                         plan_id=plan.id,
@@ -327,24 +373,28 @@ class PlanRunner:
                         error=err,
                         total_duration_ms=_ms_since(plan_start),
                         trace_steps=list(trace_steps),
+                        **event_meta,
                     )
                     return
                 resolved, recovery_events = recovered
-                yield from recovery_events
+                for event in recovery_events:
+                    yield _attach_event_meta(event, plan_id=plan.id, event_meta=event_meta)
 
             # 1b. Optional arg coercion (type cast + fuzzy enum) before the call.
             if self._validate_args == "coerce":
                 resolved, coerce_event = self._coerce_step_args(step, resolved)
                 if coerce_event is not None:
-                    yield coerce_event
+                    yield _attach_event_meta(coerce_event, plan_id=plan.id, event_meta=event_meta)
 
             step_trace.args_resolved = resolved
             yield StepStarted(
+                plan_id=plan.id,
                 step_id=step.id,
                 tool=step.tool,
                 args_resolved=resolved,
                 index=idx + 1,
                 total=len(plan.steps),
+                **event_meta,
             )
 
             # 2. Execute via caller's tool invoker, with optional retry.
@@ -367,12 +417,14 @@ class PlanRunner:
                     if attempts < max_attempts:
                         delay_ms = self._backoff_ms(attempts)
                         yield StepRetrying(
+                            plan_id=plan.id,
                             step_id=step.id,
                             tool=step.tool,
                             attempt=attempts,
                             max_attempts=max_attempts,
                             delay_ms=delay_ms,
                             error=err,
+                            **event_meta,
                         )
                         if delay_ms > 0:
                             self._sleep(delay_ms / 1000.0)
@@ -391,10 +443,12 @@ class PlanRunner:
                     if not is_output_consumed(plan, step.id, idx):
                         trace_steps.append(step_trace)
                         yield StepSkipped(
+                            plan_id=plan.id,
                             step_id=step.id,
                             tool=step.tool,
                             reason="output not consumed by later steps",
                             error=err,
+                            **event_meta,
                         )
                         idx += 1
                         continue
@@ -418,11 +472,13 @@ class PlanRunner:
                             excluded_tools = set(repair_result.excluded_tools)
                             new_plan = repair_result.plan
                             yield PlanRepaired(
+                                plan_id=plan.id,
                                 old_plan_id=plan.id,
                                 new_plan_id=new_plan.id,
                                 failed_step=step.id,
                                 excluded_tools=sorted(excluded_tools),
                                 step_count=len(new_plan.steps),
+                                **event_meta,
                             )
                             # Re-seed context for the new plan. Its already-
                             # satisfied producers are baked in as entities;
@@ -441,10 +497,12 @@ class PlanRunner:
                 # abort (abort/retry modes, or recover exhausted)
                 trace_steps.append(step_trace)
                 yield StepFailed(
+                    plan_id=plan.id,
                     step_id=step.id,
                     tool=step.tool,
                     error=err,
                     duration_ms=step_trace.duration_ms,
+                    **event_meta,
                 )
                 yield PlanAborted(
                     plan_id=plan.id,
@@ -452,6 +510,7 @@ class PlanRunner:
                     error=err,
                     total_duration_ms=_ms_since(plan_start),
                     trace_steps=list(trace_steps),
+                    **event_meta,
                 )
                 return
 
@@ -470,11 +529,13 @@ class PlanRunner:
             context[step.id] = output
 
             yield StepCompleted(
+                plan_id=plan.id,
                 step_id=step.id,
                 tool=step.tool,
                 duration_ms=step_trace.duration_ms,
                 output_preview=_preview(output, self._preview_limit),
                 output_size=_output_size(output),
+                **event_meta,
             )
             idx += 1
 
@@ -504,6 +565,7 @@ class PlanRunner:
                 error=err,
                 total_duration_ms=_ms_since(plan_start),
                 trace_steps=list(trace_steps),
+                **event_meta,
             )
             return
 
@@ -512,6 +574,7 @@ class PlanRunner:
             output=final,
             total_duration_ms=_ms_since(plan_start),
             trace_steps=list(trace_steps),
+            **event_meta,
         )
 
     # ----------------------------------------------------------------------
@@ -650,6 +713,7 @@ class PlanRunner:
         plan: Plan,
         *,
         input_context: dict[str, Any] | None = None,
+        trace_metadata: dict[str, Any] | None = None,
     ) -> ExecutionTrace:
         """Execute *plan* and return an ExecutionTrace aggregating events.
 
@@ -664,7 +728,11 @@ class PlanRunner:
         failed_step: str | None = None
         output: Any = None
 
-        for event in self.run_stream(plan, input_context=input_context):
+        for event in self.run_stream(
+            plan,
+            input_context=input_context,
+            trace_metadata=trace_metadata,
+        ):
             etype = event.type
             if etype == "plan.completed":
                 success = True
@@ -697,6 +765,51 @@ def _ms_since(start_monotonic: float) -> int:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+_VERSION_CACHE: str | None = None
+
+
+def _package_version() -> str:
+    global _VERSION_CACHE
+    if _VERSION_CACHE is not None:
+        return _VERSION_CACHE
+    try:
+        import graph_tool_call as _pkg
+
+        _VERSION_CACHE = str(getattr(_pkg, "__version__", ""))
+        if _VERSION_CACHE:
+            return _VERSION_CACHE
+    except Exception:
+        pass
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        _VERSION_CACHE = version("graph-tool-call")
+    except PackageNotFoundError:
+        _VERSION_CACHE = ""
+    return _VERSION_CACHE
+
+
+def _event_meta(trace_metadata: dict[str, Any] | None) -> dict[str, Any]:
+    return {
+        "stage": "runner",
+        "graph_tool_call_version": _package_version(),
+        "trace_metadata": dict(trace_metadata or {}),
+    }
+
+
+def _attach_event_meta(
+    event: PlanEvent,
+    *,
+    plan_id: str,
+    event_meta: dict[str, Any],
+) -> PlanEvent:
+    event.plan_id = plan_id  # type: ignore[union-attr]
+    event.stage = event_meta["stage"]  # type: ignore[union-attr]
+    event.graph_tool_call_version = event_meta["graph_tool_call_version"]  # type: ignore[union-attr]
+    event.trace_metadata = dict(event_meta["trace_metadata"])  # type: ignore[union-attr]
+    return event
 
 
 def _preview(value: Any, limit: int) -> Any:

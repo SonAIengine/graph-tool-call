@@ -158,7 +158,7 @@ def _bfs_from_seeds(
     *,
     depth: int,
     rel_weights: dict[str, float],
-) -> tuple[dict[str, float], list[tuple[str, str]]]:
+) -> tuple[dict[str, float], list[tuple[str, str]], dict[str, dict[str, Any]]]:
     """Confidence-weighted BFS. Returns (scores, edges_visited).
 
     Score policy:
@@ -180,6 +180,11 @@ def _bfs_from_seeds(
 
     max_seed = max((s for _, s in seed_scores), default=1.0) or 1.0
     scores: dict[str, float] = {n: s / max_seed for n, s in seed_scores if graph.has_node(n)}
+    provenance: dict[str, dict[str, Any]] = {
+        n: {"seed": True, "seed_score": round(s / max_seed, 6)}
+        for n, s in seed_scores
+        if graph.has_node(n)
+    }
     visited: set[str] = set(scores)
     frontier: list[str] = list(scores)
     edges_visited: list[tuple[str, str]] = []
@@ -212,7 +217,15 @@ def _bfs_from_seeds(
                     # parent_score multiplication every BFS-discovered tool
                     # would inherit the same fixed weight.
                     score = parent_score * rel_w * conf_factor * decay
-                    scores[neighbour] = max(scores.get(neighbour, 0.0), score)
+                    prev = scores.get(neighbour, 0.0)
+                    if score >= prev:
+                        scores[neighbour] = score
+                        provenance[neighbour] = {
+                            "seed": False,
+                            "expanded_from": node,
+                            "depth": d,
+                            "edge": _edge_evidence_dict(src, tgt, attrs),
+                        }
                     edges_visited.append((src, tgt))
                     next_frontier.append(neighbour)
                     visited.add(neighbour)
@@ -225,7 +238,20 @@ def _bfs_from_seeds(
         if not frontier:
             break
 
-    return scores, edges_visited
+    return scores, edges_visited, provenance
+
+
+def _edge_evidence_dict(src: str, tgt: str, attrs: dict[str, Any]) -> dict[str, Any]:
+    rel = attrs.get("relation")
+    conf = attrs.get("confidence")
+    return {
+        "source": src,
+        "target": tgt,
+        "relation": rel.value if hasattr(rel, "value") else str(rel) if rel is not None else "",
+        "confidence": conf.value if hasattr(conf, "value") else conf,
+        "conf_score": attrs.get("conf_score"),
+        "evidence": attrs.get("evidence") or "",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +378,7 @@ def retrieve_graphify(
     depth: int = _DEFAULT_DEPTH,
     token_budget: int = _DEFAULT_BUDGET,
     history: list[str] | None = None,
+    include_evidence: bool = False,
 ) -> dict[str, Any]:
     """Retrieve tools for a natural-language query using graph traversal only.
 
@@ -382,6 +409,10 @@ def retrieve_graphify(
       - intent:         {dominant: 'read'|'write'|'delete'|'neutral', read, write, delete}
       - stats:          {seeds: [...], visited_nodes: int, visited_edges: int}
 
+    ``include_evidence=True`` keeps the legacy keys and adds per-result
+    ``score_breakdown``, ``expanded_from``, ``edge_evidence`` plus
+    ``stats.token_budget_used`` for traceable XGEN UI/logging.
+
     Note: prerequisite chain construction (e.g. listOrders → getOrder → cancelOrder)
     is NOT this function's job — it lives in Stage 2 ``synthesize_plan`` which
     consumes the graph this module produces. retrieve_graphify only finds the
@@ -392,7 +423,7 @@ def retrieve_graphify(
             "results": [],
             "subgraph_text": "",
             "intent": {"dominant": "neutral", "read": 0.0, "write": 0.0, "delete": 0.0},
-            "stats": {"seeds": [], "visited_nodes": 0, "visited_edges": 0},
+            "stats": _stats([], 0, 0, "", include_evidence=include_evidence),
         }
 
     # 1) Seeds
@@ -404,7 +435,7 @@ def retrieve_graphify(
             "results": [],
             "subgraph_text": "",
             "intent": {"dominant": "neutral", "read": 0.0, "write": 0.0, "delete": 0.0},
-            "stats": {"seeds": [], "visited_nodes": 0, "visited_edges": 0},
+            "stats": _stats([], 0, 0, "", include_evidence=include_evidence),
         }
 
     # 2) Intent → relation weight map
@@ -414,7 +445,7 @@ def retrieve_graphify(
     intent_obj = classify_intent(query)
 
     # 3) BFS — pass full (name, score) pairs so seed scores reflect BM25 ranking
-    scores, edges_visited = _bfs_from_seeds(
+    scores, edges_visited, provenance = _bfs_from_seeds(
         tg.graph,
         seeds_with_scores,
         depth=depth,
@@ -441,14 +472,27 @@ def retrieve_graphify(
         sort_by_score=tool_scores,
     )
 
-    results = [
-        {
+    results = []
+    for name, score in ranked:
+        row = {
             "name": name,
             "score": round(score, 4),
             "tool": tg.tools[name].to_dict() if name in tg.tools else None,
         }
-        for name, score in ranked
-    ]
+        if include_evidence:
+            prov = provenance.get(name) or {}
+            seed_score = float(prov.get("seed_score") or 0.0) if prov.get("seed") else 0.0
+            graph_score = 0.0 if prov.get("seed") else round(score, 6)
+            row["score_breakdown"] = {
+                "seed": round(seed_score, 6),
+                "graph": graph_score,
+                "history_demoted": bool(history and name in history),
+            }
+            if prov.get("expanded_from"):
+                row["expanded_from"] = prov["expanded_from"]
+            edge = prov.get("edge")
+            row["edge_evidence"] = [edge] if isinstance(edge, dict) else []
+        results.append(row)
 
     return {
         "results": results,
@@ -459,9 +503,29 @@ def retrieve_graphify(
             "write": round(intent_obj.write_intent, 3),
             "delete": round(intent_obj.delete_intent, 3),
         },
-        "stats": {
-            "seeds": seed_names,
-            "visited_nodes": len(scores),
-            "visited_edges": len(edges_visited),
-        },
+        "stats": _stats(
+            seed_names,
+            len(scores),
+            len(edges_visited),
+            subgraph_text,
+            include_evidence=include_evidence,
+        ),
     }
+
+
+def _stats(
+    seeds: list[str],
+    visited_nodes: int,
+    visited_edges: int,
+    subgraph_text: str,
+    *,
+    include_evidence: bool,
+) -> dict[str, Any]:
+    stats: dict[str, Any] = {
+        "seeds": seeds,
+        "visited_nodes": visited_nodes,
+        "visited_edges": visited_edges,
+    }
+    if include_evidence:
+        stats["token_budget_used"] = len(subgraph_text) // 3
+    return stats
