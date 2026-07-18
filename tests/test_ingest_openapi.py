@@ -456,6 +456,96 @@ class TestIngestOpenAPI30:
             "filters": {"brandNo": "B1"},
         }
 
+    def test_additional_properties_maps_are_preserved_in_contract_metadata(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Map Commerce API", "version": "1.0.0"},
+            "paths": {
+                "/goods/maps": {
+                    "post": {
+                        "operationId": "upsertGoodsMap",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["attributes"],
+                                        "properties": {
+                                            "attributes": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "type": "object",
+                                                    "required": ["value"],
+                                                    "properties": {
+                                                        "value": {
+                                                            "type": "string",
+                                                            "description": "속성 값",
+                                                        }
+                                                    },
+                                                },
+                                            }
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "goodsNo": {"type": "string"},
+                                                            "goodsNm": {"type": "string"},
+                                                        },
+                                                    },
+                                                }
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        openapi = tool.metadata["openapi"]
+        request_fields = {row["field_name"]: row for row in openapi["request_body"]["fields"]}
+        response_fields = {row["field_name"]: row for row in openapi["response"]["fields"]}
+
+        assert request_fields["value"]["json_path"] == "$.attributes.*.value"
+        assert request_fields["value"]["required"] is False
+        assert request_fields["value"]["additional_properties"] is True
+        assert request_fields["value"]["map_value"] is True
+        assert response_fields["goodsNo"]["json_path"] == "$.data.*.goodsNo"
+        assert response_fields["goodsNo"]["map_key_placeholder"] == "*"
+
+        consumes = {row["field_name"]: row for row in tool.metadata["api_contract"]["consumes"]}
+        produces = {row["field_name"]: row for row in tool.metadata["api_contract"]["produces"]}
+        assert consumes["value"]["map_value"] is True
+        assert consumes["value"]["required"] is False
+        assert produces["goodsNo"]["additional_properties"] is True
+
+        request = HttpExecutor("https://api.example.com").build_request(
+            tool,
+            {"attributes": {"color": {"value": "red"}}},
+        )
+        assert json.loads(request.data.decode("utf-8")) == {
+            "attributes": {"color": {"value": "red"}}
+        }
+
     def test_query_object_parameter_metadata_expands_to_inner_fields(self) -> None:
         """Query DTO wrappers should not leak into graph/Planflow contracts."""
         spec = {

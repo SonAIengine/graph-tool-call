@@ -122,6 +122,11 @@ OpenAPI field direction is enforced before graph/search promotion:
   If Spring/SpringDoc exposes both the wrapper and a sibling field, the wrapper
   is dropped and the sibling wins. Explicit `style=deepObject` parameters keep
   the wrapper because it is part of the wire format.
+- JSON Schema `additionalProperties` maps preserve map-value fields with
+  `additional_properties=true`, `map_value=true`, and `map_key_placeholder="*"`.
+  Object map values use paths such as `$.data.*.goodsNo`; primitive maps keep
+  the parent field name with paths such as `$.labels.*`. Runtime `*` selection
+  uses the first map key after string sorting.
 - `oneOf` / `anyOf` schemas are expanded across all object branches instead of
   only the first branch; branch-local required fields are marked with
   `required_in_branch` and do not become global request requirements

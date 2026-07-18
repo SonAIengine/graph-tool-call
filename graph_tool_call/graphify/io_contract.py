@@ -122,6 +122,9 @@ _CONTRACT_HINT_KEYS = (
     "discriminator_property",
     "discriminator_value",
     "discriminator_values",
+    "additional_properties",
+    "map_value",
+    "map_key_placeholder",
     *RESPONSE_ENVELOPE_HINT_KEYS,
     *EXAMPLE_FIELD_HINT_KEYS,
 )

@@ -32,6 +32,16 @@ def test_array_index():
     assert resolve_bindings("${s1.items[1].id}", ctx) == "B"
 
 
+def test_map_value_wildcard_picks_first_value_by_sorted_key():
+    ctx = {"s1": {"goodsMap": {"G2": {"goodsNo": "P2"}, "G1": {"goodsNo": "P1"}}}}
+    assert resolve_bindings("${s1.goodsMap.*.goodsNo}", ctx) == "P1"
+
+
+def test_map_value_wildcard_empty_container_raises():
+    with pytest.raises(BindingError, match="wildcard on empty dict"):
+        resolve_bindings("${s1.goodsMap.*.goodsNo}", {"s1": {"goodsMap": {}}})
+
+
 def test_array_negative_index():
     ctx = {"s1": [10, 20, 30]}
     assert resolve_bindings("${s1[-1]}", ctx) == 30

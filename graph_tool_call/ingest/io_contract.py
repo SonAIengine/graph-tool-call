@@ -62,6 +62,9 @@ class FieldLeaf:
     discriminator_property: str = ""
     discriminator_value: Any = None
     discriminator_values: list[Any] = field(default_factory=list)
+    additional_properties: bool = False
+    map_value: bool = False
+    map_key_placeholder: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +150,7 @@ def extract_leaves(
             base_path,
             max_depth,
             _depth,
+            parent_required=parent_required,
             parent_read_only=read_only,
             parent_write_only=write_only,
             parent_deprecated=deprecated,
@@ -234,6 +238,7 @@ def _walk_object(
     max_depth: int,
     depth: int,
     *,
+    parent_required: bool = False,
     parent_read_only: bool = False,
     parent_write_only: bool = False,
     parent_deprecated: bool = False,
@@ -248,7 +253,7 @@ def _walk_object(
     leaves: list[FieldLeaf] = []
     properties = schema.get("properties") or {}
     if not isinstance(properties, dict):
-        return leaves
+        properties = {}
     required_set = set(schema.get("required") or [])
 
     for prop_name, prop_schema in properties.items():
@@ -375,7 +380,129 @@ def _walk_object(
                     ),
                 )
             )
+    leaves.extend(
+        _walk_additional_properties(
+            schema,
+            base_path=base_path,
+            max_depth=max_depth,
+            depth=depth,
+            parent_required=parent_required,
+            parent_read_only=parent_read_only,
+            parent_write_only=parent_write_only,
+            parent_deprecated=parent_deprecated,
+            schema_combinator=schema_combinator,
+            schema_branch=schema_branch,
+            schema_branch_count=schema_branch_count,
+            alternative_branch=alternative_branch,
+            discriminator_property=discriminator_property,
+            discriminator_value=discriminator_value,
+            schema_ref=schema_ref,
+        )
+    )
     return leaves
+
+
+def _walk_additional_properties(
+    schema: dict[str, Any],
+    *,
+    base_path: str,
+    max_depth: int,
+    depth: int,
+    parent_required: bool,
+    parent_read_only: bool,
+    parent_write_only: bool,
+    parent_deprecated: bool,
+    schema_combinator: str,
+    schema_branch: int | None,
+    schema_branch_count: int | None,
+    alternative_branch: bool,
+    discriminator_property: str,
+    discriminator_value: Any,
+    schema_ref: str,
+) -> list[FieldLeaf]:
+    additional = schema.get("additionalProperties")
+    if not isinstance(additional, dict) or not additional:
+        return []
+
+    map_path = f"{base_path}.*"
+    leaves = extract_leaves(
+        additional,
+        base_path=map_path,
+        parent_required=parent_required,
+        max_depth=max_depth,
+        _depth=depth + 1,
+        _parent_read_only=parent_read_only,
+        _parent_write_only=parent_write_only,
+        _parent_deprecated=parent_deprecated,
+        _schema_combinator=schema_combinator,
+        _schema_branch=schema_branch,
+        _schema_branch_count=schema_branch_count,
+        _alternative_branch=alternative_branch,
+        _discriminator_property=discriminator_property,
+        _discriminator_value=discriminator_value,
+        _schema_ref=schema_ref or str(additional.get("x-graph-tool-call-ref") or ""),
+    )
+
+    parent_field_name = _last_path_segment(base_path)
+    if not leaves and parent_field_name:
+        leaves = [
+            FieldLeaf(
+                json_path=map_path,
+                field_name=parent_field_name,
+                field_type=_schema_type(additional) or "object",
+                required=parent_required and not alternative_branch,
+                description=str(additional.get("description") or "")[:200],
+                enum=_schema_enum(additional),
+                format=str(additional.get("format") or ""),
+                default=additional.get("default"),
+                example=additional.get("example"),
+                nullable=bool(additional.get("nullable", False)),
+                pattern=str(additional.get("pattern") or ""),
+                minimum=additional.get("minimum"),
+                maximum=additional.get("maximum"),
+                const=additional.get("const"),
+                exclusive_minimum=additional.get("exclusiveMinimum"),
+                exclusive_maximum=additional.get("exclusiveMaximum"),
+                min_length=additional.get("minLength"),
+                max_length=additional.get("maxLength"),
+                min_items=additional.get("minItems"),
+                max_items=additional.get("maxItems"),
+                min_properties=additional.get("minProperties"),
+                max_properties=additional.get("maxProperties"),
+                multiple_of=additional.get("multipleOf"),
+                read_only=parent_read_only or bool(additional.get("readOnly", False)),
+                write_only=parent_write_only or bool(additional.get("writeOnly", False)),
+                deprecated=parent_deprecated or bool(additional.get("deprecated", False)),
+                schema_ref=schema_ref or str(additional.get("x-graph-tool-call-ref") or ""),
+                schema_combinator=schema_combinator,
+                schema_branch=schema_branch,
+                schema_branch_count=schema_branch_count,
+                schema_branches=[schema_branch] if schema_branch is not None else [],
+                required_in_branch=parent_required if alternative_branch else False,
+                discriminator_property=discriminator_property,
+                discriminator_value=discriminator_value,
+                discriminator_values=(
+                    [discriminator_value] if discriminator_value is not None else []
+                ),
+            )
+        ]
+
+    normalized: list[FieldLeaf] = []
+    for source_leaf in leaves:
+        leaf = replace(source_leaf)
+        if leaf.field_name == "*" and parent_field_name:
+            leaf.field_name = parent_field_name
+        elif leaf.field_name == "*":
+            continue
+        leaf.required = False
+        leaf.required_in_branch = False
+        leaf.additional_properties = True
+        leaf.map_value = True
+        leaf.map_key_placeholder = "*"
+        if not leaf.schema_ref:
+            leaf.schema_ref = schema_ref or str(additional.get("x-graph-tool-call-ref") or "")
+        normalized.append(leaf)
+    return normalized
 
 
 def _extract_alternative_leaves(
@@ -558,6 +685,8 @@ def _has_extractable_shape(schema: dict[str, Any], *, base_path: str) -> bool:
         return False
     if isinstance(schema.get("properties"), dict) and schema["properties"]:
         return True
+    if isinstance(schema.get("additionalProperties"), dict) and schema["additionalProperties"]:
+        return True
     if _normalize_type(schema.get("type")) == "array" and isinstance(schema.get("items"), dict):
         return True
     if base_path != "$" and (
@@ -661,6 +790,11 @@ def _resolve_combinators(schema: dict[str, Any]) -> dict[str, Any]:
             for key in ("readOnly", "writeOnly", "deprecated", "nullable"):
                 if resolved_sub.get(key) and key not in out:
                     out[key] = resolved_sub[key]
+            if (
+                isinstance(resolved_sub.get("additionalProperties"), dict)
+                and "additionalProperties" not in out
+            ):
+                out["additionalProperties"] = resolved_sub["additionalProperties"]
         if merged_props:
             out["type"] = "object"
             out["properties"] = merged_props

@@ -1005,6 +1005,9 @@ def _copy_validation_hint(source: dict[str, Any], target: dict[str, Any]) -> Non
         "discriminator_property",
         "discriminator_value",
         "discriminator_values",
+        "additional_properties",
+        "map_value",
+        "map_key_placeholder",
     ):
         value = source.get(key)
         if value not in (None, "", []):
@@ -1132,6 +1135,8 @@ def _body_field_paths(
     paths: dict[str, str] = {}
     for row in _body_rows(api_metadata, content_type=content_type, include_content_type_rows=False):
         if not isinstance(row, dict):
+            continue
+        if row.get("map_value"):
             continue
         name = str(row.get("field_name") or "")
         json_path = str(row.get("json_path") or "")
@@ -1765,7 +1770,7 @@ def _build_json_body(
 
 
 def _can_assign_json_path(json_path: str) -> bool:
-    return json_path.startswith("$.") and "[*]" not in json_path
+    return json_path.startswith("$.") and "[*]" not in json_path and ".*" not in json_path
 
 
 def _assign_json_path(body: dict[str, Any], json_path: str, value: Any) -> None:

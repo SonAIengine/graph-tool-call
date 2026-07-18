@@ -43,6 +43,62 @@ def test_extract_leaves_array_of_objects():
     assert any("[*]" in p for p in paths), "array → [*] wildcard 경로"
 
 
+def test_extract_leaves_additional_properties_object_values():
+    schema = {
+        "type": "object",
+        "properties": {
+            "data": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "object",
+                    "required": ["goodsNo"],
+                    "properties": {
+                        "goodsNo": {"type": "string", "description": "상품 번호"},
+                        "goodsNm": {"type": "string"},
+                    },
+                },
+            }
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert by_name["goodsNo"].json_path == "$.data.*.goodsNo"
+    assert by_name["goodsNo"].description == "상품 번호"
+    assert by_name["goodsNo"].required is False
+    assert by_name["goodsNo"].additional_properties is True
+    assert by_name["goodsNo"].map_value is True
+    assert by_name["goodsNo"].map_key_placeholder == "*"
+    assert by_name["goodsNm"].json_path == "$.data.*.goodsNm"
+
+
+def test_extract_leaves_additional_properties_primitive_map_keeps_parent_field():
+    schema = {
+        "type": "object",
+        "properties": {
+            "labels": {
+                "type": "object",
+                "additionalProperties": {"type": "string", "description": "label value"},
+            }
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+
+    assert len(leaves) == 1
+    assert leaves[0].field_name == "labels"
+    assert leaves[0].json_path == "$.labels.*"
+    assert leaves[0].field_type == "string"
+    assert leaves[0].additional_properties is True
+
+
+def test_extract_leaves_root_primitive_map_without_field_name_is_empty():
+    schema = {"type": "object", "additionalProperties": {"type": "string"}}
+
+    assert extract_leaves(schema, base_path="$") == []
+
+
 def test_extract_leaves_captures_enum():
     schema = {
         "type": "object",

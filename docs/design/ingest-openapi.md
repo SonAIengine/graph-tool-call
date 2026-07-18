@@ -91,6 +91,14 @@ sibling field를 우선하고 wrapper는 제거한다. 이 규칙은 `ToolParame
 단, 명시적인 `style=deepObject` parameter는 `filter[status]=paid`처럼 wrapper
 이름이 wire format의 일부이므로 펼치지 않고 wrapper를 유지한다.
 
+JSON Schema `additionalProperties`는 동적 key map으로 보존한다. map value가
+object면 내부 field를 `$.data.*.goodsNo` 같은 path로 추출하고
+`additional_properties=true`, `map_value=true`, `map_key_placeholder="*"`를
+붙인다. primitive map이면 `$.labels.*`처럼 parent field 이름을 유지한다.
+Planflow v1에서 `*`는 fan-out이 아니라 key 문자열 정렬 기준 첫 map value
+선택이다. request body 생성 시 map value leaf path는 직접 assignment 후보에서
+제외해 `*`가 literal JSON key로 들어가지 않도록 한다.
+
 `oneOf`/`anyOf` schema는 첫 번째 branch만 선택하지 않고 모든 object branch의
 field를 union으로 추출한다. branch 안에서만 required인 field는
 `required_in_branch=true`, `schema_combinator`, `schema_branch`,

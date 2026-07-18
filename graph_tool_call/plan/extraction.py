@@ -226,7 +226,11 @@ def _resolve_json_path(output: Any, raw: str) -> Any:
 
     node = output
     for tok in _tokenize(path):
-        if tok.startswith("[") and tok.endswith("]"):
+        if tok == "*":
+            node = _first_value(node)
+            if node is None:
+                return None
+        elif tok.startswith("[") and tok.endswith("]"):
             try:
                 idx = int(tok[1:-1])
             except ValueError:
@@ -242,3 +246,16 @@ def _resolve_json_path(output: Any, raw: str) -> Any:
                 return None
             node = node[tok]
     return node
+
+
+def _first_value(node: Any) -> Any:
+    if isinstance(node, dict):
+        if not node:
+            return None
+        key = sorted(node, key=lambda item: str(item))[0]
+        return node[key]
+    if isinstance(node, (list, tuple)):
+        if not node:
+            return None
+        return node[0]
+    return None

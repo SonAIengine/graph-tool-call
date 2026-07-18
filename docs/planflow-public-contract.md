@@ -21,6 +21,9 @@ The graphify package owns product-neutral collection graph logic.
   aliases, and enum values. Example-derived object parameters can therefore
   match XGEN-style field queries such as `goodsNo` / "상품번호" without indexing
   every raw OpenAPI leaf.
+- `additionalProperties` map leaves are represented additively with
+  `additional_properties`, `map_value`, and `map_key_placeholder` hints; map
+  value paths use `*` as a sorted-key first-value placeholder, not fan-out.
 - `expand_candidates_with_producers(...)` expands retrieval candidates with deterministic 1-hop producers for required `kind=data` inputs.
 - `normalize_graph_edge(...)`, `merge_graph_edges(...)`, and `derive_plan_trace_edges(...)` normalize structural, LLM-curated, manual, and run-observed signals into graph version 2 edge metadata.
 - `retrieve_graphify(..., include_evidence=True)` keeps the legacy response keys and adds score/evidence details for logs and UI.

@@ -82,6 +82,41 @@ def test_extract_produced_entities_by_json_path():
     assert ents["goodsNo"] == "G1"
 
 
+def test_extract_produced_entities_by_map_wildcard_path():
+    tool_meta = {
+        "produces": [
+            {
+                "field_name": "goodsNo",
+                "json_path": "$.data.*.goodsNo",
+                "semantic_tag": "goods.id",
+                "additional_properties": True,
+                "map_value": True,
+                "map_key_placeholder": "*",
+            },
+        ]
+    }
+    output = {"data": {"G2": {"goodsNo": "P2"}, "G1": {"goodsNo": "P1"}}}
+
+    ents = extract_produced_entities(tool_meta, output)
+
+    assert ents["goods.id"] == "P1"
+    assert ents["goodsNo"] == "P1"
+
+
+def test_extract_produced_entities_map_wildcard_empty_map_returns_empty():
+    tool_meta = {
+        "produces": [
+            {
+                "field_name": "goodsNo",
+                "json_path": "$.data.*.goodsNo",
+                "semantic_tag": "goods.id",
+            },
+        ]
+    }
+
+    assert extract_produced_entities(tool_meta, {"data": {}}) == {}
+
+
 def test_extract_produced_entities_bfs_fallback_when_shape_differs():
     """envelope 가 벗겨져 json_path 가 안 맞아도 field-name BFS 로 회수."""
     tool_meta = {
