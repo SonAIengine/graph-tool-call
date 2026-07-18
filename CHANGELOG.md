@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-07-18
+
+### Added
+- **Graphify public contract v2** — `build_io_contract()`, `expand_candidates_with_producers()`, `normalize_graph_edge()`, `merge_graph_edges()`, and `derive_plan_trace_edges()` move product-neutral XGEN Planflow graph logic into the engine.
+- **Evidence-aware graphify retrieval** — `retrieve_graphify(..., include_evidence=True)` adds per-result `score_breakdown`, `expanded_from`, `edge_evidence`, and `stats.token_budget_used` without changing the legacy response keys.
+- **Plan synthesis diagnostics** — `PlanSynthesisError.to_dict()` exposes structured `stage`, `reason`, `message`, and details. `Plan.metadata.synthesis` records selected producers, candidate signals, and user-input fallbacks.
+- **Runner trace metadata** — `PlanRunner.run_stream(..., trace_metadata=...)` adds `stage`, `graph_tool_call_version`, `plan_id`, and caller trace metadata to dataclass events for SSE/log forwarding.
+- **Planflow public contract docs** — `docs/planflow-public-contract.md` documents graphify, synthesis, and runner event contracts for XGEN-style adapters.
+
+### Changed
+- **Collection graph version** — `collection_graph_version` is now `2`; existing graphify v1 graphs remain readable because the new fields are additive.
+- **BM25 indexing** — keyword retrieval now indexes `ai_metadata` summaries, use-when text, canonical action/resource, and IO field/semantic tags so enriched collections remain searchable even with opaque operation IDs.
+- **Ambient inputs** — `PathSynthesizer` treats `kind=auth` like `kind=context`: supplied by entities/defaults or skipped, never producer-chained.
+
 ## [0.24.0] - 2026-07-18
 
 ### Added
@@ -435,7 +449,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.21.0...v0.22.0

@@ -8,6 +8,7 @@ docs/
 │
 ├── cli.md                      # CLI 레퍼런스 (모든 명령)
 ├── api-reference.md            # Python API 레퍼런스 (ToolGraph, helpers, middleware)
+├── planflow-public-contract.md # graphify/Planflow public contract
 ├── benchmarks.md               # 벤치마크 결과 (pipeline / retrieval / competitive / scale)
 ├── roadmap.md                  # 고도화 후보 15개 + 우선순위 매트릭스 + 마일스톤
 │
@@ -62,6 +63,11 @@ docs/
 3. **Python API**: [api-reference.md](api-reference.md)
 4. **통합 가이드**: [integrations/](integrations/) — 본인 스택에 맞는 패턴 선택
 5. **벤치마크**: [benchmarks.md](benchmarks.md)
+
+**Planflow / XGEN 통합**
+1. **Public contract**: [planflow-public-contract.md](planflow-public-contract.md)
+2. **아키텍처**: [architecture-plan-and-execute.md](architecture-plan-and-execute.md)
+3. **검색 설계**: [design/retrieval-engine.md](design/retrieval-engine.md)
 
 **개발자/기여자 (내부 구조 이해하려는 사람)**
 1. **전체 그림**: [architecture/overview.md](architecture/overview.md)

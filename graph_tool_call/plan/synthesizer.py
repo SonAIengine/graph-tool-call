@@ -44,7 +44,33 @@ from graph_tool_call.plan.schema import Plan, PlanStep
 
 
 class PlanSynthesisError(Exception):
-    """Base class for synthesis failures."""
+    """Base class for synthesis failures.
+
+    ``reason`` and ``details`` are additive structured diagnostics. Existing
+    callers that only read ``str(exc)`` keep working, while XGEN-style adapters
+    can use ``to_dict()`` instead of regex-parsing the message.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str = "synthesis_error",
+        stage: str = "synthesize",
+        **details: Any,
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.stage = stage
+        self.details = dict(details)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "stage": self.stage,
+            "reason": self.reason,
+            "message": str(self),
+            **self.details,
+        }
 
 
 class UnsatisfiableFieldError(PlanSynthesisError):
@@ -83,7 +109,15 @@ class DynamicOptionRequired(UnsatisfiableFieldError):  # noqa: N818
         options_path: str,
         label_field_hints: list[str],
     ) -> None:
-        super().__init__(message)
+        super().__init__(
+            message,
+            reason="dynamic_option_required",
+            field_name=field_name,
+            semantic_tag=semantic_tag,
+            producer_name=producer_name,
+            options_path=options_path,
+            label_field_hints=list(label_field_hints),
+        )
         self.field_name = field_name
         self.semantic_tag = semantic_tag
         self.producer_name = producer_name
@@ -171,6 +205,9 @@ class PathSynthesizer:
         # field_name match — we walk the graph the user/extractor built
         # rather than failing on field-name divergence.
         self._workflow_edges_out: dict[str, list[dict[str, Any]]] = {}
+        self._candidate_signals: dict[str, dict[str, Any]] = {}
+        self._selected_producers: list[dict[str, Any]] = []
+        self._user_input_fallbacks: list[dict[str, Any]] = []
         self._index_workflow_edges(graph)
         self._build_producer_indexes()
 
@@ -202,9 +239,16 @@ class PathSynthesizer:
         declines to repair a failed target upstream.
         """
         if target not in self._tools:
-            raise PlanSynthesisError(f"target tool not in graph: {target!r}")
+            raise PlanSynthesisError(
+                f"target tool not in graph: {target!r}",
+                reason="unknown_target",
+                target=target,
+            )
 
         entities = entities or {}
+        self._candidate_signals = {}
+        self._selected_producers = []
+        self._user_input_fallbacks = []
         steps_by_tool: dict[str, _PartialStep] = {}
         visiting: set[str] = set()
 
@@ -272,6 +316,12 @@ class PathSynthesizer:
                 "entities": dict(entities),
                 "synthesized_by": "PathSynthesizer/v1",
                 "user_input_slots": user_input_slots,
+                "synthesis": {
+                    "target": target,
+                    "selected_producers": list(self._selected_producers),
+                    "candidate_signals": dict(self._candidate_signals),
+                    "fallbacks": list(self._user_input_fallbacks),
+                },
             },
         )
 
@@ -305,13 +355,19 @@ class PathSynthesizer:
         """
         if depth > self._max_depth:
             raise MaxDepthExceededError(
-                f"synthesis exceeded max_depth={self._max_depth} at {tool_name!r}"
+                f"synthesis exceeded max_depth={self._max_depth} at {tool_name!r}",
+                reason="max_depth",
+                tool=tool_name,
+                max_depth=self._max_depth,
             )
         if tool_name in steps_by_tool:
             return tool_name
         if tool_name in visiting:
             raise CyclicDependencyError(
-                f"cycle detected at {tool_name!r} (chain: {sorted(visiting)!r})"
+                f"cycle detected at {tool_name!r} (chain: {sorted(visiting)!r})",
+                reason="cycle",
+                tool=tool_name,
+                chain=sorted(visiting),
             )
         visiting.add(tool_name)
 
@@ -346,7 +402,7 @@ class PathSynthesizer:
             #    must come from entity or operator-registered default
             #    (chaining through e.g. getSiteInfo would inflate the plan
             #    with steps that don't produce business value).
-            if kind == "context":
+            if kind in ("context", "auth"):
                 default = self._lookup_context_default(semantic, field_name)
                 if default is not None:
                     args[field_name] = default
@@ -370,7 +426,11 @@ class PathSynthesizer:
                 raise UnsatisfiableFieldError(
                     f"tool {tool_name!r} requires {field_name!r} "
                     f"(semantic={semantic!r}) — enum field, expects user "
-                    f"selection (no producer chain attempted)"
+                    f"selection (no producer chain attempted)",
+                    reason="enum_required",
+                    tool=tool_name,
+                    field_name=field_name,
+                    semantic_tag=semantic,
                 )
 
             # 4b. Search-leaf policy. A ``search`` operation is a query leaf:
@@ -392,6 +452,15 @@ class PathSynthesizer:
             if target_action == "search":
                 args[field_name] = f"${{user_input.{field_name}}}"
                 rationales.append(f"{field_name} ← user_input (search filter, not chained)")
+                self._user_input_fallbacks.append(
+                    {
+                        "reason": "user_input_fallback",
+                        "tool": tool_name,
+                        "field_name": field_name,
+                        "semantic_tag": semantic,
+                        "cause": "search_filter",
+                    }
+                )
                 continue
 
             # 5. Required data field → rank candidate producers and pick the best.
@@ -416,6 +485,14 @@ class PathSynthesizer:
                 placeholder = f"${{user_input.{field_name}}}"
                 args[field_name] = placeholder
                 rationales.append(f"{field_name} ← user_input")
+                self._user_input_fallbacks.append(
+                    {
+                        "reason": "user_input_fallback",
+                        "tool": tool_name,
+                        "field_name": field_name,
+                        "semantic_tag": semantic,
+                    }
+                )
                 continue
 
             # 5a. Dynamic-option popup priority. Detect "read-detail then
@@ -473,6 +550,19 @@ class PathSynthesizer:
                 rationales.append(
                     f"{field_name} ← user_input (chain unflattenable: {exc.__class__.__name__})"
                 )
+                self._user_input_fallbacks.append(
+                    {
+                        "reason": "user_input_fallback",
+                        "tool": tool_name,
+                        "field_name": field_name,
+                        "semantic_tag": semantic,
+                        "cause": (
+                            exc.reason
+                            if isinstance(exc, PlanSynthesisError)
+                            else type(exc).__name__
+                        ),
+                    }
+                )
                 continue
 
             # Build a placeholder binding — will be rewritten after step_ids
@@ -480,6 +570,15 @@ class PathSynthesizer:
             prod_path = self._producer_jsonpath(producer, semantic, field_name)
             args[field_name] = f"${{{producer}.{prod_path}}}"
             rationales.append(f"{field_name} ← {producer} ({prod_path})")
+            self._selected_producers.append(
+                {
+                    "target_tool": tool_name,
+                    "field_name": field_name,
+                    "semantic_tag": semantic,
+                    "producer": producer,
+                    "json_path": prod_path,
+                }
+            )
 
         steps_by_tool[tool_name] = _PartialStep(
             tool=tool_name,
@@ -706,12 +805,21 @@ class PathSynthesizer:
                 _record(cand, f"graph_{conf}")
                 break  # one signal per candidate per edge target is enough
 
-        if not candidate_signals:
-            return None
-
         # Score and pre-rank by signal strength (stable for equal scores).
         def _score(signals: set[str]) -> int:
             return sum(self._SIGNAL_WEIGHTS.get(s, 0) for s in signals)
+
+        signal_key = f"{target_tool}.{field_name or semantic or '<unknown>'}"
+        self._candidate_signals[signal_key] = {
+            name: {
+                "signals": sorted(signals),
+                "score": _score(signals),
+            }
+            for name, signals in sorted(candidate_signals.items())
+        }
+
+        if not candidate_signals:
+            return None
 
         scored = sorted(
             candidate_signals.items(),
@@ -768,7 +876,7 @@ class PathSynthesizer:
             kind = str(c.get("kind") or "data").strip().lower()
             if self._match_entity(entities, sem, field) is not None:
                 continue
-            if kind == "context" and self._lookup_context_default(sem, field) is not None:
+            if kind in ("context", "auth") and self._lookup_context_default(sem, field) is not None:
                 continue
             return False
         return True

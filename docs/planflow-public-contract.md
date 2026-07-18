@@ -1,0 +1,35 @@
+# Planflow Public Contract
+
+Version: graph-tool-call 0.25.0
+
+## graphify Contract
+
+The graphify package owns product-neutral collection graph logic.
+
+- `ingest_openapi_graphify(schemas)` builds a `ToolGraph` with confidence-labeled edges.
+- `build_io_contract(...)` produces plain `metadata.produces` and `metadata.consumes` lists from schema fragments and caller-provided field classifiers.
+- `expand_candidates_with_producers(...)` expands retrieval candidates with deterministic 1-hop producers for required `kind=data` inputs.
+- `normalize_graph_edge(...)`, `merge_graph_edges(...)`, and `derive_plan_trace_edges(...)` normalize structural, LLM-curated, manual, and run-observed signals into graph version 2 edge metadata.
+- `retrieve_graphify(..., include_evidence=True)` keeps the legacy response keys and adds score/evidence details for logs and UI.
+
+## Plan Synthesis Contract
+
+`PathSynthesizer` remains transport-agnostic. It only reads a serialized graph dict and emits a `Plan`.
+
+- `kind=data` inputs can be filled from entities, producer chains, or `user_input` slots.
+- `kind=context` and `kind=auth` inputs are ambient. They are filled from entities or context defaults when available and are never producer-chained.
+- `PlanSynthesisError.to_dict()` exposes `stage`, `reason`, `message`, and structured details so adapters do not need to parse exception text.
+- `Plan.metadata.synthesis` records `target`, selected producers, candidate signals, and user-input fallbacks.
+
+## Runner Event Contract
+
+`PlanRunner.run_stream(plan, trace_metadata=None)` still yields dataclass events.
+
+Every event includes additive metadata fields:
+
+- `stage`
+- `plan_id` where applicable
+- `graph_tool_call_version`
+- `trace_metadata`
+
+Adapters can forward `asdict(event)` directly to SSE or logs.

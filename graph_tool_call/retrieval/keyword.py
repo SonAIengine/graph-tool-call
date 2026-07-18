@@ -383,10 +383,13 @@ class BM25Scorer:
         return tokens
 
     def _extract_metadata_tokens(self, tool: ToolSchema) -> list[str]:
-        """Extract discriminative tokens from tool metadata (path, method).
+        """Extract discriminative tokens from tool metadata.
 
         For OpenAPI tools, the path carries critical scope/sub-resource information
         that descriptions often omit (e.g. namespaced vs cluster-wide).
+        Graphify/Planflow collections also carry LLM enrichment and IO contracts;
+        indexing those fields lets BM25 match user vocabulary to short or opaque
+        operationIds such as ``seltPrdtInfo``.
         """
         metadata = tool.metadata
         if not metadata:
@@ -398,6 +401,8 @@ class BM25Scorer:
 
         if method:
             tokens.append(method.lower())
+
+        tokens.extend(self._extract_planflow_metadata_tokens(metadata))
 
         if not path:
             return tokens
@@ -444,6 +449,44 @@ class BM25Scorer:
         # Collection pattern: DELETE on a plural path without {name}
         if method.lower() == "delete" and not has_name_param:
             tokens.extend(["collect", "bulk"])
+
+        return tokens
+
+    def _extract_planflow_metadata_tokens(self, metadata: dict) -> list[str]:
+        """Tokenize graphify enrichment and IO contract metadata."""
+        tokens: list[str] = []
+        ai = metadata.get("ai_metadata") or {}
+        if isinstance(ai, dict):
+            for key in (
+                "one_line_summary",
+                "when_to_use",
+                "when_not_to_use",
+                "primary_resource",
+                "canonical_action",
+            ):
+                value = ai.get(key)
+                if value:
+                    tokens.extend(self._tokenize_fn(str(value)))
+            for item in ai.get("produces_semantics") or []:
+                if isinstance(item, dict):
+                    tokens.extend(self._tokenize_fn(str(item.get("semantic") or "")))
+                    tokens.extend(self._tokenize_fn(str(item.get("json_path") or "")))
+            for item in ai.get("consumes_semantics") or []:
+                if isinstance(item, dict):
+                    tokens.extend(self._tokenize_fn(str(item.get("semantic") or "")))
+                    tokens.extend(self._tokenize_fn(str(item.get("field") or "")))
+            for pair in ai.get("pairs_well_with") or []:
+                if isinstance(pair, dict):
+                    tokens.extend(self._tokenize_fn(str(pair.get("reason") or "")))
+
+        for key in ("produces", "consumes"):
+            for field in metadata.get(key) or []:
+                if not isinstance(field, dict):
+                    continue
+                for field_key in ("field_name", "semantic_tag", "json_path", "field_type", "kind"):
+                    value = field.get(field_key)
+                    if value:
+                        tokens.extend(self._tokenize_fn(str(value)))
 
         return tokens
 

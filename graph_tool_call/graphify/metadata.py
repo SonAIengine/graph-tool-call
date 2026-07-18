@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
-COLLECTION_GRAPH_VERSION = "1"
+COLLECTION_GRAPH_VERSION = "2"
 
 
 def detect_enrichment_status(tools: Mapping[str, Any] | None) -> str:
