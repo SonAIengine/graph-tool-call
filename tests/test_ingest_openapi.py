@@ -90,6 +90,21 @@ class TestIngestOpenAPI30:
         spec: dict = {
             "openapi": "3.0.0",
             "info": {"title": "Contract API", "version": "1.0.0"},
+            "components": {
+                "securitySchemes": {
+                    "bearerAuth": {
+                        "type": "http",
+                        "scheme": "bearer",
+                        "bearerFormat": "JWT",
+                    },
+                    "siteHeader": {
+                        "type": "apiKey",
+                        "in": "header",
+                        "name": "X-Site-No",
+                    },
+                }
+            },
+            "security": [{"bearerAuth": []}],
             "paths": {
                 "/tenants/{tenantId}/orders/{orderId}": {
                     "parameters": [
@@ -103,6 +118,7 @@ class TestIngestOpenAPI30:
                     "post": {
                         "operationId": "updateOrder",
                         "summary": "주문 수정",
+                        "security": [{"siteHeader": []}],
                         "parameters": [
                             {
                                 "name": "orderId",
@@ -113,7 +129,11 @@ class TestIngestOpenAPI30:
                             {
                                 "name": "preview",
                                 "in": "query",
-                                "schema": {"type": "boolean"},
+                                "style": "form",
+                                "explode": False,
+                                "allowReserved": True,
+                                "schema": {"type": "boolean", "default": False},
+                                "example": True,
                             },
                             {
                                 "name": "X-Site-No",
@@ -133,16 +153,36 @@ class TestIngestOpenAPI30:
                                             "status": {
                                                 "type": "string",
                                                 "enum": ["paid", "cancelled"],
+                                                "example": "paid",
                                             },
                                             "shipping": {
                                                 "type": "object",
                                                 "properties": {
-                                                    "city": {"type": "string"},
+                                                    "city": {
+                                                        "type": "string",
+                                                        "minLength": 2,
+                                                        "pattern": "^[A-Za-z ]+$",
+                                                    },
                                                 },
                                             },
                                         },
+                                    },
+                                    "examples": {
+                                        "paidOrder": {
+                                            "summary": "Paid order",
+                                            "value": {
+                                                "status": "paid",
+                                                "shipping": {"city": "Seoul"},
+                                            },
+                                        }
+                                    },
+                                },
+                                "application/x-www-form-urlencoded": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"status": {"type": "string"}},
                                     }
-                                }
+                                },
                             },
                         },
                         "responses": {
@@ -161,10 +201,36 @@ class TestIngestOpenAPI30:
                                                     },
                                                 }
                                             },
-                                        }
+                                        },
+                                        "example": {"data": {"orderId": "O-1", "status": "paid"}},
                                     }
                                 },
-                            }
+                            },
+                            "400": {
+                                "description": "Invalid order update",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "errorCode": {
+                                                    "type": "string",
+                                                    "example": "ORDER_BAD",
+                                                },
+                                                "message": {"type": "string"},
+                                            },
+                                        },
+                                        "examples": {
+                                            "invalidStatus": {
+                                                "value": {
+                                                    "errorCode": "ORDER_BAD",
+                                                    "message": "Invalid status",
+                                                }
+                                            }
+                                        },
+                                    }
+                                },
+                            },
                         },
                     },
                 }
@@ -187,6 +253,7 @@ class TestIngestOpenAPI30:
         assert metadata["request_content_type"] == "application/json"
         assert metadata["response_content_type"] == "*/*"
         assert metadata["response_status"] == "201"
+        assert openapi["summary"] == "주문 수정"
         assert openapi["path_params"] == ["tenantId", "orderId"]
         assert openapi["input_locations"]["path"] == ["tenantId", "orderId"]
         assert openapi["input_locations"]["query"] == ["preview"]
@@ -197,8 +264,37 @@ class TestIngestOpenAPI30:
         assert any(
             row["json_path"] == "$.shipping.city" for row in openapi["request_body"]["fields"]
         )
+        preview = next(row for row in openapi["parameters"] if row["name"] == "preview")
+        assert preview["style"] == "form"
+        assert preview["explode"] is False
+        assert preview["allowReserved"] is True
+        assert preview["default"] is False
+        assert preview["examples"][0]["value"] is True
+        body_content_types = openapi["request_body"]["content_types"]
+        assert [row["content_type"] for row in body_content_types] == [
+            "application/json",
+            "application/x-www-form-urlencoded",
+        ]
+        assert body_content_types[0]["selected"] is True
+        assert body_content_types[0]["examples"][0]["value"]["status"] == "paid"
+        city = next(row for row in openapi["request_body"]["fields"] if row["field_name"] == "city")
+        assert city["min_length"] == 2
+        assert city["pattern"] == "^[A-Za-z ]+$"
         assert any(row["json_path"] == "$.data.orderId" for row in openapi["response"]["fields"])
+        assert openapi["response"]["description"] == "OK"
+        responses = {row["status"]: row for row in openapi["responses"]}
+        assert responses["201"]["success"] is True
+        assert responses["201"]["selected"] is True
+        assert responses["400"]["success"] is False
+        assert responses["400"]["field_count"] == 2
+        assert openapi["error_responses"][0]["status"] == "400"
+        assert openapi["examples"]["request_body"][0]["name"] == "paidOrder"
+        assert {row["status"] for row in openapi["examples"]["responses"]} == {"201", "400"}
+        assert openapi["security"]["requirements"] == [{"siteHeader": []}]
+        assert openapi["security"]["schemes"]["siteHeader"]["in"] == "header"
+        assert openapi["security"]["schemes"]["bearerAuth"]["scheme"] == "bearer"
         assert any(row["field_name"] == "orderId" for row in metadata["api_contract"]["produces"])
+        assert all(row["field_name"] != "errorCode" for row in metadata["api_contract"]["produces"])
         assert any(
             row["field_name"] == "preview" and row["location"] == "query"
             for row in metadata["api_contract"]["consumes"]

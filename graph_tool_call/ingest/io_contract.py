@@ -33,6 +33,17 @@ class FieldLeaf:
     required: bool = False
     description: str = ""
     enum: list[Any] = field(default_factory=list)
+    format: str = ""
+    default: Any = None
+    example: Any = None
+    nullable: bool = False
+    pattern: str = ""
+    minimum: Any = None
+    maximum: Any = None
+    min_length: int | None = None
+    max_length: int | None = None
+    min_items: int | None = None
+    max_items: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +116,17 @@ def extract_leaves(
             required=parent_required,
             description=str(schema.get("description") or "")[:200],
             enum=list(schema.get("enum") or []),
+            format=str(schema.get("format") or ""),
+            default=schema.get("default"),
+            example=schema.get("example"),
+            nullable=bool(schema.get("nullable", False)),
+            pattern=str(schema.get("pattern") or ""),
+            minimum=schema.get("minimum"),
+            maximum=schema.get("maximum"),
+            min_length=schema.get("minLength"),
+            max_length=schema.get("maxLength"),
+            min_items=schema.get("minItems"),
+            max_items=schema.get("maxItems"),
         )
     ]
 
@@ -146,6 +168,40 @@ def _walk_object(
                         str(prop_schema.get("description") or "")[:200]
                         if isinstance(prop_schema, dict)
                         else ""
+                    ),
+                    enum=(
+                        list(prop_schema.get("enum") or []) if isinstance(prop_schema, dict) else []
+                    ),
+                    format=(
+                        str(prop_schema.get("format") or "")
+                        if isinstance(prop_schema, dict)
+                        else ""
+                    ),
+                    default=prop_schema.get("default") if isinstance(prop_schema, dict) else None,
+                    example=prop_schema.get("example") if isinstance(prop_schema, dict) else None,
+                    nullable=(
+                        bool(prop_schema.get("nullable", False))
+                        if isinstance(prop_schema, dict)
+                        else False
+                    ),
+                    pattern=(
+                        str(prop_schema.get("pattern") or "")
+                        if isinstance(prop_schema, dict)
+                        else ""
+                    ),
+                    minimum=prop_schema.get("minimum") if isinstance(prop_schema, dict) else None,
+                    maximum=prop_schema.get("maximum") if isinstance(prop_schema, dict) else None,
+                    min_length=(
+                        prop_schema.get("minLength") if isinstance(prop_schema, dict) else None
+                    ),
+                    max_length=(
+                        prop_schema.get("maxLength") if isinstance(prop_schema, dict) else None
+                    ),
+                    min_items=(
+                        prop_schema.get("minItems") if isinstance(prop_schema, dict) else None
+                    ),
+                    max_items=(
+                        prop_schema.get("maxItems") if isinstance(prop_schema, dict) else None
                     ),
                 )
             )

@@ -59,6 +59,25 @@ metadata["response_schema"] = {
 }
 ```
 
+### 실행 contract metadata
+
+`metadata["openapi"]`는 XGEN 같은 실행 adapter가 HTTP 요청을 정확하게 렌더링하고
+실패를 설명할 수 있도록 operation-level 정보를 additive로 보존한다.
+
+| 키 | 의미 |
+|---|---|
+| `parameters` | path/query/header/cookie parameter, `style`, `explode`, `allowReserved`, default/example/constraint |
+| `request_body` | 선택된 content type, 전체 content type 후보, schema, top-level field, leaf field, body examples |
+| `response` | 선택된 2xx/default response의 status, content type, schema, description, leaf field |
+| `responses` | 모든 response status의 compact catalog: success flag, content types, examples, field count |
+| `error_responses` | non-2xx response만 모은 실패 처리용 catalog |
+| `security` | OpenAPI security requirements와 static scheme 정보. runtime token/cookie 값은 보존하지 않음 |
+
+`metadata["api_contract"]`는 graph/search/plan용 raw produces/consumes leaf를 보존한다.
+plain ingest 단계에서는 이 raw field들을 top-level `metadata.produces` /
+`metadata.consumes`로 직접 올리지 않는다. large Swagger에서는 `status`, `data`,
+`list` 같은 wrapper field가 많아 검색 ranking을 오염시킬 수 있기 때문이다.
+
 ## Auto-categorization
 
 ```python

@@ -189,6 +189,10 @@ result = tg.execute(
 )
 ```
 
+OpenAPI ingest keeps execution metadata such as parameter locations, content
+types, examples, security schemes, response catalogs, and error responses under
+`tool.metadata["openapi"]`; see [docs/api-reference.md](docs/api-reference.md#execution).
+
 ### Workflow planning
 
 `plan_workflow()` returns ordered execution chains with prerequisites — reducing agent round-trips from 3-4 to 1.

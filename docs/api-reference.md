@@ -92,9 +92,18 @@ tools = tg.retrieve("create a pet", top_k=5)
 OpenAPI ingest preserves execution-oriented request/response facts in each
 tool's metadata:
 
-- `metadata.openapi.parameters`: normalized path/query/header/cookie parameters
-- `metadata.openapi.request_body`: content type, schema, top-level fields, leaf fields
-- `metadata.openapi.response`: selected success status, content type, schema, leaf fields
+- `metadata.openapi.parameters`: normalized path/query/header/cookie parameters,
+  including serialization hints such as `style`, `explode`, `allowReserved`,
+  schema defaults, examples, and validation constraints
+- `metadata.openapi.request_body`: selected content type, all declared content
+  type candidates, schema, top-level fields, leaf fields, and body examples
+- `metadata.openapi.response`: selected success status, content type, schema,
+  description, and leaf fields
+- `metadata.openapi.responses`: compact catalog of every declared response,
+  including status, success flag, content types, examples, and field count
+- `metadata.openapi.error_responses`: non-2xx response catalog for failure UI/logs
+- `metadata.openapi.security`: declared security requirements and static scheme
+  metadata, without runtime credentials
 - `metadata.api_contract`: raw extracted produces/consumes rows for graph building
 
 `HttpExecutor` uses this metadata before falling back to method-based heuristics,

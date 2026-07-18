@@ -130,6 +130,30 @@ _TYPE_MAP: dict[str, str] = {
     "array": "array",
     "object": "object",
 }
+_MAX_EXAMPLES_PER_BLOCK = 5
+_MAX_EXAMPLE_CHARS = 2_000
+_SCHEMA_HINT_KEYS: tuple[tuple[str, str], ...] = (
+    ("format", "format"),
+    ("default", "default"),
+    ("example", "example"),
+    ("nullable", "nullable"),
+    ("pattern", "pattern"),
+    ("minimum", "minimum"),
+    ("maximum", "maximum"),
+    ("exclusiveMinimum", "exclusive_minimum"),
+    ("exclusiveMaximum", "exclusive_maximum"),
+    ("minLength", "min_length"),
+    ("maxLength", "max_length"),
+    ("minItems", "min_items"),
+    ("maxItems", "max_items"),
+    ("minProperties", "min_properties"),
+    ("maxProperties", "max_properties"),
+    ("multipleOf", "multiple_of"),
+    ("readOnly", "read_only"),
+    ("writeOnly", "write_only"),
+    ("deprecated", "deprecated"),
+)
+_ROW_HINT_KEYS = tuple(row_key for _schema_key, row_key in _SCHEMA_HINT_KEYS)
 
 
 def _schema_type(schema: dict[str, Any]) -> str:
@@ -137,6 +161,159 @@ def _schema_type(schema: dict[str, Any]) -> str:
     if isinstance(schema_type, list):
         schema_type = next((t for t in schema_type if t and t != "null"), "string")
     return _TYPE_MAP.get(str(schema_type or "string"), "string")
+
+
+def _add_schema_hints(row: dict[str, Any], schema: dict[str, Any]) -> None:
+    """Copy JSON Schema validation/example hints into compact metadata rows."""
+    if not isinstance(schema, dict):
+        return
+    for schema_key, row_key in _SCHEMA_HINT_KEYS:
+        if schema_key not in schema:
+            continue
+        value = schema[schema_key]
+        if value in (None, ""):
+            continue
+        row[row_key] = _compact_openapi_value(value)
+
+
+def _copy_row_hints(source: dict[str, Any], target: dict[str, Any]) -> None:
+    for key in (*_ROW_HINT_KEYS, "description"):
+        value = source.get(key)
+        if value not in (None, "", []):
+            target[key] = copy.deepcopy(value)
+
+
+def _compact_openapi_value(value: Any, *, max_chars: int = _MAX_EXAMPLE_CHARS) -> Any:
+    """Keep examples/defaults JSON-safe without letting one spec bloat metadata."""
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        text = str(value)
+        return text if len(text) <= max_chars else text[: max_chars - 3] + "..."
+    if len(encoded) <= max_chars:
+        return value
+    return encoded[: max_chars - 3] + "..."
+
+
+def _is_json_media_type(content_type: str) -> bool:
+    media = content_type.split(";", 1)[0].strip().lower()
+    return media == "application/json" or media.endswith("+json") or media == "*/*"
+
+
+def _example_rows(
+    container: dict[str, Any],
+    *,
+    location: str,
+    content_type: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """Normalize OpenAPI ``example`` / ``examples`` blocks into compact rows."""
+    if not isinstance(container, dict):
+        return []
+
+    rows: list[dict[str, Any]] = []
+
+    def add(name: str, value: Any = None, source: dict[str, Any] | None = None) -> None:
+        if len(rows) >= _MAX_EXAMPLES_PER_BLOCK:
+            return
+        row: dict[str, Any] = {"name": name, "location": location}
+        if content_type:
+            row["content_type"] = content_type
+        if status:
+            row["status"] = status
+        if source:
+            summary = str(source.get("summary") or "").strip()
+            description = str(source.get("description") or "").strip()
+            if summary:
+                row["summary"] = summary[:200]
+            if description:
+                row["description"] = description[:300]
+            if source.get("externalValue"):
+                row["external_value"] = str(source["externalValue"])[:500]
+        if value is not None:
+            row["value"] = _compact_openapi_value(value)
+        if "value" in row or "external_value" in row:
+            rows.append(row)
+
+    if "example" in container:
+        add("example", container.get("example"))
+
+    examples = container.get("examples")
+    if isinstance(examples, dict):
+        for name, example in examples.items():
+            if isinstance(example, dict):
+                add(str(name), example.get("value"), example)
+            else:
+                add(str(name), example)
+    return rows
+
+
+def _content_type_rows(
+    content: dict[str, Any],
+    *,
+    location: str,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """Summarize every declared OpenAPI media type without duplicating schemas."""
+    if not isinstance(content, dict) or not content:
+        return []
+    rows: list[dict[str, Any]] = []
+    for content_type, media in content.items():
+        media = media if isinstance(media, dict) else {}
+        schema = media.get("schema") if isinstance(media.get("schema"), dict) else {}
+        row: dict[str, Any] = {
+            "content_type": str(content_type),
+            "is_json": _is_json_media_type(str(content_type)),
+            "has_schema": bool(schema),
+        }
+        if schema:
+            row["schema_type"] = _schema_type(schema)
+            row["field_count"] = len(extract_leaves(schema, base_path="$"))
+        encoding = media.get("encoding")
+        if isinstance(encoding, dict) and encoding:
+            row["encoding"] = _encoding_rows(encoding)
+        examples = _example_rows(
+            media,
+            location=location,
+            content_type=str(content_type),
+            status=status,
+        )
+        if examples:
+            row["examples"] = examples
+            row["example_count"] = len(examples)
+        rows.append(row)
+    return rows
+
+
+def _media_type_name_rows(media_types: list[Any], *, has_schema: bool) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for media_type in media_types:
+        if not media_type:
+            continue
+        content_type = str(media_type)
+        rows.append(
+            {
+                "content_type": content_type,
+                "is_json": _is_json_media_type(content_type),
+                "has_schema": bool(has_schema),
+            }
+        )
+    return rows
+
+
+def _encoding_rows(encoding: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for field_name, enc in encoding.items():
+        if not isinstance(enc, dict):
+            continue
+        row: dict[str, Any] = {"field_name": str(field_name)}
+        for key in ("contentType", "style", "explode", "allowReserved"):
+            if key in enc:
+                row_key = "content_type" if key == "contentType" else key
+                row[row_key] = enc[key]
+        if len(row) > 1:
+            rows.append(row)
+    return rows
 
 
 def _pick_content_schema(content: dict[str, Any]) -> dict[str, Any]:
@@ -510,6 +687,207 @@ def _pick_response_schema_with_status_and_type(
     return {}, None, None
 
 
+def _request_body_content_types(
+    operation: dict[str, Any],
+    resolved_spec: dict[str, Any],
+    *,
+    is_swagger2: bool = False,
+    path_item: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    if is_swagger2:
+        consumes = (
+            operation.get("consumes")
+            or (path_item or {}).get("consumes")
+            or resolved_spec.get("consumes")
+            or []
+        )
+        schema, _content_type, _required = _pick_request_body_schema_with_type(
+            operation,
+            resolved_spec,
+            is_swagger2=True,
+            path_item=path_item,
+        )
+        return _media_type_name_rows(list(consumes), has_schema=bool(schema))
+
+    request_body = operation.get("requestBody") or {}
+    if not isinstance(request_body, dict):
+        return []
+    return _content_type_rows(request_body.get("content") or {}, location="request_body")
+
+
+def _openapi_response_rows(
+    operation: dict[str, Any],
+    resolved_spec: dict[str, Any],
+    *,
+    is_swagger2: bool = False,
+    path_item: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Summarize all declared responses, including error bodies."""
+    produces = (
+        operation.get("produces")
+        or (path_item or {}).get("produces")
+        or resolved_spec.get("produces")
+        or []
+    )
+    swagger_content_type = str(produces[0]) if produces else None
+    responses = operation.get("responses", {})
+    if not isinstance(responses, dict):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    sorted_responses = sorted(
+        responses.items(),
+        key=lambda item: _response_status_sort(item[0]),
+    )
+    for status, response in sorted_responses:
+        response = response if isinstance(response, dict) else {}
+        status_text = str(status)
+        row: dict[str, Any] = {
+            "status": status_text,
+            "success": _is_success_response_status(status_text),
+        }
+        description = str(response.get("description") or "").strip()
+        if description:
+            row["description"] = description[:300]
+
+        schema: dict[str, Any] = {}
+        content_type: str | None = None
+        if is_swagger2:
+            schema = response.get("schema") if isinstance(response.get("schema"), dict) else {}
+            content_type = swagger_content_type if schema else None
+            content_types = _media_type_name_rows(list(produces), has_schema=bool(schema))
+            if content_types:
+                row["content_types"] = content_types
+            examples = _swagger_response_examples(response, status=status_text)
+        else:
+            content = response.get("content") or {}
+            content_types = _content_type_rows(content, location="response", status=status_text)
+            if content_types:
+                row["content_types"] = content_types
+            schema, content_type = _pick_content_schema_with_type(content)
+            examples = []
+            for content_row in content_types:
+                examples.extend(content_row.get("examples") or [])
+
+        if schema:
+            row["content_type"] = content_type
+            row["schema_type"] = _schema_type(schema)
+            row["field_count"] = len(extract_leaves(schema, base_path="$"))
+        if examples:
+            row["examples"] = examples[:_MAX_EXAMPLES_PER_BLOCK]
+            row["example_count"] = len(row["examples"])
+        rows.append(row)
+    return rows
+
+
+def _swagger_response_examples(response: dict[str, Any], *, status: str) -> list[dict[str, Any]]:
+    examples = response.get("examples")
+    if not isinstance(examples, dict):
+        return []
+    rows: list[dict[str, Any]] = []
+    for content_type, value in examples.items():
+        if len(rows) >= _MAX_EXAMPLES_PER_BLOCK:
+            break
+        rows.append(
+            {
+                "name": "example",
+                "location": "response",
+                "status": status,
+                "content_type": str(content_type),
+                "value": _compact_openapi_value(value),
+            }
+        )
+    return rows
+
+
+def _response_status_sort(status: Any) -> tuple[int, int | str]:
+    text = str(status)
+    if text.isdigit():
+        return 0, int(text)
+    if text == "default":
+        return 1, text
+    return 2, text
+
+
+def _is_success_response_status(status: str) -> bool:
+    return status.isdigit() and 200 <= int(status) < 300
+
+
+def _operation_examples(
+    *,
+    parameter_rows: list[dict[str, Any]],
+    request_body_content_types: list[dict[str, Any]],
+    response_rows: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    parameter_examples: list[dict[str, Any]] = []
+    request_body_examples: list[dict[str, Any]] = []
+    response_examples: list[dict[str, Any]] = []
+
+    for row in parameter_rows:
+        for example in row.get("examples") or []:
+            example_row = dict(example)
+            example_row.setdefault("name", str(row.get("name") or "example"))
+            example_row.setdefault("parameter", row.get("name"))
+            example_row.setdefault("location", row.get("in") or "parameter")
+            parameter_examples.append(example_row)
+
+    for row in request_body_content_types:
+        request_body_examples.extend(dict(example) for example in row.get("examples") or [])
+
+    for row in response_rows:
+        response_examples.extend(dict(example) for example in row.get("examples") or [])
+
+    return {
+        "parameters": parameter_examples[:_MAX_EXAMPLES_PER_BLOCK],
+        "request_body": request_body_examples[:_MAX_EXAMPLES_PER_BLOCK],
+        "responses": response_examples[:_MAX_EXAMPLES_PER_BLOCK],
+    }
+
+
+def _security_metadata(operation: dict[str, Any], resolved_spec: dict[str, Any]) -> dict[str, Any]:
+    """Expose declared OpenAPI security requirements without runtime secrets."""
+    requirements = operation.get("security", resolved_spec.get("security", []))
+    schemes = (
+        resolved_spec.get("components", {}).get("securitySchemes", {})
+        or resolved_spec.get("securityDefinitions", {})
+        or {}
+    )
+    if not requirements and not schemes:
+        return {}
+
+    compact_schemes: dict[str, dict[str, Any]] = {}
+    if isinstance(schemes, dict):
+        for name, scheme in schemes.items():
+            if not isinstance(scheme, dict):
+                continue
+            row: dict[str, Any] = {}
+            for key in (
+                "type",
+                "scheme",
+                "bearerFormat",
+                "name",
+                "in",
+                "description",
+                "openIdConnectUrl",
+            ):
+                value = scheme.get(key)
+                if value not in (None, ""):
+                    row_key = "bearer_format" if key == "bearerFormat" else key
+                    row[row_key] = str(value)[:500]
+            flows = scheme.get("flows")
+            if isinstance(flows, dict) and flows:
+                row["oauth_flows"] = sorted(str(flow_name) for flow_name in flows)
+            if row:
+                compact_schemes[str(name)] = row
+
+    metadata: dict[str, Any] = {}
+    if isinstance(requirements, list):
+        metadata["requirements"] = copy.deepcopy(requirements)
+    if compact_schemes:
+        metadata["schemes"] = compact_schemes
+    return metadata
+
+
 def _openapi_parameter_rows(
     operation: dict[str, Any],
     *,
@@ -537,12 +915,19 @@ def _openapi_parameter_rows(
             "required": required,
             "field_type": _schema_type(schema),
         }
+        _add_schema_hints(row, schema)
         desc = str(p.get("description") or "").strip()
         if desc:
             row["description"] = desc[:300]
         if isinstance(enum, list):
             row["enum"] = list(enum)
-        for key in ("style", "explode"):
+        examples = [
+            *_example_rows(p, location=location),
+            *_example_rows(schema, location=location),
+        ]
+        if examples:
+            row["examples"] = examples[:_MAX_EXAMPLES_PER_BLOCK]
+        for key in ("style", "explode", "allowReserved", "deprecated"):
             if key in p:
                 row[key] = p[key]
         rows.append(row)
@@ -579,6 +964,7 @@ def _request_body_top_level_rows(schema: dict[str, Any]) -> list[dict[str, Any]]
             "required": name in required,
             "location": "body",
         }
+        _add_schema_hints(row, prop)
         desc = str(prop.get("description") or "").strip()
         if desc:
             row["description"] = desc[:300]
@@ -601,6 +987,22 @@ def _leaf_row(leaf: FieldLeaf, *, location: str) -> dict[str, Any]:
         row["description"] = leaf.description
     if leaf.enum:
         row["enum"] = list(leaf.enum)
+    for source_key, row_key in (
+        ("format", "format"),
+        ("default", "default"),
+        ("example", "example"),
+        ("nullable", "nullable"),
+        ("pattern", "pattern"),
+        ("minimum", "minimum"),
+        ("maximum", "maximum"),
+        ("min_length", "min_length"),
+        ("max_length", "max_length"),
+        ("min_items", "min_items"),
+        ("max_items", "max_items"),
+    ):
+        value = getattr(leaf, source_key)
+        if value not in (None, "", []):
+            row[row_key] = _compact_openapi_value(value)
     return row
 
 
@@ -636,14 +1038,14 @@ def _api_contract_rows(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     produces = []
     for row in response_leaf_rows:
-        produces.append(
-            {
-                "field_name": row["field_name"],
-                "json_path": row["json_path"],
-                "field_type": row["field_type"],
-                **({"enum": row["enum"]} if row.get("enum") else {}),
-            }
-        )
+        produce = {
+            "field_name": row["field_name"],
+            "json_path": row["json_path"],
+            "field_type": row["field_type"],
+            **({"enum": row["enum"]} if row.get("enum") else {}),
+        }
+        _copy_row_hints(row, produce)
+        produces.append(produce)
 
     consumes: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -668,6 +1070,7 @@ def _api_contract_rows(
             consume["json_path"] = row["json_path"]
         if row.get("enum"):
             consume["enum"] = list(row["enum"])
+        _copy_row_hints(row, consume)
         consumes.append(consume)
 
     for row in parameter_rows:
@@ -831,6 +1234,12 @@ def _operation_to_tool(
             path_item=path_item,
         )
     )
+    request_body_content_type_rows = _request_body_content_types(
+        operation,
+        resolved_spec,
+        is_swagger2=is_swagger2,
+        path_item=path_item,
+    )
     response_schema, response_status, response_content_type = (
         _pick_response_schema_with_status_and_type(
             operation,
@@ -839,6 +1248,24 @@ def _operation_to_tool(
             path_item=path_item,
         )
     )
+    response_rows = _openapi_response_rows(
+        operation,
+        resolved_spec,
+        is_swagger2=is_swagger2,
+        path_item=path_item,
+    )
+    for row in request_body_content_type_rows:
+        if row.get("content_type") == request_content_type:
+            row["selected"] = True
+    for row in response_rows:
+        if row.get("status") == response_status:
+            row["selected"] = True
+            for content_row in row.get("content_types") or []:
+                if (
+                    isinstance(content_row, dict)
+                    and content_row.get("content_type") == response_content_type
+                ):
+                    content_row["selected"] = True
     parameter_rows = _openapi_parameter_rows(
         operation,
         is_swagger2=is_swagger2,
@@ -853,6 +1280,16 @@ def _operation_to_tool(
         response_leaf_rows=response_leaf_rows,
     )
     input_locations = _input_locations(parameter_rows, body_top_level_rows, body_leaf_rows)
+    selected_response = next(
+        (row for row in response_rows if row.get("status") == response_status),
+        {},
+    )
+    examples = _operation_examples(
+        parameter_rows=parameter_rows,
+        request_body_content_types=request_body_content_type_rows,
+        response_rows=response_rows,
+    )
+    security = _security_metadata(operation, resolved_spec)
 
     metadata: dict[str, Any] = {
         "source": "openapi",
@@ -864,12 +1301,16 @@ def _operation_to_tool(
         },
         "openapi": {
             "operation_id": operation_id,
+            "summary": operation.get("summary") or "",
+            "description": operation.get("description") or "",
+            "deprecated": bool(operation.get("deprecated", False)),
             "parameters": parameter_rows,
             "path_params": _path_params(path),
             "input_locations": input_locations,
             "request_body": {
                 "required": request_required,
                 "content_type": request_content_type,
+                "content_types": request_body_content_type_rows,
                 "schema": request_body_schema,
                 "top_level_fields": body_top_level_rows,
                 "fields": body_leaf_rows,
@@ -877,12 +1318,18 @@ def _operation_to_tool(
             "response": {
                 "status": response_status,
                 "content_type": response_content_type,
+                "description": selected_response.get("description", ""),
                 "schema": response_schema,
                 "fields": response_leaf_rows,
             },
+            "responses": response_rows,
+            "error_responses": [row for row in response_rows if not row.get("success")],
+            "examples": examples,
         },
         "input_locations": input_locations,
     }
+    if security:
+        metadata["openapi"]["security"] = security
     if request_body_schema:
         metadata["request_body_schema"] = request_body_schema
     if request_content_type:

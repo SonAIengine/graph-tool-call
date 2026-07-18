@@ -87,6 +87,27 @@ _DEFAULT_SEARCH_FILTER_FIELDS = frozenset(
     }
 )
 _IDENTIFIER_SUFFIXES = ("id", "ids", "no", "nos", "num", "number", "code", "key", "seq", "uuid")
+_CONTRACT_HINT_KEYS = (
+    "format",
+    "default",
+    "example",
+    "nullable",
+    "pattern",
+    "minimum",
+    "maximum",
+    "exclusive_minimum",
+    "exclusive_maximum",
+    "min_length",
+    "max_length",
+    "min_items",
+    "max_items",
+    "min_properties",
+    "max_properties",
+    "multiple_of",
+    "read_only",
+    "write_only",
+    "deprecated",
+)
 
 
 def build_io_contract(
@@ -394,6 +415,7 @@ def _build_produces(response_schema: dict[str, Any] | None) -> list[dict[str, An
         }
         if leaf.enum:
             row["enum"] = list(leaf.enum)
+        _copy_leaf_hints(leaf, row)
         produces.append(row)
     return produces
 
@@ -602,10 +624,21 @@ def _copy_contract_field(row: dict[str, Any]) -> dict[str, Any]:
         value = row.get(key)
         if value not in (None, ""):
             out[key] = value
+    for key in _CONTRACT_HINT_KEYS:
+        value = row.get(key)
+        if value not in (None, "", []):
+            out[key] = value
     enum = row.get("enum")
     if isinstance(enum, list):
         out["enum"] = list(enum)
     return out
+
+
+def _copy_leaf_hints(leaf: Any, row: dict[str, Any]) -> None:
+    for key in _CONTRACT_HINT_KEYS:
+        value = getattr(leaf, key, None)
+        if value not in (None, "", []):
+            row[key] = value
 
 
 def _consume_kind(field_name: str, *, location: str, policy: _Policy) -> str:
@@ -640,6 +673,7 @@ def _merge_rows(metadata: dict[str, Any], key: str, incoming: list[dict[str, Any
             "contract_source",
             "search_signal",
             "signal_score",
+            *_CONTRACT_HINT_KEYS,
         ):
             if merge_key in row and not existing.get(merge_key):
                 existing[merge_key] = row[merge_key]

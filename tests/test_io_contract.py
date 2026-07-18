@@ -55,6 +55,42 @@ def test_extract_leaves_captures_enum():
     assert status.enum == ["pending", "shipped"]
 
 
+def test_extract_leaves_preserves_schema_hints():
+    schema = {
+        "type": "object",
+        "properties": {
+            "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "default": "2026-01-01T00:00:00Z",
+                "example": "2026-07-19T12:00:00Z",
+                "nullable": True,
+                "pattern": "^\\d{4}-",
+                "minLength": 10,
+                "maxLength": 30,
+            },
+            "quantity": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99,
+            },
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert by_name["createdAt"].format == "date-time"
+    assert by_name["createdAt"].default == "2026-01-01T00:00:00Z"
+    assert by_name["createdAt"].example == "2026-07-19T12:00:00Z"
+    assert by_name["createdAt"].nullable is True
+    assert by_name["createdAt"].pattern == "^\\d{4}-"
+    assert by_name["createdAt"].min_length == 10
+    assert by_name["createdAt"].max_length == 30
+    assert by_name["quantity"].minimum == 1
+    assert by_name["quantity"].maximum == 99
+
+
 # ─── consumes — enum 추출 회귀 (리뷰 🟢 항목) ──
 
 
