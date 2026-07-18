@@ -26,18 +26,29 @@ _RESERVED_QUERY_CHARS = ":/?#[]@!$&'()*+,;="
 
 
 class OpenAPIRequestValidationError(ValueError):
-    """Raised when OpenAPI request arguments miss required inputs."""
+    """Raised when OpenAPI request preflight fails before network I/O."""
 
     def __init__(self, tool_name: str, diagnostics: dict[str, Any]) -> None:
         self.tool_name = tool_name
         self.diagnostics = diagnostics
-        missing = ", ".join(
+        missing_inputs = ", ".join(
             f"{item.get('location', 'input')}:{item.get('name', '')}"
             for item in diagnostics.get("missing_required") or []
         )
-        message = f"Missing required argument(s) for tool '{tool_name}'"
-        if missing:
-            message = f"{message}: {missing}"
+        missing_security = ", ".join(
+            str(scheme.get("name") or "")
+            for requirement in diagnostics.get("missing_security") or []
+            for scheme in requirement.get("schemes") or []
+            if isinstance(scheme, dict) and scheme.get("name")
+        )
+        details = []
+        if missing_inputs:
+            details.append(f"missing inputs: {missing_inputs}")
+        if missing_security:
+            details.append(f"missing security: {missing_security}")
+        message = f"Invalid OpenAPI request for tool '{tool_name}'"
+        if details:
+            message = f"{message}: {'; '.join(details)}"
         super().__init__(message)
 
     def to_dict(self) -> dict[str, Any]:
@@ -208,14 +219,20 @@ class HttpExecutor:
             headers=self._headers,
             selected_content_type=selected_content_type,
         )
+        missing_security = _missing_security_requirements(
+            api_metadata,
+            arguments,
+            headers=self._headers,
+        )
         unused_arguments = [
             str(name)
             for name, value in arguments.items()
             if value is not None and str(name) not in known_name_set
         ]
         return {
-            "valid": not missing_required,
+            "valid": not missing_required and not missing_security,
             "missing_required": missing_required,
+            "missing_security": missing_security,
             "unused_arguments": unused_arguments,
             "used_arguments": used_by_location,
             "selected_content_type": selected_content_type,
@@ -333,6 +350,8 @@ def _iter_known_argument_names(
     for row in _body_rows(api_metadata):
         if isinstance(row, dict):
             add(str(row.get("field_name") or ""))
+    for name in _security_api_key_locations(api_metadata):
+        add(name)
     return names
 
 
@@ -508,6 +527,112 @@ def _argument_present(
     return False
 
 
+def _missing_security_requirements(
+    api_metadata: dict[str, Any],
+    arguments: dict[str, Any],
+    *,
+    headers: dict[str, str],
+) -> list[dict[str, Any]]:
+    security = _security_metadata(api_metadata)
+    requirements = (
+        security.get("requirements") if isinstance(security.get("requirements"), list) else []
+    )
+    schemes = security.get("schemes") if isinstance(security.get("schemes"), dict) else {}
+    if not requirements:
+        return []
+
+    missing_alternatives: list[dict[str, Any]] = []
+    for index, requirement in enumerate(requirements):
+        if not isinstance(requirement, dict):
+            continue
+        if not requirement:
+            return []
+
+        missing_schemes: list[dict[str, Any]] = []
+        all_satisfied = True
+        for scheme_name, scopes in requirement.items():
+            name = str(scheme_name)
+            scheme = schemes.get(name) if isinstance(schemes.get(name), dict) else {}
+            if _security_scheme_satisfied(name, scheme, arguments, headers):
+                continue
+            all_satisfied = False
+            row = _security_scheme_diagnostic(name, scheme)
+            if isinstance(scopes, list) and scopes:
+                row["scopes"] = [str(scope) for scope in scopes]
+            missing_schemes.append(row)
+
+        if all_satisfied:
+            return []
+        if missing_schemes:
+            missing_alternatives.append(
+                {
+                    "requirement_index": index,
+                    "source": "openapi_security",
+                    "schemes": missing_schemes,
+                }
+            )
+
+    return missing_alternatives
+
+
+def _security_scheme_satisfied(
+    name: str,
+    scheme: dict[str, Any],
+    arguments: dict[str, Any],
+    headers: dict[str, str],
+) -> bool:
+    if not scheme:
+        return False
+    scheme_type = str(scheme.get("type") or "").lower()
+    if scheme_type == "apikey":
+        credential_name = str(scheme.get("name") or "")
+        location = str(scheme.get("in") or "").lower()
+        if not credential_name or location not in {"query", "header", "cookie"}:
+            return False
+        return _argument_present(credential_name, location, arguments, headers)
+    if scheme_type == "http":
+        auth_scheme = str(scheme.get("scheme") or "").lower()
+        if auth_scheme in {"bearer", "basic"}:
+            return _authorization_header_matches(headers, auth_scheme)
+        return _header_present(headers, "Authorization")
+    if scheme_type in {"oauth2", "openidconnect"}:
+        return _header_present(headers, "Authorization")
+    return _header_present(headers, name)
+
+
+def _security_scheme_diagnostic(name: str, scheme: dict[str, Any]) -> dict[str, Any]:
+    row: dict[str, Any] = {"name": name, "source": "openapi_security_scheme"}
+    scheme_type = str(scheme.get("type") or "")
+    if scheme_type:
+        row["type"] = scheme_type
+
+    if scheme_type.lower() == "apikey":
+        location = str(scheme.get("in") or "")
+        credential_name = str(scheme.get("name") or "")
+        if location:
+            row["location"] = location
+        if credential_name:
+            row["credential_name"] = credential_name
+        return row
+
+    auth_scheme = str(scheme.get("scheme") or "")
+    if auth_scheme:
+        row["scheme"] = auth_scheme
+    if scheme_type.lower() in {"http", "oauth2", "openidconnect"}:
+        row["location"] = "header"
+        row["credential_name"] = "Authorization"
+    return row
+
+
+def _authorization_header_matches(headers: dict[str, str], scheme: str) -> bool:
+    prefix = f"{scheme.lower()} "
+    for key, value in headers.items():
+        if str(key).lower() != "authorization" or value in (None, ""):
+            continue
+        return str(value).lower().startswith(prefix)
+    return False
+
+
 def _header_present(headers: dict[str, str], name: str) -> bool:
     lower_name = name.lower()
     return any(
@@ -562,7 +687,30 @@ def _location_by_param(api_metadata: dict[str, Any]) -> dict[str, str]:
     for row in _body_rows(api_metadata):
         if isinstance(row, dict) and row.get("field_name"):
             locations.setdefault(str(row["field_name"]), "body")
+    for name, location in _security_api_key_locations(api_metadata).items():
+        locations.setdefault(name, location)
     return locations
+
+
+def _security_api_key_locations(api_metadata: dict[str, Any]) -> dict[str, str]:
+    security = _security_metadata(api_metadata)
+    schemes = security.get("schemes") if isinstance(security.get("schemes"), dict) else {}
+    locations: dict[str, str] = {}
+    for scheme in schemes.values():
+        if not isinstance(scheme, dict):
+            continue
+        if str(scheme.get("type") or "").lower() != "apikey":
+            continue
+        name = str(scheme.get("name") or "")
+        location = str(scheme.get("in") or "").lower()
+        if name and location in {"query", "header", "cookie"}:
+            locations[name] = location
+    return locations
+
+
+def _security_metadata(api_metadata: dict[str, Any]) -> dict[str, Any]:
+    security = api_metadata.get("security")
+    return security if isinstance(security, dict) else {}
 
 
 def _parameter_metadata_by_name(api_metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:

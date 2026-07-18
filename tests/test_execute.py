@@ -594,6 +594,91 @@ class TestBuildRequest:
         assert req.full_url == "https://api.example.com/orders"
         assert executor.validate_request(tool, {})["missing_required"][0]["name"] == "q"
 
+    def test_validate_request_reports_missing_security_alternatives(self):
+        tool = _make_tool(name="listOrders", method="GET", path="/orders", params=[])
+        tool.metadata["openapi"] = {
+            "security": {
+                "requirements": [{"bearerAuth": []}, {"apiKeyAuth": []}],
+                "schemes": {
+                    "bearerAuth": {"type": "http", "scheme": "bearer"},
+                    "apiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-Api-Key"},
+                },
+            }
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {})
+
+        assert diagnostics["valid"] is False
+        assert diagnostics["missing_required"] == []
+        assert [row["requirement_index"] for row in diagnostics["missing_security"]] == [0, 1]
+        assert diagnostics["missing_security"][0]["schemes"] == [
+            {
+                "name": "bearerAuth",
+                "source": "openapi_security_scheme",
+                "type": "http",
+                "scheme": "bearer",
+                "location": "header",
+                "credential_name": "Authorization",
+            }
+        ]
+        assert diagnostics["missing_security"][1]["schemes"][0]["credential_name"] == "X-Api-Key"
+
+        with pytest.raises(OpenAPIRequestValidationError, match="missing security: bearerAuth"):
+            executor.build_request(tool, {})
+
+    def test_validate_request_security_can_be_satisfied_by_auth_token(self):
+        tool = _make_tool(name="listOrders", method="GET", path="/orders", params=[])
+        tool.metadata["openapi"] = {
+            "security": {
+                "requirements": [{"bearerAuth": []}],
+                "schemes": {"bearerAuth": {"type": "http", "scheme": "bearer"}},
+            }
+        }
+        executor = HttpExecutor("https://api.example.com", auth_token="test-token")
+
+        diagnostics = executor.validate_request(tool, {})
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_security"] == []
+
+    def test_api_key_security_argument_is_serialized_from_security_scheme(self):
+        tool = _make_tool(name="listOrders", method="GET", path="/orders", params=[])
+        tool.metadata["openapi"] = {
+            "security": {
+                "requirements": [{"apiKeyAuth": []}],
+                "schemes": {"apiKeyAuth": {"type": "apiKey", "in": "query", "name": "api_key"}},
+            }
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {"api_key": "secret"})
+        req = executor.build_request(tool, {"api_key": "secret"})
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_security"] == []
+        assert diagnostics["unused_arguments"] == []
+        assert diagnostics["used_arguments"]["query"] == ["api_key"]
+        assert req.full_url == "https://api.example.com/orders?api_key=secret"
+
+    def test_security_requirement_accepts_one_declared_alternative(self):
+        tool = _make_tool(name="listOrders", method="GET", path="/orders", params=[])
+        tool.metadata["openapi"] = {
+            "security": {
+                "requirements": [{"bearerAuth": []}, {"apiKeyAuth": []}],
+                "schemes": {
+                    "bearerAuth": {"type": "http", "scheme": "bearer"},
+                    "apiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-Api-Key"},
+                },
+            }
+        }
+        executor = HttpExecutor("https://api.example.com", headers={"X-Api-Key": "secret"})
+
+        diagnostics = executor.validate_request(tool, {})
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_security"] == []
+
     def test_missing_path_parameter_raises(self):
         tool = _make_tool(path="/users/{userId}/orders/{orderId}")
         executor = HttpExecutor("https://api.example.com")
