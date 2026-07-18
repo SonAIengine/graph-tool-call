@@ -34,6 +34,12 @@ from graph_tool_call.analyze.dependency import (
     detect_dependencies,
 )
 from graph_tool_call.core.tool import ToolSchema
+from graph_tool_call.graphify.edges import (
+    EVIDENCE_API_CONTRACT,
+    merge_graph_edges,
+    normalize_graph_edge,
+)
+from graph_tool_call.graphify.io_contract import FieldPredicate, promote_api_contract_signals
 from graph_tool_call.ontology.schema import Confidence, RelationType
 from graph_tool_call.tool_graph import ToolGraph
 
@@ -273,6 +279,98 @@ def _apply_pair_hints(
     return stats
 
 
+def _apply_contract_data_flow_edges(
+    tg: ToolGraph,
+    schemas: list[ToolSchema],
+    *,
+    max_producers_per_field: int = 3,
+) -> dict[str, int]:
+    """Derive deterministic producer edges from promoted IO contracts.
+
+    Direction follows the rest of Planflow: ``consumer --requires--> producer``.
+    The edge is a graph hint, not an execution binding. ``PathSynthesizer`` still
+    verifies that the producer actually exposes the field before using it.
+    """
+
+    stats = {
+        "added": 0,
+        "merged": 0,
+        "skipped_self": 0,
+        "skipped_no_producer": 0,
+        "skipped_echo": 0,
+    }
+    tools_by_name = {schema.name: schema for schema in schemas}
+    producer_index = _contract_producer_index(schemas)
+
+    for consumer in schemas:
+        metadata = consumer.metadata or {}
+        for consume in metadata.get("consumes") or []:
+            if not isinstance(consume, dict):
+                continue
+            if not consume.get("required"):
+                continue
+            if str(consume.get("kind") or "data").strip().lower() != "data":
+                continue
+
+            semantic = str(consume.get("semantic_tag") or "").strip()
+            field_name = str(consume.get("field_name") or "").strip()
+            field_key = _contract_field_key(field_name)
+            candidate_names = list(
+                dict.fromkeys(
+                    producer_index.get(("semantic", semantic), [])
+                    + producer_index.get(("field", field_name), [])
+                    + producer_index.get(("loose", field_key), [])
+                )
+            )
+            if not candidate_names:
+                stats["skipped_no_producer"] += 1
+                continue
+
+            scored: list[tuple[int, str, dict[str, Any]]] = []
+            for producer_name in candidate_names:
+                if producer_name == consumer.name:
+                    stats["skipped_self"] += 1
+                    continue
+                producer = tools_by_name.get(producer_name)
+                if producer is None:
+                    continue
+                produce = _matching_produce(
+                    producer.metadata or {},
+                    semantic=semantic,
+                    field_name=field_name,
+                    field_key=field_key,
+                )
+                if produce is None:
+                    continue
+                if _is_echo_producer(producer.metadata or {}, produce):
+                    stats["skipped_echo"] += 1
+                    continue
+                scored.append(
+                    (
+                        _contract_edge_score(producer.metadata or {}, produce),
+                        producer_name,
+                        produce,
+                    )
+                )
+
+            if not scored:
+                stats["skipped_no_producer"] += 1
+                continue
+
+            scored.sort(key=lambda item: (-item[0], item[1]))
+            for _score, producer_name, produce in scored[: max(0, max_producers_per_field)]:
+                result = _add_or_merge_contract_edge(
+                    tg,
+                    consumer=consumer.name,
+                    producer=producer_name,
+                    consume=consume,
+                    produce=produce,
+                )
+                stats[result] += 1
+
+    return stats
+
+
 def _source_label(schema: ToolSchema) -> str:
     """Return the source label that distinguishes which OpenAPI spec a tool came from.
 
@@ -289,6 +387,138 @@ def _source_label(schema: ToolSchema) -> str:
     return segs[0] if segs else ""
 
 
+def _contract_producer_index(
+    schemas: list[ToolSchema],
+) -> dict[tuple[str, str], list[str]]:
+    index: dict[tuple[str, str], list[str]] = {}
+    for schema in schemas:
+        metadata = schema.metadata or {}
+        for produce in metadata.get("produces") or []:
+            if not isinstance(produce, dict):
+                continue
+            semantic = str(produce.get("semantic_tag") or "").strip()
+            field_name = str(produce.get("field_name") or "").strip()
+            field_key = _contract_field_key(field_name)
+            if semantic:
+                index.setdefault(("semantic", semantic), []).append(schema.name)
+            if field_name:
+                index.setdefault(("field", field_name), []).append(schema.name)
+            if field_key:
+                index.setdefault(("loose", field_key), []).append(schema.name)
+    return index
+
+
+def _matching_produce(
+    metadata: dict[str, Any],
+    *,
+    semantic: str,
+    field_name: str,
+    field_key: str,
+) -> dict[str, Any] | None:
+    for produce in metadata.get("produces") or []:
+        if not isinstance(produce, dict):
+            continue
+        p_semantic = str(produce.get("semantic_tag") or "").strip()
+        p_field_name = str(produce.get("field_name") or "").strip()
+        if semantic and p_semantic == semantic:
+            return produce
+        if field_name and p_field_name == field_name:
+            return produce
+        if field_key and _contract_field_key(p_field_name) == field_key:
+            return produce
+    return None
+
+
+def _is_echo_producer(metadata: dict[str, Any], produce: dict[str, Any]) -> bool:
+    p_semantic = str(produce.get("semantic_tag") or "").strip()
+    p_field_name = str(produce.get("field_name") or "").strip()
+    p_field_key = _contract_field_key(p_field_name)
+    for consume in metadata.get("consumes") or []:
+        if not isinstance(consume, dict):
+            continue
+        c_semantic = str(consume.get("semantic_tag") or "").strip()
+        c_field_name = str(consume.get("field_name") or "").strip()
+        if p_semantic and c_semantic == p_semantic:
+            return True
+        if p_field_name and c_field_name == p_field_name:
+            return True
+        if p_field_key and _contract_field_key(c_field_name) == p_field_key:
+            return True
+    return False
+
+
+def _contract_edge_score(metadata: dict[str, Any], produce: dict[str, Any]) -> int:
+    score = int(produce.get("signal_score") or 0)
+    ai = metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
+    action = str(ai.get("canonical_action") or "").strip().lower()
+    if action == "search":
+        score += 4
+    elif action == "read":
+        score += 3
+    elif action in ("list", "lookup"):
+        score += 2
+    if produce.get("semantic_inferred_from") != "field_name":
+        score += 2
+    return score
+
+
+def _add_or_merge_contract_edge(
+    tg: ToolGraph,
+    *,
+    consumer: str,
+    producer: str,
+    consume: dict[str, Any],
+    produce: dict[str, Any],
+) -> str:
+    to_field = str(consume.get("field_name") or "")
+    from_path = str(produce.get("json_path") or produce.get("field_name") or "")
+    incoming = normalize_graph_edge(
+        {
+            "source": consumer,
+            "target": producer,
+            "relation": RelationType.REQUIRES,
+            "confidence": Confidence.INFERRED,
+            "conf_score": 0.82,
+            "layer": 2,
+            "evidence": f"api contract data flow: {producer}.{from_path} -> {consumer}.{to_field}",
+            "kind": "data",
+            "evidence_sources": [EVIDENCE_API_CONTRACT],
+            "data_flow": {
+                "from_path": from_path,
+                "from_field": produce.get("field_name"),
+                "to_field": to_field,
+                "semantic_tag": consume.get("semantic_tag") or produce.get("semantic_tag") or "",
+            },
+        },
+        default_source=EVIDENCE_API_CONTRACT,
+    )
+    if tg.graph.has_edge(consumer, producer):
+        existing = tg.graph.get_edge_attrs(consumer, producer)
+        merged = merge_graph_edges(
+            {"source": consumer, "target": producer, **existing},
+            incoming,
+        )
+        # A schema data-flow signal should remain traversable by Planflow even
+        # when an older semantic edge already connected the same pair.
+        merged["relation"] = RelationType.REQUIRES.value
+        _put_edge(tg, consumer, producer, merged)
+        return "merged"
+
+    _put_edge(tg, consumer, producer, incoming)
+    return "added"
+
+
+def _put_edge(tg: ToolGraph, source: str, target: str, edge: dict[str, Any]) -> None:
+    attrs = {k: v for k, v in edge.items() if k not in {"source", "target"}}
+    tg.graph.add_edge(source, target, **attrs)
+
+
+def _contract_field_key(value: Any) -> str:
+    import re
+
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
 def ingest_openapi_graphify(
     schemas: list[ToolSchema],
     *,
@@ -297,6 +527,18 @@ def ingest_openapi_graphify(
     ambiguous_min: float = DEFAULT_CONF_AMBIGUOUS,
     spec: dict[str, Any] | None = None,
     raw_spec: dict[str, Any] | None = None,
+    promote_contract_signals: bool = False,
+    contract_signal_options: dict[str, Any] | None = None,
+    max_contract_producers_per_field: int = 3,
+    user_input_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
+    context_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
+    auth_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
+    paging_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
+    search_filter_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
+    context_detector: FieldPredicate | None = None,
+    auth_detector: FieldPredicate | None = None,
+    paging_detector: FieldPredicate | None = None,
+    search_filter_detector: FieldPredicate | None = None,
 ) -> tuple[ToolGraph, dict[str, Any]]:
     """Build a graphify-style ToolGraph from a list of ToolSchemas.
 
@@ -317,6 +559,13 @@ def ingest_openapi_graphify(
         of SpringDoc-generated OpenAPI). xgen-workflow callers who already
         bake refs into tool metadata via swagger_tool_generator can leave
         this None.
+    promote_contract_signals:
+        When True, selected rows from ``metadata.api_contract`` are promoted
+        into top-level ``metadata.produces`` / ``metadata.consumes`` and used
+        to derive ``REQUIRES`` data-flow edges. Defaults False to keep plain
+        ingest conservative on very large, noisy Swagger specs.
+    contract_signal_options:
+        Optional keyword overrides forwarded to ``promote_api_contract_signals``.
 
     Returns
     -------
@@ -329,6 +578,26 @@ def ingest_openapi_graphify(
           refs_preserved:                           int  (tools touched by
                                                           preserve_refs_for_detection)
     """
+    if promote_contract_signals:
+        options = dict(contract_signal_options or {})
+        defaults = {
+            "user_input_field_names": user_input_field_names,
+            "context_field_names": context_field_names,
+            "auth_field_names": auth_field_names,
+            "paging_field_names": paging_field_names,
+            "search_filter_field_names": search_filter_field_names,
+            "context_detector": context_detector,
+            "auth_detector": auth_detector,
+            "paging_detector": paging_detector,
+            "search_filter_detector": search_filter_detector,
+        }
+        for key, value in defaults.items():
+            if value is not None and key not in options:
+                options[key] = value
+        contract_signal_stats = promote_api_contract_signals(schemas, **options)
+    else:
+        contract_signal_stats = {}
+
     tg = ToolGraph()
     for s in schemas:
         tg.add_tool(s)
@@ -345,9 +614,18 @@ def ingest_openapi_graphify(
         "tool_count": len(schemas),
         "edge_count": 0,
         "refs_preserved": 0,
+        "contract_signals": contract_signal_stats,
+        "contract_edges": {},
     }
 
     if len(schemas) < 2:
+        if promote_contract_signals:
+            stats["contract_edges"] = _apply_contract_data_flow_edges(
+                tg,
+                schemas,
+                max_producers_per_field=max_contract_producers_per_field,
+            )
+            stats["edge_count"] = tg.graph.edge_count()
         return tg, stats
 
     # Optional: rescue layer-1 shared-schema signal that ingest_openapi inlined.
@@ -432,6 +710,18 @@ def ingest_openapi_graphify(
                 tgt_lab = label_by_name.get(tgt, "")
                 if src_lab and tgt_lab and src_lab != tgt_lab:
                     stats["cross_source"] += 1
+
+    if promote_contract_signals:
+        contract_edge_stats = _apply_contract_data_flow_edges(
+            tg,
+            schemas,
+            max_producers_per_field=max_contract_producers_per_field,
+        )
+        stats["contract_edges"] = contract_edge_stats
+        stats["INFERRED"] += contract_edge_stats.get("added", 0)
+        stats["by_relation"]["requires"] = stats["by_relation"].get(
+            "requires", 0
+        ) + contract_edge_stats.get("added", 0)
 
     stats["edge_count"] = tg.graph.edge_count()
     return tg, stats

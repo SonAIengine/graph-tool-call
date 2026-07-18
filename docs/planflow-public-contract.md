@@ -7,7 +7,13 @@ Version: graph-tool-call 0.25.0
 The graphify package owns product-neutral collection graph logic.
 
 - `ingest_openapi_graphify(schemas)` builds a `ToolGraph` with confidence-labeled edges.
+- `ingest_openapi_graphify(..., promote_contract_signals=True)` selectively promotes
+  OpenAPI `metadata.api_contract` rows into search/planning IO signals and derives
+  `REQUIRES` data-flow edges.
 - `build_io_contract(...)` produces plain `metadata.produces` and `metadata.consumes` lists from schema fragments and caller-provided field classifiers.
+- `promote_api_contract_signals(...)` applies the same product-neutral contract
+  promotion policy independently when callers want to inspect or persist the
+  enriched tool metadata before graph build.
 - `expand_candidates_with_producers(...)` expands retrieval candidates with deterministic 1-hop producers for required `kind=data` inputs.
 - `normalize_graph_edge(...)`, `merge_graph_edges(...)`, and `derive_plan_trace_edges(...)` normalize structural, LLM-curated, manual, and run-observed signals into graph version 2 edge metadata.
 - `retrieve_graphify(..., include_evidence=True)` keeps the legacy response keys and adds score/evidence details for logs and UI.

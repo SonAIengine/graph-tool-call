@@ -100,6 +100,29 @@ tool's metadata:
 `HttpExecutor` uses this metadata before falling back to method-based heuristics,
 so POST operations with query/header parameters are rendered correctly.
 
+For graph/search use, keep raw contract and promoted signal separate. Large
+Swagger specs often repeat wrapper fields such as `status`, `data`, and `list`,
+so plain ingest does not index every leaf. Use graphify promotion when you want
+selected contract fields to participate in retrieval and plan synthesis:
+
+```python
+from graph_tool_call.graphify import ingest_openapi_graphify
+from graph_tool_call.ingest.openapi import ingest_openapi
+
+tools, _ = ingest_openapi(spec)
+tg, stats = ingest_openapi_graphify(
+    tools,
+    raw_spec=spec,
+    promote_contract_signals=True,
+    context_field_names={"siteNo"},
+    paging_field_names={"pageNo", "pageSize"},
+)
+```
+
+The promotion step adds high-value fields to `metadata.produces` /
+`metadata.consumes`, classifies `kind=data|context|auth`, and derives
+`consumer --requires--> producer` data-flow edges with `api_contract` evidence.
+
 ---
 
 ## Top-level helpers

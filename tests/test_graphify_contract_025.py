@@ -11,8 +11,10 @@ from graph_tool_call.graphify import (
     build_io_contract,
     derive_plan_trace_edges,
     expand_candidates_with_producers,
+    ingest_openapi_graphify,
     merge_graph_edges,
     normalize_graph_edge,
+    promote_api_contract_signals,
     retrieve_graphify,
 )
 from graph_tool_call.ontology.schema import RelationType
@@ -97,6 +99,164 @@ def test_build_io_contract_preserves_kind_required_enum_and_semantics():
     assert by_consume["pageNo"]["required"] is False
     assert by_consume["Authorization"]["kind"] == "auth"
     assert by_consume["Authorization"]["required"] is False
+
+
+def test_promote_api_contract_signals_selects_useful_fields_without_wrapper_noise():
+    search = ToolSchema(
+        name="searchProducts",
+        metadata={
+            "api_contract": {
+                "produces": [
+                    {"field_name": "status", "json_path": "$.status", "field_type": "string"},
+                    {"field_name": "data", "json_path": "$.data", "field_type": "object"},
+                    {
+                        "field_name": "goodsNo",
+                        "json_path": "$.data.items[*].goodsNo",
+                        "field_type": "string",
+                    },
+                    {
+                        "field_name": "goodsNm",
+                        "json_path": "$.data.items[*].goodsNm",
+                        "field_type": "string",
+                    },
+                ],
+                "consumes": [
+                    {
+                        "field_name": "keyword",
+                        "field_type": "string",
+                        "required": False,
+                        "location": "query",
+                    }
+                ],
+            }
+        },
+    )
+    detail = ToolSchema(
+        name="getProductDetail",
+        metadata={
+            "api_contract": {
+                "produces": [],
+                "consumes": [
+                    {
+                        "field_name": "goodsNo",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "path",
+                    },
+                    {
+                        "field_name": "siteNo",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "query",
+                    },
+                    {
+                        "field_name": "pageNo",
+                        "field_type": "integer",
+                        "required": False,
+                        "location": "query",
+                    },
+                    {
+                        "field_name": "giftMessage",
+                        "field_type": "string",
+                        "required": False,
+                        "location": "body",
+                    },
+                ],
+            }
+        },
+    )
+
+    stats = promote_api_contract_signals(
+        [search, detail],
+        user_input_field_names={"gift_message"},
+        context_field_names={"site_no"},
+        paging_field_names={"pageNo"},
+    )
+
+    produces = {row["field_name"]: row for row in search.metadata["produces"]}
+    consumes = {row["field_name"]: row for row in detail.metadata["consumes"]}
+    assert "status" not in produces
+    assert "data" not in produces
+    assert produces["goodsNo"]["semantic_tag"] == "goods_no"
+    assert produces["goodsNo"]["semantic_inferred_from"] == "field_name"
+    assert consumes["goodsNo"]["kind"] == "data"
+    assert consumes["goodsNo"]["required"] is True
+    assert consumes["siteNo"]["kind"] == "context"
+    assert consumes["siteNo"]["required"] is False
+    assert consumes["pageNo"]["kind"] == "context"
+    assert consumes["giftMessage"]["required"] is True
+    assert stats["produces_added"] == 2
+    assert stats["consumes_added"] == 5
+
+
+def test_ingest_openapi_graphify_can_promote_contracts_into_data_flow_edges():
+    search = ToolSchema(
+        name="searchProducts",
+        description="상품 검색",
+        metadata={
+            "method": "get",
+            "path": "/products",
+            "api_contract": {
+                "produces": [
+                    {
+                        "field_name": "goodsNo",
+                        "json_path": "$.items[*].goodsNo",
+                        "field_type": "string",
+                    }
+                ],
+                "consumes": [
+                    {
+                        "field_name": "keyword",
+                        "field_type": "string",
+                        "required": False,
+                        "location": "query",
+                    }
+                ],
+            },
+            "ai_metadata": {"canonical_action": "search"},
+        },
+    )
+    detail = ToolSchema(
+        name="getProductDetail",
+        description="상품 상세",
+        metadata={
+            "method": "get",
+            "path": "/products/{goodsNo}",
+            "api_contract": {
+                "produces": [],
+                "consumes": [
+                    {
+                        "field_name": "goodsNo",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "path",
+                    }
+                ],
+            },
+            "ai_metadata": {"canonical_action": "read"},
+        },
+    )
+
+    tg, stats = ingest_openapi_graphify(
+        [search, detail],
+        promote_contract_signals=True,
+    )
+    edge = tg.graph.get_edge_attrs("getProductDetail", "searchProducts")
+
+    assert stats["contract_signals"]["produces_added"] == 1
+    assert stats["contract_edges"]["added"] == 1
+    assert edge["relation"] == "requires"
+    assert edge["kind"] == "data"
+    assert edge["evidence_sources"] == ["api_contract"]
+    assert edge["data_flow"]["to_field"] == "goodsNo"
+
+    graph_payload = {
+        "graph": tg.graph.to_dict(),
+        "tools": {name: tool.to_dict() for name, tool in tg.tools.items()},
+    }
+    plan = PathSynthesizer(graph_payload).synthesize(target="getProductDetail", goal="상품 상세")
+    assert [step.tool for step in plan.steps] == ["searchProducts", "getProductDetail"]
+    assert plan.steps[-1].args["goodsNo"] == "${s1.items[0].goodsNo}"
 
 
 def test_expand_candidates_with_producers_uses_required_data_only_and_action_priority():

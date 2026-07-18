@@ -18,6 +18,7 @@ EVIDENCE_PROVEN = "proven"
 EVIDENCE_RUN = "run"
 EVIDENCE_LLM_CURATED = "llm_curated"
 EVIDENCE_MANUAL = "manual"
+EVIDENCE_API_CONTRACT = "api_contract"
 
 _DATA_FLOW_RELATIONS = frozenset({"requires", "precedes", "produces_for"})
 _BINDING_RE = re.compile(r"^\$\{(\w+)\.(.+)\}$")
@@ -211,6 +212,7 @@ def _infer_kind(relation: Any) -> str:
 
 
 __all__ = [
+    "EVIDENCE_API_CONTRACT",
     "EVIDENCE_LLM_CURATED",
     "EVIDENCE_MANUAL",
     "EVIDENCE_NAME_BASED",
