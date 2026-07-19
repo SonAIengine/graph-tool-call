@@ -76,7 +76,7 @@ bfcl-hard-cases:
 		$$data_root_args \
 		--categories "$${CATEGORIES:-}" \
 		--failure-categories "$${FAILURE_CATEGORIES:-retrieval_miss,candidate_ambiguity}" \
-		--tool-sources "$${TOOL_SOURCES:-retrieved}" \
+		--tool-sources "$${TOOL_SOURCES:-}" \
 		--top-ks "$${REPORT_TOP_KS:-5}" \
 		--top-k "$${TOP_K:-5}" \
 		--inspect-depth "$${INSPECT_DEPTH:-20}"

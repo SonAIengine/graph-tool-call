@@ -85,6 +85,27 @@ def _report():
     }
 
 
+def _deterministic_report():
+    return {
+        "benchmark": "BFCL v4 Tool Selection",
+        "top_k": 5,
+        "categories": [
+            {
+                "category": "simple_python",
+                "cases": [
+                    {
+                        "case_id": "simple_python_0",
+                        "expected_tools": ["alpha_tool", "beta_tool"],
+                        "retrieved": ["alpha_beta_noise"],
+                        "recall_at_5": 0.5,
+                        "all_tools_found_at_5": 0.0,
+                    }
+                ],
+            }
+        ],
+    }
+
+
 def test_build_hard_case_bundle_summarizes_and_writes_reusable_files(tmp_path):
     bundle = build_hard_case_bundle(
         report=_report(),
@@ -119,6 +140,22 @@ def test_build_hard_case_bundle_summarizes_and_writes_reusable_files(tmp_path):
         == 1
     )
     assert paths["case_ids"].endswith("case_ids.txt")
+
+
+def test_build_hard_case_bundle_accepts_deterministic_report(tmp_path):
+    bundle = build_hard_case_bundle(
+        report=_deterministic_report(),
+        categories=["simple_python"],
+        data_root=_bfcl_data_root(tmp_path),
+        top_k=1,
+        inspect_depth=3,
+        failure_categories={"retrieval_miss"},
+    )
+
+    assert bundle["summary"]["cases"] == 1
+    assert bundle["summary"]["failure_categories"] == {"retrieval_miss": 1}
+    assert bundle["failure_cases"][0]["retrieval_recall_at_k"] == 0.5
+    assert bundle["case_ids"] == ["simple_python_0"]
 
 
 def test_hard_cases_cli_writes_bundle(tmp_path):

@@ -213,6 +213,14 @@ make bfcl-inspect-failures \
 
 ```bash
 make bfcl-hard-cases \
+  REPORT=/tmp/gtc-research-check/bfcl-deterministic.json \
+  OUT_DIR=/tmp/gtc-bfcl-deterministic-hard-cases \
+  FAILURE_CATEGORIES=retrieval_miss \
+  REPORT_TOP_KS=5 \
+  TOP_K=5 \
+  INSPECT_DEPTH=20
+
+make bfcl-hard-cases \
   REPORT=/tmp/gtc-bfcl-full-retrieved-k5-repeats2-current-v7.json \
   OUT_DIR=/tmp/gtc-bfcl-k5-hard-cases \
   FAILURE_CATEGORIES=retrieval_miss,candidate_ambiguity \
@@ -221,6 +229,11 @@ make bfcl-hard-cases \
   TOP_K=5 \
   INSPECT_DEPTH=20
 ```
+
+첫 번째 명령은 `make research-check`가 남긴 no-LLM deterministic BFCL artifact에서
+`recall_at_5 < 1.0` 또는 `all_tools_found_at_5 < 1.0`인 케이스를
+`retrieval_miss`로 추론한다. 두 번째 명령은 LLM/sweep report의 명시적
+`failure_category`를 사용한다.
 
 이 명령은 `/tmp/gtc-bfcl-k5-hard-cases/` 아래에 다음 파일을 남긴다.
 
