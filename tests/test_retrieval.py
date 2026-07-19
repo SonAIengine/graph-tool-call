@@ -1,5 +1,6 @@
 """Tests for retrieval engine."""
 
+from graph_tool_call.retrieval.engine import RetrievalEngine
 from graph_tool_call.tool_graph import ToolGraph
 
 
@@ -185,3 +186,55 @@ def test_retrieve_keeps_clause_level_tools_for_multi_intent_query():
     ]
 
     assert {"traffic_estimate", "calculate_distance", "weather_forecast"}.issubset(names)
+
+
+def test_split_query_clauses_handles_and_before_new_action():
+    clauses = RetrievalEngine._split_query_clauses(
+        "I need to convert 10 dollars to Euros and make a 10 dollar deposit "
+        "in my local bank account."
+    )
+
+    assert clauses == [
+        "I need to convert 10 dollars to Euros",
+        "make a 10 dollar deposit in my local bank account",
+    ]
+
+
+def test_retrieve_keeps_and_joined_clause_tool_in_top_k():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "currency_conversion",
+                "description": "Convert an amount of money from one currency to another.",
+            },
+            {
+                "name": "banking_service",
+                "description": "Make a deposit into a local bank account.",
+            },
+            {
+                "name": "bank_account.transfer",
+                "description": "Transfer money between bank accounts.",
+            },
+            {
+                "name": "bank.calculate_balance",
+                "description": "Calculate the balance of a bank account.",
+            },
+            {
+                "name": "latest_exchange_rate",
+                "description": "Retrieve the latest exchange rate for a currency pair.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+
+    names = [
+        tool.name
+        for tool in tg.retrieve(
+            "I need to convert 10 dollars to Euros and make a 10 dollar deposit "
+            "in my local bank account.",
+            top_k=5,
+        )
+    ]
+
+    assert {"currency_conversion", "banking_service"}.issubset(names)

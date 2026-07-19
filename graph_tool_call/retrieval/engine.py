@@ -417,11 +417,35 @@ class RetrievalEngine:
             flags=re.IGNORECASE,
         )
         marked = marker_pattern.sub(".", text)
-        parts = re.split(r"[.;?!]\s+|\n+", marked)
+        initial_parts = RetrievalEngine._split_query_clause_parts(marked)
+        if len(initial_parts) < 4:
+            marked = re.sub(
+                r"\s+(?:and|plus)\s+(?="
+                r"(?:please\s+)?"
+                r"(?:find|get|retrieve|search|calculate|compute|convert|make|create|"
+                r"return|fit|book|check|estimate|determine|identify|generate|"
+                r"translate|summarize|compare|recommend|use)\b"
+                r")",
+                ". ",
+                marked,
+                flags=re.IGNORECASE,
+            )
+        parts = RetrievalEngine._split_query_clause_parts(marked)
+        return RetrievalEngine._dedupe_query_clauses(parts)
+
+    @staticmethod
+    def _split_query_clause_parts(text: str) -> list[str]:
+        """Split clause text on sentence-like separators without filtering."""
+        parts = re.split(r"[.;?!]\s+|\n+", text)
+        return [part.strip(" \t\r\n'\"`[]{}().,;:!?") for part in parts]
+
+    @staticmethod
+    def _dedupe_query_clauses(parts: list[str]) -> list[str]:
+        """Filter tiny/duplicate clause fragments while preserving order."""
         clauses: list[str] = []
         seen: set[str] = set()
         for part in parts:
-            clause = part.strip(" \t\r\n'\"`[]{}()")
+            clause = part.strip(" \t\r\n'\"`[]{}().,;:!?")
             if not clause:
                 continue
             token_count = len(re.findall(r"[a-zA-Z0-9가-힣]+", clause))

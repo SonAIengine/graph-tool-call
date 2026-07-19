@@ -208,6 +208,34 @@ make research-check-smoke
 이 흐름의 목적은 full 1000-case run을 반복하지 않고, 이전 병목에 직접 닿는
 100-200개 케이스로 변화량을 먼저 확인하는 것이다.
 
+`2026-07-19` BFCL deterministic miss subset에서는 `recall_at_5 < 1`인 97건과
+그중 `parallel_multiple` 49건을 별도 case-id 파일로 뽑아 inspector를 돌렸다.
+
+```bash
+CASE_IDS_FILE=/tmp/gtc-bfcl-det-miss-parallel-multiple.txt \
+BFCL_CATEGORIES=parallel_multiple \
+BFCL_MIN_RECALL_AT_5=0 \
+ARTIFACT_DIR=/tmp/gtc-pm-clause-test \
+make research-check-deterministic
+
+BFCL_MIN_RECALL_AT_5=0 \
+ARTIFACT_DIR=/tmp/gtc-clause-conditional-full \
+make research-check-deterministic
+```
+
+진단 결과는 다음과 같다.
+
+- 전체 deterministic miss 97건 중 73건은 expected tool이 top-20에는 있었고
+  top-5 밖에 있는 near-miss였다.
+- `parallel_multiple` miss 49건 중 39건은 near-miss였고, 41건은 일부 expected
+  tool만 top-5에 있는 `partial_multi_tool_at_k`였다.
+- 조건부 `and + action` clause split은 `parallel_multiple_21`의 `data_loading`
+  rank를 top-5 안으로 당겼고, 전체 BFCL deterministic 기준 `recall@5`
+  `0.929 -> 0.9295`, `all_tools_found@5` `0.903 -> 0.904`,
+  `parallel_multiple recall@5` `0.885 -> 0.8875`로 개선했다. 악화 케이스는 0건이다.
+- 더 공격적인 clause top-5 확장은 개선 5건/악화 2건으로, 다음 단계에서는
+  clause-level diversity 또는 sibling suppression과 함께 재실험한다.
+
 ## 승격 기준
 
 연구 변경은 아래 순서로 승격한다.
