@@ -370,6 +370,12 @@ make xgen-scale-sweep \
   TOP_KS=3,5,10 \
   OUT=/tmp/gtc-x2bee-scale-sweep.json
 
+SPEC=/tmp/x2bee-openapi-snapshot.json \
+MIN_UNIQUE_TOOLS=1000 \
+make xgen-scale-sweep \
+  TOP_KS=3,5,10 \
+  OUT=/tmp/gtc-x2bee-scale-snapshot-sweep.json
+
 make xgen-scale-contract-ablation \
   CONTEXT_FIELDS=siteNo,langCd,sysGbCd \
   OUT=/tmp/gtc-x2bee-scale-contract-ablation.json
@@ -387,8 +393,12 @@ synthesis 쪽에서만 쓰인다. raw field를 BM25에도 넣어보는 실험은
 https://api-bo.x2bee.com/api/bo/swagger-ui/index.html
 ```
 
-이 runner는 live spec 본문을 commit하지 않고 실행 시점에 가져온다. report에는
-아래를 남긴다.
+이 runner는 기본적으로 live spec 본문을 commit하지 않고 실행 시점에 가져온다.
+검증 반복 속도나 Swagger drift 분리가 중요할 때는 `SPEC=/path/openapi.json` 또는
+`SPECS=a.json,b.json`을 넘겨 local/API snapshot spec으로 실행한다. `SPEC`/`SPECS`
+를 쓰면 Swagger UI discovery는 건너뛴다. 작은 snapshot smoke는
+`NO_CASES=1 MIN_UNIQUE_TOOLS=1`처럼 threshold를 낮춰 runner contract만 확인할 수
+있다. report에는 아래를 남긴다.
 
 - discovered spec 수, raw operation 수, unique tool 수, duplicate tool 수
 - requestBody/response schema coverage

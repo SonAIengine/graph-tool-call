@@ -31,15 +31,37 @@ xgen-llm-benchmark:
 	poetry run python -m benchmarks.xgen_tool_graph.llm_loop --model qwen3:4b
 
 xgen-scale-acceptance:
+	@source_args="--swagger-url $${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}"; \
+	selected_specs="$${SPECS:-$${SPEC:-}}"; \
+	if [ -n "$$selected_specs" ]; then \
+		source_args=""; \
+		for spec in $$(printf "%s" "$$selected_specs" | tr ',' ' '); do source_args="$$source_args --spec $$spec"; done; \
+	fi; \
+	case_args=""; \
+	if [ "$${NO_CASES:-0}" != "0" ]; then case_args="--no-cases"; fi; \
 	poetry run python -m benchmarks.xgen_api_scale.run \
-		--swagger-url "$${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}" \
+		$$source_args \
+		$$case_args \
+		--min-unique-tools "$${MIN_UNIQUE_TOOLS:-1000}" \
+		--max-build-seconds "$${MAX_BUILD_SECONDS:-30}" \
 		--output "$${OUT:-/tmp/gtc-xgen-scale-acceptance.json}"
 
 xgen-scale-sweep:
+	@source_args="--swagger-url $${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}"; \
+	selected_specs="$${SPECS:-$${SPEC:-}}"; \
+	if [ -n "$$selected_specs" ]; then \
+		source_args=""; \
+		for spec in $$(printf "%s" "$$selected_specs" | tr ',' ' '); do source_args="$$source_args --spec $$spec"; done; \
+	fi; \
+	case_args=""; \
+	if [ "$${NO_CASES:-0}" != "0" ]; then case_args="--no-cases"; fi; \
 	poetry run python -m benchmarks.xgen_api_scale.run \
-		--swagger-url "$${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}" \
+		$$source_args \
+		$$case_args \
 		--top-ks "$${TOP_KS:-3,5,10}" \
 		--acceptance-top-k "$${ACCEPTANCE_TOP_K:-10}" \
+		--min-unique-tools "$${MIN_UNIQUE_TOOLS:-1000}" \
+		--max-build-seconds "$${MAX_BUILD_SECONDS:-30}" \
 		--output "$${OUT:-/tmp/gtc-xgen-scale-sweep.json}"
 
 xgen-scale-gate-check:
@@ -47,10 +69,21 @@ xgen-scale-gate-check:
 	poetry run python -m benchmarks.xgen_api_scale.gate "$(REPORT)" --profile "$${PROFILE:-xgen-scale-0.27}"
 
 xgen-scale-contract-ablation:
+	@source_args="--swagger-url $${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}"; \
+	selected_specs="$${SPECS:-$${SPEC:-}}"; \
+	if [ -n "$$selected_specs" ]; then \
+		source_args=""; \
+		for spec in $$(printf "%s" "$$selected_specs" | tr ',' ' '); do source_args="$$source_args --spec $$spec"; done; \
+	fi; \
+	case_args=""; \
+	if [ "$${NO_CASES:-0}" != "0" ]; then case_args="--no-cases"; fi; \
 	poetry run python -m benchmarks.xgen_api_scale.run \
-		--swagger-url "$${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}" \
+		$$source_args \
+		$$case_args \
 		--compare-contract-signals \
 		--context-fields "$${CONTEXT_FIELDS:-siteNo,langCd,sysGbCd}" \
+		--min-unique-tools "$${MIN_UNIQUE_TOOLS:-1000}" \
+		--max-build-seconds "$${MAX_BUILD_SECONDS:-30}" \
 		--output "$${OUT:-/tmp/gtc-xgen-scale-contract-ablation.json}"
 
 bfcl-benchmark:

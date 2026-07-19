@@ -568,7 +568,9 @@ XGEN scale live sweep is also gated. Reuse saved artifacts with
 `make xgen-scale-sweep` only when OpenAPI ingest, graph construction, retrieval, or
 candidate planning behavior changes. New acceptance/sweep artifacts include a
 normalized `gate` block so PRs and research notes can cite the pass/fail state
-without rebuilding the live Swagger graph.
+without rebuilding the live Swagger graph. When validating against a captured
+API snapshot instead of live Swagger discovery, pass `SPEC=/path/openapi.json` or
+`SPECS=a.json,b.json` to the same XGEN scale targets.
 
 ## Non-Goals
 
