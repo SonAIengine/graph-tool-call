@@ -55,9 +55,15 @@ class QueryEvaluation:
     expected_target: str
     retrieved: list[str]
     candidates: list[str]
+    expansion_seed: list[str]
+    candidate_count: int
     target_rank: int | None
     target_recall_at_k: float
     target_mrr: float
+    producer_needed: bool
+    producer_added_count: int
+    adaptive_expansion_applied: bool
+    unneeded_expansion_applied: bool
     producer_recall: float
     candidate_plan_coverage: float
     candidate_binding_support: float
@@ -253,6 +259,8 @@ def run_all_benchmarks(
         "producer_recall",
         "candidate_plan_coverage",
         "candidate_binding_support",
+        "avg_candidate_count",
+        "avg_producer_added_count",
         "plan_exact_match",
         "plan_step_recall",
         "binding_accuracy",
@@ -277,6 +285,19 @@ def run_all_benchmarks(
         ),
         "missing_field_count": sum(
             int(row.get("missing_field_count") or 0) for row in graph_summaries
+        ),
+        "producer_needed_case_count": sum(
+            int(row.get("producer_needed_case_count") or 0) for row in graph_summaries
+        ),
+        "adaptive_expansion_case_count": sum(
+            int(row.get("adaptive_expansion_case_count") or 0) for row in graph_summaries
+        ),
+        "unneeded_expansion_case_count": sum(
+            int(row.get("unneeded_expansion_case_count") or 0) for row in graph_summaries
+        ),
+        "max_candidate_count": max(
+            (int(row.get("max_candidate_count") or 0) for row in graph_summaries),
+            default=0,
         ),
     }
     for metric in aggregate_metrics:
@@ -346,18 +367,23 @@ def evaluate_case(
     retrieved = [str(row["name"]) for row in retrieval.get("results") or []]
     # The baseline isolates what happens after a target selector has picked the
     # expected target but before producer expansion adds prerequisite tools.
-    candidates = [expected_target] if expected_target in retrieved else retrieved[:1]
+    expansion_seed = [expected_target] if expected_target in retrieved else retrieved[:1]
+    candidates = list(expansion_seed)
     if expand_producers:
-        candidates = list(retrieved)
         candidates = expand_candidates_with_producers(
-            retrieved,
+            expansion_seed,
             graph_payload["tools"],
             max_producers_per_field=3,
+            max_hops=max(1, depth),
         )
 
     target_rank = _rank_of(retrieved, expected_target)
     target_recall = recall_at_k(retrieved, {expected_target}, top_k)
     target_mrr = mrr(retrieved, {expected_target})
+    producer_needed = bool(expected_producers)
+    producer_added_count = max(0, len(candidates) - len(expansion_seed))
+    adaptive_expansion_applied = bool(expand_producers and producer_added_count)
+    unneeded_expansion_applied = bool(adaptive_expansion_applied and not producer_needed)
     producer_recall = recall_at_k(candidates, expected_producers, len(candidates))
     candidate_plan_coverage = recall_at_k(candidates, set(expected_plan), len(candidates))
     candidate_binding_support = recall_at_k(
@@ -433,9 +459,15 @@ def evaluate_case(
         expected_target=expected_target,
         retrieved=retrieved,
         candidates=candidates,
+        expansion_seed=expansion_seed,
+        candidate_count=len(candidates),
         target_rank=target_rank,
         target_recall_at_k=target_recall,
         target_mrr=target_mrr,
+        producer_needed=producer_needed,
+        producer_added_count=producer_added_count,
+        adaptive_expansion_applied=adaptive_expansion_applied,
+        unneeded_expansion_applied=unneeded_expansion_applied,
         producer_recall=producer_recall,
         candidate_plan_coverage=candidate_plan_coverage,
         candidate_binding_support=candidate_binding_support,
@@ -623,6 +655,12 @@ def _summarize(
         "producer_recall": _mean(r.producer_recall for r in rows),
         "candidate_plan_coverage": _mean(r.candidate_plan_coverage for r in rows),
         "candidate_binding_support": _mean(r.candidate_binding_support for r in rows),
+        "avg_candidate_count": _mean(r.candidate_count for r in rows),
+        "max_candidate_count": max((r.candidate_count for r in rows), default=0),
+        "producer_needed_case_count": sum(1 for r in rows if r.producer_needed),
+        "adaptive_expansion_case_count": sum(1 for r in rows if r.adaptive_expansion_applied),
+        "unneeded_expansion_case_count": sum(1 for r in rows if r.unneeded_expansion_applied),
+        "avg_producer_added_count": _mean(r.producer_added_count for r in rows),
         "plan_exact_match": _mean(r.plan_exact_match for r in rows),
         "plan_step_recall": _mean(r.plan_step_recall for r in rows),
         "binding_accuracy": _mean(r.binding_accuracy for r in rows),
@@ -690,6 +728,9 @@ def _producer_expansion_lift(pipelines: list[PipelineEvaluation]) -> dict[str, A
         "baseline_pipeline": base.name,
         "expanded_pipeline": graph.name,
         "cases": min(len(base.cases), len(graph.cases)),
+        "producer_needed_cases": sum(1 for row in graph.cases if row.producer_needed),
+        "adaptive_expansion_cases": sum(1 for row in graph.cases if row.adaptive_expansion_applied),
+        "unneeded_expansion_cases": sum(1 for row in graph.cases if row.unneeded_expansion_applied),
         "lifted_cases": _lifted_case_counts(base.cases, graph.cases),
     }
     for metric in metrics:
@@ -739,6 +780,15 @@ def _aggregate_producer_expansion_lift(lifts: list[dict[str, Any]]) -> dict[str,
         "baseline_pipeline": "target_only",
         "expanded_pipeline": "graph_with_producers",
         "cases": total_cases,
+        "producer_needed_cases": sum(
+            int(lift.get("producer_needed_cases") or 0) for lift in active
+        ),
+        "adaptive_expansion_cases": sum(
+            int(lift.get("adaptive_expansion_cases") or 0) for lift in active
+        ),
+        "unneeded_expansion_cases": sum(
+            int(lift.get("unneeded_expansion_cases") or 0) for lift in active
+        ),
         "lifted_cases": {
             "producer_recall": sum(
                 int((lift.get("lifted_cases") or {}).get("producer_recall") or 0) for lift in active
@@ -935,7 +985,8 @@ def _print_report(report: dict[str, Any]) -> None:
         print(
             "  target@K={target:.2f} mrr={mrr_:.2f} producers={prod:.2f} "
             "candidate_plan={cand_plan:.2f} plan_exact={plan:.2f} "
-            "bindings={bind:.2f} diagnostics={diag:.2f} latency={latency:.2f}ms".format(
+            "bindings={bind:.2f} diagnostics={diag:.2f} candidates={cand:.2f} "
+            "latency={latency:.2f}ms".format(
                 target=summary["target_recall_at_k"],
                 mrr_=summary["mean_target_mrr"],
                 prod=summary["producer_recall"],
@@ -943,7 +994,17 @@ def _print_report(report: dict[str, Any]) -> None:
                 plan=summary["plan_exact_match"],
                 bind=summary["binding_accuracy"],
                 diag=summary["synthesis_diagnostics_coverage"],
+                cand=summary["avg_candidate_count"],
                 latency=summary["avg_latency_ms"],
+            )
+        )
+        print(
+            "  adaptive expansion: applied={applied} producer_needed={needed} "
+            "unneeded={unneeded} max_candidates={max_candidates}".format(
+                applied=summary["adaptive_expansion_case_count"],
+                needed=summary["producer_needed_case_count"],
+                unneeded=summary["unneeded_expansion_case_count"],
+                max_candidates=summary["max_candidate_count"],
             )
         )
         lift = report.get("producer_expansion_lift") or {}
@@ -966,12 +1027,13 @@ def _print_report(report: dict[str, Any]) -> None:
             row = graph["summary"]
             print(
                 "  [{suite}] status={status} cases={cases} target@K={target:.2f} "
-                "plan_exact={plan:.2f}".format(
+                "plan_exact={plan:.2f} unneeded_expansion={unneeded}".format(
                     suite=suite_report["suite"],
                     status=row.get("status", "n/a"),
                     cases=row["cases"],
                     target=row["target_recall_at_k"],
                     plan=row["plan_exact_match"],
+                    unneeded=row["unneeded_expansion_case_count"],
                 )
             )
         return
@@ -988,7 +1050,8 @@ def _print_report(report: dict[str, Any]) -> None:
         print(
             "  target@K={target:.2f} mrr={mrr_:.2f} producers={prod:.2f} "
             "candidate_plan={cand_plan:.2f} plan_exact={plan:.2f} "
-            "bindings={bind:.2f} diagnostics={diag:.2f} latency={latency:.2f}ms".format(
+            "bindings={bind:.2f} diagnostics={diag:.2f} candidates={cand:.2f} "
+            "latency={latency:.2f}ms".format(
                 target=summary["target_recall_at_k"],
                 mrr_=summary["mean_target_mrr"],
                 prod=summary["producer_recall"],
@@ -996,7 +1059,17 @@ def _print_report(report: dict[str, Any]) -> None:
                 plan=summary["plan_exact_match"],
                 bind=summary["binding_accuracy"],
                 diag=summary["synthesis_diagnostics_coverage"],
+                cand=summary["avg_candidate_count"],
                 latency=summary["avg_latency_ms"],
+            )
+        )
+        print(
+            "  adaptive expansion: applied={applied} producer_needed={needed} "
+            "unneeded={unneeded} max_candidates={max_candidates}".format(
+                applied=summary["adaptive_expansion_case_count"],
+                needed=summary["producer_needed_case_count"],
+                unneeded=summary["unneeded_expansion_case_count"],
+                max_candidates=summary["max_candidate_count"],
             )
         )
     print()
