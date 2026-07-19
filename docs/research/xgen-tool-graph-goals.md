@@ -221,6 +221,12 @@ Goal: top-K를 단순히 키우지 않고 후보 구성을 좋아지게 한다.
     surface로 유지하면서 selected target만 producer expansion seed로 전달할 수
     있다.
 - near-duplicate/sibling 후보를 제어한다.
+  - `2026-07-19`: 전역 suppression 대신 `build_candidate_set(...)`의
+    opt-in `max_targets_per_group`로 같은 `primary_resource` +
+    `canonical_action` target sibling을 cap한다. 결과에는
+    `raw_target_candidates`, `suppressed_target_candidates`,
+    `target_candidate_groups`가 남아 XGEN target selector가 어떤 후보를 줄였는지
+    설명할 수 있다.
 - multi-intent query에서는 category diversity를 보장한다.
 - 복합 query에서만 adaptive expansion을 적용한다.
 - X2BEE 현재 gap은 `order_query`의 target rank 4와 page-role secondary target
