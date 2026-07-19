@@ -248,6 +248,10 @@ Goal: recall을 유지하면서 candidate ambiguity를 줄인다.
     target 후보는 `ai_metadata.canonical_action` 기준으로 stable rerank되고
     `target_rank_signals`에 original/reranked rank, group key, priority,
     selected/suppressed evidence가 남는다.
+  - `2026-07-19`: `target_action_priority_for_query(...)`를 추가했다. XGEN은
+    LLM 없이 한국어/영어 action term에서 generic action priority를 만들고,
+    그 결과를 `build_candidate_set(..., target_action_priority=...)`에 바로
+    전달할 수 있다.
 - 2차: optional embedding rerank
 - 3차: optional small model rerank
 - 성공 기준은 top-k=5 exact 상승과 ambiguity 비증가다.

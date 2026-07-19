@@ -46,6 +46,9 @@ The graphify package owns product-neutral collection graph logic.
   candidates by `ai_metadata.canonical_action` and reports
   `target_rank_signals` with original/reranked ranks and selected/suppressed
   evidence.
+- `target_action_priority_for_query(...)` derives the same
+  `target_action_priority` map from generic Korean/English query action terms
+  without an LLM.
 - `expand_candidates_with_producers(...)` expands retrieval candidates with deterministic producers for required `kind=data` inputs; `max_hops` defaults to `1` for backward compatibility and can be raised for target-specific producer chains.
 - `normalize_graph_edge(...)`, `merge_graph_edges(...)`, and `derive_plan_trace_edges(...)` normalize structural, LLM-curated, manual, and run-observed signals into graph version 2 edge metadata.
 - `retrieve_graphify(..., include_evidence=True)` keeps the legacy response keys and adds score/evidence details for logs and UI.

@@ -12,7 +12,11 @@ Public API:
   - render_subgraph_text(tg, nodes, edges, budget) -> str
 """
 
-from graph_tool_call.graphify.catalog import build_candidate_set, expand_candidates_with_producers
+from graph_tool_call.graphify.catalog import (
+    build_candidate_set,
+    expand_candidates_with_producers,
+    target_action_priority_for_query,
+)
 from graph_tool_call.graphify.edges import (
     EVIDENCE_API_CONTRACT,
     EVIDENCE_LLM_CURATED,
@@ -74,4 +78,5 @@ __all__ = [
     "promote_api_contract_signals",
     "render_subgraph_text",
     "retrieve_graphify",
+    "target_action_priority_for_query",
 ]

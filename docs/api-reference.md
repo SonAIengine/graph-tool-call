@@ -447,10 +447,13 @@ diversity selection. The returned `target_rank_signals` keeps original rank,
 reranked rank, action priority, group key, and selected/suppressed flags:
 
 ```python
+from graph_tool_call.graphify import target_action_priority_for_query
+
+priority = target_action_priority_for_query("상품 리뷰 작성")
 candidate_set = build_candidate_set(
     target_candidates,
     graph_payload["tools"],
-    target_action_priority={"create": 5, "update": 4, "read": 2, "search": 1},
+    target_action_priority=priority,
     max_target_candidates=5,
 )
 

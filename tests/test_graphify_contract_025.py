@@ -19,6 +19,7 @@ from graph_tool_call.graphify import (
     normalize_graph_edge,
     promote_api_contract_signals,
     retrieve_graphify,
+    target_action_priority_for_query,
 )
 from graph_tool_call.ingest.openapi import ingest_openapi
 from graph_tool_call.ontology.schema import RelationType
@@ -37,6 +38,7 @@ def test_graphify_public_contract_imports():
     assert callable(build_candidate_set)
     assert callable(build_io_contract)
     assert callable(expand_candidates_with_producers)
+    assert callable(target_action_priority_for_query)
     assert callable(normalize_graph_edge)
     assert callable(merge_graph_edges)
     assert callable(derive_plan_trace_edges)
@@ -1156,6 +1158,55 @@ def test_build_candidate_set_can_rerank_targets_by_action_priority_with_signals(
     assert signals["createProductReview"]["reranked_rank"] == 1
     assert signals["createProductReview"]["action_priority"] == 5
     assert signals["listProducts"]["suppressed"] is True
+
+
+def test_target_action_priority_for_query_maps_generic_korean_and_english_intent():
+    search = target_action_priority_for_query("상품 검색")
+    read = target_action_priority_for_query("상품 상세 확인")
+    create = target_action_priority_for_query("리뷰 작성")
+    update = target_action_priority_for_query("권한 수정")
+    delete = target_action_priority_for_query("세션 revoke")
+    action = target_action_priority_for_query("send notification")
+
+    assert search["search"] > search["read"]
+    assert read["read"] > read["search"]
+    assert create["create"] > create["read"]
+    assert update["update"] > update["read"]
+    assert delete["delete"] > delete["read"]
+    assert action["action"] > action["read"]
+    assert target_action_priority_for_query("nonsense") == {}
+
+
+def test_build_candidate_set_can_use_query_derived_action_priority():
+    tools = {
+        "searchProducts": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "product", "canonical_action": "search"},
+            }
+        },
+        "getProductDetail": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "product", "canonical_action": "read"},
+            }
+        },
+        "createProductReview": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "review", "canonical_action": "create"},
+            }
+        },
+    }
+
+    result = build_candidate_set(
+        ["searchProducts", "getProductDetail", "createProductReview"],
+        tools,
+        target_action_priority=target_action_priority_for_query("상품 리뷰 작성"),
+        max_target_candidates=2,
+        max_hops=0,
+    )
+
+    assert result["target_candidates"] == ["createProductReview", "getProductDetail"]
+    assert result["target_rank_signals"][0]["name"] == "createProductReview"
+    assert result["target_rank_signals"][0]["action_priority"] == 6
 
 
 def test_edge_normalize_merge_and_trace_derivation_contract():
