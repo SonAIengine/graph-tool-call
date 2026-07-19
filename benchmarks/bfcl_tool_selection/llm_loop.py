@@ -132,6 +132,7 @@ def run_model_benchmark(
     progress: bool = False,
     progress_every: int = 25,
     retrieval_rank_hints: bool = False,
+    candidate_selection_guidance: bool = False,
 ) -> dict[str, Any]:
     """Run BFCL-compatible native tool-call evaluation with a real model."""
     if evaluator == "official":
@@ -162,6 +163,7 @@ def run_model_benchmark(
             progress=progress,
             progress_every=progress_every,
             retrieval_rank_hints=retrieval_rank_hints,
+            candidate_selection_guidance=candidate_selection_guidance,
         )
         for category in selected
     ]
@@ -187,6 +189,7 @@ def run_model_benchmark(
         "concurrency": max(1, concurrency),
         "progress": progress,
         "retrieval_rank_hints": retrieval_rank_hints,
+        "candidate_selection_guidance": candidate_selection_guidance,
         "categories": [asdict(category) for category in evaluated],
         "summary": _summarize(overall_rows, min_exact_match=min_exact_match),
     }
@@ -216,6 +219,7 @@ def evaluate_category_model(
     progress: bool = False,
     progress_every: int = 25,
     retrieval_rank_hints: bool = False,
+    candidate_selection_guidance: bool = False,
 ) -> BFCLModelCategoryEvaluation:
     question_rows = _load_jsonl(category, kind="question", data_root=data_root, ref=ref)
     answer_rows = _load_jsonl(category, kind="answer", data_root=data_root, ref=ref)
@@ -249,6 +253,7 @@ def evaluate_category_model(
         progress=progress,
         progress_every=progress_every,
         retrieval_rank_hints=retrieval_rank_hints,
+        candidate_selection_guidance=candidate_selection_guidance,
     )
     rows = [row for row in rows if row.expected_calls]
     return BFCLModelCategoryEvaluation(
@@ -284,6 +289,7 @@ def _evaluate_category_cases(
     progress: bool,
     progress_every: int,
     retrieval_rank_hints: bool,
+    candidate_selection_guidance: bool,
 ) -> list[BFCLModelCaseEvaluation]:
     max_workers = max(1, concurrency)
     started = time.perf_counter()
@@ -312,6 +318,7 @@ def _evaluate_category_cases(
                 timeout=timeout,
                 disable_thinking=disable_thinking,
                 retrieval_rank_hints=retrieval_rank_hints,
+                candidate_selection_guidance=candidate_selection_guidance,
             )
             rows[index] = row
             cache_hits += int(cache_hit)
@@ -351,6 +358,7 @@ def _evaluate_category_cases(
                 timeout=timeout,
                 disable_thinking=disable_thinking,
                 retrieval_rank_hints=retrieval_rank_hints,
+                candidate_selection_guidance=candidate_selection_guidance,
             ): index
             for index, question_row in enumerate(case_rows)
         }
@@ -394,6 +402,7 @@ def _evaluate_or_read_case(
     timeout: int,
     disable_thinking: bool,
     retrieval_rank_hints: bool,
+    candidate_selection_guidance: bool,
 ) -> tuple[BFCLModelCaseEvaluation, bool]:
     answer_row = answers_by_id.get(str(question_row.get("id"))) or {}
     cache_path = _case_cache_path(
@@ -412,6 +421,7 @@ def _evaluate_or_read_case(
         disable_thinking=disable_thinking,
         cache_namespace=cache_namespace,
         retrieval_rank_hints=retrieval_rank_hints,
+        candidate_selection_guidance=candidate_selection_guidance,
     )
     row = None if refresh_cache else _read_case_cache(cache_path)
     if row is not None:
@@ -433,6 +443,7 @@ def _evaluate_or_read_case(
         timeout=timeout,
         disable_thinking=disable_thinking,
         retrieval_rank_hints=retrieval_rank_hints,
+        candidate_selection_guidance=candidate_selection_guidance,
     )
     _write_case_cache(cache_path, row)
     return row, False
@@ -482,6 +493,7 @@ def evaluate_model_case(
     timeout: int,
     disable_thinking: bool,
     retrieval_rank_hints: bool,
+    candidate_selection_guidance: bool,
 ) -> BFCLModelCaseEvaluation:
     query = _question_text(question_row)
     expected_calls = _expected_calls(answer_row)
@@ -505,7 +517,10 @@ def evaluate_model_case(
     response = _chat(
         model=model,
         llm_url=llm_url,
-        messages=_messages_for_case(query),
+        messages=_messages_for_case(
+            query,
+            candidate_selection_guidance=candidate_selection_guidance,
+        ),
         tools=model_tools,
         tool_choice=tool_choice,
         timeout=timeout,
@@ -571,7 +586,11 @@ def evaluate_model_case(
     )
 
 
-def _messages_for_case(query: str) -> list[dict[str, str]]:
+def _messages_for_case(
+    query: str,
+    *,
+    candidate_selection_guidance: bool = False,
+) -> list[dict[str, str]]:
     system = (
         "You are evaluating function calling. Use only the provided tools. "
         "Emit native tool calls only, with no prose. If the request needs "
@@ -579,6 +598,16 @@ def _messages_for_case(query: str) -> list[dict[str, str]]:
         "Use exact argument values from the user request. Omit optional "
         "arguments unless the request explicitly sets them."
     )
+    if candidate_selection_guidance:
+        system += (
+            " Candidate selection guidance: if several tools look similar, prefer the most "
+            "specific tool whose name and description match the exact requested action. "
+            "For related multi-call requests, prefer tools from the same namespace or API "
+            "family when their actions match. Avoid adding a generic all-in-one or lower-level "
+            "helper tool when one provided tool already satisfies the requested operation. "
+            "Do not decompose one requested operation into multiple tool calls unless the user "
+            "asks for separate actions."
+        )
     return [{"role": "system", "content": system}, {"role": "user", "content": query}]
 
 
@@ -1259,6 +1288,7 @@ def _case_cache_path(
     disable_thinking: bool,
     cache_namespace: str,
     retrieval_rank_hints: bool,
+    candidate_selection_guidance: bool,
 ) -> Path | None:
     if cache_dir is None:
         return None
@@ -1280,6 +1310,7 @@ def _case_cache_path(
         "timeout": timeout,
         "disable_thinking": disable_thinking,
         "retrieval_rank_hints": retrieval_rank_hints,
+        "candidate_selection_guidance": candidate_selection_guidance,
     }
     key = hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]  # noqa: S324
     safe_case_id = re.sub(r"[^a-zA-Z0-9_.-]", "_", case_id)
@@ -1550,6 +1581,14 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--candidate-selection-guidance",
+        action="store_true",
+        help=(
+            "Add deterministic candidate-selection guidance to the system prompt. "
+            "Use as an ablation for call-count mismatch and sibling ambiguity."
+        ),
+    )
+    parser.add_argument(
         "--concurrency",
         type=int,
         default=1,
@@ -1615,6 +1654,7 @@ def main(argv: list[str] | None = None) -> int:
             progress=args.progress,
             progress_every=args.progress_every,
             retrieval_rank_hints=args.retrieval_rank_hints,
+            candidate_selection_guidance=args.candidate_selection_guidance,
         )
     except ImportError as exc:
         parser.error(str(exc))
