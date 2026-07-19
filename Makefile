@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-acceptance xgen-scale-sweep xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-acceptance xgen-scale-sweep xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -57,6 +57,24 @@ bfcl-llm-benchmark:
 
 bfcl-sweep:
 	poetry run python -m benchmarks.bfcl_tool_selection.sweep --categories simple_python --limit 5 --top-ks 3,5 --model qwen3:4b
+
+bfcl-027-gate:
+	poetry run python -m benchmarks.bfcl_tool_selection.sweep \
+		--categories "$${CATEGORIES:-simple_python,multiple,parallel,parallel_multiple}" \
+		--limit "$${LIMIT:-25}" \
+		--top-ks "$${TOP_KS:-5}" \
+		--tool-sources "$${TOOL_SOURCES:-row,retrieved}" \
+		--repeats "$${REPEATS:-3}" \
+		--model "$${MODEL:-qwen3.6-27b}" \
+		--llm-url "$${LLM_URL:-http://127.0.0.1:18000/v1}" \
+		--disable-thinking \
+		--candidate-selection-guidance \
+		--cohesive-namespace-candidates \
+		--cache-dir "$${CACHE_DIR:-/tmp/gtc-bfcl-027-gate-cache}" \
+		--concurrency "$${CONCURRENCY:-6}" \
+		--progress \
+		--progress-every "$${PROGRESS_EVERY:-10}" \
+		--output "$${OUT:-/tmp/gtc-bfcl-027-gate.json}"
 
 bfcl-failure-subset:
 	@test -n "$(REPORT)" || (echo "Usage: make bfcl-failure-subset REPORT=/tmp/report.json [OUT=/tmp/case_ids.txt]" && exit 2)

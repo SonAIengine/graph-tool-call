@@ -544,6 +544,11 @@ LLM_URL=http://127.0.0.1:8000/v1 \
 DISABLE_THINKING=1 \
 SMOKE_LIMIT=100 \
 make research-check-smoke
+
+MODEL=qwen3.6-27b \
+LLM_URL=http://127.0.0.1:18000/v1 \
+OUT=/tmp/gtc-bfcl-027-gate.json \
+make bfcl-027-gate
 ```
 
 Full model benchmark is allowed only when:
