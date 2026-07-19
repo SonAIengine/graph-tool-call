@@ -119,6 +119,46 @@ def test_sweep_milestone_gate_reports_xgen_027_bottlenecks():
     assert summary["category_repeat_groups"][0]["category"] == "parallel_multiple"
 
 
+def test_sweep_summary_pairs_row_and_retrieved_failures():
+    summary = sweep._summarize_sweep(
+        [
+            _paired_case_run(
+                "row",
+                [
+                    ("simple_python_1", "pass"),
+                    ("simple_python_2", "pass"),
+                    ("simple_python_3", "argument_value_mismatch"),
+                    ("simple_python_4", "call_count_mismatch"),
+                ],
+            ),
+            _paired_case_run(
+                "retrieved",
+                [
+                    ("simple_python_1", "pass"),
+                    ("simple_python_2", "candidate_ambiguity"),
+                    ("simple_python_3", "pass"),
+                    ("simple_python_4", "retrieval_miss"),
+                ],
+            ),
+        ]
+    )
+
+    delta = summary["row_vs_retrieved_deltas"][0]
+
+    assert delta["paired_cases"] == 4
+    assert delta["both_pass"] == 1
+    assert delta["row_pass_retrieved_fail"] == 1
+    assert delta["row_fail_retrieved_pass"] == 1
+    assert delta["both_fail"] == 1
+    assert delta["row_pass_count"] == 2
+    assert delta["retrieved_exact_on_row_pass"] == 0.5
+    assert delta["row_pass_retrieved_fail_rate"] == 0.5
+    assert delta["row_pass_retrieved_fail_breakdown"] == {"candidate_ambiguity": 1}
+    assert delta["both_fail_retrieved_breakdown"] == {"retrieval_miss": 1}
+    assert delta["row_pass_retrieved_fail_case_ids"] == ["simple_python_2"]
+    assert delta["both_fail_case_ids"] == ["simple_python_4"]
+
+
 def test_write_sweep_bfcl_result_files_separates_runs(tmp_path):
     report = {
         "official_model_name": "qwen3-32b-FC",
@@ -148,6 +188,48 @@ def test_write_sweep_bfcl_result_files_separates_runs(tmp_path):
         (retrieved_path / "BFCL_v4_multiple_result.json").read_text(encoding="utf-8")
     )
     assert retrieved_row["graph_tool_call"]["tool_source"] == "retrieved"
+
+
+def _paired_case_run(tool_source: str, cases: list[tuple[str, str]]) -> dict[str, object]:
+    passed = sum(1 for _case_id, failure in cases if failure == "pass")
+    return {
+        "repeat": 1,
+        "tool_source": tool_source,
+        "top_k": 5,
+        "report": {
+            "summary": {
+                "cases": len(cases),
+                "retrieval_recall_at_k": 1.0,
+                "model_tool_call_rate": 1.0,
+                "strict_exact_match": passed / len(cases),
+                "evaluator_exact_match": passed / len(cases),
+                "avg_latency_ms": 100.0,
+                "failure_breakdown": {"pass": passed},
+            },
+            "categories": [
+                {
+                    "category": "simple_python",
+                    "summary": {
+                        "cases": len(cases),
+                        "retrieval_recall_at_k": 1.0,
+                        "model_tool_call_rate": 1.0,
+                        "strict_exact_match": passed / len(cases),
+                        "evaluator_exact_match": passed / len(cases),
+                        "avg_latency_ms": 100.0,
+                        "failure_breakdown": {"pass": passed},
+                    },
+                    "cases": [
+                        {
+                            "case_id": case_id,
+                            "failure_category": failure,
+                            "evaluator_exact_match": 1.0 if failure == "pass" else 0.0,
+                        }
+                        for case_id, failure in cases
+                    ],
+                }
+            ],
+        },
+    }
 
 
 def _single_case_report(tool_source: str):
