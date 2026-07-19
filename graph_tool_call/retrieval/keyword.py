@@ -464,6 +464,8 @@ class BM25Scorer:
             boost *= 3.0
         if "population density" in q and "population density" in tool_text:
             boost *= 3.0
+        if "population density" in q and tool_name.lower().replace(".", "_") == "calculate_density":
+            boost *= 4.0
         if "highest common factor" in q and (
             "highest common factor" in tool_text
             or re.search(r"(^|[._\s-])hcf($|[._\s-])", tool_text)

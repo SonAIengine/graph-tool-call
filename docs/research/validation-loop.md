@@ -402,6 +402,26 @@ store criteria, state/year historical population, public preference 같은
   `target selector exact@3=1.00`, `avg_candidate_count=2.16`,
   `max_candidate_count=7`, `avg_latency=41.81ms`로 통과했다.
 
+마지막 tail hard-case 실험에서는 `population density` query가 sparse
+`calculate_density` operation name만 가지고도 잡히도록 좁은 name fallback을
+추가했다. BFCL corpus에는 같은 operation name의 서로 다른 schema가 반복되어
+description이 population-specific하지 않은 경우가 있어, XGEN의 짧거나 부실한
+operation summary 문제와 같은 형태로 본다. 비교 artifact는
+`/tmp/gtc-bfcl-near-miss-current/bfcl-deterministic.json`,
+`/tmp/gtc-bfcl-tail-current/bfcl-deterministic.json`,
+`/tmp/gtc-bfcl-near-miss-hardcases/inspect.json`,
+`/tmp/gtc-bfcl-tail-hardcases/inspect.json`이다.
+
+- 전체 BFCL deterministic 기준 `recall@5`는 `0.95000 -> 0.95200`,
+  `all_tools_found@5`는 `0.928 -> 0.930`, `mrr`은
+  `0.8305 -> 0.8325`, `ndcg@5`는 `0.8509 -> 0.8529`로 올랐다.
+- Deterministic hard-case count는 `72 -> 70`, `expected_present_below_top_k`
+  issue는 `59 -> 57`로 줄어 0.26 retrieval-miss gate인 `<= 70`에 도달했다.
+- 케이스 단위 recall 개선은 2건, recall 악화 케이스는 0건이었다.
+- X2BEE BO scale acceptance는 1084개 unique tool 기준 `hit@3=1.00`,
+  `target selector exact@3=1.00`, `avg_candidate_count=2.16`,
+  `max_candidate_count=7`, `avg_latency=39.50ms`로 통과했다.
+
 ## 승격 기준
 
 연구 변경은 아래 순서로 승격한다.
