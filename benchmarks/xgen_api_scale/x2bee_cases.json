@@ -9,8 +9,8 @@
     "avg_required_input_coverage": 0.85,
     "avg_required_input_resolution_coverage": 1.0,
     "max_unresolved_required_input_count": 0,
-    "max_avg_candidate_count": 5.0,
-    "max_candidate_count": 15.0,
+    "max_avg_candidate_count": 3.0,
+    "max_candidate_count": 8.0,
     "max_avg_latency_ms": 50.0
   },
   "cases": [

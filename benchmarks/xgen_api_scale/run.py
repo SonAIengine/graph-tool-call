@@ -986,11 +986,11 @@ def _plan_readiness(
     target_tool = tools_by_name.get(selected_target) or {}
     consumes = _data_consumes(target_tool)
     input_support: list[dict[str, Any]] = []
-    producer_candidates: list[str] = []
     supported = 0
     required_total = 0
     required_supported = 0
     required_resolved = 0
+    required_producer_choices: list[list[str]] = []
 
     for consume in consumes:
         required = bool(consume.get("required"))
@@ -999,6 +999,7 @@ def _plan_readiness(
         producers = _producer_candidates_for_field(
             consume,
             producer_index=producer_index,
+            tools_by_name=tools_by_name,
             exclude={selected_target},
             max_producers=max_producers_per_field,
         )
@@ -1006,7 +1007,7 @@ def _plan_readiness(
             supported += 1
             if required:
                 required_supported += 1
-                producer_candidates.extend(producers)
+                required_producer_choices.append(producers)
         issue_code = _readiness_issue_code(consume, supported=bool(producers))
         resolution = _input_resolution(issue_code, supported=bool(producers))
         if required and resolution != "unresolved":
@@ -1025,7 +1026,7 @@ def _plan_readiness(
             }
         )
 
-    producers = _dedupe(producer_candidates)
+    producers = _select_representative_producers(required_producer_choices, tools_by_name)
     plan_candidates = _dedupe([selected_target, *producers])
     return {
         "plan_candidates": plan_candidates,
@@ -1145,13 +1146,111 @@ def _producer_candidates_for_field(
     consume: dict[str, Any],
     *,
     producer_index: dict[str, list[str]],
+    tools_by_name: dict[str, dict[str, Any]],
     exclude: set[str],
     max_producers: int,
 ) -> list[str]:
     producers: list[str] = []
     for token in _contract_tokens(consume):
         producers.extend(name for name in producer_index.get(token, []) if name not in exclude)
-    return _dedupe(producers)[: max(0, max_producers)]
+    return _rank_producer_candidates(_dedupe(producers), tools_by_name)[: max(0, max_producers)]
+
+
+def _rank_producer_candidates(
+    producer_names: list[str],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[str]:
+    return sorted(
+        producer_names,
+        key=lambda name: (
+            -_producer_quality_score(name, tools_by_name),
+            producer_names.index(name),
+            name,
+        ),
+    )
+
+
+def _select_representative_producers(
+    per_field_candidates: list[list[str]],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[str]:
+    selected: list[str] = []
+    uncovered = {index for index, candidates in enumerate(per_field_candidates) if any(candidates)}
+    while uncovered:
+        scored: list[tuple[int, int, int, str]] = []
+        candidate_names = _dedupe(
+            [
+                name
+                for index in sorted(uncovered)
+                for name in per_field_candidates[index]
+                if name not in selected
+            ]
+        )
+        if not candidate_names:
+            break
+        for name in candidate_names:
+            covered = {index for index in uncovered if name in per_field_candidates[index]}
+            if not covered:
+                continue
+            first_rank = min(per_field_candidates[index].index(name) for index in covered)
+            scored.append(
+                (
+                    len(covered),
+                    _producer_quality_score(name, tools_by_name),
+                    -first_rank,
+                    name,
+                )
+            )
+        if not scored:
+            break
+        _coverage, _quality, _rank, name = max(scored)
+        selected.append(name)
+        uncovered = {index for index in uncovered if name not in per_field_candidates[index]}
+    return selected
+
+
+def _producer_quality_score(name: str, tools_by_name: dict[str, dict[str, Any]]) -> int:
+    tool = tools_by_name.get(name) or {}
+    metadata = tool.get("metadata") or {}
+    ai = metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
+    action = str(ai.get("canonical_action") or "").strip().lower()
+    method = str(metadata.get("method") or "").strip().lower()
+    lower_name = name.lower()
+    score = 0
+    if action in {"search", "list", "lookup"}:
+        score += 80
+    elif action == "read":
+        score += 70
+    elif action in {"create", "update", "delete"}:
+        score -= 60
+    elif action == "action":
+        score -= 20
+    if lower_name.startswith(("get", "list", "search", "find", "query", "select", "fetch")):
+        score += 40
+    if any(term in lower_name for term in ("list", "search", "query", "lookup")):
+        score += 15
+    if lower_name.startswith(
+        (
+            "save",
+            "insert",
+            "update",
+            "modify",
+            "delete",
+            "remove",
+            "reject",
+            "withdraw",
+            "approve",
+            "cancel",
+            "create",
+            "register",
+            "send",
+            "upload",
+        )
+    ):
+        score -= 50
+    if method == "get":
+        score += 10
+    return score
 
 
 def _contract_rows(tool: dict[str, Any], key: str) -> list[dict[str, Any]]:
