@@ -207,7 +207,10 @@ so POST operations with query/header parameters are rendered correctly. It also
 honors common OpenAPI parameter serialization rules such as `form`,
 `spaceDelimited`, `pipeDelimited`, `deepObject`, `simple`, `label`, `matrix`,
 `explode`, and `allowReserved`. JSON parameter `content` values are serialized
-as one encoded parameter value instead of exploded object fields. For request
+as one encoded parameter value instead of exploded object fields. Nested
+`deepObject` query filters are rendered with deterministic bracket notation
+such as `filter[range][minPrice]=1000`; primitive arrays repeat the same
+bracketed field name and structured arrays use numeric indexes. For request
 bodies it preserves declared media type candidates and can render `application/json`,
 `application/x-www-form-urlencoded`, and `multipart/form-data`; binary/file-like
 arguments select the multipart candidate when one is declared. OpenAPI

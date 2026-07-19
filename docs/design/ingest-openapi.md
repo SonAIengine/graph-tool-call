@@ -211,6 +211,10 @@ generic schema만 있는 API에서도 LLM이 `keyword`, `filters` 같은 body ar
 
 `HttpExecutor`는 이 metadata를 사용해 query/path/header/cookie parameter의
 OpenAPI serialization 규칙(`style`, `explode`, `allowReserved`)을 반영한다.
+`style=deepObject` query object는 `filter[status]=SALE` 같은 1-depth 필드뿐
+아니라 `filter[range][minPrice]=1000` 같은 nested object도 bracket notation으로
+재귀 직렬화한다. primitive array는 같은 bracket field를 반복하고, object array는
+`filter[sort][0][field]=createdAt`처럼 index를 붙여 deterministic하게 보낸다.
 request body는 `application/json`, `application/x-www-form-urlencoded`,
 `multipart/form-data`를 렌더링하며, binary/file-like 인자가 있고 multipart
 후보가 선언되어 있으면 multipart를 선택한다.

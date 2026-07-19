@@ -648,6 +648,51 @@ class TestBuildRequest:
             "filter[status]=paid&filter[siteNo]=10&q=/goods?x=1"
         )
 
+    def test_openapi_deep_object_query_serializes_nested_filters(self):
+        tool = _make_tool(
+            name="searchItems",
+            method="GET",
+            path="/items",
+            params=[
+                ToolParam(name="filter", type="object"),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {
+                    "name": "filter",
+                    "in": "query",
+                    "style": "deepObject",
+                    "explode": True,
+                },
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(
+            tool,
+            {
+                "filter": {
+                    "status": "SALE",
+                    "range": {"minPrice": 1000, "maxPrice": 5000},
+                    "tags": ["new", "best"],
+                    "sort": [{"field": "createdAt", "direction": "desc"}],
+                    "ignored": None,
+                }
+            },
+        )
+
+        assert req.full_url == (
+            "https://api.example.com/items?"
+            "filter[status]=SALE&"
+            "filter[range][minPrice]=1000&"
+            "filter[range][maxPrice]=5000&"
+            "filter[tags]=new&"
+            "filter[tags]=best&"
+            "filter[sort][0][field]=createdAt&"
+            "filter[sort][0][direction]=desc"
+        )
+
     def test_openapi_path_header_and_cookie_serialization_styles(self):
         tool = _make_tool(
             name="scopedItems",

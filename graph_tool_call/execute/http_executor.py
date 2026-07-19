@@ -1557,16 +1557,11 @@ def _serialize_query_parameter(
         return [_query_pair(name, content_text, allow_reserved=allow_reserved)]
 
     if style == "deepObject" and isinstance(value, dict):
-        return [
-            _query_pair(
-                f"{name}[{key}]",
-                item,
-                allow_reserved=allow_reserved,
-                name_safe_extra="[]",
-            )
-            for key, item in value.items()
-            if item is not None
-        ]
+        return _serialize_deep_object_query_parameter(
+            name,
+            value,
+            allow_reserved=allow_reserved,
+        )
 
     if style == "spaceDelimited" and _is_sequence(value):
         return [
@@ -1621,6 +1616,75 @@ def _serialize_query_parameter(
         ]
 
     return [_query_pair(name, value, allow_reserved=allow_reserved)]
+
+
+def _serialize_deep_object_query_parameter(
+    name: str,
+    value: dict[Any, Any],
+    *,
+    allow_reserved: bool,
+) -> list[str]:
+    segments: list[str] = []
+    _append_deep_object_query_segments(
+        segments,
+        str(name),
+        value,
+        allow_reserved=allow_reserved,
+    )
+    return segments
+
+
+def _append_deep_object_query_segments(
+    segments: list[str],
+    prefix: str,
+    value: Any,
+    *,
+    allow_reserved: bool,
+) -> None:
+    if value is None:
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if item is None:
+                continue
+            _append_deep_object_query_segments(
+                segments,
+                f"{prefix}[{key}]",
+                item,
+                allow_reserved=allow_reserved,
+            )
+        return
+    if _is_sequence(value):
+        if all(not isinstance(item, dict | list | tuple) for item in value):
+            for item in value:
+                if item is not None:
+                    segments.append(
+                        _query_pair(
+                            prefix,
+                            item,
+                            allow_reserved=allow_reserved,
+                            name_safe_extra="[]",
+                        )
+                    )
+            return
+        for index, item in enumerate(value):
+            if item is None:
+                continue
+            _append_deep_object_query_segments(
+                segments,
+                f"{prefix}[{index}]",
+                item,
+                allow_reserved=allow_reserved,
+            )
+        return
+    segments.append(
+        _query_pair(
+            prefix,
+            value,
+            allow_reserved=allow_reserved,
+            name_safe_extra="[]",
+        )
+    )
 
 
 def _query_pair(
