@@ -100,6 +100,9 @@ def test_xgen_api_scale_run_cli_accepts_verified_manifest(tmp_path: Path):
     assert report["status"] == "pass"
     assert report["scale"]["unique_tool_count"] == 1
     assert report["specs"][0]["source"] == manifest["specs"][0]["path"]
+    assert report["snapshot_manifests"][0]["manifest_path"] == str(manifest["manifest_path"])
+    assert report["snapshot_manifests"][0]["spec_count"] == 1
+    assert report["snapshot_manifests"][0]["specs"][0]["sha256"] == manifest["specs"][0]["sha256"]
 
 
 def test_xgen_api_scale_manifest_detects_snapshot_tampering(tmp_path: Path):

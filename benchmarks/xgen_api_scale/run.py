@@ -20,7 +20,7 @@ from urllib.parse import unquote
 
 from benchmarks.metrics import mrr, recall_at_k
 from benchmarks.xgen_api_scale.gate import evaluate_gate
-from benchmarks.xgen_api_scale.manifest import spec_sources_from_manifest
+from benchmarks.xgen_api_scale.manifest import load_snapshot_manifest
 from graph_tool_call import ToolGraph, __version__
 from graph_tool_call.core.contract_matching import description_alias_key
 from graph_tool_call.graphify import (
@@ -1779,7 +1779,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     contract_signal_options = _contract_signal_options_from_args(args)
-    spec_sources = _spec_sources_from_args(args)
+    spec_sources, snapshot_manifests = _spec_sources_from_args(args)
 
     if args.compare_contract_signals:
         report = run_contract_signal_ablation(
@@ -1829,6 +1829,8 @@ def main(argv: list[str] | None = None) -> int:
             promote_contract_signals=args.promote_contract_signals,
             contract_signal_options=contract_signal_options,
         )
+    if snapshot_manifests:
+        report["snapshot_manifests"] = snapshot_manifests
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1843,12 +1845,49 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if report["status"] == "pass" else 1
 
 
-def _spec_sources_from_args(args: argparse.Namespace) -> list[str] | None:
+def _spec_sources_from_args(
+    args: argparse.Namespace,
+) -> tuple[list[str] | None, list[dict[str, Any]]]:
     sources: list[str] = []
+    snapshot_manifests: list[dict[str, Any]] = []
     for manifest_path in args.manifest or []:
-        sources.extend(spec_sources_from_manifest(manifest_path))
+        manifest = load_snapshot_manifest(manifest_path)
+        sources.extend(str(row["path"]) for row in manifest["specs"])
+        snapshot_manifests.append(_snapshot_manifest_provenance(manifest))
     sources.extend(args.spec or [])
-    return sources or None
+    return sources or None, snapshot_manifests
+
+
+def _snapshot_manifest_provenance(manifest: dict[str, Any]) -> dict[str, Any]:
+    spec_keys = [
+        "index",
+        "label",
+        "source",
+        "path",
+        "sha256",
+        "bytes",
+        "title",
+        "version",
+        "openapi_version",
+        "path_count",
+        "operation_count",
+    ]
+    return {
+        "snapshot": manifest.get("snapshot"),
+        "manifest_path": manifest.get("manifest_path"),
+        "created_at": manifest.get("created_at"),
+        "graph_tool_call_version": manifest.get("graph_tool_call_version"),
+        "source_url": manifest.get("source_url"),
+        "spec_count": manifest.get("spec_count"),
+        "operation_count": manifest.get("operation_count"),
+        "path_count": manifest.get("path_count"),
+        "specs_csv": manifest.get("specs_csv"),
+        "specs": [
+            {key: row.get(key) for key in spec_keys if key in row}
+            for row in manifest.get("specs", [])
+            if isinstance(row, dict)
+        ],
+    }
 
 
 if __name__ == "__main__":  # pragma: no cover
