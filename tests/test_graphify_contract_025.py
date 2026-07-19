@@ -1283,6 +1283,79 @@ def test_build_tool_equivalence_groups_returns_surface_evidence_without_suppress
     assert candidate_set["target_equivalence_groups"][0]["suppressed"] == []
 
 
+def test_build_tool_equivalence_groups_recognizes_domain_surface_siblings():
+    tools = {
+        "currency_exchange.convert": {
+            "name": "currency_exchange.convert",
+            "description": (
+                "Converts a value from one currency to another using the latest exchange rate."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "amount": {},
+                    "from_currency": {},
+                    "to_currency": {},
+                    "live_conversion": {},
+                },
+                "required": ["amount", "from_currency", "to_currency"],
+            },
+        },
+        "currency_conversion": {
+            "name": "currency_conversion",
+            "description": "Convert a specific amount from one currency to another.",
+            "parameters": {
+                "type": "object",
+                "properties": {"amount": {}, "from_currency": {}, "to_currency": {}},
+                "required": ["amount", "from_currency", "to_currency"],
+            },
+        },
+        "integral": {
+            "name": "integral",
+            "description": "Calculate the definite integral for a function between bounds.",
+            "parameters": {
+                "type": "object",
+                "properties": {"function": {}, "start_x": {}, "end_x": {}},
+                "required": ["function", "start_x", "end_x"],
+            },
+        },
+        "calculate_area_under_curve": {
+            "name": "calculate_area_under_curve",
+            "description": "Calculate the area under a mathematical function within an interval.",
+            "parameters": {
+                "type": "object",
+                "properties": {"function": {}, "interval": {}, "method": {}},
+                "required": ["function", "interval"],
+            },
+        },
+        "get_fibonacci_sequence": {
+            "name": "get_fibonacci_sequence",
+            "description": "Generate a Fibonacci sequence up to a specific number of items.",
+            "parameters": {
+                "type": "object",
+                "properties": {"count": {}},
+                "required": ["count"],
+            },
+        },
+        "calculate_fibonacci": {
+            "name": "calculate_fibonacci",
+            "description": "Calculate the Fibonacci series up to a specific position.",
+            "parameters": {
+                "type": "object",
+                "properties": {"position": {}},
+                "required": ["position"],
+            },
+        },
+    }
+
+    groups = build_tool_equivalence_groups(list(tools), tools)
+    group_members = {tuple(group["members"]) for group in groups}
+
+    assert ("currency_exchange.convert", "currency_conversion") in group_members
+    assert ("integral", "calculate_area_under_curve") in group_members
+    assert ("get_fibonacci_sequence", "calculate_fibonacci") in group_members
+
+
 def test_target_action_priority_for_query_maps_generic_korean_and_english_intent():
     search = target_action_priority_for_query("상품 검색")
     read = target_action_priority_for_query("상품 상세 확인")

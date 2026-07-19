@@ -56,7 +56,7 @@ from graph_tool_call.graphify import build_tool_equivalence_groups
 
 DEFAULT_OFFICIAL_MODEL_NAME = "qwen3-32b-FC"
 BFCL_RESULT_ARGUMENT_FORMATS = ("json-string", "decoded")
-MODEL_CASE_CACHE_VERSION = 15
+MODEL_CASE_CACHE_VERSION = 17
 
 
 @dataclass(frozen=True)
@@ -533,6 +533,12 @@ def evaluate_model_case(
         question_row=question_row,
         tools_by_name=tools_by_name,
     )
+    presented_tools = _suppress_non_priority_equivalent_names(
+        presented_tools,
+        preferred_equivalent_names,
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
     presented_tools = _prioritize_candidate_names(presented_tools, preferred_equivalent_names)
     raw_tools = _presented_raw_tools(
         presented_tools,
@@ -649,7 +655,10 @@ def _messages_for_case(
         "object or dict arguments, keep nested fields inside that argument value; "
         "do not flatten them into top-level arguments. Preserve symbolic data "
         "references such as data['sales'] exactly as strings; do not replace "
-        "them with made-up arrays or sample values."
+        "them with made-up arrays or sample values. If the same tool must be "
+        "applied to multiple distinct entities, times, or parameter sets, emit "
+        "one tool call per distinct set; do not merge them into array arguments "
+        "unless the schema explicitly asks for an array."
     )
     if candidate_selection_guidance:
         system += (
@@ -931,6 +940,27 @@ def _prioritize_candidate_names(names: list[str], priority_names: set[str]) -> l
     return priority + remaining
 
 
+def _suppress_non_priority_equivalent_names(
+    names: list[str],
+    priority_names: set[str],
+    *,
+    question_row: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[str]:
+    if not priority_names:
+        return list(names)
+
+    combined_tools = dict(tools_by_name)
+    combined_tools.update(_tools_by_name([question_row]))
+    suppressed: set[str] = set()
+    for group in build_tool_equivalence_groups(names, combined_tools):
+        members = set(group.get("members") or [])
+        if not members & priority_names:
+            continue
+        suppressed.update(members - priority_names)
+    return [name for name in names if name not in suppressed]
+
+
 def _model_tool_description(
     raw_tool: dict[str, Any],
     *,
@@ -1130,6 +1160,8 @@ def _looks_like_decimal_rate_field(name: str, schema: dict[str, Any]) -> bool:
         return False
     description = str(schema.get("description") or "").lower()
     if any(marker in description for marker in ("percent point", "percentage point")):
+        return False
+    if re.search(r"\bin\s+(percent|percentage)\b|\bas\s+(a\s+)?percent(age)?\b", description):
         return False
     return True
 

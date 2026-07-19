@@ -22,6 +22,7 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     _prepare_tools_for_model,
     _presented_raw_tools,
     _prioritize_candidate_names,
+    _suppress_non_priority_equivalent_names,
     run_model_benchmark,
     write_bfcl_result_files,
 )
@@ -192,6 +193,58 @@ def test_prioritize_candidate_names_moves_priority_surfaces_to_front():
     ) == ["solve_quadratic", "solve_quadratic_equation", "algebra.quadratic_roots"]
 
 
+def test_suppress_non_priority_equivalent_names_keeps_case_surface_only():
+    question_row = {
+        "id": "simple_python_19",
+        "function": [
+            {
+                "name": "math.gcd",
+                "description": "Compute the greatest common divisor of two numbers.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {"num1": {}, "num2": {}},
+                    "required": ["num1", "num2"],
+                },
+            }
+        ],
+    }
+    tools_by_name = {
+        "math.gcd": question_row["function"][0],
+        "number_theory.gcd": {
+            "name": "number_theory.gcd",
+            "description": "Compute the greatest common divisor of two given integers.",
+            "parameters": {
+                "type": "dict",
+                "properties": {"number1": {}, "number2": {}},
+                "required": ["number1", "number2"],
+            },
+        },
+        "math.hcf": {
+            "name": "math.hcf",
+            "description": "Calculate the highest common factor of two numbers.",
+            "parameters": {
+                "type": "dict",
+                "properties": {"number1": {}, "number2": {}},
+                "required": ["number1", "number2"],
+            },
+        },
+        "calculate_average": {
+            "name": "calculate_average",
+            "description": "Calculates the average of a list of numbers.",
+            "parameters": {"type": "dict", "properties": {}, "required": []},
+        },
+    }
+
+    names = _suppress_non_priority_equivalent_names(
+        ["math.gcd", "number_theory.gcd", "calculate_average", "math.hcf"],
+        {"math.gcd"},
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
+
+    assert names == ["math.gcd", "calculate_average"]
+
+
 def test_normalized_parameters_add_argument_value_preservation_hints():
     schema = _normalize_parameters(
         {
@@ -204,6 +257,10 @@ def test_normalized_parameters_add_argument_value_preservation_hints():
                 "interest_rate": {
                     "type": "float",
                     "description": "The annual interest rate.",
+                },
+                "depreciation_rate": {
+                    "type": "integer",
+                    "description": "The annual depreciation rate in percentage.",
                 },
                 "gradeDict": {
                     "type": "dict",
@@ -230,6 +287,7 @@ def test_normalized_parameters_add_argument_value_preservation_hints():
     assert "pass true" in properties["formatted"]["description"]
     assert "does not explicitly request false" in properties["formatted"]["description"]
     assert "pass the decimal fraction 0.04" in properties["interest_rate"]["description"]
+    assert "pass the decimal fraction" not in properties["depreciation_rate"]["description"]
     assert "Pass a JSON object" in properties["gradeDict"]["description"]
     assert "not as top-level arguments" in properties["gradeDict"]["description"]
     assert properties["gradeDict"]["additionalProperties"] is True
@@ -249,6 +307,7 @@ def test_messages_can_include_candidate_selection_guidance():
     assert "never invent extra argument names" in plain[0]["content"]
     assert "do not flatten them into top-level arguments" in plain[0]["content"]
     assert "Preserve symbolic data references" in plain[0]["content"]
+    assert "one tool call per distinct set" in plain[0]["content"]
     assert "Candidate selection guidance" not in plain[0]["content"]
     assert "Candidate selection guidance" in guided[0]["content"]
     assert "same namespace or API family" in guided[0]["content"]

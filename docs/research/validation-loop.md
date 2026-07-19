@@ -192,6 +192,19 @@ order를 분리한다. Fresh qwen3.6-27B run
 `/tmp/gtc-bfcl-neardup-case-local-order.json` 기준 4-case near-duplicate subset은
 retrieval@5 `1.00`, evaluator exact `1.00`, failure tags `{}`다.
 
+`2026-07-19` equivalent sibling pruning pass는 case-local surface가 있는
+equivalence group에서 non-priority sibling을 model-facing list에서 숨긴다.
+동시에 equivalence evidence가 currency conversion, definite integral/area under
+curve, Fibonacci sequence/series, GCD/HCF surface를 더 잘 묶게 했다. Fresh
+qwen3.6-27B 10-hardcase run
+`/tmp/gtc-bfcl-equivalent-sibling-pruning-hardcases-v2.json`은 10건 중 6건을
+pass로 회복했고, 100-case middle sweep
+`/tmp/gtc-bfcl-equivalent-sibling-pruning-limit25-sweep.json`은 retrieved exact
+`0.96`, retrieval@5 `0.99`, row-source preservation `0.98`,
+`parallel_multiple` exact `1.00`으로 `xgen-0.27` gate를 pass했다. 남은
+retrieval-layer loss는 `multiple_24` route retrieval miss와 `parallel_3`
+sequence-only plus sequence+3D over-decomposition이다.
+
 ## 실행 타깃
 
 ```bash

@@ -321,9 +321,17 @@ Required work:
     exact를 `1.00`으로 만들었다. 이 pass는 retrieved list 자체를 바꾸지 않고
     presentation order만 기록하므로 search evidence와 model-facing selection을
     따로 비교할 수 있다.
-    다음 병목은 이 두 pass를 100-case/full sweep으로 넓혔을 때 남는
-    `parallel_multiple` candidate ambiguity, repeated-call grouping, row-source에서도
-    실패하는 모델 상한 케이스다. Row-source에서도 실패한 repeated-call /
+    equivalent sibling pruning pass에서는 case-local surface가 있는 equivalence
+    group의 non-priority sibling을 model-facing list에서 숨기고, currency,
+    definite-integral/area-under-curve, Fibonacci sequence/series, GCD/HCF
+    equivalence evidence를 보강했다. 100-case middle sweep
+    `/tmp/gtc-bfcl-equivalent-sibling-pruning-limit25-sweep.json` 기준 retrieved
+    exact는 `0.90 -> 0.96`, row-source preservation은 `0.928 -> 0.98`,
+    `parallel_multiple` exact는 `0.88 -> 1.00`으로 올라 `xgen-0.27` gate를
+    pass했다.
+    다음 병목은 `multiple_24`처럼 expected tool이 top-5 밖에 있는 route retrieval
+    miss와 `parallel_3`처럼 lower-level sequence-only tool을 sequence+3D tool과
+    함께 호출하는 over-decomposition이다. Row-source에서도 실패한 repeated-call /
     argument mismatch는 retrieval layer 손실과 분리해서 모델 상한 및 tool schema
     표현 문제로 본다.
 
