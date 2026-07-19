@@ -1111,7 +1111,101 @@ def _failure_tags(
         tools_by_name=tools_by_name,
     ):
         tags.append("near_duplicate_tool_surface")
-    return tags
+    if failure_category == "argument_value_mismatch":
+        tags.extend(_argument_failure_tags(expected_calls, predicted_calls))
+    return list(dict.fromkeys(tags))
+
+
+def _argument_failure_tags(
+    expected_calls: list[ExpectedToolCall],
+    predicted_calls: list[PredictedToolCall],
+) -> list[str]:
+    tags: list[str] = []
+    for expected, predicted in _paired_calls_by_name(expected_calls, predicted_calls):
+        unexpected_args = set(predicted.arguments) - set(expected.arguments)
+        if unexpected_args:
+            tags.append("unexpected_argument")
+
+        for arg_name, possible_values in expected.arguments.items():
+            if arg_name not in predicted.arguments:
+                if _structured_possible_values(possible_values):
+                    tags.append("structured_value_missing")
+                continue
+            value = predicted.arguments[arg_name]
+            if _value_matches(value, possible_values):
+                continue
+            if _allows_missing(possible_values):
+                tags.append("optional_value_mismatch")
+            if _structured_value_missing(value, possible_values):
+                tags.append("structured_value_missing")
+            if _percentage_scale_mismatch(value, possible_values):
+                tags.append("percentage_scale_mismatch")
+            if _data_reference_substitution(value, possible_values):
+                tags.append("data_reference_substitution")
+    return list(dict.fromkeys(tags))
+
+
+def _paired_calls_by_name(
+    expected_calls: list[ExpectedToolCall],
+    predicted_calls: list[PredictedToolCall],
+) -> list[tuple[ExpectedToolCall, PredictedToolCall]]:
+    pairs: list[tuple[ExpectedToolCall, PredictedToolCall]] = []
+    used: set[int] = set()
+    for expected in expected_calls:
+        for index, predicted in enumerate(predicted_calls):
+            if index in used or predicted.name != expected.name:
+                continue
+            pairs.append((expected, predicted))
+            used.add(index)
+            break
+    return pairs
+
+
+def _structured_possible_values(possible_values: list[Any]) -> bool:
+    return any(isinstance(value, dict) for value in possible_values)
+
+
+def _structured_value_missing(value: Any, possible_values: list[Any]) -> bool:
+    if not _structured_possible_values(possible_values):
+        return False
+    return value is None or value == "" or value == [] or value == {}
+
+
+def _percentage_scale_mismatch(value: Any, possible_values: list[Any]) -> bool:
+    numeric = _coerce_number(value)
+    if numeric is None:
+        return False
+    for possible in possible_values:
+        expected = _coerce_number(possible)
+        if expected is None or expected == 0:
+            continue
+        if _numbers_close(numeric, expected * 100) or _numbers_close(numeric * 100, expected):
+            return True
+    return False
+
+
+def _data_reference_substitution(value: Any, possible_values: list[Any]) -> bool:
+    if not isinstance(value, list | dict):
+        return False
+    return any(_looks_like_data_reference(possible) for possible in possible_values)
+
+
+def _looks_like_data_reference(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    return bool(re.search(r"\bdata\s*\[[^\]]+\]", value))
+
+
+def _coerce_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def _numbers_close(left: float, right: float) -> bool:
+    return abs(left - right) <= max(1e-9, abs(right) * 1e-9)
 
 
 def _equivalence_adjusted_exact_match(

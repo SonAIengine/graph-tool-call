@@ -153,6 +153,16 @@ subset smoke `/tmp/gtc-bfcl-argument-matcher-subset.json`에서는
 optional argument hallucination, boolean default inversion, percentage scale mismatch,
 data-reference vs synthetic array mismatch.
 
+`2026-07-19` argument failure tag pass는 이 남은 실패를 아래 안정 tag로 나눈다:
+`unexpected_argument`, `optional_value_mismatch`, `structured_value_missing`,
+`percentage_scale_mismatch`, `data_reference_substitution`.
+`/tmp/gtc-bfcl-argument-tags-subset.json` 기준 6-case smoke의
+`failure_tag_breakdown`은 각 1건씩이며, hard-case bundle
+`/tmp/gtc-bfcl-qwen027-argument-tags-hardcases/`는 바로 실행 가능한
+`tag_unexpected_argument.txt`, `tag_optional_value_mismatch.txt`,
+`tag_structured_value_missing.txt`, `tag_percentage_scale_mismatch.txt`,
+`tag_data_reference_substitution.txt`를 생성한다.
+
 ## 실행 타깃
 
 ```bash

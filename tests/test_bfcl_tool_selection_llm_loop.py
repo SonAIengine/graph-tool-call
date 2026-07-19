@@ -409,6 +409,67 @@ def test_failure_taxonomy_detects_argument_mismatch_after_correct_tool():
     )
 
 
+def test_argument_value_failure_tags_identify_actionable_patterns():
+    expected = [
+        ExpectedToolCall(name="calculate_triangle_area", arguments={"base": [10], "height": [5]}),
+        ExpectedToolCall(
+            name="get_prime_factors", arguments={"number": [450], "formatted": [True, ""]}
+        ),
+        ExpectedToolCall(
+            name="calculate_average",
+            arguments={
+                "gradeDict": [{"math": [90], "science": [75], "history": [82], "music": [89]}]
+            },
+        ),
+        ExpectedToolCall(
+            name="calculate_mortgage_payment",
+            arguments={"loan_amount": [400000], "interest_rate": [0.04], "loan_term": [30]},
+        ),
+        ExpectedToolCall(
+            name="linear_regression_fit",
+            arguments={
+                "x": ["data['sales']"],
+                "y": ["data['future_sales']"],
+                "return_residuals": [True],
+            },
+        ),
+    ]
+    predicted = [
+        PredictedToolCall(
+            name="calculate_triangle_area",
+            arguments={"base": 10, "height": 5, "unit": "units"},
+        ),
+        PredictedToolCall(
+            name="get_prime_factors",
+            arguments={"number": 450, "formatted": False},
+        ),
+        PredictedToolCall(name="calculate_average", arguments={"gradeDict": ""}),
+        PredictedToolCall(
+            name="calculate_mortgage_payment",
+            arguments={"loan_amount": 400000, "interest_rate": 4, "loan_term": 30},
+        ),
+        PredictedToolCall(
+            name="linear_regression_fit",
+            arguments={"x": [100, 200], "y": [110, 220], "return_residuals": True},
+        ),
+    ]
+
+    tags = _failure_tags(
+        expected_calls=expected,
+        predicted_calls=predicted,
+        tools_by_name={},
+        failure_category="argument_value_mismatch",
+    )
+
+    assert tags == [
+        "unexpected_argument",
+        "optional_value_mismatch",
+        "structured_value_missing",
+        "percentage_scale_mismatch",
+        "data_reference_substitution",
+    ]
+
+
 def test_model_loop_runs_against_local_fixture_with_fake_tool_calls(
     tmp_path: Path,
     monkeypatch,
