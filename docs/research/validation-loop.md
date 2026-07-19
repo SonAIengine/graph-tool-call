@@ -208,6 +208,30 @@ make bfcl-inspect-failures \
   OUT=/tmp/gtc-bfcl-k5-hard-cases-inspect.json
 ```
 
+두 단계를 매번 손으로 이어붙이지 않기 위해 hard-case bundle runner를 기본
+진입점으로 둔다.
+
+```bash
+make bfcl-hard-cases \
+  REPORT=/tmp/gtc-bfcl-full-retrieved-k5-repeats2-current-v7.json \
+  OUT_DIR=/tmp/gtc-bfcl-k5-hard-cases \
+  FAILURE_CATEGORIES=retrieval_miss,candidate_ambiguity \
+  TOOL_SOURCES=retrieved \
+  REPORT_TOP_KS=5 \
+  TOP_K=5 \
+  INSPECT_DEPTH=20
+```
+
+이 명령은 `/tmp/gtc-bfcl-k5-hard-cases/` 아래에 다음 파일을 남긴다.
+
+- `case_ids.txt`: deterministic/model smoke에 바로 넣는 전체 hard-case subset
+- `cases.json`: failure extractor 결과와 case metadata
+- `inspect.json`: deterministic rank/distractor/evidence 진단
+- `summary.json`: near-miss, partial multi-tool, weak keyword, outside-depth 요약
+- `failure_<category>.txt`: failure category별 case-id subset
+- `issue_<issue>.txt`: `expected_present_below_top_k`,
+  `partial_multi_tool_at_k`, `weak_or_missing_keyword_signal` 같은 issue별 subset
+
 생성되는 JSON은 케이스별로 아래 정보를 남긴다.
 
 - `expected[].rank`: 정답 tool이 deeper retrieval에서 발견된 순위
