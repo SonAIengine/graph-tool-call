@@ -57,7 +57,9 @@ Korean BO case 기준 target selector exact@3/5/10이 모두 `1.00`까지 확인
 보여준다. 현재 평균 plan candidate count는 `17.16`, 평균 required input
 coverage는 `0.846`, `required_input_not_producible` issue는 `5`건이다. 남은
 live-scale 연구는 producer 후보 폭을 줄이고, request/response field matching과
-실행 전 readiness를 더 정확하게 만드는 것이다.
+실행 전 readiness를 더 정확하게 만드는 것이다. 이 5건은
+`required_request_wrapper=2`, `required_context_input=1`,
+`required_filter_input=1`, `required_producer_missing=1`로 분류된다.
 
 `2026-07-19` rank-compression branch에서는 X2BEE live sweep에서 기존 hard
 case인 `order_query_ko`, `page_role_buttons_ko`, `settlement_compare_ko`,
@@ -79,6 +81,8 @@ unique tool, 19개 Korean BO case 기준 top-K `3,5,10` 모두
 X2BEE acceptance gate는 `avg_required_input_coverage >= 0.8`과
 `avg_candidate_count <= 25`를 포함한다. 현재 top-K `3,5,10` 모두 평균 candidate
 count `17.16`, 평균 required input coverage `0.846`, readiness issue `5`건이다.
+Readiness issue breakdown은 request wrapper `2`, context input `1`, filter
+input `1`, producer missing `1`이다.
 
 ## Product Maturity Levels
 

@@ -827,6 +827,14 @@ def summarize_search(
         "required_input_ready_case_count": sum(
             1 for case in cases if case.required_input_coverage >= 1.0
         ),
+        "readiness_issue_counts": dict(
+            Counter(
+                row["issue_code"]
+                for case in cases
+                for row in case.input_support
+                if row.get("issue_code")
+            ).most_common()
+        ),
         "top_1_hit_at_k": _mean(case.top_1_hit for case in cases),
         "top_3_hit_at_k": _mean(case.top_3_hit for case in cases),
         "mean_mrr": _mean(case.mrr for case in cases),
@@ -972,14 +980,17 @@ def _plan_readiness(
             if required:
                 required_supported += 1
         producer_candidates.extend(producers)
+        issue_code = _readiness_issue_code(consume, supported=bool(producers))
         input_support.append(
             {
                 "field_name": str(consume.get("field_name") or ""),
                 "semantic_tag": str(consume.get("semantic_tag") or ""),
                 "location": str(consume.get("location") or ""),
+                "field_type": str(consume.get("field_type") or ""),
                 "required": required,
                 "producer_candidates": producers,
                 "supported": bool(producers),
+                "issue_code": issue_code,
             }
         )
 
@@ -998,6 +1009,60 @@ def _plan_readiness(
         "required_input_coverage": _ratio(required_supported, required_total),
         "input_support": input_support,
     }
+
+
+def _readiness_issue_code(consume: dict[str, Any], *, supported: bool) -> str:
+    if supported or not bool(consume.get("required")):
+        return ""
+    if _is_request_wrapper_input(consume):
+        return "required_request_wrapper"
+    if _is_context_like_input(consume):
+        return "required_context_input"
+    if consume.get("enum"):
+        return "required_enum_input"
+    if _is_filter_like_input(consume):
+        return "required_filter_input"
+    return "required_producer_missing"
+
+
+def _is_request_wrapper_input(row: dict[str, Any]) -> bool:
+    name = _normalized_field_name(row.get("field_name"))
+    description = str(row.get("description") or "").lower()
+    return name.endswith("request") or " request" in description
+
+
+def _is_context_like_input(row: dict[str, Any]) -> bool:
+    name = _normalized_field_name(row.get("field_name"))
+    return name in {
+        "systemtype",
+        "systype",
+        "sysgbcd",
+        "siteno",
+        "tenantid",
+        "langcd",
+        "locale",
+        "channel",
+    }
+
+
+def _is_filter_like_input(row: dict[str, Any]) -> bool:
+    name = _normalized_field_name(row.get("field_name"))
+    description = str(row.get("description") or "").lower()
+    if str(row.get("location") or "").lower() != "query":
+        return False
+    return (
+        "search" in name
+        or "filter" in name
+        or "date" in name
+        or name.endswith("type")
+        or name.endswith("cd")
+        or "검색" in description
+        or "코드" in description
+    )
+
+
+def _normalized_field_name(value: Any) -> str:
+    return re.sub(r"[^a-z0-9가-힣]+", "", str(value or "").strip().lower())
 
 
 def _data_consumes(tool: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1288,6 +1353,8 @@ def _print_report(report: dict[str, Any]) -> None:
                     required=case["required_input_coverage"],
                 )
             )
+        if search.get("readiness_issue_counts"):
+            print(f"readiness issues: {search['readiness_issue_counts']}")
 
 
 def _print_sweep_report(report: dict[str, Any]) -> None:
@@ -1326,7 +1393,8 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
             "k={top_k:<2}{suffix}: status={status} hit@K={hit:.2f} recall@K={recall:.2f} "
             "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
             "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
-            "required_inputs={required:.2f} avg_latency={latency:.2f}ms issues={issues}".format(
+            "required_inputs={required:.2f} avg_latency={latency:.2f}ms issues={issues} "
+            "readiness={readiness}".format(
                 top_k=run["top_k"],
                 suffix=suffix,
                 status=search["status"],
@@ -1341,6 +1409,7 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
                 required=search["avg_required_input_coverage"],
                 latency=search["avg_latency_ms"],
                 issues=search["issues"],
+                readiness=search["readiness_issue_counts"],
             )
         )
 

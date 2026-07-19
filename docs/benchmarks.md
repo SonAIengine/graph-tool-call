@@ -753,8 +753,11 @@ the 19 product-level cases, average plan candidate count is `17.16`, max
 candidate count is `44`, average producer candidates added is `16.16`, and
 average required input coverage is `0.846`. Fourteen cases have all required
 data inputs matched to at least one response-field producer; five cases emit
-`required_input_not_producible`. Those five are the next request/response
-binding and contract-normalization targets.
+`required_input_not_producible`. The issue breakdown is
+`required_request_wrapper=2`, `required_context_input=1`,
+`required_filter_input=1`, and `required_producer_missing=1`. This separates
+DTO-wrapper/context/filter inputs from the one current response-field producer
+gap, making the next request/response binding work less foggy.
 
 OpenAPI request/response contract is preserved under `metadata.api_contract`
 and `metadata.openapi`. It is intentionally not promoted into top-level
