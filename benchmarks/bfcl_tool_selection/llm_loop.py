@@ -133,6 +133,7 @@ def run_model_benchmark(
     progress_every: int = 25,
     retrieval_rank_hints: bool = False,
     candidate_selection_guidance: bool = False,
+    cohesive_namespace_candidates: bool = False,
 ) -> dict[str, Any]:
     """Run BFCL-compatible native tool-call evaluation with a real model."""
     if evaluator == "official":
@@ -164,6 +165,7 @@ def run_model_benchmark(
             progress_every=progress_every,
             retrieval_rank_hints=retrieval_rank_hints,
             candidate_selection_guidance=candidate_selection_guidance,
+            cohesive_namespace_candidates=cohesive_namespace_candidates,
         )
         for category in selected
     ]
@@ -190,6 +192,7 @@ def run_model_benchmark(
         "progress": progress,
         "retrieval_rank_hints": retrieval_rank_hints,
         "candidate_selection_guidance": candidate_selection_guidance,
+        "cohesive_namespace_candidates": cohesive_namespace_candidates,
         "categories": [asdict(category) for category in evaluated],
         "summary": _summarize(overall_rows, min_exact_match=min_exact_match),
     }
@@ -220,6 +223,7 @@ def evaluate_category_model(
     progress_every: int = 25,
     retrieval_rank_hints: bool = False,
     candidate_selection_guidance: bool = False,
+    cohesive_namespace_candidates: bool = False,
 ) -> BFCLModelCategoryEvaluation:
     question_rows = _load_jsonl(category, kind="question", data_root=data_root, ref=ref)
     answer_rows = _load_jsonl(category, kind="answer", data_root=data_root, ref=ref)
@@ -254,6 +258,7 @@ def evaluate_category_model(
         progress_every=progress_every,
         retrieval_rank_hints=retrieval_rank_hints,
         candidate_selection_guidance=candidate_selection_guidance,
+        cohesive_namespace_candidates=cohesive_namespace_candidates,
     )
     rows = [row for row in rows if row.expected_calls]
     return BFCLModelCategoryEvaluation(
@@ -290,6 +295,7 @@ def _evaluate_category_cases(
     progress_every: int,
     retrieval_rank_hints: bool,
     candidate_selection_guidance: bool,
+    cohesive_namespace_candidates: bool,
 ) -> list[BFCLModelCaseEvaluation]:
     max_workers = max(1, concurrency)
     started = time.perf_counter()
@@ -319,6 +325,7 @@ def _evaluate_category_cases(
                 disable_thinking=disable_thinking,
                 retrieval_rank_hints=retrieval_rank_hints,
                 candidate_selection_guidance=candidate_selection_guidance,
+                cohesive_namespace_candidates=cohesive_namespace_candidates,
             )
             rows[index] = row
             cache_hits += int(cache_hit)
@@ -359,6 +366,7 @@ def _evaluate_category_cases(
                 disable_thinking=disable_thinking,
                 retrieval_rank_hints=retrieval_rank_hints,
                 candidate_selection_guidance=candidate_selection_guidance,
+                cohesive_namespace_candidates=cohesive_namespace_candidates,
             ): index
             for index, question_row in enumerate(case_rows)
         }
@@ -403,6 +411,7 @@ def _evaluate_or_read_case(
     disable_thinking: bool,
     retrieval_rank_hints: bool,
     candidate_selection_guidance: bool,
+    cohesive_namespace_candidates: bool,
 ) -> tuple[BFCLModelCaseEvaluation, bool]:
     answer_row = answers_by_id.get(str(question_row.get("id"))) or {}
     cache_path = _case_cache_path(
@@ -422,6 +431,7 @@ def _evaluate_or_read_case(
         cache_namespace=cache_namespace,
         retrieval_rank_hints=retrieval_rank_hints,
         candidate_selection_guidance=candidate_selection_guidance,
+        cohesive_namespace_candidates=cohesive_namespace_candidates,
     )
     row = None if refresh_cache else _read_case_cache(cache_path)
     if row is not None:
@@ -444,6 +454,7 @@ def _evaluate_or_read_case(
         disable_thinking=disable_thinking,
         retrieval_rank_hints=retrieval_rank_hints,
         candidate_selection_guidance=candidate_selection_guidance,
+        cohesive_namespace_candidates=cohesive_namespace_candidates,
     )
     _write_case_cache(cache_path, row)
     return row, False
@@ -494,6 +505,7 @@ def evaluate_model_case(
     disable_thinking: bool,
     retrieval_rank_hints: bool,
     candidate_selection_guidance: bool,
+    cohesive_namespace_candidates: bool,
 ) -> BFCLModelCaseEvaluation:
     query = _question_text(question_row)
     expected_calls = _expected_calls(answer_row)
@@ -504,7 +516,11 @@ def evaluate_model_case(
     if tool_source == "row":
         presented_tools = _case_tool_names(question_row)
     elif tool_source == "retrieved":
-        presented_tools = retrieved
+        presented_tools = _cohesive_namespace_candidates(
+            retrieved,
+            query=query,
+            enabled=cohesive_namespace_candidates,
+        )
     else:
         raise ValueError(f"Unknown tool_source: {tool_source}")
 
@@ -609,6 +625,55 @@ def _messages_for_case(
             "asks for separate actions."
         )
     return [{"role": "system", "content": system}, {"role": "user", "content": query}]
+
+
+def _cohesive_namespace_candidates(
+    names: list[str],
+    *,
+    query: str,
+    enabled: bool,
+) -> list[str]:
+    """Prefer a cohesive dotted namespace family for multi-action retrieved sets.
+
+    This is an opt-in model-loop ablation. It does not change graph retrieval:
+    the report still records the raw retrieved names, while ``tools_presented``
+    shows the compressed LLM-facing set.
+    """
+
+    if not enabled or not _looks_multi_intent(query):
+        return list(names)
+
+    groups: dict[str, list[str]] = {}
+    for name in names:
+        namespace = _dotted_namespace(name)
+        if namespace:
+            groups.setdefault(namespace, []).append(name)
+    cohesive_namespaces = {namespace for namespace, members in groups.items() if len(members) >= 2}
+    if not cohesive_namespaces:
+        return list(names)
+
+    selected = [name for name in names if _dotted_namespace(name) in cohesive_namespaces]
+    return selected or list(names)
+
+
+def _looks_multi_intent(query: str) -> bool:
+    text = f" {str(query or '').lower()} "
+    if any(marker in text for marker in (" also ", " as well ", " then ", "그리고", "또")):
+        return True
+    return bool(
+        re.search(
+            r"\band\s+(also\s+)?(find|calculate|compute|get|retrieve|determine|check|show)\b",
+            text,
+        )
+    )
+
+
+def _dotted_namespace(name: str) -> str:
+    text = str(name or "")
+    if "." not in text:
+        return ""
+    namespace, _sep, _rest = text.partition(".")
+    return namespace.strip().lower()
 
 
 def _chat(
@@ -1289,6 +1354,7 @@ def _case_cache_path(
     cache_namespace: str,
     retrieval_rank_hints: bool,
     candidate_selection_guidance: bool,
+    cohesive_namespace_candidates: bool,
 ) -> Path | None:
     if cache_dir is None:
         return None
@@ -1311,6 +1377,7 @@ def _case_cache_path(
         "disable_thinking": disable_thinking,
         "retrieval_rank_hints": retrieval_rank_hints,
         "candidate_selection_guidance": candidate_selection_guidance,
+        "cohesive_namespace_candidates": cohesive_namespace_candidates,
     }
     key = hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]  # noqa: S324
     safe_case_id = re.sub(r"[^a-zA-Z0-9_.-]", "_", case_id)
@@ -1589,6 +1656,15 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--cohesive-namespace-candidates",
+        action="store_true",
+        help=(
+            "For retrieved multi-action queries, present only candidate tools from dotted "
+            "namespaces that contribute at least two retrieved tools. Use as an ablation for "
+            "sibling ambiguity."
+        ),
+    )
+    parser.add_argument(
         "--concurrency",
         type=int,
         default=1,
@@ -1655,6 +1731,7 @@ def main(argv: list[str] | None = None) -> int:
             progress_every=args.progress_every,
             retrieval_rank_hints=args.retrieval_rank_hints,
             candidate_selection_guidance=args.candidate_selection_guidance,
+            cohesive_namespace_candidates=args.cohesive_namespace_candidates,
         )
     except ImportError as exc:
         parser.error(str(exc))

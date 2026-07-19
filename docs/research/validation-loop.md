@@ -53,6 +53,8 @@ description에 graph rank hint만 붙이므로 검색 알고리즘 개선과 LLM
 - selection-guidance smoke: `/tmp/gtc-bfcl-qwen027-guidance-smoke.json`
 - hard cases: `/tmp/gtc-bfcl-qwen027-smoke-hardcases`
 - selection-guidance hard cases: `/tmp/gtc-bfcl-qwen027-guidance-hardcases`
+- cohesive namespace smoke: `/tmp/gtc-bfcl-qwen027-cohesive-smoke-v2.json`
+- cohesive namespace hard cases: `/tmp/gtc-bfcl-qwen027-cohesive-hardcases-v2`
 
 두 smoke 모두 retrieved `k=5` exact `0.85`, retrieval recall `1.00`,
 `parallel_multiple` exact `0.60`이다. 즉 다음 작은 subset은 retrieval miss가
@@ -61,6 +63,10 @@ Selection guidance를 full 20-case smoke에 적용하면 retrieved exact는
 `0.85 -> 0.90`으로 오르고 `parallel_3` call-count mismatch는 pass로 바뀐다.
 남은 실패는 `parallel_multiple_2`, `parallel_multiple_4`의 sibling ambiguity 2건이다.
 따라서 다음 깊은 개선은 prompt만이 아니라 candidate equivalence/grouping 쪽이다.
+Cohesive namespace candidate compression을 selection guidance와 함께 적용하면 같은
+20-case smoke에서 retrieved exact는 `0.95`, row-source preservation은 `0.95`,
+`parallel_multiple` exact는 `0.80`이 되어 `xgen-0.27` milestone gate가 pass한다.
+남은 실패는 `parallel_multiple_4`의 integral sibling ambiguity 1건이다.
 
 ## 실행 타깃
 

@@ -270,6 +270,12 @@ Required work:
     `calculate_area_under_curve` sibling 선택은 해결하지 못했다. 이 결과는
     LLM-facing prompt 정책과 candidate equivalence/grouping을 별도 workstream으로
     나눠야 함을 보여준다.
+  - `--cohesive-namespace-candidates`를 selection guidance와 함께 적용한 20-case
+    smoke는 retrieved exact `0.95`, retrieval recall `1.00`, row-source
+    preservation `0.95`, `parallel_multiple` exact `0.80`으로 `xgen-0.27`
+    milestone gate를 pass했다. 이 수치는 작은 smoke evidence이며, 다음 승격은
+    같은 옵션을 failure subset과 더 큰 full sweep에서 반복 확인하는 것이다.
+    남은 실패는 `parallel_multiple_4`의 integral sibling ambiguity 1건이다.
 
 ## Paper-Ready Target
 

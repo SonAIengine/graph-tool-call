@@ -66,6 +66,7 @@ def run_sweep(
     milestone_profile: str = DEFAULT_MILESTONE_PROFILE,
     retrieval_rank_hints: bool = False,
     candidate_selection_guidance: bool = False,
+    cohesive_namespace_candidates: bool = False,
 ) -> dict[str, Any]:
     selected_categories = categories or list(DEFAULT_CATEGORIES)
     selected_top_ks = top_ks or [3, 5, 10]
@@ -98,6 +99,7 @@ def run_sweep(
                     progress_every=progress_every,
                     retrieval_rank_hints=retrieval_rank_hints,
                     candidate_selection_guidance=candidate_selection_guidance,
+                    cohesive_namespace_candidates=cohesive_namespace_candidates,
                 )
                 runs.append(
                     {
@@ -128,6 +130,7 @@ def run_sweep(
         "milestone_profile": milestone_profile,
         "retrieval_rank_hints": retrieval_rank_hints,
         "candidate_selection_guidance": candidate_selection_guidance,
+        "cohesive_namespace_candidates": cohesive_namespace_candidates,
         "runs": runs,
         "summary": _summarize_sweep(runs, milestone_profile=milestone_profile),
     }
@@ -453,7 +456,9 @@ def print_report(report: dict[str, Any]) -> None:
         f"categories={','.join(report['categories'])} repeats={report['repeats']} "
         f"retrieval_rank_hints={str(report.get('retrieval_rank_hints', False)).lower()} "
         "candidate_selection_guidance="
-        f"{str(report.get('candidate_selection_guidance', False)).lower()}"
+        f"{str(report.get('candidate_selection_guidance', False)).lower()} "
+        "cohesive_namespace_candidates="
+        f"{str(report.get('cohesive_namespace_candidates', False)).lower()}"
     )
     for row in report["summary"]["rows"]:
         failures = _format_failure_breakdown(row.get("failure_breakdown") or {})
@@ -585,6 +590,15 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--cohesive-namespace-candidates",
+        action="store_true",
+        help=(
+            "For retrieved multi-action queries, present only candidate tools from dotted "
+            "namespaces that contribute at least two retrieved tools. Use as an ablation for "
+            "sibling ambiguity."
+        ),
+    )
+    parser.add_argument(
         "--concurrency",
         type=int,
         default=1,
@@ -641,6 +655,7 @@ def main(argv: list[str] | None = None) -> int:
             milestone_profile=args.milestone_profile,
             retrieval_rank_hints=args.retrieval_rank_hints,
             candidate_selection_guidance=args.candidate_selection_guidance,
+            cohesive_namespace_candidates=args.cohesive_namespace_candidates,
         )
     except ImportError as exc:
         parser.error(str(exc))
