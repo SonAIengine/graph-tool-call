@@ -220,6 +220,8 @@ _KO_BRIDGE_TERMS = frozenset({"목록", "리스트", "정보", "관리", "대상
 _EN_QUERY_SYNONYMS: dict[str, list[str]] = {
     # Common math/science wording that appears in user requests more often
     # than in compact operationIds.
+    "geographic": ["geo"],
+    "geographical": ["geo"],
     "hypotenuse": ["hypot", "norm"],
     "euclidean": ["hypot", "norm"],
     "series": ["sequence"],
@@ -438,6 +440,10 @@ class BM25Scorer:
                 boost *= 2.0
         if ("distance covered" in q or "distance travelled" in q or "distance traveled" in q) and (
             "distance_traveled" in tool_name or "distance traveled" in tool_text
+        ):
+            boost *= 2.0
+        if re.search(r"\bgeo(?:graphic|graphical)?\s+distance\b", q) and (
+            "geo_distance" in tool_name.lower() or "geographic distance" in tool_text
         ):
             boost *= 2.0
         if "fibonacci series" in q and ("sequence" in tool_text or "series" in tool_text):
@@ -693,6 +699,8 @@ class BM25Scorer:
             extra.extend(["integral", "integrat"])
         if "distance covered" in q or "distance travelled" in q or "distance traveled" in q:
             extra.extend(["distance", "travel", "traveled"])
+        if re.search(r"\bgeo(?:graphic|graphical)?\s+distance\b", q):
+            extra.extend(["geo", "geographic"])
         if re.search(r"\bfibonacci\s+series\b", q):
             extra.extend(["fibonacci", "sequence"])
 
