@@ -658,6 +658,28 @@ are `1.00 / 0.000`, `parallel_multiple` exact is `1.00`, and
 `row_pass_retrieved_fail=0`. This is the XGEN 0.27 product-candidate gate, not a
 replacement for a fresh full 1000-case paper-ready run.
 
+Latest full 0.28 paper-ready attempt on 2026-07-19:
+
+```bash
+make bfcl-028-gate-check \
+  REPORT=/tmp/gtc-bfcl-028-gate-full-qwen.json
+```
+
+```text
+milestone xgen-0.28 status=fail
+retrieved_exact@5=0.865 retrieval@5=0.953
+row_preservation=0.904497 parallel_multiple=0.730
+repeats=3 cases_per_repeat=1000
+```
+
+This is a local BFCL-compatible qwen3.6-27B run, not a BFCL leaderboard score.
+It is not strong enough for a README/public paper headline. The saved failure
+inspection artifact `/tmp/gtc-bfcl-028-failure-inspect.json` shows that many
+expected tools are present within depth 30 but not top 5, and that
+`parallel_multiple` loses too much of the row-source upper bound. Treat this as
+the next research target for rank compression, multi-tool candidate-set
+preservation, and optional embedding/rerank ablation.
+
 No-LLM deterministic retrieval experiments use the validation loop in
 [`docs/research/validation-loop.md`](research/validation-loop.md). The current
 hard-case bundle sequence improved deterministic `recall@5` from `0.9325` to
