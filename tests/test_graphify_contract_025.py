@@ -487,6 +487,68 @@ def test_ingest_openapi_graphify_can_promote_contracts_into_data_flow_edges():
     assert plan.steps[-1].args["goodsNo"] == "${s1.items[0].goodsNo}"
 
 
+def test_ingest_openapi_graphify_matches_identifier_description_aliases():
+    producer = ToolSchema(
+        name="getMarketDisplayList",
+        description="기획전 목록",
+        metadata={
+            "api_contract": {
+                "produces": [
+                    {
+                        "field_name": "mkdpNo",
+                        "json_path": "$.items[*].mkdpNo",
+                        "field_type": "string",
+                        "description": "기획전번호",
+                    }
+                ],
+                "consumes": [],
+            },
+        },
+    )
+    target = ToolSchema(
+        name="getDeliveryAmountInfo",
+        description="배송비 정보",
+        metadata={
+            "api_contract": {
+                "produces": [],
+                "consumes": [
+                    {
+                        "field_name": "marketingDisplayNo",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "body",
+                        "description": "기획전번호",
+                    }
+                ],
+            },
+        },
+    )
+
+    tg, stats = ingest_openapi_graphify(
+        [producer, target],
+        promote_contract_signals=True,
+    )
+    edge = tg.graph.get_edge_attrs("getDeliveryAmountInfo", "getMarketDisplayList")
+
+    assert stats["contract_signals"]["produces_added"] == 1
+    assert stats["contract_edges"]["added"] == 1
+    assert edge["relation"] == "requires"
+    assert edge["kind"] == "data"
+    assert edge["data_flow"]["from_field"] == "mkdpNo"
+    assert edge["data_flow"]["to_field"] == "marketingDisplayNo"
+
+    graph_payload = {
+        "graph": tg.graph.to_dict(),
+        "tools": {name: tool.to_dict() for name, tool in tg.tools.items()},
+    }
+    plan = PathSynthesizer(graph_payload).synthesize(
+        target="getDeliveryAmountInfo",
+        goal="배송비 정보",
+    )
+    assert [step.tool for step in plan.steps] == ["getMarketDisplayList", "getDeliveryAmountInfo"]
+    assert plan.steps[-1].args["marketingDisplayNo"] == "${s1.items[0].mkdpNo}"
+
+
 def test_ingest_openapi_graphify_uses_openapi_links_for_cross_field_data_flow():
     spec = {
         "openapi": "3.0.0",

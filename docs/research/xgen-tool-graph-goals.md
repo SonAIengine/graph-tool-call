@@ -41,10 +41,10 @@ live acceptance run을 별도로 둔다.
 | X2BEE Korean product cases | `19` |
 | X2BEE Korean product hit@3 | `1.00` |
 | X2BEE target selector exact@3 | `1.00` |
-| X2BEE avg plan candidate count | `17.16` |
-| X2BEE required input coverage | `0.846` |
-| X2BEE required input resolution coverage | `0.974` |
-| X2BEE unresolved required inputs | `1` |
+| X2BEE avg plan candidate count | `17.84` |
+| X2BEE required input coverage | `0.872` |
+| X2BEE required input resolution coverage | `1.00` |
+| X2BEE unresolved required inputs | `0` |
 | X2BEE expected tool recall@10 | `1.00` |
 | X2BEE mean MRR | `1.00` |
 
@@ -56,14 +56,14 @@ target recall@5와 query-action target selector exact@5가 모두 `1.00`까지
 target을 고르는 단계가 모두 통과한다. X2BEE-scale에서도 19개 product-level
 Korean BO case 기준 target selector exact@3/5/10이 모두 `1.00`까지 확인됐다.
 이제 live-scale artifact는 선택된 target의 request/response binding readiness도
-보여준다. 현재 평균 plan candidate count는 `17.16`, 평균 required input
-coverage는 `0.846`이다. 이 값은 producer-only coverage라서, 이전 response
+보여준다. 현재 평균 plan candidate count는 `17.84`, 평균 required input
+coverage는 `0.872`이다. 이 값은 producer-only coverage라서, 이전 response
 field가 직접 채울 수 있는 required input만 센다. 실행 관점의 required input
-resolution coverage는 `0.974`이고 unresolved required input은 `1`건이다. 남은
+resolution coverage는 `1.00`이고 unresolved required input은 `0`건이다. 남은
 live-scale 연구는 producer 후보 폭을 줄이고, request/response field matching과
-실행 전 readiness를 더 정확하게 만드는 것이다. producer-only 미지원 5건은
+실행 전 readiness를 더 정확하게 만드는 것이다. producer-only 미지원 4건은
 `required_request_wrapper=2`, `required_context_input=1`,
-`required_filter_input=1`, `required_producer_missing=1`로 분류된다.
+`required_filter_input=1`로 분류된다.
 
 `2026-07-19` rank-compression branch에서는 X2BEE live sweep에서 기존 hard
 case인 `order_query_ko`, `page_role_buttons_ko`, `settlement_compare_ko`,
@@ -96,6 +96,15 @@ input `1`, producer missing `1`이다.
 평균 required input resolution coverage `0.974`, unresolved required input
 count `1`이다. Resolution breakdown은 producer `41`, request wrapper `2`,
 context `1`, user input `1`, unresolved `1`이다.
+
+`2026-07-19` description-alias branch에서는 `marketingDisplayNo`처럼 긴
+필드명과 `mkdpNo` 같은 축약 필드명이 같은 구체적 OpenAPI description을 공유할
+때 identifier alias로 매칭한다. X2BEE live sweep 기준 producer-only required
+input coverage는 `0.872`, required input resolution coverage는 `1.00`,
+unresolved required input count는 `0`이다. Acceptance gate는
+`avg_required_input_coverage >= 0.85`,
+`avg_required_input_resolution_coverage >= 1.0`,
+`unresolved_required_input_count <= 0`으로 올라갔다.
 
 ## Product Maturity Levels
 
