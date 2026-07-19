@@ -14,6 +14,7 @@ Public API:
 
 from graph_tool_call.graphify.catalog import (
     build_candidate_set,
+    build_tool_equivalence_groups,
     expand_candidates_with_producers,
     target_action_priority_for_query,
 )
@@ -68,6 +69,7 @@ __all__ = [
     "bucket_confidence",
     "build_candidate_set",
     "build_io_contract",
+    "build_tool_equivalence_groups",
     "derive_plan_trace_edges",
     "detect_enrichment_status",
     "expand_candidates_with_producers",

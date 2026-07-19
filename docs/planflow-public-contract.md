@@ -46,6 +46,11 @@ The graphify package owns product-neutral collection graph logic.
   candidates by `ai_metadata.canonical_action` and reports
   `target_rank_signals` with original/reranked ranks and selected/suppressed
   evidence.
+- `build_candidate_set(...)` also reports evidence-only
+  `target_equivalence_groups` for high-confidence near-duplicate target
+  surfaces. `build_tool_equivalence_groups(...)` exposes the same deterministic
+  grouping for adapters that want to inspect or display duplicate/equivalent
+  tool candidates without changing candidate order.
 - `target_action_priority_for_query(...)` derives the same
   `target_action_priority` map from generic Korean/English query action terms
   without an LLM.
