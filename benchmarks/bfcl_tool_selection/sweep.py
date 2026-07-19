@@ -171,6 +171,7 @@ def _summarize_sweep(
         "category_repeat_groups": _summarize_category_repeat_groups(category_rows),
         "failure_breakdown": dict(sorted(failure_totals.items())),
         "best_retrieved": _best_retrieved(rows),
+        "row_vs_retrieved_deltas": _row_vs_retrieved_deltas(runs),
         "milestone_gate": _evaluate_milestone_gate(
             rows,
             category_rows,
@@ -213,6 +214,112 @@ def _best_retrieved(rows: list[dict[str, Any]]) -> dict[str, Any]:
             -row["avg_latency_ms"],
         ),
     )
+
+
+def _row_vs_retrieved_deltas(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compare paired row-source and retrieved-source runs case by case.
+
+    Row-source runs approximate the model/tool-schema upper bound for the same
+    BFCL case. Pairing them with retrieved-source runs tells us whether a
+    failure is caused by graph retrieval/presentation or by the model/evaluator
+    even when given the official row tool list.
+    """
+
+    grouped: dict[tuple[int, int], dict[str, dict[str, Any]]] = {}
+    for run in runs:
+        key = (int(run.get("repeat") or 1), int(run.get("top_k") or 0))
+        source = str(run.get("tool_source") or "")
+        grouped.setdefault(key, {})[source] = run
+
+    deltas: list[dict[str, Any]] = []
+    for (repeat, top_k), group in sorted(grouped.items()):
+        row_run = group.get("row")
+        retrieved_run = group.get("retrieved")
+        if not row_run or not retrieved_run:
+            continue
+        row_cases = _cases_by_key(row_run["report"])
+        retrieved_cases = _cases_by_key(retrieved_run["report"])
+        paired_keys = sorted(set(row_cases) & set(retrieved_cases))
+        if not paired_keys:
+            continue
+
+        counts: Counter[str] = Counter()
+        row_pass_retrieved_fail_breakdown: Counter[str] = Counter()
+        both_fail_retrieved_breakdown: Counter[str] = Counter()
+        row_pass_retrieved_fail_case_ids: list[str] = []
+        both_fail_case_ids: list[str] = []
+
+        for key in paired_keys:
+            row_case = row_cases[key]
+            retrieved_case = retrieved_cases[key]
+            row_pass = _case_passed(row_case)
+            retrieved_pass = _case_passed(retrieved_case)
+            if row_pass and retrieved_pass:
+                counts["both_pass"] += 1
+            elif row_pass and not retrieved_pass:
+                counts["row_pass_retrieved_fail"] += 1
+                failure = str(retrieved_case.get("failure_category") or "unknown")
+                row_pass_retrieved_fail_breakdown[failure] += 1
+                row_pass_retrieved_fail_case_ids.append(str(retrieved_case.get("case_id") or key))
+            elif not row_pass and retrieved_pass:
+                counts["row_fail_retrieved_pass"] += 1
+            else:
+                counts["both_fail"] += 1
+                failure = str(retrieved_case.get("failure_category") or "unknown")
+                both_fail_retrieved_breakdown[failure] += 1
+                both_fail_case_ids.append(str(retrieved_case.get("case_id") or key))
+
+        paired_count = len(paired_keys)
+        row_pass_count = counts["both_pass"] + counts["row_pass_retrieved_fail"]
+        retrieved_on_row_pass = counts["both_pass"] / row_pass_count if row_pass_count else None
+        deltas.append(
+            {
+                "repeat": repeat,
+                "top_k": top_k,
+                "paired_cases": paired_count,
+                "both_pass": counts["both_pass"],
+                "row_pass_retrieved_fail": counts["row_pass_retrieved_fail"],
+                "row_fail_retrieved_pass": counts["row_fail_retrieved_pass"],
+                "both_fail": counts["both_fail"],
+                "row_pass_count": row_pass_count,
+                "retrieved_exact_on_row_pass": _round_or_none(retrieved_on_row_pass),
+                "row_pass_retrieved_fail_rate": _round_or_none(
+                    counts["row_pass_retrieved_fail"] / row_pass_count if row_pass_count else None
+                ),
+                "row_pass_retrieved_fail_breakdown": dict(
+                    sorted(row_pass_retrieved_fail_breakdown.items())
+                ),
+                "both_fail_retrieved_breakdown": dict(
+                    sorted(both_fail_retrieved_breakdown.items())
+                ),
+                "row_pass_retrieved_fail_case_ids": row_pass_retrieved_fail_case_ids,
+                "both_fail_case_ids": both_fail_case_ids,
+            }
+        )
+    return deltas
+
+
+def _cases_by_key(report: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
+    cases: dict[tuple[str, str], dict[str, Any]] = {}
+    for category in report.get("categories") or []:
+        category_name = str(category.get("category") or "")
+        for case in category.get("cases") or []:
+            case_id = str(case.get("case_id") or "")
+            if case_id:
+                cases[(category_name, case_id)] = case
+    return cases
+
+
+def _case_passed(case: dict[str, Any]) -> bool:
+    if str(case.get("failure_category") or "") == "pass":
+        return True
+    return float(case.get("evaluator_exact_match") or 0.0) >= 1.0
+
+
+def _round_or_none(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return round(float(value), 6)
 
 
 def _summarize_category_repeat_groups(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -508,6 +615,8 @@ def print_report(report: dict[str, Any]) -> None:
     gate = report["summary"].get("milestone_gate") or {}
     if gate:
         print(_format_milestone_gate(gate))
+    for delta in report["summary"].get("row_vs_retrieved_deltas") or []:
+        print(_format_row_vs_retrieved_delta(delta))
 
 
 def _format_failure_breakdown(breakdown: dict[str, int]) -> str:
@@ -529,6 +638,19 @@ def _format_milestone_gate(gate: dict[str, Any]) -> str:
         f"retrieval@{top_k}={retrieval} "
         f"row_preservation={preservation} "
         f"parallel_multiple={parallel}"
+    )
+
+
+def _format_row_vs_retrieved_delta(delta: dict[str, Any]) -> str:
+    breakdown = _format_failure_breakdown(delta.get("row_pass_retrieved_fail_breakdown") or {})
+    exact_on_row_pass = _format_optional_metric(delta.get("retrieved_exact_on_row_pass"))
+    return (
+        "row_vs_retrieved "
+        f"k={delta.get('top_k')} repeat={delta.get('repeat')} "
+        f"paired={delta.get('paired_cases')} "
+        f"row_pass_loss={delta.get('row_pass_retrieved_fail')} "
+        f"retrieved_on_row_pass={exact_on_row_pass} "
+        f"retrieval_layer_failures={breakdown}"
     )
 
 

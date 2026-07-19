@@ -282,10 +282,13 @@ Required work:
     `parallel_multiple` exact `0.84`로 gate는 아직 `fail`이다. 다만 후보 압축
     가드를 추가한 뒤 이전 100-case run의 `candidate_not_present` 2건은 0건으로
     사라졌고, `parallel_multiple` exact는 `0.76 -> 0.84`로 올랐다. 0.27의
+    paired row/retrieved attribution 기준 retrieval/presentation 손실은 11건이며
+    `candidate_ambiguity:8`, `argument_value_mismatch:2`, `retrieval_miss:1`이다.
     다음 병목은 `solve_quadratic` vs `solve_quadratic_equation`,
     `geometry.circumference` vs `calculate_circumference`, `math.gcd` vs
-    `number_theory.gcd` 같은 near-duplicate disambiguation과 repeated-call /
-    argument-value preservation이다.
+    `number_theory.gcd` 같은 near-duplicate disambiguation과 argument-value
+    preservation이다. Row-source에서도 실패한 repeated-call / argument mismatch는
+    retrieval layer 손실과 분리해서 모델 상한 및 tool schema 표현 문제로 본다.
 
 ## Paper-Ready Target
 

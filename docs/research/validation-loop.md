@@ -97,8 +97,21 @@ retrieved exact와 row preservation 때문에 `fail`이다. 다만 이전 100-ca
 보이던 `candidate_not_present` 2건은 0건으로 사라졌고, `parallel_multiple` exact는
 `0.76 -> 0.84`로 올랐다. 남은 실패 17건은 `candidate_ambiguity:8`,
 `argument_value_mismatch:6`, `call_count_mismatch:2`, `retrieval_miss:1`이다.
+paired row/retrieved attribution 기준으로 보면 row-source에서는 pass했지만
+retrieved-source에서만 fail한 retrieval/presentation 손실은 11건이다.
+Breakdown은 `candidate_ambiguity:8`, `argument_value_mismatch:2`,
+`retrieval_miss:1`이고, retrieved exact on row-pass cases는 `0.883`이다.
 따라서 다음 T2/T3 루프는 후보 누락이 아니라 near-duplicate disambiguation,
-argument preservation, repeated-call preservation을 분리해서 본다.
+argument preservation을 우선 보고, row-source에서도 실패한 repeated-call 문제는
+별도 model/tool-schema upper-bound 이슈로 분리한다.
+
+`benchmarks.bfcl_tool_selection.sweep` summary에는
+`row_vs_retrieved_deltas`가 들어간다. 같은 repeat/top-K의 row-source와
+retrieved-source를 case-id 기준으로 pair해서 `both_pass`,
+`row_pass_retrieved_fail`, `row_fail_retrieved_pass`, `both_fail`,
+`retrieved_exact_on_row_pass`, `row_pass_retrieved_fail_breakdown`,
+`row_pass_retrieved_fail_case_ids`를 남긴다. 이 값으로 full/smoke 이후 바로
+"검색 계층이 실제로 깎은 케이스"만 subset으로 뽑는다.
 
 ## 실행 타깃
 
