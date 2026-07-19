@@ -205,6 +205,33 @@ def test_write_sweep_bfcl_result_files_separates_runs(tmp_path):
     assert retrieved_row["graph_tool_call"]["tool_source"] == "retrieved"
 
 
+def test_sweep_cli_can_fail_on_milestone_gate(monkeypatch, capsys):
+    def fake_run_sweep(**kwargs):
+        return {
+            "benchmark": "BFCL v4 Model Tool Call Sweep",
+            "summary": {"milestone_gate": {"status": "fail"}},
+        }
+
+    monkeypatch.setattr(sweep, "run_sweep", fake_run_sweep)
+
+    exit_code = sweep.main(["--json", "--fail-on-milestone-gate"])
+
+    assert exit_code == 1
+    assert '"status": "fail"' in capsys.readouterr().out
+
+
+def test_sweep_cli_allows_gate_failure_without_flag(monkeypatch):
+    def fake_run_sweep(**kwargs):
+        return {
+            "benchmark": "BFCL v4 Model Tool Call Sweep",
+            "summary": {"milestone_gate": {"status": "fail"}},
+        }
+
+    monkeypatch.setattr(sweep, "run_sweep", fake_run_sweep)
+
+    assert sweep.main(["--json"]) == 0
+
+
 def _paired_case_run(tool_source: str, cases: list[tuple]) -> dict[str, object]:
     passed = sum(1 for row in cases if row[1] == "pass")
     failure_tag_breakdown = {}

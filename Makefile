@@ -59,6 +59,8 @@ bfcl-sweep:
 	poetry run python -m benchmarks.bfcl_tool_selection.sweep --categories simple_python --limit 5 --top-ks 3,5 --model qwen3:4b
 
 bfcl-027-gate:
+	@fail_args=""; \
+	if [ "$${FAIL_ON_GATE:-1}" != "0" ]; then fail_args="--fail-on-milestone-gate"; fi; \
 	poetry run python -m benchmarks.bfcl_tool_selection.sweep \
 		--categories "$${CATEGORIES:-simple_python,multiple,parallel,parallel_multiple}" \
 		--limit "$${LIMIT:-25}" \
@@ -74,7 +76,8 @@ bfcl-027-gate:
 		--concurrency "$${CONCURRENCY:-6}" \
 		--progress \
 		--progress-every "$${PROGRESS_EVERY:-10}" \
-		--output "$${OUT:-/tmp/gtc-bfcl-027-gate.json}"
+		--output "$${OUT:-/tmp/gtc-bfcl-027-gate.json}" \
+		$$fail_args
 
 bfcl-failure-subset:
 	@test -n "$(REPORT)" || (echo "Usage: make bfcl-failure-subset REPORT=/tmp/report.json [OUT=/tmp/case_ids.txt]" && exit 2)

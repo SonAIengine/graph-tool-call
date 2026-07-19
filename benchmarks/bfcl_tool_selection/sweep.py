@@ -741,6 +741,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Add a milestone gate summary to the sweep artifact.",
     )
     parser.add_argument(
+        "--fail-on-milestone-gate",
+        action="store_true",
+        help="Exit with status 1 when the selected milestone gate is not pass.",
+    )
+    parser.add_argument(
         "--retrieval-rank-hints",
         action="store_true",
         help=(
@@ -841,7 +846,16 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         print_report(report)
+    if args.fail_on_milestone_gate and _milestone_gate_failed(report):
+        return 1
     return 0
+
+
+def _milestone_gate_failed(report: dict[str, Any]) -> bool:
+    gate = (report.get("summary") or {}).get("milestone_gate") or {}
+    if not gate:
+        return False
+    return gate.get("status") != "pass"
 
 
 if __name__ == "__main__":  # pragma: no cover
