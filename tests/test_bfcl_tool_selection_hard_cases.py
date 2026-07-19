@@ -74,6 +74,7 @@ def _report():
                                 {
                                     "case_id": "simple_python_0",
                                     "failure_category": "retrieval_miss",
+                                    "failure_tags": ["near_duplicate_tool_surface"],
                                     "retrieved": ["alpha_beta_noise"],
                                 }
                             ],
@@ -121,8 +122,10 @@ def test_build_hard_case_bundle_summarizes_and_writes_reusable_files(tmp_path):
     assert bundle["model"] == "qwen-test"
     assert bundle["summary"]["cases"] == 1
     assert bundle["summary"]["failure_categories"] == {"retrieval_miss": 1}
+    assert bundle["summary"]["failure_tags"] == {"near_duplicate_tool_surface": 1}
     assert bundle["summary"]["issues"]["reported_retrieval_miss"] == 1
     assert bundle["case_ids"] == ["simple_python_0"]
+    assert bundle["failure_cases"][0]["failure_tags"] == ["near_duplicate_tool_surface"]
 
     paths = write_hard_case_bundle(bundle, tmp_path / "out")
 
@@ -131,6 +134,9 @@ def test_build_hard_case_bundle_summarizes_and_writes_reusable_files(tmp_path):
         encoding="utf-8"
     ) == "simple_python_0\n"
     assert (tmp_path / "out" / "issue_reported_retrieval_miss.txt").read_text(
+        encoding="utf-8"
+    ) == "simple_python_0\n"
+    assert (tmp_path / "out" / "tag_near_duplicate_tool_surface.txt").read_text(
         encoding="utf-8"
     ) == "simple_python_0\n"
     assert (
@@ -154,6 +160,7 @@ def test_build_hard_case_bundle_accepts_deterministic_report(tmp_path):
 
     assert bundle["summary"]["cases"] == 1
     assert bundle["summary"]["failure_categories"] == {"retrieval_miss": 1}
+    assert bundle["summary"]["failure_tags"] == {}
     assert bundle["failure_cases"][0]["retrieval_recall_at_k"] == 0.5
     assert bundle["case_ids"] == ["simple_python_0"]
 

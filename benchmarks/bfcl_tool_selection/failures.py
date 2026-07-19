@@ -47,8 +47,10 @@ def extract_failure_cases(
                     continue
                 case_id = str(case.get("case_id") or case.get("id") or "")
                 if not case_id or case_id in selected:
+                    if case_id in selected:
+                        _merge_failure_tags(selected[case_id], _failure_tags(case))
                     continue
-                selected[case_id] = {
+                row = {
                     "case_id": case_id,
                     "category": category_name,
                     "failure_category": failure,
@@ -57,6 +59,10 @@ def extract_failure_cases(
                     "retrieval_recall_at_k": _retrieval_recall(case),
                     "evaluator_exact_match": case.get("evaluator_exact_match"),
                 }
+                tags = _failure_tags(case)
+                if tags:
+                    row["failure_tags"] = tags
+                selected[case_id] = row
                 if limit is not None and len(selected) >= max(0, limit):
                     return list(selected.values())
     return list(selected.values())
@@ -93,6 +99,34 @@ def _retrieval_recall(case: dict[str, Any]) -> float | None:
         except (TypeError, ValueError):
             continue
     return None
+
+
+def _failure_tags(case: dict[str, Any]) -> list[str]:
+    values = case.get("failure_tags")
+    if not isinstance(values, list):
+        return []
+    tags: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        tag = str(value).strip()
+        if not tag or tag in seen:
+            continue
+        seen.add(tag)
+        tags.append(tag)
+    return tags
+
+
+def _merge_failure_tags(row: dict[str, Any], tags: list[str]) -> None:
+    if not tags:
+        return
+    merged = _failure_tags(row)
+    seen = set(merged)
+    for tag in tags:
+        if tag in seen:
+            continue
+        seen.add(tag)
+        merged.append(tag)
+    row["failure_tags"] = merged
 
 
 def _iter_reports(report: dict[str, Any]) -> list[dict[str, Any]]:
