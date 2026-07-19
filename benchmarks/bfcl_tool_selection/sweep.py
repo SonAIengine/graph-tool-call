@@ -38,7 +38,16 @@ MILESTONE_PROFILES: dict[str, dict[str, float | int | str]] = {
         "min_retrieval_recall": 0.95,
         "min_row_source_preservation": 0.94,
         "min_parallel_multiple_exact": 0.75,
-    }
+    },
+    "xgen-0.28": {
+        "target_top_k": 5,
+        "min_retrieved_exact": 0.87,
+        "min_retrieval_recall": 0.96,
+        "min_row_source_preservation": 0.96,
+        "min_parallel_multiple_exact": 0.78,
+        "min_repeat_count": 3,
+        "min_case_count": 1000,
+    },
 }
 
 
@@ -454,8 +463,10 @@ def _evaluate_milestone_gate(
         }
 
     target_top_k = int(profile["target_top_k"])
-    retrieved = _mean_run_row(rows, tool_source="retrieved", top_k=target_top_k)
-    row_source = _mean_run_row(rows, tool_source="row", top_k=target_top_k)
+    retrieved_rows = _select_run_rows(rows, tool_source="retrieved", top_k=target_top_k)
+    row_source_rows = _select_run_rows(rows, tool_source="row", top_k=target_top_k)
+    retrieved = _mean_selected_rows(retrieved_rows)
+    row_source = _mean_selected_rows(row_source_rows)
     parallel_multiple = _mean_category_row(
         category_rows,
         tool_source="retrieved",
@@ -479,12 +490,22 @@ def _evaluate_milestone_gate(
             parallel_multiple, "evaluator_exact_match"
         ),
     }
+    if "min_repeat_count" in profile:
+        metrics["retrieved_repeat_count"] = float(len(retrieved_rows)) if retrieved_rows else None
+    if "min_case_count" in profile:
+        metrics["retrieved_cases_per_repeat"] = (
+            float(min(int(row["cases"]) for row in retrieved_rows)) if retrieved_rows else None
+        )
     thresholds = {
         f"retrieved_exact_at_{target_top_k}": profile["min_retrieved_exact"],
         f"retrieval_recall_at_{target_top_k}": profile["min_retrieval_recall"],
         "row_source_upper_bound_preservation": profile["min_row_source_preservation"],
         f"parallel_multiple_exact_at_{target_top_k}": profile["min_parallel_multiple_exact"],
     }
+    if "min_repeat_count" in profile:
+        thresholds["retrieved_repeat_count"] = profile["min_repeat_count"]
+    if "min_case_count" in profile:
+        thresholds["retrieved_cases_per_repeat"] = profile["min_case_count"]
     failed_gates = [
         {
             "metric": metric,
@@ -520,10 +541,16 @@ def _mean_run_row(
     tool_source: str,
     top_k: int,
 ) -> dict[str, Any]:
-    selected = [
-        row for row in rows if row["tool_source"] == tool_source and int(row["top_k"]) == top_k
-    ]
-    return _mean_selected_rows(selected)
+    return _mean_selected_rows(_select_run_rows(rows, tool_source=tool_source, top_k=top_k))
+
+
+def _select_run_rows(
+    rows: list[dict[str, Any]],
+    *,
+    tool_source: str,
+    top_k: int,
+) -> list[dict[str, Any]]:
+    return [row for row in rows if row["tool_source"] == tool_source and int(row["top_k"]) == top_k]
 
 
 def _mean_category_row(
@@ -675,12 +702,13 @@ def _format_milestone_gate(gate: dict[str, Any]) -> str:
     retrieval = _format_optional_metric(metrics.get(f"retrieval_recall_at_{top_k}"))
     preservation = _format_optional_metric(metrics.get("row_source_upper_bound_preservation"))
     parallel = _format_optional_metric(metrics.get(f"parallel_multiple_exact_at_{top_k}"))
+    scope = _format_milestone_scope(metrics)
     return (
         f"milestone {gate.get('profile')} status={gate.get('status')} "
         f"retrieved_exact@{top_k}={retrieved_exact} "
         f"retrieval@{top_k}={retrieval} "
         f"row_preservation={preservation} "
-        f"parallel_multiple={parallel}"
+        f"parallel_multiple={parallel}{scope}"
     )
 
 
@@ -701,6 +729,21 @@ def _format_row_vs_retrieved_delta(delta: dict[str, Any]) -> str:
 
 def _format_optional_metric(value: Any) -> str:
     return "n/a" if value is None else f"{float(value):.3f}"
+
+
+def _format_optional_count(value: Any) -> str:
+    return "n/a" if value is None else str(int(float(value)))
+
+
+def _format_milestone_scope(metrics: dict[str, Any]) -> str:
+    parts: list[str] = []
+    if "retrieved_repeat_count" in metrics:
+        parts.append(f"repeats={_format_optional_count(metrics.get('retrieved_repeat_count'))}")
+    if "retrieved_cases_per_repeat" in metrics:
+        parts.append(
+            f"cases_per_repeat={_format_optional_count(metrics.get('retrieved_cases_per_repeat'))}"
+        )
+    return "" if not parts else " " + " ".join(parts)
 
 
 def _parse_ints(value: str) -> list[int]:
@@ -739,6 +782,11 @@ def main(argv: list[str] | None = None) -> int:
         choices=[*MILESTONE_PROFILES.keys(), "none"],
         default=DEFAULT_MILESTONE_PROFILE,
         help="Add a milestone gate summary to the sweep artifact.",
+    )
+    parser.add_argument(
+        "--fail-on-milestone-gate",
+        action="store_true",
+        help="Exit with status 1 when the selected milestone gate is not pass.",
     )
     parser.add_argument(
         "--retrieval-rank-hints",
@@ -841,7 +889,16 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         print_report(report)
+    if args.fail_on_milestone_gate and _milestone_gate_failed(report):
+        return 1
     return 0
+
+
+def _milestone_gate_failed(report: dict[str, Any]) -> bool:
+    gate = (report.get("summary") or {}).get("milestone_gate") or {}
+    if not gate:
+        return False
+    return gate.get("status") != "pass"
 
 
 if __name__ == "__main__":  # pragma: no cover

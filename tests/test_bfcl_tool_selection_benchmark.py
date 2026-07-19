@@ -140,7 +140,10 @@ def test_bfcl_tool_selection_runs_against_local_jsonl_fixture(tmp_path: Path):
 
     assert report["summary"]["status"] == "pass"
     assert report["summary"]["recall_at_5"] == 1.0
+    assert report["summary"]["recall_at_k"] == 1.0
+    assert report["summary"]["all_tools_found_at_k"] == 1.0
     assert report["summary"]["argument_schema_coverage"] == 1.0
+    assert report["summary"]["argument_schema_coverage_at_k"] == 1.0
     assert report["categories"][0]["corpus_tool_count"] == 4
 
     limited = run_benchmark(

@@ -369,12 +369,18 @@ model-in-the-loop benchmark.
 | `make xgen-scale-acceptance` | none | X2BEE-scale Swagger UI discovery, dedupe, ingest, graph build, Korean product-case search |
 | `make xgen-scale-sweep` | none | one X2BEE-scale graph build, then top-K compression diagnostics for `k=3,5,10` |
 | `make xgen-scale-contract-ablation` | none | one X2BEE-scale spec load, then baseline vs promoted OpenAPI contract signal comparison |
+| `make xgen-scale-028-gate-check REPORT=...` | none | saved XGEN scale sweep artifact check for the stricter snapshot-provenance `xgen-scale-0.28` profile |
+| `make bfcl-028-gate-check REPORT=...` | none | saved BFCL sweep artifact check for the stricter paper-ready `xgen-0.28` profile |
 | `make xgen-llm-benchmark` | CLI `--model` value | whether that model actually calls `search_tools` and selects the right plan |
 
 ```bash
 make xgen-benchmark
 make xgen-scale-acceptance
 make xgen-scale-sweep
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
+  GATE_PROFILE=xgen-scale-0.28 \
+  make xgen-scale-sweep
+make xgen-scale-028-gate-check REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep.json
 make xgen-scale-contract-ablation
 make xgen-llm-benchmark
 poetry run python -m benchmarks.xgen_tool_graph.llm_loop \

@@ -433,10 +433,17 @@ def test_normalized_parameters_add_argument_value_preservation_hints():
                     "description": "Return residuals.",
                     "default": "false",
                 },
+                "date": {
+                    "type": "string",
+                    "description": "Date when the ticket should be bought for.",
+                },
             },
             "required": ["formatted", "interest_rate", "gradeDict"],
         },
-        query="Fit a model with x=data['sales'] and y=data['future_sales'].",
+        query=(
+            "Buy a ticket for next Friday, June 30th 2023, then use the same day. "
+            "Fit a model with x=data['sales'] and y=data['future_sales']."
+        ),
     )
 
     properties = schema["properties"]
@@ -454,6 +461,8 @@ def test_normalized_parameters_add_argument_value_preservation_hints():
     assert "pass exactly the string" in properties["x"]["description"]
     assert "one pairing in this array" in properties["movie"]["description"]
     assert "pass false" in properties["return_residuals"]["description"]
+    assert "2023-06-30" in properties["date"]["description"]
+    assert "same date or same day" in properties["date"]["description"]
     assert schema["required"] == ["formatted", "interest_rate", "gradeDict"]
 
 

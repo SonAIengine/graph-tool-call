@@ -5,6 +5,7 @@ import json
 from benchmarks.xgen_api_scale.run import (
     DEFAULT_X2BEE_CASES_PATH,
     load_cases,
+    main,
     run_benchmark,
     run_contract_signal_ablation,
     run_top_k_sweep,
@@ -127,6 +128,11 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     )
 
     assert report["status"] == "pass"
+    assert report["gate"]["status"] == "pass"
+    assert report["gate"]["methodology"] == "xgen_large_openapi_acceptance"
+    assert report["gate"]["metrics"]["unique_tool_count"] == 3
+    assert report["gate"]["metrics"]["case_hit_at_k"] == 1.0
+    assert report["gate"]["metrics"]["avg_tool_surface_reduction"] == 0.666667
     assert report["scale"]["spec_count"] == 2
     assert report["scale"]["operation_count"] == 4
     assert report["scale"]["unique_tool_count"] == 3
@@ -140,6 +146,23 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     assert report["search"]["case_hit_at_k"] == 1.0
     assert report["search"]["target_selector_exact_at_k"] == 1.0
     assert report["search"]["target_selector_miss_count"] == 0
+    assert report["search"]["full_tool_count"] == 3
+    assert report["search"]["avg_candidate_tool_fraction"] == 0.333333
+    assert report["search"]["avg_tool_surface_reduction"] == 0.666667
+    assert report["search"]["min_tool_surface_reduction"] == 0.666667
+    assert (
+        report["search"]["full_tool_schema_chars"] > report["search"]["avg_candidate_schema_chars"]
+    )
+    assert report["search"]["avg_candidate_schema_chars"] > 0
+    assert 0 < report["search"]["avg_schema_context_reduction"] < 1
+    assert (
+        report["search"]["min_schema_context_reduction"]
+        == report["search"]["avg_schema_context_reduction"]
+    )
+    assert (
+        report["gate"]["metrics"]["avg_schema_context_reduction"]
+        == report["search"]["avg_schema_context_reduction"]
+    )
     assert "avg_target_equivalence_group_count" in report["search"]
     assert "target_equivalence_group_case_count" in report["search"]
     assert report["search"]["target_selector_rank_buckets"]["top_1"] == 1
@@ -153,6 +176,17 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     assert report["cases"][0]["target_selector_rank"] == 1
     assert report["cases"][0]["target_equivalence_group_count"] == len(
         report["cases"][0]["target_equivalence_groups"]
+    )
+    assert (
+        report["cases"][0]["full_tool_schema_chars"] == report["search"]["full_tool_schema_chars"]
+    )
+    assert (
+        report["cases"][0]["candidate_schema_chars"]
+        == report["search"]["avg_candidate_schema_chars"]
+    )
+    assert (
+        report["cases"][0]["schema_context_reduction"]
+        == report["search"]["avg_schema_context_reduction"]
     )
     assert report["cases"][0]["best_expected_rank"] == 1
     assert report["cases"][0]["required_expected_found_at_k"] is True
@@ -170,6 +204,8 @@ def test_x2bee_default_cases_cover_product_level_domains():
     assert cases_doc["thresholds"]["max_unresolved_required_input_count"] == 0
     assert cases_doc["thresholds"]["max_avg_candidate_count"] <= 3.0
     assert cases_doc["thresholds"]["max_candidate_count"] <= 8.0
+    assert cases_doc["thresholds"]["avg_schema_context_reduction"] >= 0.99
+    assert cases_doc["thresholds"]["min_schema_context_reduction"] >= 0.98
     assert len(case_ids) == len(set(case_ids))
     for required_id in {
         "member_list_ko",
@@ -812,9 +848,49 @@ def test_xgen_api_scale_can_profile_without_cases():
     )
 
     assert report["status"] == "pass"
+    assert report["gate"]["status"] == "pass"
+    assert report["gate"]["search_status"] == "skipped"
     assert report["search"]["status"] == "skipped"
     assert report["scale"]["request_body_count"] == 0
     assert report["scale"]["response_schema_count"] == 2
+
+
+def test_xgen_api_scale_cli_accepts_local_spec_snapshot(tmp_path):
+    spec_path = tmp_path / "snapshot.json"
+    output_path = tmp_path / "report.json"
+    spec_path.write_text(
+        json.dumps(
+            _spec(
+                "Snapshot Profile",
+                {
+                    "/brands": _operation("searchBrands", "Brand search"),
+                    "/orders": _operation("listOrders", "Order list"),
+                },
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "--spec",
+            str(spec_path),
+            "--no-cases",
+            "--min-unique-tools",
+            "2",
+            "--max-build-seconds",
+            "10",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert report["status"] == "pass"
+    assert report["gate"]["status"] == "pass"
+    assert report["specs"][0]["source"] == str(spec_path)
+    assert report["scale"]["unique_tool_count"] == 2
 
 
 def test_xgen_api_scale_top_k_sweep_uses_one_acceptance_k(tmp_path):
@@ -859,6 +935,10 @@ def test_xgen_api_scale_top_k_sweep_uses_one_acceptance_k(tmp_path):
     )
 
     assert report["status"] == "pass"
+    assert report["gate"]["status"] == "pass"
+    assert report["gate"]["acceptance_top_k"] == 3
+    assert report["gate"]["metrics"]["case_hit_at_k"] == 1.0
+    assert report["gate"]["metrics"]["avg_tool_surface_reduction"] == 0.666667
     assert report["methodology"] == "xgen_large_openapi_top_k_sweep"
     assert report["top_ks"] == [1, 3]
     assert report["acceptance_top_k"] == 3

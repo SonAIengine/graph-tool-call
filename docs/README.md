@@ -17,7 +17,8 @@ docs/
 │   ├── mcp-proxy.md            # MCP proxy (multi-backend aggregation)
 │   ├── langchain.md            # LangChain Gateway / auto-filter / retriever
 │   ├── middleware.md           # OpenAI/Anthropic SDK 1-line patch
-│   └── direct-api.md           # Python API + workflow planning
+│   ├── direct-api.md           # Python API + workflow planning
+│   └── xgen-api-collection.md  # XGEN API Collection build/runtime integration
 │
 ├── architecture/               # 아키텍처 & 데이터 모델
 │   ├── overview.md             # 전체 아키텍처 (파이프라인, 레이어)
@@ -68,6 +69,7 @@ docs/
 1. **Public contract**: [planflow-public-contract.md](planflow-public-contract.md)
 2. **아키텍처**: [architecture-plan-and-execute.md](architecture-plan-and-execute.md)
 3. **검색 설계**: [design/retrieval-engine.md](design/retrieval-engine.md)
+4. **XGEN API Collection**: [integrations/xgen-api-collection.md](integrations/xgen-api-collection.md)
 
 **개발자/기여자 (내부 구조 이해하려는 사람)**
 1. **전체 그림**: [architecture/overview.md](architecture/overview.md)

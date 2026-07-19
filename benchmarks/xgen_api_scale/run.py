@@ -19,6 +19,8 @@ from typing import Any
 from urllib.parse import unquote
 
 from benchmarks.metrics import mrr, recall_at_k
+from benchmarks.xgen_api_scale.gate import DEFAULT_GATE_PROFILE, evaluate_gate
+from benchmarks.xgen_api_scale.manifest import load_snapshot_manifest
 from graph_tool_call import ToolGraph, __version__
 from graph_tool_call.core.contract_matching import description_alias_key
 from graph_tool_call.graphify import (
@@ -91,6 +93,10 @@ class SearchEvaluation:
     producer_candidates: list[str]
     producer_added_count: int
     candidate_count: int
+    candidate_schema_chars: int
+    full_tool_schema_chars: int
+    candidate_schema_char_fraction: float
+    schema_context_reduction: float
     target_data_input_count: int
     target_required_data_input_count: int
     target_producible_input_count: int
@@ -148,6 +154,8 @@ def run_benchmark(
     cases_doc = load_cases(cases_path)
     selected_top_k = int(top_k or cases_doc.get("top_k") or 10)
     tools_by_name = _tools_by_name(prepared.graph)
+    schema_char_counts = _tool_schema_char_counts(tools_by_name)
+    full_schema_chars = sum(schema_char_counts.values())
     producer_index = _contract_producer_index(tools_by_name)
     cases = [
         evaluate_search_case(
@@ -156,10 +164,16 @@ def run_benchmark(
             tools_by_name=tools_by_name,
             producer_index=producer_index,
             top_k=selected_top_k,
+            schema_char_counts=schema_char_counts,
+            full_schema_chars=full_schema_chars,
         )
         for case in cases_doc.get("cases", [])
     ]
-    search_summary = summarize_search(cases, thresholds=cases_doc.get("thresholds") or {})
+    search_summary = summarize_search(
+        cases,
+        thresholds=cases_doc.get("thresholds") or {},
+        full_tool_count=len(prepared.graph.tools),
+    )
     scale_summary = summarize_scale(
         prepared.profiles,
         loaded_specs=prepared.loaded_specs,
@@ -174,7 +188,7 @@ def run_benchmark(
     if cases and search_summary.get("status") != "pass":
         status = "fail"
 
-    return {
+    report = {
         "benchmark": cases_doc.get("name") or "XGEN API Scale Acceptance",
         "description": cases_doc.get("description") or "",
         "methodology": "xgen_large_openapi_acceptance",
@@ -191,6 +205,8 @@ def run_benchmark(
         "specs": [asdict(profile) for profile in prepared.profiles],
         "cases": [asdict(case) for case in cases],
     }
+    report["gate"] = evaluate_gate(report)
+    return report
 
 
 def run_top_k_sweep(
@@ -241,6 +257,8 @@ def run_top_k_sweep(
     )
     thresholds = cases_doc.get("thresholds") or {}
     tools_by_name = _tools_by_name(prepared.graph)
+    schema_char_counts = _tool_schema_char_counts(tools_by_name)
+    full_schema_chars = sum(schema_char_counts.values())
     producer_index = _contract_producer_index(tools_by_name)
     sweep: list[dict[str, Any]] = []
     acceptance_search_status = "skipped"
@@ -252,12 +270,15 @@ def run_top_k_sweep(
                 tools_by_name=tools_by_name,
                 producer_index=producer_index,
                 top_k=top_k,
+                schema_char_counts=schema_char_counts,
+                full_schema_chars=full_schema_chars,
             )
             for case in cases_doc.get("cases", [])
         ]
         search_summary = summarize_search(
             cases,
             thresholds=thresholds if top_k == selected_acceptance_top_k else {},
+            full_tool_count=len(prepared.graph.tools),
         )
         search_summary["thresholds_applied"] = bool(
             top_k == selected_acceptance_top_k and thresholds
@@ -278,7 +299,7 @@ def run_top_k_sweep(
     if cases_doc.get("cases") and acceptance_search_status != "pass":
         status = "fail"
 
-    return {
+    report = {
         "benchmark": cases_doc.get("name") or "XGEN API Scale Acceptance",
         "description": cases_doc.get("description") or "",
         "methodology": "xgen_large_openapi_top_k_sweep",
@@ -295,6 +316,8 @@ def run_top_k_sweep(
         "sweep": sweep,
         "specs": [asdict(profile) for profile in prepared.profiles],
     }
+    report["gate"] = evaluate_gate(report)
+    return report
 
 
 def run_contract_signal_ablation(
@@ -354,6 +377,8 @@ def run_contract_signal_ablation(
             max_build_seconds=max_build_seconds,
         )
         tools_by_name = _tools_by_name(graph)
+        schema_char_counts = _tool_schema_char_counts(tools_by_name)
+        full_schema_chars = sum(schema_char_counts.values())
         producer_index = _contract_producer_index(tools_by_name)
         cases = [
             evaluate_search_case(
@@ -362,10 +387,16 @@ def run_contract_signal_ablation(
                 tools_by_name=tools_by_name,
                 producer_index=producer_index,
                 top_k=selected_top_k,
+                schema_char_counts=schema_char_counts,
+                full_schema_chars=full_schema_chars,
             )
             for case in cases_doc.get("cases", [])
         ]
-        search_summary = summarize_search(cases, thresholds=thresholds)
+        search_summary = summarize_search(
+            cases,
+            thresholds=thresholds,
+            full_tool_count=len(graph.tools),
+        )
         variant_status = "pass" if scale_summary["status"] == "pass" else "fail"
         if cases and search_summary.get("status") != "pass":
             variant_status = "fail"
@@ -625,6 +656,8 @@ def evaluate_search_case(
     tools_by_name: dict[str, dict[str, Any]],
     producer_index: dict[str, list[str]],
     top_k: int,
+    schema_char_counts: dict[str, int] | None = None,
+    full_schema_chars: int = 0,
 ) -> SearchEvaluation:
     query = str(case["query"])
     expected_tools = [str(name) for name in case.get("expected_tools") or []]
@@ -657,6 +690,12 @@ def evaluate_search_case(
         tools_by_name,
         producer_index=producer_index,
     )
+    plan_candidates = [str(name) for name in readiness["plan_candidates"]]
+    candidate_schema_chars = sum(
+        (schema_char_counts or {}).get(name, 0) for name in plan_candidates
+    )
+    schema_char_fraction = _ratio(candidate_schema_chars, full_schema_chars)
+    schema_context_reduction = round(1.0 - schema_char_fraction, 6)
 
     required_ok = set(expected_tools).issubset(retrieved_set) if expected_tools else True
     any_ok = bool(set(expected_any) & retrieved_set) if expected_any else True
@@ -713,10 +752,14 @@ def evaluate_search_case(
         target_action_priority=target_action_priority,
         target_equivalence_groups=target_equivalence_groups,
         target_equivalence_group_count=len(target_equivalence_groups),
-        plan_candidates=[str(name) for name in readiness["plan_candidates"]],
+        plan_candidates=plan_candidates,
         producer_candidates=[str(name) for name in readiness["producer_candidates"]],
         producer_added_count=int(readiness["producer_added_count"]),
         candidate_count=int(readiness["candidate_count"]),
+        candidate_schema_chars=candidate_schema_chars,
+        full_tool_schema_chars=int(full_schema_chars),
+        candidate_schema_char_fraction=schema_char_fraction,
+        schema_context_reduction=schema_context_reduction,
         target_data_input_count=int(readiness["target_data_input_count"]),
         target_required_data_input_count=int(readiness["target_required_data_input_count"]),
         target_producible_input_count=int(readiness["target_producible_input_count"]),
@@ -810,6 +853,7 @@ def summarize_search(
     cases: list[SearchEvaluation],
     *,
     thresholds: dict[str, Any],
+    full_tool_count: int | None = None,
 ) -> dict[str, Any]:
     if not cases:
         return {"status": "skipped", "cases": 0}
@@ -828,6 +872,18 @@ def summarize_search(
         ),
         "avg_candidate_count": _mean(case.candidate_count for case in cases),
         "max_candidate_count": max((case.candidate_count for case in cases), default=0),
+        "full_tool_schema_chars": max((case.full_tool_schema_chars for case in cases), default=0),
+        "avg_candidate_schema_chars": _mean(case.candidate_schema_chars for case in cases),
+        "max_candidate_schema_chars": max(
+            (case.candidate_schema_chars for case in cases), default=0
+        ),
+        "avg_candidate_schema_char_fraction": _mean(
+            case.candidate_schema_char_fraction for case in cases
+        ),
+        "avg_schema_context_reduction": _mean(case.schema_context_reduction for case in cases),
+        "min_schema_context_reduction": min(
+            (case.schema_context_reduction for case in cases), default=0.0
+        ),
         "avg_producer_added_count": _mean(case.producer_added_count for case in cases),
         "producer_added_case_count": sum(1 for case in cases if case.producer_added_count > 0),
         "expected_producer_case_count": sum(1 for case in cases if case.expected_producers),
@@ -894,6 +950,7 @@ def summarize_search(
         "missing_expected_tools": _missing_expected_tools(cases),
         "issues": dict(Counter(issue for case in cases for issue in case.issues).most_common()),
     }
+    _add_tool_surface_reduction(summary, full_tool_count=full_tool_count)
     if thresholds:
         checks = {
             metric: _threshold_passed(summary, metric, float(threshold))
@@ -904,6 +961,26 @@ def summarize_search(
     else:
         summary["status"] = "pass"
     return summary
+
+
+def _add_tool_surface_reduction(
+    summary: dict[str, Any],
+    *,
+    full_tool_count: int | None,
+) -> None:
+    if not full_tool_count or full_tool_count <= 0:
+        return
+    avg_fraction = _ratio(float(summary.get("avg_candidate_count", 0.0)), full_tool_count)
+    max_fraction = _ratio(float(summary.get("max_candidate_count", 0.0)), full_tool_count)
+    summary.update(
+        {
+            "full_tool_count": int(full_tool_count),
+            "avg_candidate_tool_fraction": avg_fraction,
+            "avg_tool_surface_reduction": round(1.0 - avg_fraction, 6),
+            "max_candidate_tool_fraction": max_fraction,
+            "min_tool_surface_reduction": round(1.0 - max_fraction, 6),
+        }
+    )
 
 
 def _compare_contract_signal_variants(variants: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1304,7 +1381,7 @@ def _dedupe(values: list[str]) -> list[str]:
     return list(dict.fromkeys(str(value) for value in values if str(value)))
 
 
-def _ratio(numerator: int, denominator: int) -> float:
+def _ratio(numerator: float, denominator: float) -> float:
     if denominator <= 0:
         return 1.0
     return round(numerator / denominator, 6)
@@ -1355,6 +1432,21 @@ def _best_rank(names: list[str], expected_names: set[str]) -> int | None:
 
 def _tools_by_name(graph: ToolGraph) -> dict[str, dict[str, Any]]:
     return {name: tool.to_dict() for name, tool in graph.tools.items()}
+
+
+def _tool_schema_char_counts(tools_by_name: dict[str, dict[str, Any]]) -> dict[str, int]:
+    return {
+        name: len(
+            json.dumps(
+                tool,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+        )
+        for name, tool in tools_by_name.items()
+    }
 
 
 def _mean(values: Any) -> float:
@@ -1481,6 +1573,7 @@ def _print_report(report: dict[str, Any]) -> None:
             "search: status={status} cases={cases} hit@K={hit:.2f} recall@K={recall:.2f} "
             "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
             "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
+            "tool_reduction={reduction:.2%} schema_reduction={schema_reduction:.2%} "
             "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
             "avg_latency={latency:.2f}ms".format(
                 status=search["status"],
@@ -1493,6 +1586,8 @@ def _print_report(report: dict[str, Any]) -> None:
                 mrr_=search["mean_mrr"],
                 candidates=search["avg_candidate_count"],
                 producers=search["avg_producer_added_count"],
+                reduction=search.get("avg_tool_surface_reduction", 0.0),
+                schema_reduction=search.get("avg_schema_context_reduction", 0.0),
                 required=search["avg_required_input_coverage"],
                 resolved=search["avg_required_input_resolution_coverage"],
                 latency=search["avg_latency_ms"],
@@ -1562,6 +1657,7 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
             "k={top_k:<2}{suffix}: status={status} hit@K={hit:.2f} recall@K={recall:.2f} "
             "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
             "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
+            "tool_reduction={reduction:.2%} schema_reduction={schema_reduction:.2%} "
             "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
             "avg_latency={latency:.2f}ms issues={issues} readiness={readiness} "
             "resolutions={resolutions}".format(
@@ -1576,6 +1672,8 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
                 mrr_=search["mean_mrr"],
                 candidates=search["avg_candidate_count"],
                 producers=search["avg_producer_added_count"],
+                reduction=search.get("avg_tool_surface_reduction", 0.0),
+                schema_reduction=search.get("avg_schema_context_reduction", 0.0),
                 required=search["avg_required_input_coverage"],
                 resolved=search["avg_required_input_resolution_coverage"],
                 latency=search["avg_latency_ms"],
@@ -1614,6 +1712,7 @@ def _print_ablation_report(report: dict[str, Any]) -> None:
                 "  search: hit@K={hit:.2f} recall@K={recall:.2f} top1={top1:.2f} "
                 "top3={top3:.2f} selector={selector:.2f} mrr={mrr_:.2f} "
                 "candidates={candidates:.2f} producers={producers:.2f} "
+                "tool_reduction={reduction:.2%} schema_reduction={schema_reduction:.2%} "
                 "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
                 "avg_latency={latency:.2f}ms".format(
                     hit=search["case_hit_at_k"],
@@ -1624,6 +1723,8 @@ def _print_ablation_report(report: dict[str, Any]) -> None:
                     mrr_=search["mean_mrr"],
                     candidates=search["avg_candidate_count"],
                     producers=search["avg_producer_added_count"],
+                    reduction=search.get("avg_tool_surface_reduction", 0.0),
+                    schema_reduction=search.get("avg_schema_context_reduction", 0.0),
                     required=search["avg_required_input_coverage"],
                     resolved=search["avg_required_input_resolution_coverage"],
                     latency=search["avg_latency_ms"],
@@ -1697,6 +1798,12 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="Direct spec URL or local spec file. May be repeated. Skips Swagger discovery.",
     )
+    parser.add_argument(
+        "--manifest",
+        action="append",
+        default=[],
+        help="Snapshot manifest JSON from benchmarks.xgen_api_scale.snapshot. May be repeated.",
+    )
     parser.add_argument("--cases", type=Path, default=DEFAULT_X2BEE_CASES_PATH)
     parser.add_argument("--no-cases", action="store_true")
     parser.add_argument("--top-k", type=int, default=None)
@@ -1764,14 +1871,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Index promoted raw contract fields in BM25. Diagnostic; may add target-search noise.",
     )
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument(
+        "--gate-profile",
+        default=DEFAULT_GATE_PROFILE,
+        help="Gate profile to embed in acceptance/sweep reports.",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     contract_signal_options = _contract_signal_options_from_args(args)
+    spec_sources, snapshot_manifests = _spec_sources_from_args(args)
 
     if args.compare_contract_signals:
         report = run_contract_signal_ablation(
             swagger_url=args.swagger_url,
-            spec_sources=args.spec or None,
+            spec_sources=spec_sources,
             cases_path=None if args.no_cases else args.cases,
             top_k=args.top_k,
             detect_dependencies=not args.no_detect_dependencies,
@@ -1786,7 +1899,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.top_ks:
         report = run_top_k_sweep(
             swagger_url=args.swagger_url,
-            spec_sources=args.spec or None,
+            spec_sources=spec_sources,
             cases_path=None if args.no_cases else args.cases,
             top_ks=_parse_top_ks(args.top_ks),
             acceptance_top_k=args.acceptance_top_k,
@@ -1803,7 +1916,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         report = run_benchmark(
             swagger_url=args.swagger_url,
-            spec_sources=args.spec or None,
+            spec_sources=spec_sources,
             cases_path=None if args.no_cases else args.cases,
             top_k=args.top_k,
             detect_dependencies=not args.no_detect_dependencies,
@@ -1816,6 +1929,10 @@ def main(argv: list[str] | None = None) -> int:
             promote_contract_signals=args.promote_contract_signals,
             contract_signal_options=contract_signal_options,
         )
+    if snapshot_manifests:
+        report["snapshot_manifests"] = snapshot_manifests
+    if "gate" in report:
+        report["gate"] = evaluate_gate(report, profile=args.gate_profile)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1828,6 +1945,51 @@ def main(argv: list[str] | None = None) -> int:
     else:
         _print_report(report)
     return 0 if report["status"] == "pass" else 1
+
+
+def _spec_sources_from_args(
+    args: argparse.Namespace,
+) -> tuple[list[str] | None, list[dict[str, Any]]]:
+    sources: list[str] = []
+    snapshot_manifests: list[dict[str, Any]] = []
+    for manifest_path in args.manifest or []:
+        manifest = load_snapshot_manifest(manifest_path)
+        sources.extend(str(row["path"]) for row in manifest["specs"])
+        snapshot_manifests.append(_snapshot_manifest_provenance(manifest))
+    sources.extend(args.spec or [])
+    return sources or None, snapshot_manifests
+
+
+def _snapshot_manifest_provenance(manifest: dict[str, Any]) -> dict[str, Any]:
+    spec_keys = [
+        "index",
+        "label",
+        "source",
+        "path",
+        "sha256",
+        "bytes",
+        "title",
+        "version",
+        "openapi_version",
+        "path_count",
+        "operation_count",
+    ]
+    return {
+        "snapshot": manifest.get("snapshot"),
+        "manifest_path": manifest.get("manifest_path"),
+        "created_at": manifest.get("created_at"),
+        "graph_tool_call_version": manifest.get("graph_tool_call_version"),
+        "source_url": manifest.get("source_url"),
+        "spec_count": manifest.get("spec_count"),
+        "operation_count": manifest.get("operation_count"),
+        "path_count": manifest.get("path_count"),
+        "specs_csv": manifest.get("specs_csv"),
+        "specs": [
+            {key: row.get(key) for key in spec_keys if key in row}
+            for row in manifest.get("specs", [])
+            if isinstance(row, dict)
+        ],
+    }
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -43,10 +43,13 @@ class BFCLCaseEvaluation:
     recall_at_1: float
     recall_at_3: float
     recall_at_5: float
+    recall_at_k: float
     ndcg_at_5: float
     mrr: float
     all_tools_found_at_5: float
+    all_tools_found_at_k: float
     argument_schema_coverage: float
+    argument_schema_coverage_at_k: float
     latency_ms: float
 
 
@@ -162,13 +165,20 @@ def evaluate_case(
         recall_at_1=recall_at_k(retrieved, expected, 1),
         recall_at_3=recall_at_k(retrieved, expected, min(3, top_k)),
         recall_at_5=recall_at_k(retrieved, expected, min(5, top_k)),
+        recall_at_k=recall_at_k(retrieved, expected, top_k),
         ndcg_at_5=ndcg_at_k(retrieved, expected, min(5, top_k)),
         mrr=mrr(retrieved, expected),
         all_tools_found_at_5=1.0 if expected.issubset(set(retrieved[: min(5, top_k)])) else 0.0,
+        all_tools_found_at_k=1.0 if expected.issubset(set(retrieved[:top_k])) else 0.0,
         argument_schema_coverage=_argument_schema_coverage(
             tg,
             expected_arg_names,
             retrieved=set(retrieved[: min(5, top_k)]),
+        ),
+        argument_schema_coverage_at_k=_argument_schema_coverage(
+            tg,
+            expected_arg_names,
+            retrieved=set(retrieved[:top_k]),
         ),
         latency_ms=round(latency_ms, 3),
     )
@@ -338,10 +348,13 @@ def _summarize(
         "recall_at_1": _mean(row.recall_at_1 for row in rows),
         "recall_at_3": _mean(row.recall_at_3 for row in rows),
         "recall_at_5": _mean(row.recall_at_5 for row in rows),
+        "recall_at_k": _mean(row.recall_at_k for row in rows),
         "ndcg_at_5": _mean(row.ndcg_at_5 for row in rows),
         "mrr": _mean(row.mrr for row in rows),
         "all_tools_found_at_5": _mean(row.all_tools_found_at_5 for row in rows),
+        "all_tools_found_at_k": _mean(row.all_tools_found_at_k for row in rows),
         "argument_schema_coverage": _mean(row.argument_schema_coverage for row in rows),
+        "argument_schema_coverage_at_k": _mean(row.argument_schema_coverage_at_k for row in rows),
         "avg_latency_ms": _mean(row.latency_ms for row in rows),
     }
     summary["status"] = "pass" if summary["recall_at_5"] >= min_recall_at_5 else "fail"
@@ -357,6 +370,7 @@ def _mean(values: Any) -> float:
 
 def print_report(report: dict[str, Any]) -> None:
     summary = report["summary"]
+    top_k = int(report["top_k"])
     print(f"{report['benchmark']}")
     print(
         f"model={report['model']} methodology={report['methodology']} "
@@ -364,13 +378,19 @@ def print_report(report: dict[str, Any]) -> None:
     )
     print(
         "overall recall@1={r1:.2f} recall@3={r3:.2f} recall@5={r5:.2f} "
-        "mrr={mrr_:.2f} ndcg@5={ndcg:.2f} schema={schema:.2f} latency={latency:.2f}ms".format(
+        "recall@{k}={rk:.2f} all_tools@{k}={allk:.2f} "
+        "mrr={mrr_:.2f} ndcg@5={ndcg:.2f} schema@5={schema:.2f} "
+        "schema@{k}={schemak:.2f} latency={latency:.2f}ms".format(
+            k=top_k,
             r1=summary["recall_at_1"],
             r3=summary["recall_at_3"],
             r5=summary["recall_at_5"],
+            rk=summary["recall_at_k"],
+            allk=summary["all_tools_found_at_k"],
             mrr_=summary["mrr"],
             ndcg=summary["ndcg_at_5"],
             schema=summary["argument_schema_coverage"],
+            schemak=summary["argument_schema_coverage_at_k"],
             latency=summary["avg_latency_ms"],
         )
     )
@@ -378,12 +398,16 @@ def print_report(report: dict[str, Any]) -> None:
         cat_summary = category["summary"]
         print(
             "  {name}: cases={cases} tools={tools} recall@5={r5:.2f} "
-            "all_tools@5={all_tools:.2f} mrr={mrr_:.2f}".format(
+            "recall@{k}={rk:.2f} all_tools@5={all_tools:.2f} "
+            "all_tools@{k}={all_tools_k:.2f} mrr={mrr_:.2f}".format(
+                k=top_k,
                 name=category["category"],
                 cases=category["case_count"],
                 tools=category["corpus_tool_count"],
                 r5=cat_summary["recall_at_5"],
+                rk=cat_summary["recall_at_k"],
                 all_tools=cat_summary["all_tools_found_at_5"],
+                all_tools_k=cat_summary["all_tools_found_at_k"],
                 mrr_=cat_summary["mrr"],
             )
         )

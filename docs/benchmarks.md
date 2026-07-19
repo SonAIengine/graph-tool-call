@@ -415,6 +415,11 @@ fastest way to decide whether a full expensive run produced evidence strong
 enough for the next XGEN milestone, or whether work should return to a smaller
 failure subset first.
 
+For paper-ready rerun candidates, use the stricter `xgen-0.28` profile. It
+keeps the same core quality metrics but also requires at least `3` repeats and
+`1000` retrieved-source cases per repeat, so a 100-case smoke cannot be mistaken
+for broad-distribution evidence.
+
 ```bash
 poetry run python -m benchmarks.bfcl_tool_selection.sweep \
   --categories simple_python,multiple,parallel,parallel_multiple \
@@ -425,6 +430,11 @@ poetry run python -m benchmarks.bfcl_tool_selection.sweep \
   --disable-thinking \
   --milestone-profile xgen-0.27 \
   --output /tmp/gtc-bfcl-xgen-027-sweep.json
+```
+
+```bash
+make bfcl-028-gate
+make bfcl-028-gate-check REPORT=/tmp/gtc-bfcl-028-gate.json
 ```
 
 For diagnostic sweeps that do not include the row-source baseline or
@@ -566,7 +576,10 @@ The row-source baseline passes the official per-case BFCL tool list to the
 model. The retrieved-source runs pass only graph-tool-call top-K candidates.
 The retrieved-source full result export was also re-scored with
 `bfcl_eval evaluate --partial-eval`; per-category score JSON files matched the
-runner summary for `k=3`, `k=5`, and `k=10`.
+runner summary for `k=3`, `k=5`, and `k=10`. These 1000-case numbers are the
+last broad-distribution baseline before the later 0.27 hardening passes; they
+remain useful as the paper-ready rerun target, but the current product-candidate
+gate is tracked separately below.
 
 ```text
 row       k=5  cases=1000 retrieval@K=0.91 exact=0.90 strict=0.89
@@ -624,6 +637,55 @@ evidence, and repeated full runs the next quality targets before a
 publish-candidate run. BFCL-compatible result export now exists for local
 official-checker reruns; it should be used to keep future numbers tied to
 auditable model outputs.
+
+Latest 0.27 candidate gate evidence on 2026-07-19:
+
+```bash
+make bfcl-027-gate-check \
+  REPORT=/tmp/gtc-bfcl-date-guidance-limit25-repeat3-row-retrieved-qwen.json
+```
+
+```text
+milestone xgen-0.27 status=pass
+retrieved_exact@5=1.000 retrieval@5=1.000
+row_preservation=1.000 parallel_multiple=1.000
+```
+
+This artifact uses qwen3.6-27B, `simple_python,multiple,parallel,parallel_multiple`,
+`limit=25` per category, row/retrieved tool sources, top-k=5, and repeat 3.
+Across all three repeats, both row-source and retrieved-source exact mean/std
+are `1.00 / 0.000`, `parallel_multiple` exact is `1.00`, and
+`row_pass_retrieved_fail=0`. This is the XGEN 0.27 product-candidate gate, not a
+replacement for a fresh full 1000-case paper-ready run.
+
+Latest full 0.28 paper-ready attempt on 2026-07-19:
+
+```bash
+make bfcl-028-gate-check \
+  REPORT=/tmp/gtc-bfcl-028-gate-full-qwen.json
+```
+
+```text
+milestone xgen-0.28 status=fail
+retrieved_exact@5=0.865 retrieval@5=0.953
+row_preservation=0.904497 parallel_multiple=0.730
+repeats=3 cases_per_repeat=1000
+```
+
+This is a local BFCL-compatible qwen3.6-27B run, not a BFCL leaderboard score.
+It is not strong enough for a README/public paper headline. The saved failure
+inspection artifact `/tmp/gtc-bfcl-028-failure-inspect.json` shows that many
+expected tools are present within depth 30 but not top 5, and that
+`parallel_multiple` loses too much of the row-source upper bound. Treat this as
+the next research target for rank compression, multi-tool candidate-set
+preservation, and optional embedding/rerank ablation.
+
+The deterministic BFCL tool-selection runner now reports requested-depth
+`recall_at_k`, `all_tools_found_at_k`, and `argument_schema_coverage_at_k`
+alongside the fixed top-5 metrics. On the same 91-case 0.28 failure subset,
+`top_k=30` gives `all_tools_found_at_5=0.274725` but
+`all_tools_found_at_k=0.901099` and `recall_at_k=0.937729`. This makes the
+selector upper bound visible in seconds, before another expensive model run.
 
 No-LLM deterministic retrieval experiments use the validation loop in
 [`docs/research/validation-loop.md`](research/validation-loop.md). The current
@@ -836,6 +898,85 @@ selector instrumentation fixes:
 | `3` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
 | `5` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
 | `10` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
+
+Latest schema-context sweep on 2026-07-19:
+
+```bash
+OUT=/tmp/gtc-x2bee-schema-context-threshold-sweep.json TOP_KS=3,5,10 make xgen-scale-sweep
+make xgen-scale-gate-check REPORT=/tmp/gtc-x2bee-schema-context-threshold-sweep.json
+```
+
+| Metric | Value |
+|---|---:|
+| Full compact tool schema chars | `56,756,400` |
+| Average candidate schema chars | `157,320` |
+| Max candidate schema chars | `865,608` |
+| Average candidate schema fraction | `0.002772` |
+| Average schema context reduction | `99.72%` |
+| Minimum schema context reduction | `98.47%` |
+
+This is a deterministic compact-JSON character-count proxy, not a tokenizer
+claim. It measures how much model-facing tool schema payload remains after
+graph-tool-call selects the target plus required producers, compared with
+passing all 1,084 tool schemas to the model.
+The X2BEE acceptance thresholds now require
+`avg_schema_context_reduction >= 0.99` and
+`min_schema_context_reduction >= 0.98`, so broadening the LLM-facing candidate
+schema surface becomes a gate failure instead of an after-the-fact observation.
+
+For paper-ready or externally cited XGEN-scale claims, use the stricter
+`xgen-scale-0.28` profile. It requires the report to be generated from a saved
+OpenAPI snapshot manifest and checks that every referenced spec has sha256
+provenance:
+
+```bash
+make xgen-scale-snapshot \
+  OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot
+
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
+GATE_PROFILE=xgen-scale-0.28 \
+OUT=/tmp/gtc-x2bee-scale-snapshot-sweep.json \
+make xgen-scale-sweep
+
+make xgen-scale-028-gate-check \
+  REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep.json
+```
+
+Latest snapshot-provenance sweep on 2026-07-19:
+
+```bash
+OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot-028 make xgen-scale-snapshot
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot-028/manifest.json make xgen-scale-snapshot-check
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot-028/manifest.json \
+  GATE_PROFILE=xgen-scale-0.28 \
+  OUT=/tmp/gtc-x2bee-scale-snapshot-sweep-028.json \
+  TOP_KS=3,5,10 \
+  make xgen-scale-sweep
+make xgen-scale-028-gate-check REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep-028.json
+```
+
+| Metric | Value |
+|---|---:|
+| Snapshot specs / sha256 entries | `15 / 15` |
+| Raw operations | `2,173` |
+| Unique tools after operationId dedupe | `1,084` |
+| Duplicate tools skipped | `1,077` |
+| Graph edges | `8,579` |
+| Build time | `11.62s` |
+| Acceptance Top-K | `10` |
+| Product cases | `19` |
+| Hit@10 / expected recall@10 / selector exact@10 | `1.00 / 1.00 / 1.00` |
+| Average / max candidate count | `2.00 / 6` |
+| Average schema context reduction | `99.78%` |
+| Minimum schema context reduction | `98.30%` |
+| Average retrieval latency | `31.79ms` |
+
+The saved report embeds `gate.profile=xgen-scale-0.28`,
+`snapshot_provenance_complete=true`, and passes the external
+`xgen-scale-028-gate-check`.
+
+The routine `xgen-scale-0.27` profile remains useful for fast replay of saved
+live artifacts; `xgen-scale-0.28` is the provenance gate for public numbers.
 
 The same sweep now exposes the next bottleneck after target selection. Across
 the 19 product-level cases, average plan candidate count is `2.16`, max
