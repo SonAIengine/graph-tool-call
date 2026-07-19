@@ -57,7 +57,7 @@ from graph_tool_call.retrieval.keyword import BM25Scorer
 
 DEFAULT_OFFICIAL_MODEL_NAME = "qwen3-32b-FC"
 BFCL_RESULT_ARGUMENT_FORMATS = ("json-string", "decoded")
-MODEL_CASE_CACHE_VERSION = 17
+MODEL_CASE_CACHE_VERSION = 18
 
 
 @dataclass(frozen=True)

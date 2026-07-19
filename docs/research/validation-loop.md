@@ -250,6 +250,8 @@ qwen3.6-27B smoke는 before artifacts
 `/tmp/gtc-bfcl-extra-tool-fixed-multiple7-retrieved-qwen.json` row/retrieved exact
 `1.00` pass로 회복됐다. Route, subsumption, paired-array, contextual-extra 대표
 4-case smoke `/tmp/gtc-bfcl-extra-tool-recovered4-qwen.json`도 exact `1.00`이다.
+이 pass는 model-facing 후보와 prompt를 모두 바꾸므로 BFCL model cache version을
+`18`로 올려 이전 run cache 재사용을 막았다.
 
 ## 실행 타깃
 
