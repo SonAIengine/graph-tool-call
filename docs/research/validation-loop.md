@@ -175,6 +175,15 @@ Qwen이 만들던 `unit="units"`가 제거된다. 1-case smoke
 `optional_value_mismatch`, `percentage_scale_mismatch`이고,
 `parallel_multiple_21`은 fresh output에서 `call_count_mismatch`로 이동했다.
 
+`2026-07-19` argument-value preservation pass는 model-facing schema에
+deterministic value hints를 붙인다. Boolean default 설명은 기본값을 유지하게
+하고, `*_rate` numeric field는 `4% -> 0.04` decimal fraction을 명시하며,
+open dict argument는 nested object로 유지하게 하고, user query에
+`x=data['sales']`처럼 직접 할당된 symbolic reference는 해당 argument schema를
+string으로 열어 exact reference를 보존하게 한다. Fresh qwen3.6-27B run
+`/tmp/gtc-bfcl-argument-value-hints-v4-subset.json` 기준 6-case argument subset은
+retrieval@5 `1.00`, evaluator exact `1.00`, failure tags `{}`다.
+
 ## 실행 타깃
 
 ```bash

@@ -310,6 +310,10 @@ Required work:
     `simple_python_11` exact를 `0.00 -> 1.00`으로 바꿨고, 6-case argument subset
     exact는 `/tmp/gtc-bfcl-case-local-schema-argument-subset.json` 기준
     `0.166667 -> 0.5`가 됐다.
+    argument-value preservation pass에서는 boolean default, percentage decimal
+    scale, open dict nesting, query-local symbolic reference를 model-facing schema에
+    보강해 `/tmp/gtc-bfcl-argument-value-hints-v4-subset.json` 기준 같은 6-case
+    argument subset exact를 `1.00`까지 올렸다.
     다음 병목은 `solve_quadratic` vs `solve_quadratic_equation`,
     `geometry.circumference` vs `calculate_circumference`, `math.gcd` vs
     `number_theory.gcd` 같은 near-duplicate disambiguation과 argument-value

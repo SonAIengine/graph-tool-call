@@ -17,6 +17,7 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     _evaluate_predictions,
     _failure_tags,
     _messages_for_case,
+    _normalize_parameters,
     _prepare_tools_for_model,
     _presented_raw_tools,
     run_model_benchmark,
@@ -113,12 +114,63 @@ def test_presented_tools_prefer_case_local_schema_for_duplicate_names():
     assert set(properties) == {"base", "height"}
 
 
+def test_normalized_parameters_add_argument_value_preservation_hints():
+    schema = _normalize_parameters(
+        {
+            "type": "dict",
+            "properties": {
+                "formatted": {
+                    "type": "boolean",
+                    "description": "Return formatted string if true. Default is true.",
+                },
+                "interest_rate": {
+                    "type": "float",
+                    "description": "The annual interest rate.",
+                },
+                "gradeDict": {
+                    "type": "dict",
+                    "description": "Subject score mapping.",
+                },
+                "x": {
+                    "type": "array",
+                    "items": {"type": "float"},
+                    "description": "Array of the predictor variable.",
+                },
+                "return_residuals": {
+                    "type": "boolean",
+                    "description": "Return residuals.",
+                    "default": "false",
+                },
+            },
+            "required": ["formatted", "interest_rate", "gradeDict"],
+        },
+        query="Fit a model with x=data['sales'] and y=data['future_sales'].",
+    )
+
+    properties = schema["properties"]
+
+    assert "pass true" in properties["formatted"]["description"]
+    assert "does not explicitly request false" in properties["formatted"]["description"]
+    assert "pass the decimal fraction 0.04" in properties["interest_rate"]["description"]
+    assert "Pass a JSON object" in properties["gradeDict"]["description"]
+    assert "not as top-level arguments" in properties["gradeDict"]["description"]
+    assert properties["gradeDict"]["additionalProperties"] is True
+    assert properties["x"]["type"] == "string"
+    assert "items" not in properties["x"]
+    assert "data['sales']" in properties["x"]["description"]
+    assert "pass exactly the string" in properties["x"]["description"]
+    assert "pass false" in properties["return_residuals"]["description"]
+    assert schema["required"] == ["formatted", "interest_rate", "gradeDict"]
+
+
 def test_messages_can_include_candidate_selection_guidance():
     plain = _messages_for_case("calculate area")
     guided = _messages_for_case("calculate area", candidate_selection_guidance=True)
 
     assert "Use only argument keys declared" in plain[0]["content"]
     assert "never invent extra argument names" in plain[0]["content"]
+    assert "do not flatten them into top-level arguments" in plain[0]["content"]
+    assert "Preserve symbolic data references" in plain[0]["content"]
     assert "Candidate selection guidance" not in plain[0]["content"]
     assert "Candidate selection guidance" in guided[0]["content"]
     assert "same namespace or API family" in guided[0]["content"]
