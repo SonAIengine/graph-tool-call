@@ -76,12 +76,27 @@ class SearchEvaluation:
     query: str
     expected_tools: list[str]
     expected_any: list[str]
+    expected_producers: list[str]
+    expected_plan: list[str]
     retrieved: list[str]
     selected_target: str
     target_selector_candidates: list[str]
     target_selector_rank: int | None
     target_selector_exact: float
     target_action_priority: dict[str, int]
+    plan_candidates: list[str]
+    producer_candidates: list[str]
+    producer_added_count: int
+    candidate_count: int
+    target_data_input_count: int
+    target_required_data_input_count: int
+    target_producible_input_count: int
+    target_required_producible_input_count: int
+    producible_input_coverage: float
+    required_input_coverage: float
+    producer_recall_at_k: float
+    candidate_plan_coverage: float
+    input_support: list[dict[str, Any]]
     expected_ranks: dict[str, int | None]
     primary_expected_rank: int | None
     best_expected_rank: int | None
@@ -128,11 +143,13 @@ def run_benchmark(
     cases_doc = load_cases(cases_path)
     selected_top_k = int(top_k or cases_doc.get("top_k") or 10)
     tools_by_name = _tools_by_name(prepared.graph)
+    producer_index = _contract_producer_index(tools_by_name)
     cases = [
         evaluate_search_case(
             case,
             tg=prepared.graph,
             tools_by_name=tools_by_name,
+            producer_index=producer_index,
             top_k=selected_top_k,
         )
         for case in cases_doc.get("cases", [])
@@ -219,11 +236,18 @@ def run_top_k_sweep(
     )
     thresholds = cases_doc.get("thresholds") or {}
     tools_by_name = _tools_by_name(prepared.graph)
+    producer_index = _contract_producer_index(tools_by_name)
     sweep: list[dict[str, Any]] = []
     acceptance_search_status = "skipped"
     for top_k in selected_top_ks:
         cases = [
-            evaluate_search_case(case, tg=prepared.graph, tools_by_name=tools_by_name, top_k=top_k)
+            evaluate_search_case(
+                case,
+                tg=prepared.graph,
+                tools_by_name=tools_by_name,
+                producer_index=producer_index,
+                top_k=top_k,
+            )
             for case in cases_doc.get("cases", [])
         ]
         search_summary = summarize_search(
@@ -325,11 +349,13 @@ def run_contract_signal_ablation(
             max_build_seconds=max_build_seconds,
         )
         tools_by_name = _tools_by_name(graph)
+        producer_index = _contract_producer_index(tools_by_name)
         cases = [
             evaluate_search_case(
                 case,
                 tg=graph,
                 tools_by_name=tools_by_name,
+                producer_index=producer_index,
                 top_k=selected_top_k,
             )
             for case in cases_doc.get("cases", [])
@@ -592,11 +618,14 @@ def evaluate_search_case(
     *,
     tg: ToolGraph,
     tools_by_name: dict[str, dict[str, Any]],
+    producer_index: dict[str, list[str]],
     top_k: int,
 ) -> SearchEvaluation:
     query = str(case["query"])
     expected_tools = [str(name) for name in case.get("expected_tools") or []]
     expected_any = [str(name) for name in case.get("expected_any") or []]
+    expected_producers = [str(name) for name in case.get("expected_producers") or []]
+    expected_plan = [str(name) for name in case.get("expected_plan") or []]
     expected_union = set(expected_tools) | set(expected_any)
 
     started = time.perf_counter()
@@ -613,6 +642,11 @@ def evaluate_search_case(
     )
     selector_candidates = [str(name) for name in selector_set.get("target_candidates") or []]
     selected_target = selector_candidates[0] if selector_candidates else ""
+    readiness = _plan_readiness(
+        selected_target,
+        tools_by_name,
+        producer_index=producer_index,
+    )
 
     required_ok = set(expected_tools).issubset(retrieved_set) if expected_tools else True
     any_ok = bool(set(expected_any) & retrieved_set) if expected_any else True
@@ -625,6 +659,16 @@ def evaluate_search_case(
     expected_ranks = {name: _rank_of(retrieved, name) for name in sorted(expected_union)}
     target_selector_rank = _best_rank(selector_candidates, expected_union)
     target_selector_exact = 1.0 if not expected_union or selected_target in expected_union else 0.0
+    producer_recall = recall_at_k(
+        readiness["plan_candidates"],
+        set(expected_producers),
+        len(readiness["plan_candidates"]),
+    )
+    candidate_plan_coverage = recall_at_k(
+        readiness["plan_candidates"],
+        set(expected_plan),
+        len(readiness["plan_candidates"]),
+    )
     primary_expected_rank = _rank_of(retrieved, expected_tools[0]) if expected_tools else None
     ranked_expected = [rank for rank in expected_ranks.values() if rank is not None]
     best_expected_rank = min(ranked_expected) if ranked_expected else None
@@ -637,18 +681,41 @@ def evaluate_search_case(
     if target_selector_exact < 1.0:
         issues = [issue for issue in issues if issue != "pass"]
         issues.append("target_selector_miss")
+    if (
+        int(readiness["target_required_data_input_count"]) > 0
+        and float(readiness["required_input_coverage"]) < 1.0
+    ):
+        issues = [issue for issue in issues if issue != "pass"]
+        issues.append("required_input_not_producible")
 
     return SearchEvaluation(
         case_id=str(case["id"]),
         query=query,
         expected_tools=expected_tools,
         expected_any=expected_any,
+        expected_producers=expected_producers,
+        expected_plan=expected_plan,
         retrieved=retrieved,
         selected_target=selected_target,
         target_selector_candidates=selector_candidates,
         target_selector_rank=target_selector_rank,
         target_selector_exact=target_selector_exact,
         target_action_priority=target_action_priority,
+        plan_candidates=[str(name) for name in readiness["plan_candidates"]],
+        producer_candidates=[str(name) for name in readiness["producer_candidates"]],
+        producer_added_count=int(readiness["producer_added_count"]),
+        candidate_count=int(readiness["candidate_count"]),
+        target_data_input_count=int(readiness["target_data_input_count"]),
+        target_required_data_input_count=int(readiness["target_required_data_input_count"]),
+        target_producible_input_count=int(readiness["target_producible_input_count"]),
+        target_required_producible_input_count=int(
+            readiness["target_required_producible_input_count"]
+        ),
+        producible_input_coverage=float(readiness["producible_input_coverage"]),
+        required_input_coverage=float(readiness["required_input_coverage"]),
+        producer_recall_at_k=producer_recall,
+        candidate_plan_coverage=candidate_plan_coverage,
+        input_support=[dict(row) for row in readiness["input_support"]],
         expected_ranks=expected_ranks,
         primary_expected_rank=primary_expected_rank,
         best_expected_rank=best_expected_rank,
@@ -739,6 +806,27 @@ def summarize_search(
         "expected_tool_recall_at_k": _mean(case.expected_tool_recall_at_k for case in cases),
         "target_selector_exact_at_k": _mean(case.target_selector_exact for case in cases),
         "target_selector_miss_count": sum(1 for case in cases if case.target_selector_exact < 1.0),
+        "avg_candidate_count": _mean(case.candidate_count for case in cases),
+        "max_candidate_count": max((case.candidate_count for case in cases), default=0),
+        "avg_producer_added_count": _mean(case.producer_added_count for case in cases),
+        "producer_added_case_count": sum(1 for case in cases if case.producer_added_count > 0),
+        "expected_producer_case_count": sum(1 for case in cases if case.expected_producers),
+        "producer_recall_at_k": _mean(
+            case.producer_recall_at_k for case in cases if case.expected_producers
+        ),
+        "expected_plan_case_count": sum(1 for case in cases if case.expected_plan),
+        "candidate_plan_coverage": _mean(
+            case.candidate_plan_coverage for case in cases if case.expected_plan
+        ),
+        "avg_target_data_input_count": _mean(case.target_data_input_count for case in cases),
+        "avg_target_required_data_input_count": _mean(
+            case.target_required_data_input_count for case in cases
+        ),
+        "avg_producible_input_coverage": _mean(case.producible_input_coverage for case in cases),
+        "avg_required_input_coverage": _mean(case.required_input_coverage for case in cases),
+        "required_input_ready_case_count": sum(
+            1 for case in cases if case.required_input_coverage >= 1.0
+        ),
         "top_1_hit_at_k": _mean(case.top_1_hit for case in cases),
         "top_3_hit_at_k": _mean(case.top_3_hit for case in cases),
         "mean_mrr": _mean(case.mrr for case in cases),
@@ -785,6 +873,10 @@ def _compare_contract_signal_variants(variants: list[dict[str, Any]]) -> dict[st
         "avg_latency_ms",
         "p50_latency_ms",
         "target_selector_exact_at_k",
+        "avg_candidate_count",
+        "producer_recall_at_k",
+        "candidate_plan_coverage",
+        "avg_required_input_coverage",
     ]
     deltas = {
         f"{metric}_delta": round(
@@ -848,6 +940,147 @@ def _case_issues(
     if best_expected_rank is not None and best_expected_rank > 3:
         issues.append("best_expected_below_top_3")
     return issues or ["pass"]
+
+
+def _plan_readiness(
+    selected_target: str,
+    tools_by_name: dict[str, dict[str, Any]],
+    *,
+    producer_index: dict[str, list[str]],
+    max_producers_per_field: int = 3,
+) -> dict[str, Any]:
+    target_tool = tools_by_name.get(selected_target) or {}
+    consumes = _data_consumes(target_tool)
+    input_support: list[dict[str, Any]] = []
+    producer_candidates: list[str] = []
+    supported = 0
+    required_total = 0
+    required_supported = 0
+
+    for consume in consumes:
+        required = bool(consume.get("required"))
+        if required:
+            required_total += 1
+        producers = _producer_candidates_for_field(
+            consume,
+            producer_index=producer_index,
+            exclude={selected_target},
+            max_producers=max_producers_per_field,
+        )
+        if producers:
+            supported += 1
+            if required:
+                required_supported += 1
+        producer_candidates.extend(producers)
+        input_support.append(
+            {
+                "field_name": str(consume.get("field_name") or ""),
+                "semantic_tag": str(consume.get("semantic_tag") or ""),
+                "location": str(consume.get("location") or ""),
+                "required": required,
+                "producer_candidates": producers,
+                "supported": bool(producers),
+            }
+        )
+
+    producers = _dedupe(producer_candidates)
+    plan_candidates = _dedupe([selected_target, *producers])
+    return {
+        "plan_candidates": plan_candidates,
+        "producer_candidates": producers,
+        "producer_added_count": len(producers),
+        "candidate_count": len(plan_candidates),
+        "target_data_input_count": len(consumes),
+        "target_required_data_input_count": required_total,
+        "target_producible_input_count": supported,
+        "target_required_producible_input_count": required_supported,
+        "producible_input_coverage": _ratio(supported, len(consumes)),
+        "required_input_coverage": _ratio(required_supported, required_total),
+        "input_support": input_support,
+    }
+
+
+def _data_consumes(tool: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = _contract_rows(tool, "consumes")
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for row in rows:
+        kind = str(row.get("kind") or "data").strip().lower()
+        if kind != "data":
+            continue
+        key = (
+            str(row.get("field_name") or ""),
+            str(row.get("semantic_tag") or ""),
+            str(row.get("location") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(dict(row))
+    return out
+
+
+def _contract_producer_index(
+    tools_by_name: dict[str, dict[str, Any]],
+) -> dict[str, list[str]]:
+    index: dict[str, list[str]] = {}
+    for name, tool in tools_by_name.items():
+        for produce in _contract_rows(tool, "produces"):
+            for token in _contract_tokens(produce):
+                index.setdefault(token, []).append(name)
+    return {token: _dedupe(names) for token, names in index.items()}
+
+
+def _producer_candidates_for_field(
+    consume: dict[str, Any],
+    *,
+    producer_index: dict[str, list[str]],
+    exclude: set[str],
+    max_producers: int,
+) -> list[str]:
+    producers: list[str] = []
+    for token in _contract_tokens(consume):
+        producers.extend(name for name in producer_index.get(token, []) if name not in exclude)
+    return _dedupe(producers)[: max(0, max_producers)]
+
+
+def _contract_rows(tool: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    metadata = tool.get("metadata") or {}
+    rows = [dict(row) for row in metadata.get(key) or [] if isinstance(row, dict)]
+    api_contract = metadata.get("api_contract") or {}
+    rows.extend(dict(row) for row in api_contract.get(key) or [] if isinstance(row, dict))
+    return rows
+
+
+def _contract_tokens(row: dict[str, Any]) -> list[str]:
+    values = [
+        row.get("semantic_tag"),
+        row.get("field_name"),
+        row.get("json_path"),
+        *(row.get("value_path_aliases") or []),
+    ]
+    tokens: list[str] = []
+    for value in values:
+        if not value:
+            continue
+        text = str(value).strip().lower()
+        if not text:
+            continue
+        tokens.append(text)
+        normalized = re.sub(r"[^a-z0-9가-힣]+", "", text)
+        if normalized:
+            tokens.append(normalized)
+    return _dedupe(tokens)
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(str(value) for value in values if str(value)))
+
+
+def _ratio(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 1.0
+    return round(numerator / denominator, 6)
 
 
 def _result_row(result: Any) -> dict[str, Any]:
@@ -1019,7 +1252,8 @@ def _print_report(report: dict[str, Any]) -> None:
         print(
             "search: status={status} cases={cases} hit@K={hit:.2f} recall@K={recall:.2f} "
             "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
-            "mrr={mrr_:.2f} avg_latency={latency:.2f}ms".format(
+            "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
+            "required_inputs={required:.2f} avg_latency={latency:.2f}ms".format(
                 status=search["status"],
                 cases=search["cases"],
                 hit=search["case_hit_at_k"],
@@ -1028,6 +1262,9 @@ def _print_report(report: dict[str, Any]) -> None:
                 top1=search["top_1_hit_at_k"],
                 top3=search["top_3_hit_at_k"],
                 mrr_=search["mean_mrr"],
+                candidates=search["avg_candidate_count"],
+                producers=search["avg_producer_added_count"],
+                required=search["avg_required_input_coverage"],
                 latency=search["avg_latency_ms"],
             )
         )
@@ -1042,9 +1279,13 @@ def _print_report(report: dict[str, Any]) -> None:
                 )
             )
             print(
-                "    selector={selected} selector_rank={rank}".format(
+                "    selector={selected} selector_rank={rank} candidates={count} "
+                "producers={producers} required_inputs={required:.2f}".format(
                     selected=case["selected_target"],
                     rank=case["target_selector_rank"],
+                    count=case["candidate_count"],
+                    producers=case["producer_added_count"],
+                    required=case["required_input_coverage"],
                 )
             )
 
@@ -1084,7 +1325,8 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
         print(
             "k={top_k:<2}{suffix}: status={status} hit@K={hit:.2f} recall@K={recall:.2f} "
             "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
-            "mrr={mrr_:.2f} avg_latency={latency:.2f}ms issues={issues}".format(
+            "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
+            "required_inputs={required:.2f} avg_latency={latency:.2f}ms issues={issues}".format(
                 top_k=run["top_k"],
                 suffix=suffix,
                 status=search["status"],
@@ -1094,6 +1336,9 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
                 top1=search["top_1_hit_at_k"],
                 top3=search["top_3_hit_at_k"],
                 mrr_=search["mean_mrr"],
+                candidates=search["avg_candidate_count"],
+                producers=search["avg_producer_added_count"],
+                required=search["avg_required_input_coverage"],
                 latency=search["avg_latency_ms"],
                 issues=search["issues"],
             )
@@ -1127,13 +1372,17 @@ def _print_ablation_report(report: dict[str, Any]) -> None:
             print(
                 "  search: hit@K={hit:.2f} recall@K={recall:.2f} top1={top1:.2f} "
                 "top3={top3:.2f} selector={selector:.2f} mrr={mrr_:.2f} "
-                "avg_latency={latency:.2f}ms".format(
+                "candidates={candidates:.2f} producers={producers:.2f} "
+                "required_inputs={required:.2f} avg_latency={latency:.2f}ms".format(
                     hit=search["case_hit_at_k"],
                     recall=search["expected_tool_recall_at_k"],
                     top1=search["top_1_hit_at_k"],
                     top3=search["top_3_hit_at_k"],
                     selector=search["target_selector_exact_at_k"],
                     mrr_=search["mean_mrr"],
+                    candidates=search["avg_candidate_count"],
+                    producers=search["avg_producer_added_count"],
+                    required=search["avg_required_input_coverage"],
                     latency=search["avg_latency_ms"],
                 )
             )

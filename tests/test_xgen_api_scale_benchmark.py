@@ -160,6 +160,8 @@ def test_x2bee_default_cases_cover_product_level_domains():
 
     assert len(cases) >= 18
     assert cases_doc["thresholds"]["target_selector_exact_at_k"] >= 0.85
+    assert cases_doc["thresholds"]["avg_required_input_coverage"] >= 0.8
+    assert cases_doc["thresholds"]["max_avg_candidate_count"] <= 25.0
     assert len(case_ids) == len(set(case_ids))
     for required_id in {
         "member_list_ko",
@@ -237,6 +239,82 @@ def test_xgen_api_scale_can_promote_contract_signals(tmp_path):
     assert promotion["produces_added"] >= 1
     assert promotion["consumes_added"] >= 1
     assert report["search"]["case_hit_at_k"] == 1.0
+
+
+def test_xgen_api_scale_reports_contract_plan_readiness(tmp_path):
+    cases_path = tmp_path / "cases.json"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "name": "Tiny Plan Readiness",
+                "top_k": 2,
+                "thresholds": {
+                    "case_hit_at_k": 1.0,
+                    "target_selector_exact_at_k": 1.0,
+                    "producer_recall_at_k": 1.0,
+                    "candidate_plan_coverage": 1.0,
+                    "avg_required_input_coverage": 1.0,
+                },
+                "cases": [
+                    {
+                        "id": "detail_from_search",
+                        "query": "product detail",
+                        "expected_tools": ["getProductDetail"],
+                        "expected_producers": ["searchProducts"],
+                        "expected_plan": ["searchProducts", "getProductDetail"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    spec = _spec(
+        "Plan Readiness",
+        {
+            "/products": _contract_operation(
+                "searchProducts",
+                "Product search",
+                response_fields={"productId": {"type": "string"}},
+            ),
+            "/products/detail": _contract_operation(
+                "getProductDetail",
+                "Product detail",
+                parameters=[
+                    {
+                        "name": "productId",
+                        "in": "query",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    }
+                ],
+                response_fields={"skuId": {"type": "string"}},
+            ),
+        },
+    )
+
+    report = run_benchmark(
+        spec_sources=[spec],
+        cases_path=cases_path,
+        top_k=2,
+        min_unique_tools=2,
+        max_build_seconds=10,
+    )
+    case = report["cases"][0]
+
+    assert report["status"] == "pass"
+    assert report["search"]["expected_producer_case_count"] == 1
+    assert report["search"]["expected_plan_case_count"] == 1
+    assert report["search"]["producer_recall_at_k"] == 1.0
+    assert report["search"]["candidate_plan_coverage"] == 1.0
+    assert report["search"]["avg_required_input_coverage"] == 1.0
+    assert report["search"]["required_input_ready_case_count"] == 1
+    assert case["selected_target"] == "getProductDetail"
+    assert case["producer_candidates"] == ["searchProducts"]
+    assert case["plan_candidates"] == ["getProductDetail", "searchProducts"]
+    assert case["target_required_data_input_count"] == 1
+    assert case["target_required_producible_input_count"] == 1
+    assert case["input_support"][0]["field_name"] == "productId"
+    assert case["input_support"][0]["producer_candidates"] == ["searchProducts"]
 
 
 def test_xgen_api_scale_contract_signal_ablation_reports_deltas(tmp_path):

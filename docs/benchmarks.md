@@ -734,7 +734,10 @@ acceptable expected tool, so `expected_any` alternatives do not make passing
 cases look missing. It also records `target_selector_exact_at_k`,
 `target_selector_miss_count`, and `target_selector_rank_buckets` by reranking
 the retrieved top-K through the same query-action candidate contract used by the
-deterministic fixture benchmark.
+deterministic fixture benchmark. After target selection, the runner also derives
+contract-based plan-readiness metrics without indexing raw contract fields into
+BM25: `plan_candidates`, `producer_candidates`, input support evidence,
+`avg_required_input_coverage`, and `required_input_not_producible` issues.
 
 Latest product-level sweep on 2026-07-19 after Korean top-1 ambiguity and
 selector instrumentation fixes:
@@ -744,6 +747,14 @@ selector instrumentation fixes:
 | `3` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
 | `5` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
 | `10` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
+
+The same sweep now exposes the next bottleneck after target selection. Across
+the 19 product-level cases, average plan candidate count is `17.16`, max
+candidate count is `44`, average producer candidates added is `16.16`, and
+average required input coverage is `0.846`. Fourteen cases have all required
+data inputs matched to at least one response-field producer; five cases emit
+`required_input_not_producible`. Those five are the next request/response
+binding and contract-normalization targets.
 
 OpenAPI request/response contract is preserved under `metadata.api_contract`
 and `metadata.openapi`. It is intentionally not promoted into top-level

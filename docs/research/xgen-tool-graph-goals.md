@@ -41,6 +41,8 @@ live acceptance run을 별도로 둔다.
 | X2BEE Korean product cases | `19` |
 | X2BEE Korean product hit@3 | `1.00` |
 | X2BEE target selector exact@3 | `1.00` |
+| X2BEE avg plan candidate count | `17.16` |
+| X2BEE required input coverage | `0.846` |
 | X2BEE expected tool recall@10 | `1.00` |
 | X2BEE mean MRR | `1.00` |
 
@@ -51,8 +53,11 @@ target recall@5와 query-action target selector exact@5가 모두 `1.00`까지
 올라왔다. 즉 built-in fixture에서는 top-5 안에 정답을 넣는 단계와 그중 실제
 target을 고르는 단계가 모두 통과한다. X2BEE-scale에서도 19개 product-level
 Korean BO case 기준 target selector exact@3/5/10이 모두 `1.00`까지 확인됐다.
-남은 live-scale 연구는 producer chain, request/response binding, 실행 전
-readiness까지 이어지는 검증이다.
+이제 live-scale artifact는 선택된 target의 request/response binding readiness도
+보여준다. 현재 평균 plan candidate count는 `17.16`, 평균 required input
+coverage는 `0.846`, `required_input_not_producible` issue는 `5`건이다. 남은
+live-scale 연구는 producer 후보 폭을 줄이고, request/response field matching과
+실행 전 readiness를 더 정확하게 만드는 것이다.
 
 `2026-07-19` rank-compression branch에서는 X2BEE live sweep에서 기존 hard
 case인 `order_query_ko`, `page_role_buttons_ko`, `settlement_compare_ko`,
@@ -67,6 +72,13 @@ artifact 규칙은 [`validation-loop.md`](validation-loop.md)에 둔다.
 `target_action_priority`, `target_selector_rank_buckets`를 추가했다. 1084개
 unique tool, 19개 Korean BO case 기준 top-K `3,5,10` 모두
 `target_selector_exact_at_k=1.00`, `target_selector_miss_count=0`이다.
+
+`2026-07-19` scale plan-readiness branch에서는 같은 artifact에
+`plan_candidates`, `producer_candidates`, `input_support`,
+`avg_required_input_coverage`, `required_input_not_producible`을 추가했다.
+X2BEE acceptance gate는 `avg_required_input_coverage >= 0.8`과
+`avg_candidate_count <= 25`를 포함한다. 현재 top-K `3,5,10` 모두 평균 candidate
+count `17.16`, 평균 required input coverage `0.846`, readiness issue `5`건이다.
 
 ## Product Maturity Levels
 

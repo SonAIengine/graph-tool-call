@@ -6,6 +6,8 @@
     "case_hit_at_k": 1.0,
     "expected_tool_recall_at_k": 0.85,
     "target_selector_exact_at_k": 0.85,
+    "avg_required_input_coverage": 0.8,
+    "max_avg_candidate_count": 25.0,
     "max_avg_latency_ms": 50.0
   },
   "cases": [
