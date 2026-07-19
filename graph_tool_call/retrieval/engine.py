@@ -653,6 +653,9 @@ class RetrievalEngine:
                 scores[name] *= 1.5
             if "fibonacci series" in q and ("sequence" in tool_text or "series" in tool_text):
                 scores[name] *= 1.25
+            korean_multiplier = BM25Scorer._semantic_phrase_multiplier(query, name, tool)
+            if korean_multiplier > 1.0:
+                scores[name] *= min(korean_multiplier, 1.5)
 
     def _inject_graph_candidates(
         self,

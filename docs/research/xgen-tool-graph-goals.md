@@ -48,6 +48,14 @@ retrieval miss와 candidate ambiguity가 크다. X2BEE-scale에서는 target이
 top-10 후보 안에 들어오는 baseline은 확인됐지만, top-5 압축, producer chain,
 XGEN target selector까지 이어지는 검증은 아직 별도 연구 대상이다.
 
+`2026-07-19` rank-compression branch에서는 X2BEE live sweep에서 기존 hard
+case인 `order_query_ko`, `page_role_buttons_ko`, `settlement_compare_ko`,
+`return_withdrawal_ko`를 다시 검증했다. `make xgen-scale-sweep
+OUT=/tmp/gtc-x2bee-sweep-after3.json TOP_KS=3,5,10` 기준 `hit@3=1.00`,
+`expected recall@3=1.00`, `top-3 hit=1.00`, `mean MRR=0.833`까지 개선됐고,
+page-role button multi-target은 rank `1`/`2`로 압축됐다. 상세 runner와
+artifact 규칙은 [`validation-loop.md`](validation-loop.md)에 둔다.
+
 ## Product Maturity Levels
 
 | Level | Meaning | Expected Use |

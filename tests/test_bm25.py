@@ -116,6 +116,99 @@ def test_korean_query_matches_tool():
     assert scores["cancelSubscription"] > 0
 
 
+def test_korean_spaced_query_prefers_compact_business_phrase():
+    """Separated Korean query terms should prefer compact Swagger menu summaries."""
+    target = _make_tool("getOrderQueryList", description="주문/결제 > 주문관리 > 주문조회")
+    noisy = _make_tool(
+        "getGoodsItmInfoList",
+        description="정기주문 상품의 변경 가능한 단품 목록 조회",
+    )
+    tools = {tool.name: tool for tool in [target, noisy]}
+    scorer = BM25Scorer(tools)
+
+    scores = scorer.score("주문 목록 조회")
+
+    assert scores["getOrderQueryList"] > scores["getGoodsItmInfoList"]
+
+
+def test_korean_settlement_compare_matches_reconciliation_alias():
+    """Business wording 정산 비교 should match 정산대사/AdjustCompare APIs."""
+    target = _make_tool("getPgAdjustCompareSummary", description="PG정산대사 요약 조회")
+    noisy = _make_tool("savePgApprovalList", description="PG정산정보 수신")
+    tools = {tool.name: tool for tool in [target, noisy]}
+    scorer = BM25Scorer(tools)
+
+    scores = scorer.score("정산 비교 조회")
+
+    assert scores["getPgAdjustCompareSummary"] > scores["savePgApprovalList"]
+
+
+def test_korean_permission_button_phrase_beats_generic_menu():
+    """회원 권한 버튼 조회 should prefer button-right APIs over generic menu lookup."""
+    target = _make_tool("getButtonByPageRoleList", description="권한 없는 버튼 조회")
+    noisy = _make_tool("getTopMenuList", description="상단 메뉴 조회")
+    tools = {tool.name: tool for tool in [target, noisy]}
+    scorer = BM25Scorer(tools)
+
+    scores = scorer.score("회원 권한 버튼 조회")
+
+    assert scores["getButtonByPageRoleList"] > scores["getTopMenuList"]
+
+
+def test_korean_permission_button_prefers_page_role_siblings():
+    """권한 버튼 queries should keep page-role button APIs ahead of user variants."""
+    page_role = _make_tool("getButtonByPageRoleList", description="권한 없는 버튼 조회")
+    enabled_page_role = _make_tool(
+        "getEnabledButtonByPageRoleList",
+        description="권한 존재 버튼 조회",
+    )
+    user_button = _make_tool("getButtonByUserList", description="권한 없는 저장버튼 조회")
+    individual_button = _make_tool(
+        "getIndivRightButtonList",
+        description="개별 권한 버튼 목록 조회",
+    )
+    tools = {
+        tool.name: tool for tool in [page_role, enabled_page_role, user_button, individual_button]
+    }
+    scorer = BM25Scorer(tools)
+
+    scores = scorer.score("회원 권한 버튼 조회")
+
+    assert scores["getButtonByPageRoleList"] > scores["getButtonByUserList"]
+    assert scores["getEnabledButtonByPageRoleList"] > scores["getIndivRightButtonList"]
+    assert BM25Scorer._semantic_phrase_multiplier(
+        "회원 권한 버튼 조회",
+        "getEnabledButtonByPageRoleList",
+        enabled_page_role,
+    ) > BM25Scorer._semantic_phrase_multiplier(
+        "회원 권한 버튼 조회",
+        "getButtonByUserList",
+        user_button,
+    )
+
+
+def test_korean_intent_phrases_skip_bridge_terms_and_repeated_actions():
+    """Phrase builder should keep discriminative word+action pairs."""
+    phrases = BM25Scorer._korean_intent_phrases(["상품", "목록", "조회", "주문", "조회"])
+
+    assert "상품조회" in phrases
+    assert "주문조회" in phrases
+    assert "목록조회" not in phrases
+
+
+def test_korean_business_phrase_multiplier_is_bounded_and_negative_safe():
+    """Korean phrase boosts should not fire for unrelated or English-only queries."""
+    assert BM25Scorer._korean_business_phrase_multiplier("read file", "read_file") == 1.0
+    assert BM25Scorer._korean_business_phrase_multiplier("배송 조회", "주문조회") == 1.0
+    assert (
+        BM25Scorer._korean_business_phrase_multiplier(
+            "회원 권한 버튼 조회",
+            "getButtonByPageRoleList 권한 버튼 조회 pagerole button role",
+        )
+        <= 2.0
+    )
+
+
 def test_mixed_korean_english():
     """Tokenization of mixed Korean/English text produces both bigrams and English tokens."""
     tokens = BM25Scorer._tokenize("주문order 해지cancel")

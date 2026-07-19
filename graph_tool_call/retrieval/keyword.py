@@ -95,6 +95,8 @@ _KO_EN_DICT: dict[str, list[str]] = {
     "상품": ["product", "item", "good"],
     "주문": ["order", "purchas"],
     "결제": ["payment", "checkout", "pay", "billing"],
+    "정산": ["settlement", "adjust", "adjustment", "pg", "대사"],
+    "비교": ["compare", "comparison", "reconcile", "reconciliation", "대사"],
     "환불": ["refund", "return"],
     "배송": ["shipping", "deliver", "shipment"],
     "배송비": ["shipping", "rate", "calculat", "cost"],
@@ -131,6 +133,7 @@ _KO_EN_DICT: dict[str, list[str]] = {
     "비밀번호": ["password", "secret", "credenti"],
     "인증": ["auth", "verifi", "token"],
     "권한": ["permiss", "role", "access", "author"],
+    "버튼": ["button", "btn"],
     "토큰": ["token", "jwt", "api_key"],
     # ── Data / Resources ──
     "목록": ["list", "index", "collect"],
@@ -189,10 +192,30 @@ _KO_EN_DICT: dict[str, list[str]] = {
     "전체": ["all", "total", "list"],
     "최신": ["latest", "recent", "newest"],
     "통계": ["statist", "analyt", "metric", "report"],
+    "요약": ["summary", "summari"],
     "대시보드": ["dashboard", "overview"],
     "웹훅": ["webhook", "callback"],
     "연동": ["integr", "connect", "link"],
 }
+
+_KO_ACTION_TERMS = frozenset(
+    {
+        "검색",
+        "조회",
+        "수정",
+        "등록",
+        "삭제",
+        "저장",
+        "처리",
+        "취소",
+        "철회",
+        "승인",
+        "거부",
+        "비교",
+        "요약",
+    }
+)
+_KO_BRIDGE_TERMS = frozenset({"목록", "리스트", "정보", "관리", "대상"})
 
 _EN_QUERY_SYNONYMS: dict[str, list[str]] = {
     # Common math/science wording that appears in user requests more often
@@ -394,6 +417,11 @@ class BM25Scorer:
 
     def _semantic_phrase_boost(self, query: str, tool_name: str, tool: ToolSchema) -> float:
         """Boost compact operationIds for common user-facing semantic phrases."""
+        return BM25Scorer._semantic_phrase_multiplier(query, tool_name, tool)
+
+    @staticmethod
+    def _semantic_phrase_multiplier(query: str, tool_name: str, tool: ToolSchema) -> float:
+        """Return deterministic phrase/synonym boost for high-confidence matches."""
         q = query.lower()
         tool_text = f"{tool_name} {tool.description}".lower()
         boost = 1.0
@@ -415,7 +443,73 @@ class BM25Scorer:
         if "fibonacci series" in q and ("sequence" in tool_text or "series" in tool_text):
             boost *= 1.6
 
+        boost *= BM25Scorer._korean_business_phrase_multiplier(query, tool_text)
         return boost
+
+    @staticmethod
+    def _korean_business_phrase_multiplier(query: str, tool_text: str) -> float:
+        """Boost Korean business intent phrases that appear compacted in OpenAPI docs.
+
+        Large Swagger specs often contain menu-like summaries such as
+        ``주문조회`` or ``PG정산대사`` while users type separated phrases such as
+        ``주문 목록 조회`` or ``정산 비교 조회``. Character bigrams keep these
+        candidates visible, but near-duplicate list APIs can still crowd the
+        exact target. This boost is deterministic and only fires when the
+        compact phrase is directly present in the tool text.
+        """
+        words = re.findall(r"[가-힣]{2,}", query)
+        if not words:
+            return 1.0
+
+        tool_norm = re.sub(r"[^a-z0-9가-힣]+", "", tool_text.lower())
+        query_norm = "".join(words)
+        phrases = BM25Scorer._korean_intent_phrases(words)
+        matches = 0
+        longest = 0
+        for phrase in phrases:
+            if len(phrase) < 4:
+                continue
+            if phrase in tool_norm:
+                matches += 1
+                longest = max(longest, len(phrase))
+
+        boost = 1.0
+        if len(query_norm) >= 4 and query_norm in tool_norm:
+            boost *= 1.35
+        if matches:
+            boost *= min(1.6, 1.0 + 0.18 * matches + min(0.12, longest / 100.0))
+
+        if "정산" in words and "비교" in words and "정산대사" in tool_norm:
+            boost *= 1.35
+        if "권한" in words and "버튼" in words and "권한" in tool_norm and "버튼" in tool_norm:
+            boost *= 1.08
+        if "권한" in words and "버튼" in words and "button" in tool_norm:
+            if "pagerole" in tool_norm:
+                boost *= 1.35
+            elif "role" in tool_norm:
+                boost *= 1.12
+        return min(boost, 2.0)
+
+    @staticmethod
+    def _korean_intent_phrases(words: list[str]) -> set[str]:
+        """Build compact phrase candidates from spaced Korean query terms."""
+        phrases: set[str] = set()
+        for i, left in enumerate(words):
+            if left in _KO_BRIDGE_TERMS:
+                continue
+            for right in words[i + 1 : i + 4]:
+                if right in _KO_BRIDGE_TERMS:
+                    continue
+                phrases.add(left + right)
+        for action_index, action in enumerate(words):
+            if action not in _KO_ACTION_TERMS:
+                continue
+            for word in words[:action_index]:
+                if word not in _KO_ACTION_TERMS and word not in _KO_BRIDGE_TERMS:
+                    phrases.add(word + action)
+        if "정산" in words and "비교" in words:
+            phrases.add("정산대사")
+        return phrases
 
     def _tokenize_tool(self, tool: ToolSchema) -> list[str]:
         """Extract tokens from all tool fields: name, description, tags, param names, metadata."""

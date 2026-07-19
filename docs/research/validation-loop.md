@@ -119,6 +119,32 @@ top-K sweep 기준선은 다음과 같다.
 | `5` | `1.00` | `1.00` | `0.75` | `0.875` | rank-4/5 압축 |
 | `10` | `1.00` | `1.00` | `0.75` | `0.875` | acceptance 기준 |
 
+`2026-07-19` rank-compression branch에서는 같은 live runner를 아래 명령으로
+재검증했다.
+
+```bash
+make xgen-scale-sweep \
+  OUT=/tmp/gtc-x2bee-sweep-after3.json \
+  TOP_KS=3,5,10
+```
+
+결과는 다음과 같다.
+
+| Top-K | hit@K | expected recall@K | top-1 hit | top-3 hit | mean MRR | 평균 latency |
+|---:|---:|---:|---:|---:|---:|---:|
+| `3` | `1.00` | `1.00` | `0.75` | `1.00` | `0.833` | `53.39ms` |
+| `5` | `1.00` | `1.00` | `0.75` | `1.00` | `0.833` | `23.42ms` |
+| `10` | `1.00` | `1.00` | `0.75` | `1.00` | `0.833` | `21.41ms` |
+
+hard case rank 변화는 다음과 같다.
+
+| Case | Before | After |
+|---|---|---|
+| `order_query_ko` | `getOrderQueryList`: rank `4` at K=5, missing at K=3 | rank `3` at K=3 |
+| `page_role_buttons_ko` | secondary page-role target drifted behind user/individual button siblings | `getButtonByPageRoleList`: rank `1`, `getEnabledButtonByPageRoleList`: rank `2` |
+| `settlement_compare_ko` | summary target missing at K=5 | list rank `1`, summary rank `2` |
+| `return_withdrawal_ko` | `withdrawalReturn`: rank `2` | rank `1` |
+
 raw OpenAPI contract는 `metadata.api_contract`와 `metadata.openapi`에 보존한다.
 단, plain ingest에서는 top-level `metadata.produces` / `metadata.consumes`로
 자동 승격하지 않는다. 대형 Swagger에서 모든 raw field를 검색 인덱스에 직접
