@@ -251,6 +251,17 @@ Required work:
     preservation, `parallel_multiple` exact를 판정한다. 이 값이 `fail`이면 full
     run을 반복하지 않고 `category_rows`와 hard-case bundle로 돌아가 작은 subset을
     먼저 고친다.
+- qwen3.6-27B small model smoke로 0.27 gate 병목을 확인한다.
+  - `2026-07-19`: `go165` vLLM `qwen3.6-27b`, category별 `limit=5`,
+    row/retrieved `k=5` smoke에서 row-source exact는 `1.00`, retrieved exact는
+    `0.85`, retrieval recall은 `1.00`이었다. Gate는 `fail`이며 실패 지점은
+    row-source preservation `0.85 < 0.94`, `parallel_multiple`
+    `0.60 < 0.75`다. 실패 3건은 retrieval miss가 아니라
+    `candidate_ambiguity`/`call_count_mismatch`라서 다음 개선은 단순 recall이
+    아니라 sibling/candidate presentation/plan grouping 쪽이다.
+  - 같은 조건에서 `--retrieval-rank-hints` ablation은 retrieved exact `0.85`,
+    `parallel_multiple` `0.60`으로 aggregate를 올리지 못했다. 따라서 단순 rank
+    문구보다 후보 동등성/그룹화/복합 call set 구성 개선을 우선한다.
 
 ## Paper-Ready Target
 

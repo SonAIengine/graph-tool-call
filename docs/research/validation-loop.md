@@ -37,6 +37,21 @@ upper-bound preservation, `parallel_multiple` exact를 한 번에 판정한다. 
 baseline이나 `parallel_multiple`를 일부러 제외한 smoke에서는 `incomplete`가 정상일
 수 있다.
 
+Gate failure가 `retrieval_miss`가 아니라 `candidate_ambiguity` 중심이면
+`--retrieval-rank-hints` ablation을 먼저 돌린다. 이 옵션은 retrieved 후보의 tool
+description에 graph rank hint만 붙이므로 검색 알고리즘 개선과 LLM-facing 후보
+표현 개선을 분리해서 볼 수 있다.
+
+`2026-07-19` qwen3.6-27B small smoke artifact:
+
+- baseline: `/tmp/gtc-bfcl-qwen027-smoke-live.json`
+- rank-hint ablation: `/tmp/gtc-bfcl-qwen027-rankhint-smoke.json`
+- hard cases: `/tmp/gtc-bfcl-qwen027-smoke-hardcases`
+
+두 smoke 모두 retrieved `k=5` exact `0.85`, retrieval recall `1.00`,
+`parallel_multiple` exact `0.60`이다. 즉 다음 작은 subset은 retrieval miss가
+아니라 candidate ambiguity와 call-count mismatch를 우선 본다.
+
 ## 실행 타깃
 
 ```bash

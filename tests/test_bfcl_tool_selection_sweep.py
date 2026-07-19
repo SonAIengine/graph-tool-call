@@ -41,13 +41,16 @@ def test_sweep_runs_top_k_and_source_matrix(monkeypatch):
         concurrency=3,
         progress=True,
         progress_every=2,
+        retrieval_rank_hints=True,
     )
 
     assert len(calls) == 8
     assert all(call["concurrency"] == 3 for call in calls)
     assert all(call["progress"] is True for call in calls)
     assert all(call["progress_every"] == 2 for call in calls)
+    assert all(call["retrieval_rank_hints"] is True for call in calls)
     assert all(call["case_ids"] == {"simple_python_0"} for call in calls)
+    assert report["retrieval_rank_hints"] is True
     assert [call["cache_namespace"] for call in calls[:4]] == ["repeat-1"] * 4
     assert [call["cache_namespace"] for call in calls[4:]] == ["repeat-2"] * 4
     assert report["summary"]["run_count"] == 8

@@ -64,6 +64,7 @@ def run_sweep(
     progress: bool = False,
     progress_every: int = 25,
     milestone_profile: str = DEFAULT_MILESTONE_PROFILE,
+    retrieval_rank_hints: bool = False,
 ) -> dict[str, Any]:
     selected_categories = categories or list(DEFAULT_CATEGORIES)
     selected_top_ks = top_ks or [3, 5, 10]
@@ -94,6 +95,7 @@ def run_sweep(
                     concurrency=concurrency,
                     progress=progress,
                     progress_every=progress_every,
+                    retrieval_rank_hints=retrieval_rank_hints,
                 )
                 runs.append(
                     {
@@ -122,6 +124,7 @@ def run_sweep(
         "cache_dir": str(cache_dir) if cache_dir else "",
         "bfcl_ref": ref,
         "milestone_profile": milestone_profile,
+        "retrieval_rank_hints": retrieval_rank_hints,
         "runs": runs,
         "summary": _summarize_sweep(runs, milestone_profile=milestone_profile),
     }
@@ -444,7 +447,8 @@ def print_report(report: dict[str, Any]) -> None:
     print(report["benchmark"])
     print(
         f"model={report['model']} evaluator={report['evaluator']} "
-        f"categories={','.join(report['categories'])} repeats={report['repeats']}"
+        f"categories={','.join(report['categories'])} repeats={report['repeats']} "
+        f"retrieval_rank_hints={str(report.get('retrieval_rank_hints', False)).lower()}"
     )
     for row in report["summary"]["rows"]:
         failures = _format_failure_breakdown(row.get("failure_breakdown") or {})
@@ -560,6 +564,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Add a milestone gate summary to the sweep artifact.",
     )
     parser.add_argument(
+        "--retrieval-rank-hints",
+        action="store_true",
+        help=(
+            "For retrieved tool-source runs, prefix tool descriptions with graph retrieval rank "
+            "hints. Use as an ablation for candidate ambiguity."
+        ),
+    )
+    parser.add_argument(
         "--concurrency",
         type=int,
         default=1,
@@ -614,6 +626,7 @@ def main(argv: list[str] | None = None) -> int:
             progress=args.progress,
             progress_every=args.progress_every,
             milestone_profile=args.milestone_profile,
+            retrieval_rank_hints=args.retrieval_rank_hints,
         )
     except ImportError as exc:
         parser.error(str(exc))
