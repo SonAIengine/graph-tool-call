@@ -731,15 +731,19 @@ member, mileage, event, goods, coupon, notice, restock, delivery policy,
 promotion, and market display flows. The runner reports both `rank_buckets`
 over all expected tool names and `case_rank_buckets` over each case's best
 acceptable expected tool, so `expected_any` alternatives do not make passing
-cases look missing.
+cases look missing. It also records `target_selector_exact_at_k`,
+`target_selector_miss_count`, and `target_selector_rank_buckets` by reranking
+the retrieved top-K through the same query-action candidate contract used by the
+deterministic fixture benchmark.
 
-Latest product-level sweep on 2026-07-19 after Korean top-1 ambiguity fixes:
+Latest product-level sweep on 2026-07-19 after Korean top-1 ambiguity and
+selector instrumentation fixes:
 
-| Top-K | Cases | Hit@K | Expected recall@K | Top-1 hit | Top-3 hit | Mean MRR | Case rank buckets |
-|---:|---:|---:|---:|---:|---:|---:|---|
-| `3` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` |
-| `5` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` |
-| `10` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` |
+| Top-K | Cases | Hit@K | Expected recall@K | Selector exact@K | Top-1 hit | Top-3 hit | Mean MRR | Case rank buckets | Selector rank buckets |
+|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| `3` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
+| `5` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
+| `10` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
 
 OpenAPI request/response contract is preserved under `metadata.api_contract`
 and `metadata.openapi`. It is intentionally not promoted into top-level

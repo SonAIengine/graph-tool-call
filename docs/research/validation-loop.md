@@ -161,10 +161,11 @@ make xgen-scale-sweep \
 ```
 
 19건 product-level sweep 결과는 `hit@3=1.00`, `expected recall@3=1.00`,
-`top-1 hit=1.00`, `top-3 hit=1.00`, `mean MRR=1.00`이다. 케이스 기준
-rank bucket은 `top_1=19`, `missing=0`이다. Tool-name 기준
+`target selector exact@3=1.00`, `top-1 hit=1.00`, `top-3 hit=1.00`,
+`mean MRR=1.00`이다. 케이스 기준 rank bucket은 `top_1=19`, `missing=0`이고
+selector rank bucket도 `top_1=19`, `missing=0`이다. Tool-name 기준
 `rank_buckets`는 `expected_any` 대체 정답까지 모두 세므로 product-level
-gate 해석에는 `case_rank_buckets`를 우선한다.
+gate 해석에는 `case_rank_buckets`와 `target_selector_rank_buckets`를 우선한다.
 
 raw OpenAPI contract는 `metadata.api_contract`와 `metadata.openapi`에 보존한다.
 단, plain ingest에서는 top-level `metadata.produces` / `metadata.consumes`로
@@ -278,7 +279,8 @@ BFCL 수학/지리 표현을 keyword scorer에 보강했다. 비교 기준은
   top-1 정밀도 개선이 아니라 복합 요청에서 expected tool을 top-5 안에 더
   안정적으로 넣는 recall/diversity 개선으로 본다.
 - X2BEE BO Swagger scale sweep은 1084개 unique tool 기준 `hit@3=1.00`,
-  `expected recall@3=1.00`, `top3=1.00`, `mrr=0.83`으로 회귀 없이 통과했다.
+  `expected recall@3=1.00`, `target selector exact@3=1.00`, `top3=1.00`,
+  `mrr=0.83`으로 회귀 없이 통과했다.
 - 전역 sibling suppression은 `parallel_multiple_195` 일부를 개선했지만
   악화 케이스가 크게 늘어 폐기했다. sibling/alias 보정은 앞으로도 broad rule이
   아니라 query/operation evidence가 강한 좁은 규칙으로만 승격한다.
