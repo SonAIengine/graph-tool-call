@@ -29,8 +29,9 @@ live acceptance run을 별도로 둔다.
 | graph-tool-call retrieved top-k=3 exact | `0.69` |
 | graph-tool-call retrieved top-k=5 exact | `0.764` |
 | graph-tool-call retrieved top-k=10 exact | `0.798` |
-| deterministic BFCL retrieval@5 | `0.917` |
-| deterministic BFCL MRR | `0.80` |
+| deterministic BFCL recall@5 | `0.940` |
+| deterministic BFCL all-tools@5 | `0.917` |
+| deterministic BFCL MRR | `0.821` |
 | top-k=5 repeat exact mean/std | `0.764 / 0.000` |
 | weakest category | `parallel_multiple` |
 | parallel_multiple top-k=5 exact | `0.615` |
@@ -121,6 +122,14 @@ resolution coverage는 유지됐다.
 기준 평균 candidate count는 `3.53 -> 2.16`, max candidate count는 `14 -> 7`로
 줄었고, `coupon_list_ko`는 candidate count `14 -> 4`까지 내려갔다. Acceptance
 gate는 `max_avg_candidate_count <= 3`와 `max_candidate_count <= 8`을 포함한다.
+
+`2026-07-19` BFCL weak-keyword branch에서는 hard-case bundle의
+`weak_or_missing_keyword_signal` subset을 대상으로 guarded domain alias query
+expansion을 추가했다. Concrete currency/unit/history/card wording이 generic
+tool descriptions와 매칭되도록 하되, `king`/`card`/measurement unit 같은
+ambiguous token은 probability/conversion intent가 같이 있을 때만 확장한다. 전체
+BFCL deterministic 기준 `recall@5`는 `0.9325 -> 0.94025`,
+`all_tools_found@5`는 `0.908 -> 0.917`, hard-case count는 `92 -> 83`으로 개선했다.
 
 ## Product Maturity Levels
 
