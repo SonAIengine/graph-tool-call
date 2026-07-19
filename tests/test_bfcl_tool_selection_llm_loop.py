@@ -12,6 +12,7 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     PredictedToolCall,
     _classify_failure,
     _cohesive_namespace_candidates,
+    _equivalence_adjusted_exact_match,
     _evaluate_official_predictions,
     _evaluate_predictions,
     _failure_tags,
@@ -191,6 +192,79 @@ def test_near_duplicate_tool_surface_tags_candidate_ambiguity():
         tools_by_name=tools_by_name,
         failure_category="candidate_ambiguity",
     ) == ["near_duplicate_tool_surface"]
+
+
+def test_equivalence_adjusted_exact_match_accepts_equivalent_surface_with_values():
+    tools_by_name = {
+        "number_theory.gcd": {
+            "name": "number_theory.gcd",
+            "description": "Compute the greatest common divisor of two given integers.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "number1": {"description": "The first integer."},
+                    "number2": {"description": "The second integer."},
+                },
+                "required": ["number1", "number2"],
+            },
+        },
+        "math.gcd": {
+            "name": "math.gcd",
+            "description": "Calculate the greatest common divisor of the two integers.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "num1": {"description": "The first number."},
+                    "num2": {"description": "The second number."},
+                },
+                "required": ["num1", "num2"],
+            },
+        },
+        "math.hypot": {
+            "name": "math.hypot",
+            "description": "Calculate a hypotenuse.",
+            "parameters": {
+                "type": "object",
+                "properties": {"x": {}, "y": {}},
+                "required": ["x", "y"],
+            },
+        },
+    }
+
+    expected = [
+        ExpectedToolCall("number_theory.gcd", {"number1": [36], "number2": [48]}),
+    ]
+
+    assert (
+        _equivalence_adjusted_exact_match(
+            expected,
+            [PredictedToolCall("math.gcd", {"num1": 36, "num2": 48})],
+            tools_by_name=tools_by_name,
+            category="simple_python",
+            strict_exact_match=0.0,
+        )
+        == 1.0
+    )
+    assert (
+        _equivalence_adjusted_exact_match(
+            expected,
+            [PredictedToolCall("math.gcd", {"num1": 36, "num2": 49})],
+            tools_by_name=tools_by_name,
+            category="simple_python",
+            strict_exact_match=0.0,
+        )
+        == 0.0
+    )
+    assert (
+        _equivalence_adjusted_exact_match(
+            expected,
+            [PredictedToolCall("math.hypot", {"x": 36, "y": 48})],
+            tools_by_name=tools_by_name,
+            category="simple_python",
+            strict_exact_match=0.0,
+        )
+        == 0.0
+    )
 
 
 def test_prediction_matcher_allows_optional_missing_and_parallel_order():
@@ -427,6 +501,7 @@ def test_model_loop_runs_against_local_fixture_with_fake_tool_calls(
     assert report["summary"]["retrieval_recall_at_k"] == 1.0
     assert report["summary"]["model_tool_call_rate"] == 1.0
     assert report["summary"]["strict_exact_match"] == 1.0
+    assert report["summary"]["equivalence_adjusted_exact_match"] == 1.0
     assert report["summary"]["failure_breakdown"] == {"pass": 1}
     assert cached_report["summary"]["strict_exact_match"] == 1.0
     assert namespaced_report["cache_namespace"] == "repeat-2"
@@ -661,6 +736,7 @@ def test_write_bfcl_result_files_uses_official_result_jsonl_shape(tmp_path: Path
                         "tools_presented": ["triangle_properties.get"],
                         "failure_category": "pass",
                         "evaluator_exact_match": 1.0,
+                        "equivalence_adjusted_exact_match": 1.0,
                     }
                 ],
             }
@@ -679,6 +755,7 @@ def test_write_bfcl_result_files_uses_official_result_jsonl_shape(tmp_path: Path
     assert row["latency"] == 1.234
     assert row["graph_tool_call"]["version"] == "0.test"
     assert row["graph_tool_call"]["tool_source"] == "retrieved"
+    assert row["graph_tool_call"]["equivalence_adjusted_exact_match"] == 1.0
 
 
 def test_write_bfcl_result_files_can_emit_decoded_ast_input(tmp_path: Path):

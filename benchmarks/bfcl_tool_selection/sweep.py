@@ -160,6 +160,10 @@ def _summarize_sweep(
                 "model_tool_call_rate": summary["model_tool_call_rate"],
                 "strict_exact_match": summary["strict_exact_match"],
                 "evaluator_exact_match": summary["evaluator_exact_match"],
+                "equivalence_adjusted_exact_match": summary.get(
+                    "equivalence_adjusted_exact_match",
+                    summary["evaluator_exact_match"],
+                ),
                 "avg_latency_ms": summary["avg_latency_ms"],
                 "failure_breakdown": summary.get("failure_breakdown") or {},
             }
@@ -198,6 +202,10 @@ def _category_summary_rows(run: dict[str, Any]) -> list[dict[str, Any]]:
                 "model_tool_call_rate": summary.get("model_tool_call_rate", 0.0),
                 "strict_exact_match": summary.get("strict_exact_match", 0.0),
                 "evaluator_exact_match": summary.get("evaluator_exact_match", 0.0),
+                "equivalence_adjusted_exact_match": summary.get(
+                    "equivalence_adjusted_exact_match",
+                    summary.get("evaluator_exact_match", 0.0),
+                ),
                 "avg_latency_ms": summary.get("avg_latency_ms", 0.0),
                 "failure_breakdown": summary.get("failure_breakdown") or {},
             }
@@ -213,6 +221,7 @@ def _best_retrieved(rows: list[dict[str, Any]]) -> dict[str, Any]:
         retrieved_rows,
         key=lambda row: (
             row["evaluator_exact_match"],
+            row["equivalence_adjusted_exact_match"],
             row["retrieval_recall_at_k"],
             -row["avg_latency_ms"],
         ),
@@ -252,12 +261,15 @@ def _row_vs_retrieved_deltas(runs: list[dict[str, Any]]) -> list[dict[str, Any]]
         both_fail_retrieved_breakdown: Counter[str] = Counter()
         row_pass_retrieved_fail_case_ids: list[str] = []
         both_fail_case_ids: list[str] = []
+        retrieved_adjusted_pass_on_row_pass = 0
 
         for key in paired_keys:
             row_case = row_cases[key]
             retrieved_case = retrieved_cases[key]
             row_pass = _case_passed(row_case)
             retrieved_pass = _case_passed(retrieved_case)
+            if row_pass and _case_equivalence_adjusted_passed(retrieved_case):
+                retrieved_adjusted_pass_on_row_pass += 1
             if row_pass and retrieved_pass:
                 counts["both_pass"] += 1
             elif row_pass and not retrieved_pass:
@@ -277,6 +289,9 @@ def _row_vs_retrieved_deltas(runs: list[dict[str, Any]]) -> list[dict[str, Any]]
         paired_count = len(paired_keys)
         row_pass_count = counts["both_pass"] + counts["row_pass_retrieved_fail"]
         retrieved_on_row_pass = counts["both_pass"] / row_pass_count if row_pass_count else None
+        adjusted_on_row_pass = (
+            retrieved_adjusted_pass_on_row_pass / row_pass_count if row_pass_count else None
+        )
         deltas.append(
             {
                 "repeat": repeat,
@@ -288,6 +303,9 @@ def _row_vs_retrieved_deltas(runs: list[dict[str, Any]]) -> list[dict[str, Any]]
                 "both_fail": counts["both_fail"],
                 "row_pass_count": row_pass_count,
                 "retrieved_exact_on_row_pass": _round_or_none(retrieved_on_row_pass),
+                "retrieved_equivalence_adjusted_exact_on_row_pass": _round_or_none(
+                    adjusted_on_row_pass
+                ),
                 "row_pass_retrieved_fail_rate": _round_or_none(
                     counts["row_pass_retrieved_fail"] / row_pass_count if row_pass_count else None
                 ),
@@ -322,6 +340,12 @@ def _case_passed(case: dict[str, Any]) -> bool:
     return float(case.get("evaluator_exact_match") or 0.0) >= 1.0
 
 
+def _case_equivalence_adjusted_passed(case: dict[str, Any]) -> bool:
+    if _case_passed(case):
+        return True
+    return float(case.get("equivalence_adjusted_exact_match") or 0.0) >= 1.0
+
+
 def _round_or_none(value: float | None) -> float | None:
     if value is None:
         return None
@@ -348,6 +372,9 @@ def _summarize_category_repeat_groups(rows: list[dict[str, Any]]) -> list[dict[s
                 ),
                 "evaluator_exact_match": _metric_stats(
                     row["evaluator_exact_match"] for row in group_rows
+                ),
+                "equivalence_adjusted_exact_match": _metric_stats(
+                    row["equivalence_adjusted_exact_match"] for row in group_rows
                 ),
                 "strict_exact_match": _metric_stats(
                     row["strict_exact_match"] for row in group_rows
@@ -377,6 +404,9 @@ def _summarize_repeat_groups(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
                 ),
                 "evaluator_exact_match": _metric_stats(
                     row["evaluator_exact_match"] for row in group_rows
+                ),
+                "equivalence_adjusted_exact_match": _metric_stats(
+                    row["equivalence_adjusted_exact_match"] for row in group_rows
                 ),
                 "strict_exact_match": _metric_stats(
                     row["strict_exact_match"] for row in group_rows
@@ -522,6 +552,9 @@ def _mean_selected_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "model_tool_call_rate": _mean(row["model_tool_call_rate"] for row in rows),
         "strict_exact_match": _mean(row["strict_exact_match"] for row in rows),
         "evaluator_exact_match": _mean(row["evaluator_exact_match"] for row in rows),
+        "equivalence_adjusted_exact_match": _mean(
+            row["equivalence_adjusted_exact_match"] for row in rows
+        ),
         "avg_latency_ms": _mean(row["avg_latency_ms"] for row in rows),
     }
 
@@ -577,7 +610,8 @@ def print_report(report: dict[str, Any]) -> None:
         failures = _format_failure_breakdown(row.get("failure_breakdown") or {})
         print(
             "{source:9s} k={top_k:<2} repeat={repeat:<2} cases={cases:<4} "
-            "retrieval@K={retrieval:.2f} exact={exact:.2f} strict={strict:.2f} "
+            "retrieval@K={retrieval:.2f} exact={exact:.2f} "
+            "equiv_exact={equiv_exact:.2f} strict={strict:.2f} "
             "latency={latency:.1f}ms failures={failures}".format(
                 source=row["tool_source"],
                 top_k=row["top_k"],
@@ -585,6 +619,7 @@ def print_report(report: dict[str, Any]) -> None:
                 cases=row["cases"],
                 retrieval=row["retrieval_recall_at_k"],
                 exact=row["evaluator_exact_match"],
+                equiv_exact=row["equivalence_adjusted_exact_match"],
                 strict=row["strict_exact_match"],
                 latency=row["avg_latency_ms"],
                 failures=failures,
@@ -593,9 +628,11 @@ def print_report(report: dict[str, Any]) -> None:
     best = report["summary"].get("best_retrieved") or {}
     if best:
         print(
-            "best_retrieved: k={top_k} exact={exact:.2f} retrieval@K={retrieval:.2f}".format(
+            "best_retrieved: k={top_k} exact={exact:.2f} equiv_exact={equiv_exact:.2f} "
+            "retrieval@K={retrieval:.2f}".format(
                 top_k=best["top_k"],
                 exact=best["evaluator_exact_match"],
+                equiv_exact=best["equivalence_adjusted_exact_match"],
                 retrieval=best["retrieval_recall_at_k"],
             )
         )

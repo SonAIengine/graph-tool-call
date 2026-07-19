@@ -20,6 +20,7 @@ def test_sweep_runs_top_k_and_source_matrix(monkeypatch):
                 "model_tool_call_rate": 1.0,
                 "strict_exact_match": exact,
                 "evaluator_exact_match": exact,
+                "equivalence_adjusted_exact_match": exact,
                 "avg_latency_ms": 100 + kwargs["top_k"],
                 "failure_breakdown": {
                     "pass": int(exact == 1.0),
@@ -63,6 +64,7 @@ def test_sweep_runs_top_k_and_source_matrix(monkeypatch):
     assert report["concurrency"] == 3
     assert report["summary"]["best_retrieved"]["top_k"] == 5
     assert report["summary"]["best_retrieved"]["evaluator_exact_match"] == 0.5
+    assert report["summary"]["best_retrieved"]["equivalence_adjusted_exact_match"] == 0.5
     assert report["summary"]["failure_breakdown"]["retrieval_miss"] == 4
     repeat_groups = report["summary"]["repeat_groups"]
     retrieved_k5 = next(
@@ -73,6 +75,12 @@ def test_sweep_runs_top_k_and_source_matrix(monkeypatch):
     assert retrieved_k5["repeat_count"] == 2
     assert retrieved_k5["cases_per_repeat"] == [2, 2]
     assert retrieved_k5["evaluator_exact_match"] == {
+        "mean": 0.5,
+        "std": 0.0,
+        "min": 0.5,
+        "max": 0.5,
+    }
+    assert retrieved_k5["equivalence_adjusted_exact_match"] == {
         "mean": 0.5,
         "std": 0.0,
         "min": 0.5,
@@ -156,6 +164,7 @@ def test_sweep_summary_pairs_row_and_retrieved_failures():
     assert delta["both_fail"] == 1
     assert delta["row_pass_count"] == 2
     assert delta["retrieved_exact_on_row_pass"] == 0.5
+    assert delta["retrieved_equivalence_adjusted_exact_on_row_pass"] == 1.0
     assert delta["row_pass_retrieved_fail_rate"] == 0.5
     assert delta["row_pass_retrieved_fail_breakdown"] == {"candidate_ambiguity": 1}
     assert delta["row_pass_retrieved_fail_tags"] == {"near_duplicate_tool_surface": 1}
@@ -213,6 +222,7 @@ def _paired_case_run(tool_source: str, cases: list[tuple]) -> dict[str, object]:
                 "model_tool_call_rate": 1.0,
                 "strict_exact_match": passed / len(cases),
                 "evaluator_exact_match": passed / len(cases),
+                "equivalence_adjusted_exact_match": _adjusted_exact(cases),
                 "avg_latency_ms": 100.0,
                 "failure_breakdown": {"pass": passed},
                 "failure_tag_breakdown": failure_tag_breakdown,
@@ -226,6 +236,7 @@ def _paired_case_run(tool_source: str, cases: list[tuple]) -> dict[str, object]:
                         "model_tool_call_rate": 1.0,
                         "strict_exact_match": passed / len(cases),
                         "evaluator_exact_match": passed / len(cases),
+                        "equivalence_adjusted_exact_match": _adjusted_exact(cases),
                         "avg_latency_ms": 100.0,
                         "failure_breakdown": {"pass": passed},
                         "failure_tag_breakdown": failure_tag_breakdown,
@@ -235,6 +246,12 @@ def _paired_case_run(tool_source: str, cases: list[tuple]) -> dict[str, object]:
                             "case_id": row[0],
                             "failure_category": row[1],
                             "evaluator_exact_match": 1.0 if row[1] == "pass" else 0.0,
+                            "equivalence_adjusted_exact_match": (
+                                1.0
+                                if row[1] == "pass"
+                                or "near_duplicate_tool_surface" in (row[2] if len(row) > 2 else [])
+                                else 0.0
+                            ),
                             "failure_tags": row[2] if len(row) > 2 else [],
                         }
                         for row in cases
@@ -266,6 +283,14 @@ def _single_case_report(tool_source: str):
     }
 
 
+def _adjusted_exact(cases: list[tuple]) -> float:
+    adjusted = 0
+    for row in cases:
+        tags = row[2] if len(row) > 2 else []
+        adjusted += int(row[1] == "pass" or "near_duplicate_tool_surface" in tags)
+    return adjusted / len(cases)
+
+
 def _sweep_run(
     *,
     tool_source: str,
@@ -285,6 +310,7 @@ def _sweep_run(
                 "model_tool_call_rate": 1.0,
                 "strict_exact_match": exact,
                 "evaluator_exact_match": exact,
+                "equivalence_adjusted_exact_match": exact,
                 "avg_latency_ms": 100.0,
                 "failure_breakdown": {"pass": int(exact * 10)},
             },
@@ -297,6 +323,7 @@ def _sweep_run(
                         "model_tool_call_rate": 1.0,
                         "strict_exact_match": parallel_multiple_exact,
                         "evaluator_exact_match": parallel_multiple_exact,
+                        "equivalence_adjusted_exact_match": parallel_multiple_exact,
                         "avg_latency_ms": 100.0,
                         "failure_breakdown": {"pass": int(parallel_multiple_exact * 5)},
                     },
