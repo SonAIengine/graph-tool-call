@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -30,9 +30,28 @@ xgen-benchmark:
 xgen-llm-benchmark:
 	poetry run python -m benchmarks.xgen_tool_graph.llm_loop --model qwen3:4b
 
+xgen-scale-snapshot:
+	@source_args="--swagger-url $${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}"; \
+	selected_specs="$${SPECS:-$${SPEC:-}}"; \
+	if [ -n "$$selected_specs" ]; then \
+		source_args=""; \
+		for spec in $$(printf "%s" "$$selected_specs" | tr ',' ' '); do source_args="$$source_args --spec $$spec"; done; \
+	fi; \
+	private_args=""; \
+	if [ "$${ALLOW_PRIVATE_HOSTS:-0}" != "0" ]; then private_args="--allow-private-hosts"; fi; \
+	poetry run python -m benchmarks.xgen_api_scale.snapshot \
+		$$source_args \
+		$$private_args \
+		--max-response-bytes "$${MAX_RESPONSE_BYTES:-5000000}" \
+		--out-dir "$${OUT_DIR:-/tmp/gtc-xgen-scale-snapshot}"
+
 xgen-scale-acceptance:
 	@source_args="--swagger-url $${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}"; \
 	selected_specs="$${SPECS:-$${SPEC:-}}"; \
+	selected_manifest="$${SNAPSHOT_MANIFEST:-$${MANIFEST:-}}"; \
+	if [ -n "$$selected_manifest" ] && [ -z "$$selected_specs" ]; then \
+		selected_specs="$$(poetry run python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["specs_csv"])' "$$selected_manifest")" || exit 1; \
+	fi; \
 	if [ -n "$$selected_specs" ]; then \
 		source_args=""; \
 		for spec in $$(printf "%s" "$$selected_specs" | tr ',' ' '); do source_args="$$source_args --spec $$spec"; done; \
@@ -49,6 +68,10 @@ xgen-scale-acceptance:
 xgen-scale-sweep:
 	@source_args="--swagger-url $${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}"; \
 	selected_specs="$${SPECS:-$${SPEC:-}}"; \
+	selected_manifest="$${SNAPSHOT_MANIFEST:-$${MANIFEST:-}}"; \
+	if [ -n "$$selected_manifest" ] && [ -z "$$selected_specs" ]; then \
+		selected_specs="$$(poetry run python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["specs_csv"])' "$$selected_manifest")" || exit 1; \
+	fi; \
 	if [ -n "$$selected_specs" ]; then \
 		source_args=""; \
 		for spec in $$(printf "%s" "$$selected_specs" | tr ',' ' '); do source_args="$$source_args --spec $$spec"; done; \
@@ -71,6 +94,10 @@ xgen-scale-gate-check:
 xgen-scale-contract-ablation:
 	@source_args="--swagger-url $${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}"; \
 	selected_specs="$${SPECS:-$${SPEC:-}}"; \
+	selected_manifest="$${SNAPSHOT_MANIFEST:-$${MANIFEST:-}}"; \
+	if [ -n "$$selected_manifest" ] && [ -z "$$selected_specs" ]; then \
+		selected_specs="$$(poetry run python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["specs_csv"])' "$$selected_manifest")" || exit 1; \
+	fi; \
 	if [ -n "$$selected_specs" ]; then \
 		source_args=""; \
 		for spec in $$(printf "%s" "$$selected_specs" | tr ',' ' '); do source_args="$$source_args --spec $$spec"; done; \
