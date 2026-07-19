@@ -355,6 +355,20 @@ Required work:
     `/tmp/gtc-bfcl-extra-tool-recovered4-qwen.json`도 exact `1.00`이다. 다음 병목은
     이 guard가 full sweep에서 candidate suppression 부작용 없이 유지되는지 확인하고,
     남은 hard-case bundle에서 새로운 failure family를 추출하는 것이다.
+    그 다음 current hard-case replay에서는 이전 100-case 중간 sweep의 실패 17건이
+    `/tmp/gtc-bfcl-current-hardcase17-qwen.json` 기준 모두 pass했고, 같은 조건의
+    100-case 중간 sweep `/tmp/gtc-bfcl-current-limit25-sweep-qwen.json`은
+    row-source exact `1.00`, retrieved exact `0.99`, row preservation `0.99`,
+    `parallel_multiple` exact `0.96`으로 `xgen-0.27` gate를 pass했다. 남은 1건은
+    same-day ticket query에서 musical ticket date가 ISO로 정규화되지 않은
+    `parallel_multiple_10`이었다. Date argument guidance pass는 query-local
+    month-name date를 ISO `yyyy-mm-dd`로 schema hint에 넣어
+    `/tmp/gtc-bfcl-date-guidance-parallel-multiple-10-qwen.json` 단건을 pass로
+    바꿨고, retrieved-only 100-case 중간 sweep
+    `/tmp/gtc-bfcl-date-guidance-limit25-retrieved-qwen.json`도 exact `1.00`,
+    retrieval@5 `1.00`, `parallel_multiple` exact `1.00`으로 pass했다. 이 수치는
+    full public benchmark가 아니라 0.27 candidate를 빠르게 검증하기 위한 T2/T3
+    evidence다.
 
 ## Paper-Ready Target
 

@@ -57,7 +57,7 @@ from graph_tool_call.retrieval.keyword import BM25Scorer
 
 DEFAULT_OFFICIAL_MODEL_NAME = "qwen3-32b-FC"
 BFCL_RESULT_ARGUMENT_FORMATS = ("json-string", "decoded")
-MODEL_CASE_CACHE_VERSION = 18
+MODEL_CASE_CACHE_VERSION = 19
 
 
 @dataclass(frozen=True)
@@ -1374,6 +1374,13 @@ def _add_property_value_hint(name: str, schema: dict[str, Any], *, query: str) -
             f"The current user request sets this argument to {symbolic_reference}; "
             f"pass exactly the string {json.dumps(symbolic_reference)} for this argument."
         )
+    date_reference = _query_iso_date_reference(name, schema, query)
+    if date_reference:
+        hints.append(
+            f"The current user request refers to date {date_reference}; pass exactly "
+            f"{json.dumps(date_reference)} for this date argument, including when the "
+            "request later says the same date or same day."
+        )
     if _looks_like_decimal_rate_field(name, schema):
         hints.append(
             "If the user writes a percentage such as 4%, pass the decimal fraction "
@@ -1399,6 +1406,71 @@ def _prefer_symbolic_reference_value(schema: dict[str, Any]) -> None:
         schema.pop("items", None)
         schema.pop("properties", None)
         schema.pop("additionalProperties", None)
+
+
+_MONTH_NUMBERS: dict[str, int] = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
+}
+
+
+def _query_iso_date_reference(name: str, schema: dict[str, Any], query: str) -> str:
+    if not query or not _looks_like_date_field(name, schema):
+        return ""
+
+    text = str(query or "")
+    iso_matches = re.findall(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", text)
+    if len(iso_matches) == 1:
+        year, month, day = (int(part) for part in iso_matches[0])
+        return _format_iso_date(year, month, day)
+
+    month_names = "|".join(sorted(_MONTH_NUMBERS, key=len, reverse=True))
+    month_matches = re.findall(
+        rf"\b({month_names})\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,)?\s+(\d{{4}})\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if len(month_matches) == 1:
+        month_name, day, year = month_matches[0]
+        return _format_iso_date(int(year), _MONTH_NUMBERS[month_name.lower()], int(day))
+    return ""
+
+
+def _looks_like_date_field(name: str, schema: dict[str, Any]) -> bool:
+    field_type = _json_schema_type(schema.get("type"))
+    if field_type != "string":
+        return False
+    tokens = {token for token in re.split(r"[^a-z0-9]+", str(name).lower()) if token}
+    description = str(schema.get("description") or "").lower()
+    return "date" in tokens or " date " in f" {description} " or "yyyy-mm-dd" in description
+
+
+def _format_iso_date(year: int, month: int, day: int) -> str:
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return ""
+    return f"{year:04d}-{month:02d}-{day:02d}"
 
 
 def _append_description(schema: dict[str, Any], hint: str) -> None:

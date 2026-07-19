@@ -253,6 +253,27 @@ qwen3.6-27B smoke는 before artifacts
 이 pass는 model-facing 후보와 prompt를 모두 바꾸므로 BFCL model cache version을
 `18`로 올려 이전 run cache 재사용을 막았다.
 
+`2026-07-19` current hard-case replay는 이전 category별 `limit=25` sweep에서
+남았던 17개 실패 케이스를 새 cache version으로 fresh qwen3.6-27B 재실행했다.
+Artifact `/tmp/gtc-bfcl-current-hardcase17-qwen.json` 기준 retrieved top-k=5 exact는
+`1.00`이고 failure breakdown은 `{pass: 17}`이다. 같은 100-case 중간 sweep
+`/tmp/gtc-bfcl-current-limit25-sweep-qwen.json`은 row-source exact `1.00`,
+retrieved exact `0.99`, retrieval@5 `1.00`, row preservation `0.99`,
+`parallel_multiple` exact `0.96`으로 `xgen-0.27` gate를 pass했다. 남은 1건은
+`parallel_multiple_10`의 date value normalization으로, musical ticket date만
+`June 30th 2023` 원문 형태로 남는 `argument_value_mismatch`였다.
+
+`2026-07-19` date argument guidance pass는 query에 단일 ISO 날짜 또는
+`June 30th 2023` 같은 month-name 날짜가 있고 schema field가 date-like이면
+model-facing schema description에 exact `yyyy-mm-dd` 값을 넣는다. Same day/date
+reference도 같은 ISO 값을 쓰도록 힌트한다. Fresh qwen3.6-27B single-case artifact
+`/tmp/gtc-bfcl-date-guidance-parallel-multiple-10-qwen.json`은
+`parallel_multiple_10` retrieved exact `1.00`으로 pass했고, retrieved-only
+100-case 중간 sweep `/tmp/gtc-bfcl-date-guidance-limit25-retrieved-qwen.json`은
+retrieved exact `1.00`, retrieval@5 `1.00`, `parallel_multiple` exact `1.00`,
+failure breakdown `{pass: 100}`이다. 이 pass는 model-facing schema를 바꾸므로
+BFCL model cache version을 `19`로 올렸다.
+
 ## 실행 타깃
 
 ```bash
