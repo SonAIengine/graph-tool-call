@@ -129,6 +129,11 @@ Required work:
 - producer expansion이 plan synthesis까지 실제 이득을 내는지 측정한다.
 - top-k=5를 기본 경로로 유지하되, 복합 query에서만 adaptive expansion을 쓴다.
 - 실패 event에 stage, target, selected producers, missing fields, evidence를 남긴다.
+  - `2026-07-19`: XGEN deterministic benchmark artifact의 각 case에
+    `synthesis_diagnostics`를 추가했다. 성공 plan, user-input fallback,
+    target-selection miss, synthesis error 모두 `stage`, `target`,
+    `selected_producers`, `candidate_signals`, `missing_fields`,
+    `failure`, `retrieval_evidence`를 남기는 형태다.
 - X2BEE BO acceptance case를 smoke 수준에서 product-level case set으로 확장한다.
 
 ## Paper-Ready Target

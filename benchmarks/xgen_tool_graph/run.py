@@ -70,6 +70,7 @@ class QueryEvaluation:
     token_budget_used: int = 0
     latency_ms: float = 0.0
     failure_reason: str = ""
+    synthesis_diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -254,6 +255,7 @@ def run_all_benchmarks(
         "binding_accuracy",
         "user_input_slot_recall",
         "evidence_coverage",
+        "synthesis_diagnostics_coverage",
         "avg_token_budget_used",
         "avg_latency_ms",
     ]
@@ -264,6 +266,15 @@ def run_all_benchmarks(
         "cases": total_cases,
         "tool_count": sum(int(report["tool_count"]) for report in suite_reports),
         "edge_count": sum(int(report["edge_count"]) for report in suite_reports),
+        "synthesis_failure_count": sum(
+            int(row.get("synthesis_failure_count") or 0) for row in graph_summaries
+        ),
+        "user_input_slot_case_count": sum(
+            int(row.get("user_input_slot_case_count") or 0) for row in graph_summaries
+        ),
+        "missing_field_count": sum(
+            int(row.get("missing_field_count") or 0) for row in graph_summaries
+        ),
     }
     for metric in aggregate_metrics:
         summary[metric] = _weighted_mean(
@@ -345,6 +356,12 @@ def evaluate_case(
     binding_accuracy = 1.0
     slot_recall = 1.0
     failure_reason = ""
+    diagnostics = _base_synthesis_diagnostics(
+        target=expected_target,
+        stage="target_selection",
+        retrieval=retrieval,
+        target_rank=target_rank,
+    )
     if expected_target in candidates:
         try:
             plan = PathSynthesizer(
@@ -360,10 +377,39 @@ def evaluate_case(
             plan_recall = recall_at_k(plan_steps, set(expected_plan), len(plan_steps))
             binding_accuracy = _binding_accuracy(plan, expected_bindings)
             slot_recall = _slot_recall(plan, expected_slots)
+            diagnostics = _plan_synthesis_diagnostics(
+                plan,
+                retrieval=retrieval,
+                target_rank=target_rank,
+            )
         except PlanSynthesisError as exc:
-            failure_reason = exc.to_dict().get("reason", type(exc).__name__)
+            failure = exc.to_dict()
+            failure_reason = failure.get("reason", type(exc).__name__)
+            diagnostics = _failure_synthesis_diagnostics(
+                target=expected_target,
+                retrieval=retrieval,
+                target_rank=target_rank,
+                failure=failure,
+            )
         except Exception as exc:  # pragma: no cover - defensive benchmark diagnostics
             failure_reason = type(exc).__name__
+            diagnostics = _failure_synthesis_diagnostics(
+                target=expected_target,
+                retrieval=retrieval,
+                target_rank=target_rank,
+                failure={
+                    "stage": "synthesize",
+                    "reason": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+    else:
+        diagnostics["failure"] = {
+            "stage": "target_selection",
+            "reason": "target_not_in_candidates",
+            "message": "expected target was not present in the candidate set",
+        }
+        failure_reason = "target_not_in_candidates"
 
     return QueryEvaluation(
         case_id=str(case["id"]),
@@ -386,7 +432,165 @@ def evaluate_case(
         token_budget_used=int((retrieval.get("stats") or {}).get("token_budget_used") or 0),
         latency_ms=round(latency_ms, 3),
         failure_reason=failure_reason,
+        synthesis_diagnostics=diagnostics,
     )
+
+
+def _base_synthesis_diagnostics(
+    *,
+    target: str,
+    stage: str,
+    retrieval: dict[str, Any],
+    target_rank: int | None,
+) -> dict[str, Any]:
+    return {
+        "stage": stage,
+        "target": target,
+        "plan_id": "",
+        "selected_producers": [],
+        "candidate_signals": {},
+        "user_input_slots": [],
+        "missing_fields": [],
+        "failure": {},
+        "retrieval_evidence": _retrieval_evidence(retrieval, target_rank),
+    }
+
+
+def _plan_synthesis_diagnostics(
+    plan: Plan,
+    *,
+    retrieval: dict[str, Any],
+    target_rank: int | None,
+) -> dict[str, Any]:
+    metadata = plan.metadata or {}
+    synthesis = metadata.get("synthesis") or {}
+    user_input_slots = [
+        dict(slot) for slot in metadata.get("user_input_slots") or [] if isinstance(slot, dict)
+    ]
+    fallbacks = [dict(row) for row in synthesis.get("fallbacks") or [] if isinstance(row, dict)]
+    return {
+        "stage": "synthesize",
+        "target": str(synthesis.get("target") or metadata.get("target") or ""),
+        "plan_id": plan.id,
+        "step_count": len(plan.steps),
+        "selected_producers": [
+            dict(row) for row in synthesis.get("selected_producers") or [] if isinstance(row, dict)
+        ],
+        "candidate_signals": dict(synthesis.get("candidate_signals") or {}),
+        "user_input_slots": user_input_slots,
+        "missing_fields": _missing_fields_from_slots(user_input_slots, fallbacks),
+        "failure": {},
+        "retrieval_evidence": _retrieval_evidence(retrieval, target_rank),
+    }
+
+
+def _failure_synthesis_diagnostics(
+    *,
+    target: str,
+    retrieval: dict[str, Any],
+    target_rank: int | None,
+    failure: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "stage": str(failure.get("stage") or "synthesize"),
+        "target": target,
+        "plan_id": "",
+        "selected_producers": [],
+        "candidate_signals": {},
+        "user_input_slots": [],
+        "missing_fields": _missing_fields_from_failure(failure),
+        "failure": dict(failure),
+        "retrieval_evidence": _retrieval_evidence(retrieval, target_rank),
+    }
+
+
+def _retrieval_evidence(retrieval: dict[str, Any], target_rank: int | None) -> dict[str, Any]:
+    stats = retrieval.get("stats") or {}
+    return {
+        "target_rank": target_rank,
+        "result_count": len(retrieval.get("results") or []),
+        "token_budget_used": int(stats.get("token_budget_used") or 0),
+        "seed_count": len(stats.get("seeds") or []),
+        "expanded_from_count": len(stats.get("expanded_from") or []),
+    }
+
+
+def _missing_fields_from_slots(
+    user_input_slots: list[dict[str, Any]],
+    fallbacks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    fallback_by_key = {
+        (
+            str(row.get("tool") or ""),
+            str(row.get("field_name") or ""),
+        ): row
+        for row in fallbacks
+    }
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for slot in user_input_slots:
+        key = (
+            str(slot.get("tool") or ""),
+            str(slot.get("field_name") or ""),
+        )
+        fallback = fallback_by_key.get(key) or {}
+        out.append(
+            {
+                "stage": "synthesize",
+                "tool": key[0],
+                "field_name": key[1],
+                "step_id": str(slot.get("step_id") or ""),
+                "semantic_tag": str(fallback.get("semantic_tag") or ""),
+                "reason": str(fallback.get("reason") or "user_input_required"),
+                "cause": str(fallback.get("cause") or ""),
+            }
+        )
+        seen.add(key)
+    for key, fallback in fallback_by_key.items():
+        if key in seen:
+            continue
+        out.append(
+            {
+                "stage": "synthesize",
+                "tool": key[0],
+                "field_name": key[1],
+                "step_id": "",
+                "semantic_tag": str(fallback.get("semantic_tag") or ""),
+                "reason": str(fallback.get("reason") or "user_input_required"),
+                "cause": str(fallback.get("cause") or ""),
+            }
+        )
+    return out
+
+
+def _missing_fields_from_failure(failure: dict[str, Any]) -> list[dict[str, Any]]:
+    field_name = str(failure.get("field_name") or "")
+    if not field_name:
+        return []
+    return [
+        {
+            "stage": str(failure.get("stage") or "synthesize"),
+            "tool": str(failure.get("tool") or ""),
+            "field_name": field_name,
+            "step_id": "",
+            "semantic_tag": str(failure.get("semantic_tag") or ""),
+            "reason": str(failure.get("reason") or "synthesis_error"),
+            "cause": "",
+        }
+    ]
+
+
+def _diagnostics_coverage(diagnostics: dict[str, Any]) -> float:
+    if not diagnostics:
+        return 0.0
+    if not diagnostics.get("stage") or not diagnostics.get("target"):
+        return 0.0
+    if not isinstance(diagnostics.get("retrieval_evidence"), dict):
+        return 0.0
+    failure = diagnostics.get("failure") or {}
+    if failure and not (failure.get("stage") and failure.get("reason")):
+        return 0.0
+    return 1.0
 
 
 def _summarize(
@@ -408,6 +612,16 @@ def _summarize(
         "binding_accuracy": _mean(r.binding_accuracy for r in rows),
         "user_input_slot_recall": _mean(r.user_input_slot_recall for r in rows),
         "evidence_coverage": _mean(r.evidence_coverage for r in rows),
+        "synthesis_diagnostics_coverage": _mean(
+            _diagnostics_coverage(r.synthesis_diagnostics) for r in rows
+        ),
+        "synthesis_failure_count": sum(1 for r in rows if r.failure_reason),
+        "user_input_slot_case_count": sum(
+            1 for r in rows if (r.synthesis_diagnostics or {}).get("user_input_slots")
+        ),
+        "missing_field_count": sum(
+            len((r.synthesis_diagnostics or {}).get("missing_fields") or []) for r in rows
+        ),
         "avg_token_budget_used": round(_mean(r.token_budget_used for r in rows), 1),
         "avg_latency_ms": round(_mean(r.latency_ms for r in rows), 3),
     }
@@ -594,13 +808,14 @@ def _print_report(report: dict[str, Any]) -> None:
         print(
             "  target@K={target:.2f} mrr={mrr_:.2f} producers={prod:.2f} "
             "candidate_plan={cand_plan:.2f} plan_exact={plan:.2f} "
-            "bindings={bind:.2f} latency={latency:.2f}ms".format(
+            "bindings={bind:.2f} diagnostics={diag:.2f} latency={latency:.2f}ms".format(
                 target=summary["target_recall_at_k"],
                 mrr_=summary["mean_target_mrr"],
                 prod=summary["producer_recall"],
                 cand_plan=summary["candidate_plan_coverage"],
                 plan=summary["plan_exact_match"],
                 bind=summary["binding_accuracy"],
+                diag=summary["synthesis_diagnostics_coverage"],
                 latency=summary["avg_latency_ms"],
             )
         )
@@ -634,13 +849,14 @@ def _print_report(report: dict[str, Any]) -> None:
         print(
             "  target@K={target:.2f} mrr={mrr_:.2f} producers={prod:.2f} "
             "candidate_plan={cand_plan:.2f} plan_exact={plan:.2f} "
-            "bindings={bind:.2f} latency={latency:.2f}ms".format(
+            "bindings={bind:.2f} diagnostics={diag:.2f} latency={latency:.2f}ms".format(
                 target=summary["target_recall_at_k"],
                 mrr_=summary["mean_target_mrr"],
                 prod=summary["producer_recall"],
                 cand_plan=summary["candidate_plan_coverage"],
                 plan=summary["plan_exact_match"],
                 bind=summary["binding_accuracy"],
+                diag=summary["synthesis_diagnostics_coverage"],
                 latency=summary["avg_latency_ms"],
             )
         )

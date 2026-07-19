@@ -590,7 +590,17 @@ Latest local deterministic suite result on 2026-07-19:
 | Candidate plan coverage | `1.00` |
 | Plan exact match | `1.00` |
 | Binding accuracy | `1.00` |
+| Synthesis diagnostics coverage | `1.00` |
+| User-input slot cases | `1` |
+| Missing fields surfaced | `2` |
 | Average retrieval latency | `0.22ms` |
+
+Each case includes `synthesis_diagnostics` in the JSON artifact. The diagnostic
+block records the synthesis `stage`, `target`, `plan_id`, selected producers,
+candidate signals, user-input or missing fields, failure details when present,
+and retrieval evidence such as target rank and token budget used. This is the
+XGEN-facing trace shape for explaining why a plan was synthesized, why a field
+requires a popup/resume input, or where target selection failed.
 
 ### XGEN Scale Acceptance
 
