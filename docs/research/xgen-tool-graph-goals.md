@@ -572,7 +572,8 @@ without rebuilding the live Swagger graph. When validating against a captured
 API snapshot instead of live Swagger discovery, pass `SPEC=/path/openapi.json` or
 `SPECS=a.json,b.json` to the same XGEN scale targets. To create that captured
 snapshot from live Swagger, run `make xgen-scale-snapshot OUT_DIR=/tmp/snapshot`
-and reuse `MANIFEST=/tmp/snapshot/manifest.json`.
+and reuse `MANIFEST=/tmp/snapshot/manifest.json`. `make xgen-scale-snapshot-check`
+verifies the manifest paths and sha256 values before expensive acceptance runs.
 
 ## Non-Goals
 

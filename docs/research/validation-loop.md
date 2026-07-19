@@ -374,6 +374,9 @@ make xgen-scale-snapshot \
   OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot
 
 MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
+make xgen-scale-snapshot-check
+
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
 MIN_UNIQUE_TOOLS=1000 \
 make xgen-scale-sweep \
   TOP_KS=3,5,10 \
@@ -401,9 +404,10 @@ https://api-bo.x2bee.com/api/bo/swagger-ui/index.html
 raw OpenAPI snapshot과 `manifest.json`을 만든 뒤 `MANIFEST=/path/manifest.json`을
 넘겨 같은 snapshot으로 acceptance/sweep/contract-ablation을 반복한다. 단일 파일은
 `SPEC=/path/openapi.json`, 여러 파일은 `SPECS=a.json,b.json`으로 직접 넘길 수도
-있다. `MANIFEST`/`SPEC`/`SPECS`를 쓰면 Swagger UI discovery는 건너뛴다. 작은
-snapshot smoke는 `NO_CASES=1 MIN_UNIQUE_TOOLS=1`처럼 threshold를 낮춰 runner
-contract만 확인할 수 있다. report에는 아래를 남긴다.
+있다. `MANIFEST`/`SPEC`/`SPECS`를 쓰면 Swagger UI discovery는 건너뛴다.
+`MANIFEST`는 `benchmarks.xgen_api_scale.run --manifest`로 전달되고 각 spec의
+sha256을 검증한다. 작은 snapshot smoke는 `NO_CASES=1 MIN_UNIQUE_TOOLS=1`처럼
+threshold를 낮춰 runner contract만 확인할 수 있다. report에는 아래를 남긴다.
 
 - discovered spec 수, raw operation 수, unique tool 수, duplicate tool 수
 - requestBody/response schema coverage

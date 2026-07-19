@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-snapshot-check xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -45,15 +45,19 @@ xgen-scale-snapshot:
 		--max-response-bytes "$${MAX_RESPONSE_BYTES:-5000000}" \
 		--out-dir "$${OUT_DIR:-/tmp/gtc-xgen-scale-snapshot}"
 
+xgen-scale-snapshot-check:
+	@test -n "$(MANIFEST)" || (echo "Usage: make xgen-scale-snapshot-check MANIFEST=/tmp/gtc-xgen-scale-snapshot/manifest.json" && exit 2)
+	poetry run python -m benchmarks.xgen_api_scale.manifest "$(MANIFEST)"
+
 xgen-scale-acceptance:
 	@source_args="--swagger-url $${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}"; \
 	selected_specs="$${SPECS:-$${SPEC:-}}"; \
-	selected_manifest="$${SNAPSHOT_MANIFEST:-$${MANIFEST:-}}"; \
-	if [ -n "$$selected_manifest" ] && [ -z "$$selected_specs" ]; then \
-		selected_specs="$$(poetry run python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["specs_csv"])' "$$selected_manifest")" || exit 1; \
+	selected_manifests="$${SNAPSHOT_MANIFESTS:-$${MANIFESTS:-$${SNAPSHOT_MANIFEST:-$${MANIFEST:-}}}}"; \
+	if [ -n "$$selected_manifests$$selected_specs" ]; then \
+		source_args=""; \
+		for manifest in $$(printf "%s" "$$selected_manifests" | tr ',' ' '); do source_args="$$source_args --manifest $$manifest"; done; \
 	fi; \
 	if [ -n "$$selected_specs" ]; then \
-		source_args=""; \
 		for spec in $$(printf "%s" "$$selected_specs" | tr ',' ' '); do source_args="$$source_args --spec $$spec"; done; \
 	fi; \
 	case_args=""; \
@@ -68,12 +72,12 @@ xgen-scale-acceptance:
 xgen-scale-sweep:
 	@source_args="--swagger-url $${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}"; \
 	selected_specs="$${SPECS:-$${SPEC:-}}"; \
-	selected_manifest="$${SNAPSHOT_MANIFEST:-$${MANIFEST:-}}"; \
-	if [ -n "$$selected_manifest" ] && [ -z "$$selected_specs" ]; then \
-		selected_specs="$$(poetry run python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["specs_csv"])' "$$selected_manifest")" || exit 1; \
+	selected_manifests="$${SNAPSHOT_MANIFESTS:-$${MANIFESTS:-$${SNAPSHOT_MANIFEST:-$${MANIFEST:-}}}}"; \
+	if [ -n "$$selected_manifests$$selected_specs" ]; then \
+		source_args=""; \
+		for manifest in $$(printf "%s" "$$selected_manifests" | tr ',' ' '); do source_args="$$source_args --manifest $$manifest"; done; \
 	fi; \
 	if [ -n "$$selected_specs" ]; then \
-		source_args=""; \
 		for spec in $$(printf "%s" "$$selected_specs" | tr ',' ' '); do source_args="$$source_args --spec $$spec"; done; \
 	fi; \
 	case_args=""; \
@@ -94,12 +98,12 @@ xgen-scale-gate-check:
 xgen-scale-contract-ablation:
 	@source_args="--swagger-url $${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}"; \
 	selected_specs="$${SPECS:-$${SPEC:-}}"; \
-	selected_manifest="$${SNAPSHOT_MANIFEST:-$${MANIFEST:-}}"; \
-	if [ -n "$$selected_manifest" ] && [ -z "$$selected_specs" ]; then \
-		selected_specs="$$(poetry run python -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["specs_csv"])' "$$selected_manifest")" || exit 1; \
+	selected_manifests="$${SNAPSHOT_MANIFESTS:-$${MANIFESTS:-$${SNAPSHOT_MANIFEST:-$${MANIFEST:-}}}}"; \
+	if [ -n "$$selected_manifests$$selected_specs" ]; then \
+		source_args=""; \
+		for manifest in $$(printf "%s" "$$selected_manifests" | tr ',' ' '); do source_args="$$source_args --manifest $$manifest"; done; \
 	fi; \
 	if [ -n "$$selected_specs" ]; then \
-		source_args=""; \
 		for spec in $$(printf "%s" "$$selected_specs" | tr ',' ' '); do source_args="$$source_args --spec $$spec"; done; \
 	fi; \
 	case_args=""; \

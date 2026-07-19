@@ -20,6 +20,7 @@ from urllib.parse import unquote
 
 from benchmarks.metrics import mrr, recall_at_k
 from benchmarks.xgen_api_scale.gate import evaluate_gate
+from benchmarks.xgen_api_scale.manifest import spec_sources_from_manifest
 from graph_tool_call import ToolGraph, __version__
 from graph_tool_call.core.contract_matching import description_alias_key
 from graph_tool_call.graphify import (
@@ -1702,6 +1703,12 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="Direct spec URL or local spec file. May be repeated. Skips Swagger discovery.",
     )
+    parser.add_argument(
+        "--manifest",
+        action="append",
+        default=[],
+        help="Snapshot manifest JSON from benchmarks.xgen_api_scale.snapshot. May be repeated.",
+    )
     parser.add_argument("--cases", type=Path, default=DEFAULT_X2BEE_CASES_PATH)
     parser.add_argument("--no-cases", action="store_true")
     parser.add_argument("--top-k", type=int, default=None)
@@ -1772,11 +1779,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     contract_signal_options = _contract_signal_options_from_args(args)
+    spec_sources = _spec_sources_from_args(args)
 
     if args.compare_contract_signals:
         report = run_contract_signal_ablation(
             swagger_url=args.swagger_url,
-            spec_sources=args.spec or None,
+            spec_sources=spec_sources,
             cases_path=None if args.no_cases else args.cases,
             top_k=args.top_k,
             detect_dependencies=not args.no_detect_dependencies,
@@ -1791,7 +1799,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.top_ks:
         report = run_top_k_sweep(
             swagger_url=args.swagger_url,
-            spec_sources=args.spec or None,
+            spec_sources=spec_sources,
             cases_path=None if args.no_cases else args.cases,
             top_ks=_parse_top_ks(args.top_ks),
             acceptance_top_k=args.acceptance_top_k,
@@ -1808,7 +1816,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         report = run_benchmark(
             swagger_url=args.swagger_url,
-            spec_sources=args.spec or None,
+            spec_sources=spec_sources,
             cases_path=None if args.no_cases else args.cases,
             top_k=args.top_k,
             detect_dependencies=not args.no_detect_dependencies,
@@ -1833,6 +1841,14 @@ def main(argv: list[str] | None = None) -> int:
     else:
         _print_report(report)
     return 0 if report["status"] == "pass" else 1
+
+
+def _spec_sources_from_args(args: argparse.Namespace) -> list[str] | None:
+    sources: list[str] = []
+    for manifest_path in args.manifest or []:
+        sources.extend(spec_sources_from_manifest(manifest_path))
+    sources.extend(args.spec or [])
+    return sources or None
 
 
 if __name__ == "__main__":  # pragma: no cover

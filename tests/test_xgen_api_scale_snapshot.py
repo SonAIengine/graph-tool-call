@@ -4,8 +4,11 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
+from benchmarks.xgen_api_scale import manifest as snapshot_manifest
 from benchmarks.xgen_api_scale import snapshot
-from benchmarks.xgen_api_scale.run import run_benchmark
+from benchmarks.xgen_api_scale.run import main, run_benchmark
 
 
 def test_xgen_api_scale_snapshot_writes_reusable_manifest(tmp_path: Path):
@@ -46,6 +49,9 @@ def test_xgen_api_scale_snapshot_writes_reusable_manifest(tmp_path: Path):
     assert report["scale"]["spec_count"] == 2
     assert report["gate"]["status"] == "pass"
 
+    manifest_sources = snapshot_manifest.spec_sources_from_manifest(manifest_path)
+    assert manifest_sources == [str(row["path"]) for row in manifest["specs"]]
+
 
 def test_xgen_api_scale_snapshot_cli_accepts_local_specs(tmp_path: Path, capsys):
     spec_path = tmp_path / "catalog.json"
@@ -63,6 +69,55 @@ def test_xgen_api_scale_snapshot_cli_accepts_local_specs(tmp_path: Path, capsys)
     assert payload["spec_count"] == 1
     assert payload["specs"][0]["source"] == str(spec_path)
     assert payload["specs_csv"] == payload["specs"][0]["path"]
+
+
+def test_xgen_api_scale_run_cli_accepts_verified_manifest(tmp_path: Path):
+    out_dir = tmp_path / "snapshot"
+    output_path = tmp_path / "report.json"
+    manifest = snapshot.snapshot_specs(
+        out_dir=out_dir,
+        spec_sources=[
+            _spec("Snapshot Catalog", {"/brands": _operation("searchBrands", "Brand search")}),
+        ],
+    )
+
+    exit_code = main(
+        [
+            "--manifest",
+            str(manifest["manifest_path"]),
+            "--no-cases",
+            "--min-unique-tools",
+            "1",
+            "--max-build-seconds",
+            "10",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert report["status"] == "pass"
+    assert report["scale"]["unique_tool_count"] == 1
+    assert report["specs"][0]["source"] == manifest["specs"][0]["path"]
+
+
+def test_xgen_api_scale_manifest_detects_snapshot_tampering(tmp_path: Path):
+    out_dir = tmp_path / "snapshot"
+    manifest = snapshot.snapshot_specs(
+        out_dir=out_dir,
+        spec_sources=[
+            _spec("Snapshot Catalog", {"/brands": _operation("searchBrands", "Brand search")}),
+        ],
+    )
+    spec_path = Path(str(manifest["specs"][0]["path"]))
+    spec_path.write_text(
+        json.dumps(_spec("Tampered Catalog", {"/orders": _operation("listOrders", "Order list")})),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(snapshot_manifest.SnapshotManifestError, match="sha256 mismatch"):
+        snapshot_manifest.spec_sources_from_manifest(str(manifest["manifest_path"]))
 
 
 def _spec(title: str, paths: dict[str, object]) -> dict[str, object]:
