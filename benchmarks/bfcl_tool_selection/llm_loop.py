@@ -56,7 +56,7 @@ from graph_tool_call.graphify import build_tool_equivalence_groups
 
 DEFAULT_OFFICIAL_MODEL_NAME = "qwen3-32b-FC"
 BFCL_RESULT_ARGUMENT_FORMATS = ("json-string", "decoded")
-MODEL_CASE_CACHE_VERSION = 13
+MODEL_CASE_CACHE_VERSION = 15
 
 
 @dataclass(frozen=True)
@@ -528,6 +528,12 @@ def evaluate_model_case(
     else:
         raise ValueError(f"Unknown tool_source: {tool_source}")
 
+    preferred_equivalent_names = _case_local_equivalence_priority_names(
+        presented_tools,
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
+    presented_tools = _prioritize_candidate_names(presented_tools, preferred_equivalent_names)
     raw_tools = _presented_raw_tools(
         presented_tools,
         question_row=question_row,
@@ -536,6 +542,7 @@ def evaluate_model_case(
     model_tools, safe_name_map = _prepare_tools_for_model(
         raw_tools,
         query=query,
+        preferred_equivalent_names=preferred_equivalent_names,
         rank_hints=retrieval_rank_hints and tool_source == "retrieved",
         rank_by_name={name: index + 1 for index, name in enumerate(retrieved)},
     )
@@ -843,12 +850,14 @@ def _prepare_tools_for_model(
     raw_tools: list[dict[str, Any]],
     *,
     query: str = "",
+    preferred_equivalent_names: set[str] | None = None,
     rank_hints: bool = False,
     rank_by_name: dict[str, int] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, str]]:
     used_names: dict[str, str] = {}
     safe_to_original: dict[str, str] = {}
     model_tools: list[dict[str, Any]] = []
+    preferred_equivalent_names = preferred_equivalent_names or set()
     for raw_tool in raw_tools:
         original_name = str(raw_tool.get("name") or "")
         if not original_name:
@@ -864,6 +873,7 @@ def _prepare_tools_for_model(
                         raw_tool,
                         rank_hints=rank_hints,
                         rank=rank_by_name.get(original_name) if rank_by_name else None,
+                        preferred_equivalent=original_name in preferred_equivalent_names,
                     ),
                     "parameters": _normalize_parameters(
                         raw_tool.get("parameters") or {},
@@ -890,19 +900,57 @@ def _presented_raw_tools(
     return raw_tools
 
 
+def _case_local_equivalence_priority_names(
+    presented_tools: list[str],
+    *,
+    question_row: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> set[str]:
+    case_tool_names = set(_case_tool_names(question_row))
+    presented_names = set(presented_tools)
+    candidates = case_tool_names & presented_names
+    if not candidates:
+        return set()
+
+    combined_tools = dict(tools_by_name)
+    combined_tools.update(_tools_by_name([question_row]))
+    priority_names: set[str] = set()
+    for group in build_tool_equivalence_groups(presented_tools, combined_tools):
+        members = set(group.get("members") or [])
+        case_members = members & candidates
+        if case_members and members - case_tool_names:
+            priority_names.update(case_members)
+    return priority_names
+
+
+def _prioritize_candidate_names(names: list[str], priority_names: set[str]) -> list[str]:
+    if not priority_names:
+        return list(names)
+    priority = [name for name in names if name in priority_names]
+    remaining = [name for name in names if name not in priority_names]
+    return priority + remaining
+
+
 def _model_tool_description(
     raw_tool: dict[str, Any],
     *,
     rank_hints: bool,
     rank: int | None,
+    preferred_equivalent: bool = False,
 ) -> str:
     description = str(raw_tool.get("description") or "")
-    if not rank_hints or rank is None:
-        return description
-    return (
-        f"Graph retrieval rank #{rank} for the current user query. "
-        f"Prefer lower rank numbers when multiple tools look similar. {description}"
-    ).strip()
+    prefixes: list[str] = []
+    if preferred_equivalent:
+        prefixes.append(
+            "Case-local tool surface for this request. If an equivalent sibling "
+            "candidate is also present, prefer this exact function name."
+        )
+    if rank_hints and rank is not None:
+        prefixes.append(
+            f"Graph retrieval rank #{rank} for the current user query. "
+            "Prefer lower rank numbers when multiple tools look similar."
+        )
+    return " ".join([*prefixes, description]).strip()
 
 
 def _safe_tool_name(original_name: str, used_names: dict[str, str]) -> str:

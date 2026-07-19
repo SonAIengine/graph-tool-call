@@ -184,6 +184,14 @@ string으로 열어 exact reference를 보존하게 한다. Fresh qwen3.6-27B ru
 `/tmp/gtc-bfcl-argument-value-hints-v4-subset.json` 기준 6-case argument subset은
 retrieval@5 `1.00`, evaluator exact `1.00`, failure tags `{}`다.
 
+`2026-07-19` near-duplicate disambiguation pass는 retrieved top-K 안에 BFCL
+case-local tool surface와 equivalent sibling이 함께 있을 때 case-local surface를
+model-facing candidate list 앞쪽으로 올리고 description에도 exact function-name
+preference를 남긴다. Retrieved list는 그대로 보존해 search score와 presentation
+order를 분리한다. Fresh qwen3.6-27B run
+`/tmp/gtc-bfcl-neardup-case-local-order.json` 기준 4-case near-duplicate subset은
+retrieval@5 `1.00`, evaluator exact `1.00`, failure tags `{}`다.
+
 ## 실행 타깃
 
 ```bash
