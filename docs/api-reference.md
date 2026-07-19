@@ -155,8 +155,8 @@ OpenAPI field direction is enforced before graph/search promotion:
   container fields are not reported missing when their leaf fields are present.
 - OpenAPI parameter/body `default` values and JSON Schema `const` values are
   applied as executable defaults when the caller omits a non-path input. User
-  supplied values are never overwritten, and `example` values are not used as
-  live request data.
+  supplied values are never overwritten, `apiKey` security credentials are
+  excluded, and `example` values are not used as live request data.
 - Declared success-response headers are exposed as `api_contract.produces` rows
   with `location=response_header` and `json_path=$.headers.<Name>`, so cursor,
   `Location`, `ETag`, and token-like handoff headers can participate in
@@ -229,8 +229,11 @@ Other declared request-body media types such as `text/plain` and
 payloads; the synthetic root `body` slot is used when present.
 By default, `HttpExecutor` applies OpenAPI `default` and JSON Schema `const`
 values for omitted non-path parameters and request-body fields before validation
-and request rendering. Pass `apply_defaults=False` to keep strict caller-only
-execution. Applied values are reported in `validate_request()` diagnostics.
+and request rendering. Defaults are not applied to declared `apiKey` security
+credentials; runtime auth must still come from executor headers/cookies or
+explicit caller arguments. Pass `apply_defaults=False` to keep strict
+caller-only execution. Applied values are reported in `validate_request()`
+diagnostics.
 
 `HttpExecutor.validate_request(tool, params)` returns structured preflight
 diagnostics for XGEN popup/resume flows:

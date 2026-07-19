@@ -1765,6 +1765,69 @@ class TestBuildRequest:
         assert diagnostics["used_arguments"]["query"] == ["api_key"]
         assert req.full_url == "https://api.example.com/orders?api_key=secret"
 
+    def test_api_key_security_parameter_default_is_not_applied(self):
+        tool = _make_tool(
+            name="listOrders",
+            method="GET",
+            path="/orders",
+            params=[ToolParam(name="api_key", type="string", required=False)],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {
+                    "name": "api_key",
+                    "in": "query",
+                    "field_type": "string",
+                    "default": "demo-key",
+                }
+            ],
+            "security": {
+                "requirements": [{"apiKeyAuth": []}],
+                "schemes": {"apiKeyAuth": {"type": "apiKey", "in": "query", "name": "api_key"}},
+            },
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {})
+
+        assert diagnostics["valid"] is False
+        assert diagnostics["missing_required"] == []
+        assert diagnostics["applied_defaults"] == []
+        assert diagnostics["used_arguments"]["query"] == []
+        assert diagnostics["missing_security"][0]["schemes"][0]["credential_name"] == "api_key"
+        with pytest.raises(OpenAPIRequestValidationError, match="missing security: apiKeyAuth"):
+            executor.build_request(tool, {})
+
+    def test_api_key_security_header_default_is_not_applied(self):
+        tool = _make_tool(
+            name="listOrders",
+            method="GET",
+            path="/orders",
+            params=[ToolParam(name="X-Api-Key", type="string", required=False)],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {
+                    "name": "X-Api-Key",
+                    "in": "header",
+                    "field_type": "string",
+                    "default": "demo-key",
+                }
+            ],
+            "security": {
+                "requirements": [{"apiKeyAuth": []}],
+                "schemes": {"apiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-Api-Key"}},
+            },
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {})
+
+        assert diagnostics["valid"] is False
+        assert diagnostics["applied_defaults"] == []
+        assert diagnostics["used_arguments"]["header"] == []
+        assert diagnostics["missing_security"][0]["schemes"][0]["credential_name"] == "X-Api-Key"
+
     def test_security_requirement_accepts_one_declared_alternative(self):
         tool = _make_tool(name="listOrders", method="GET", path="/orders", params=[])
         tool.metadata["openapi"] = {

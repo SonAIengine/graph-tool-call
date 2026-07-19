@@ -428,6 +428,7 @@ def _arguments_with_openapi_defaults(
 
     effective = dict(arguments)
     applied: list[dict[str, Any]] = []
+    security_api_key_locations = _security_api_key_locations(api_metadata)
 
     def apply_default(
         name: str,
@@ -438,6 +439,8 @@ def _arguments_with_openapi_defaults(
         content_type: str = "",
     ) -> None:
         if not name or location == "path" or name in effective:
+            return
+        if security_api_key_locations.get(name) == location:
             return
         value_source, value = _openapi_static_default(row)
         if value is _NO_DEFAULT:
