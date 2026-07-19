@@ -467,6 +467,26 @@ poetry run python -m benchmarks.bfcl_tool_selection.sweep \
   --output /tmp/gtc-bfcl-xgen-027-selection-guidance.json
 ```
 
+If the remaining failures are sibling choices inside a multi-action retrieved
+set, run `--cohesive-namespace-candidates`. This ablation leaves raw retrieval
+metrics unchanged but compresses the LLM-facing retrieved tools: when a
+multi-action query has a dotted namespace family with at least two retrieved
+tools, singleton sibling families are hidden from the model. The report still
+records raw `retrieved` names and the compressed `tools_presented` per case.
+
+```bash
+poetry run python -m benchmarks.bfcl_tool_selection.sweep \
+  --categories simple_python,multiple,parallel,parallel_multiple \
+  --tool-sources row,retrieved \
+  --top-ks 5 \
+  --model qwen3.6-27b \
+  --llm-url http://127.0.0.1:8000/v1 \
+  --disable-thinking \
+  --candidate-selection-guidance \
+  --cohesive-namespace-candidates \
+  --output /tmp/gtc-bfcl-xgen-027-cohesive-namespace.json
+```
+
 Recommended smoke with a native function-calling endpoint:
 
 ```bash

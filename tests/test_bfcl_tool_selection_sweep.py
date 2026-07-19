@@ -43,6 +43,7 @@ def test_sweep_runs_top_k_and_source_matrix(monkeypatch):
         progress_every=2,
         retrieval_rank_hints=True,
         candidate_selection_guidance=True,
+        cohesive_namespace_candidates=True,
     )
 
     assert len(calls) == 8
@@ -51,9 +52,11 @@ def test_sweep_runs_top_k_and_source_matrix(monkeypatch):
     assert all(call["progress_every"] == 2 for call in calls)
     assert all(call["retrieval_rank_hints"] is True for call in calls)
     assert all(call["candidate_selection_guidance"] is True for call in calls)
+    assert all(call["cohesive_namespace_candidates"] is True for call in calls)
     assert all(call["case_ids"] == {"simple_python_0"} for call in calls)
     assert report["retrieval_rank_hints"] is True
     assert report["candidate_selection_guidance"] is True
+    assert report["cohesive_namespace_candidates"] is True
     assert [call["cache_namespace"] for call in calls[:4]] == ["repeat-1"] * 4
     assert [call["cache_namespace"] for call in calls[4:]] == ["repeat-2"] * 4
     assert report["summary"]["run_count"] == 8

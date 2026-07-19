@@ -11,6 +11,7 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     ExpectedToolCall,
     PredictedToolCall,
     _classify_failure,
+    _cohesive_namespace_candidates,
     _evaluate_official_predictions,
     _evaluate_predictions,
     _messages_for_case,
@@ -73,6 +74,34 @@ def test_messages_can_include_candidate_selection_guidance():
     assert "Candidate selection guidance" not in plain[0]["content"]
     assert "Candidate selection guidance" in guided[0]["content"]
     assert "same namespace or API family" in guided[0]["content"]
+
+
+def test_cohesive_namespace_candidates_only_compress_multi_intent_sibling_sets():
+    names = [
+        "circle.calculate_circumference",
+        "area_circle.calculate",
+        "math.circle_area",
+        "circle.calculate_area",
+        "circle_properties.get",
+    ]
+
+    compressed = _cohesive_namespace_candidates(
+        names,
+        query="Find area and also calculate circumference of a circle",
+        enabled=True,
+    )
+    single_intent = _cohesive_namespace_candidates(
+        names,
+        query="Find area of a circle",
+        enabled=True,
+    )
+
+    assert compressed == ["circle.calculate_circumference", "circle.calculate_area"]
+    assert single_intent == names
+    assert (
+        _cohesive_namespace_candidates(names, query="area and circumference", enabled=False)
+        == names
+    )
 
 
 def test_prediction_matcher_allows_optional_missing_and_parallel_order():
