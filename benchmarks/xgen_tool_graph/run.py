@@ -24,10 +24,11 @@ from graph_tool_call import __version__
 from graph_tool_call.graphify import (
     COLLECTION_GRAPH_VERSION,
     annotate_graphify_metadata,
+    build_candidate_set,
     build_io_contract,
-    expand_candidates_with_producers,
     ingest_openapi_graphify,
     retrieve_graphify,
+    target_action_priority_for_query,
 )
 from graph_tool_call.ingest.openapi import ingest_openapi
 from graph_tool_call.plan import PathSynthesizer, Plan, PlanSynthesisError
@@ -36,7 +37,16 @@ from graph_tool_call.tool_graph import ToolGraph
 ROOT = Path(__file__).resolve().parent
 DEFAULT_SPEC_PATH = ROOT / "commerce_openapi.json"
 DEFAULT_CASES_PATH = ROOT / "cases.json"
+DEFAULT_ADMIN_SPEC_PATH = ROOT / "admin_openapi.json"
+DEFAULT_ADMIN_CASES_PATH = ROOT / "admin_cases.json"
+DEFAULT_WORKFLOW_SPEC_PATH = ROOT / "workflow_openapi.json"
+DEFAULT_WORKFLOW_CASES_PATH = ROOT / "workflow_cases.json"
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options"}
+SUITE_CONFIGS: dict[str, tuple[Path, Path]] = {
+    "commerce": (DEFAULT_SPEC_PATH, DEFAULT_CASES_PATH),
+    "admin": (DEFAULT_ADMIN_SPEC_PATH, DEFAULT_ADMIN_CASES_PATH),
+    "workflow": (DEFAULT_WORKFLOW_SPEC_PATH, DEFAULT_WORKFLOW_CASES_PATH),
+}
 
 
 @dataclass
@@ -45,10 +55,23 @@ class QueryEvaluation:
     query: str
     expected_target: str
     retrieved: list[str]
+    selected_target: str
+    target_selector_candidates: list[str]
+    target_selector_rank: int | None
+    target_selector_exact: float
+    target_selector_strategy: str
+    target_action_priority: dict[str, int]
+    target_equivalence_group_count: int
     candidates: list[str]
+    expansion_seed: list[str]
+    candidate_count: int
     target_rank: int | None
     target_recall_at_k: float
     target_mrr: float
+    producer_needed: bool
+    producer_added_count: int
+    adaptive_expansion_applied: bool
+    unneeded_expansion_applied: bool
     producer_recall: float
     candidate_plan_coverage: float
     candidate_binding_support: float
@@ -61,6 +84,7 @@ class QueryEvaluation:
     token_budget_used: int = 0
     latency_ms: float = 0.0
     failure_reason: str = ""
+    synthesis_diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -181,6 +205,150 @@ def run_benchmark(
         "thresholds": cases_doc.get("thresholds") or {},
         "pipelines": [asdict(p) for p in evaluated],
         "improvements": _compare(evaluated),
+        "producer_expansion_lift": _producer_expansion_lift(evaluated),
+    }
+
+
+def run_benchmark_suite(
+    *,
+    suite: str = "commerce",
+    top_k: int | None = None,
+    token_budget: int | None = None,
+) -> dict[str, Any]:
+    """Run one named XGEN fixture suite or all suites.
+
+    ``run_benchmark`` remains the low-level entry point for ad-hoc
+    ``--spec``/``--cases`` pairs. This helper is the stable product-readiness
+    contract: every named suite represents one real XGEN API Collection family.
+    """
+    if suite == "all":
+        return run_all_benchmarks(top_k=top_k, token_budget=token_budget)
+    if suite not in SUITE_CONFIGS:
+        msg = f"unknown XGEN benchmark suite: {suite!r}"
+        raise ValueError(msg)
+    spec_path, cases_path = SUITE_CONFIGS[suite]
+    report = run_benchmark(
+        spec_path=spec_path,
+        cases_path=cases_path,
+        top_k=top_k,
+        token_budget=token_budget,
+    )
+    report["suite"] = suite
+    return report
+
+
+def run_all_benchmarks(
+    *,
+    top_k: int | None = None,
+    token_budget: int | None = None,
+) -> dict[str, Any]:
+    """Run all deterministic XGEN fixture families and aggregate graph metrics."""
+    suite_reports = [
+        run_benchmark_suite(suite=name, top_k=top_k, token_budget=token_budget)
+        for name in SUITE_CONFIGS
+    ]
+    effective_top_k = top_k if top_k is not None else _common_value(suite_reports, "top_k")
+    effective_budget = (
+        token_budget if token_budget is not None else _common_value(suite_reports, "token_budget")
+    )
+    graph_summaries = [
+        next(p for p in report["pipelines"] if p["name"] == "graph_with_producers")["summary"]
+        for report in suite_reports
+    ]
+    producer_lifts = [report["producer_expansion_lift"] for report in suite_reports]
+    aggregate_lift = _aggregate_producer_expansion_lift(producer_lifts)
+    total_cases = sum(int(summary.get("cases") or 0) for summary in graph_summaries)
+    status = (
+        "pass" if all(summary.get("status") == "pass" for summary in graph_summaries) else "fail"
+    )
+    aggregate_metrics = [
+        "target_recall_at_k",
+        "target_selector_exact",
+        "mean_target_mrr",
+        "producer_recall",
+        "candidate_plan_coverage",
+        "candidate_binding_support",
+        "avg_candidate_count",
+        "avg_target_equivalence_group_count",
+        "avg_producer_added_count",
+        "plan_exact_match",
+        "plan_step_recall",
+        "binding_accuracy",
+        "user_input_slot_recall",
+        "evidence_coverage",
+        "synthesis_diagnostics_coverage",
+        "avg_token_budget_used",
+        "avg_latency_ms",
+    ]
+    summary: dict[str, Any] = {
+        "status": status,
+        "suite_count": len(suite_reports),
+        "fixture_families": list(SUITE_CONFIGS),
+        "cases": total_cases,
+        "tool_count": sum(int(report["tool_count"]) for report in suite_reports),
+        "edge_count": sum(int(report["edge_count"]) for report in suite_reports),
+        "synthesis_failure_count": sum(
+            int(row.get("synthesis_failure_count") or 0) for row in graph_summaries
+        ),
+        "target_selector_miss_count": sum(
+            int(row.get("target_selector_miss_count") or 0) for row in graph_summaries
+        ),
+        "target_equivalence_group_case_count": sum(
+            int(row.get("target_equivalence_group_case_count") or 0) for row in graph_summaries
+        ),
+        "user_input_slot_case_count": sum(
+            int(row.get("user_input_slot_case_count") or 0) for row in graph_summaries
+        ),
+        "missing_field_count": sum(
+            int(row.get("missing_field_count") or 0) for row in graph_summaries
+        ),
+        "producer_needed_case_count": sum(
+            int(row.get("producer_needed_case_count") or 0) for row in graph_summaries
+        ),
+        "adaptive_expansion_case_count": sum(
+            int(row.get("adaptive_expansion_case_count") or 0) for row in graph_summaries
+        ),
+        "unneeded_expansion_case_count": sum(
+            int(row.get("unneeded_expansion_case_count") or 0) for row in graph_summaries
+        ),
+        "max_candidate_count": max(
+            (int(row.get("max_candidate_count") or 0) for row in graph_summaries),
+            default=0,
+        ),
+    }
+    for metric in aggregate_metrics:
+        summary[metric] = _weighted_mean(
+            (
+                float(row.get(metric) or 0.0),
+                int(row.get("cases") or 0),
+            )
+            for row in graph_summaries
+        )
+    summary.update(
+        {
+            "producer_expansion_producer_recall_delta": aggregate_lift["producer_recall"]["delta"],
+            "producer_expansion_candidate_plan_coverage_delta": aggregate_lift[
+                "candidate_plan_coverage"
+            ]["delta"],
+            "producer_expansion_binding_support_delta": aggregate_lift["candidate_binding_support"][
+                "delta"
+            ],
+            "producer_expansion_lifted_cases": aggregate_lift["lifted_cases"]["any"],
+        }
+    )
+
+    return {
+        "benchmark": "XGEN Tool Graph Benchmark Suites",
+        "description": "Deterministic XGEN-style benchmark across API Collection fixture families.",
+        "methodology": "deterministic_engine_contract",
+        "model": "none",
+        "graph_tool_call_version": __version__,
+        "collection_graph_version": COLLECTION_GRAPH_VERSION,
+        "top_k": effective_top_k,
+        "token_budget": effective_budget,
+        "summary": summary,
+        "producer_expansion_lift": aggregate_lift,
+        "suites": suite_reports,
     }
 
 
@@ -213,20 +381,59 @@ def evaluate_case(
     )
     latency_ms = (time.perf_counter() - start) * 1000
     retrieved = [str(row["name"]) for row in retrieval.get("results") or []]
+    target_action_priority = target_action_priority_for_query(query)
+    selector_set = build_candidate_set(
+        retrieved,
+        graph_payload["tools"],
+        target_action_priority=target_action_priority,
+        max_hops=0,
+    )
+    selector_candidates = [str(name) for name in selector_set.get("target_candidates") or []]
+    selected_target = selector_candidates[0] if selector_candidates else ""
+    target_selector_rank = _rank_of(selector_candidates, expected_target)
+    target_selector_exact = 1.0 if selected_target == expected_target else 0.0
+    target_equivalence_groups = [
+        dict(row)
+        for row in selector_set.get("target_equivalence_groups") or []
+        if isinstance(row, dict)
+    ]
+    target_selector = _target_selector_evidence(
+        expected_target=expected_target,
+        selected_target=selected_target,
+        selector_candidates=selector_candidates,
+        target_selector_rank=target_selector_rank,
+        target_selector_exact=target_selector_exact,
+        selector_set=selector_set,
+        target_equivalence_groups=target_equivalence_groups,
+    )
     # The baseline isolates what happens after a target selector has picked the
     # expected target but before producer expansion adds prerequisite tools.
-    candidates = [expected_target] if expected_target in retrieved else retrieved[:1]
+    expansion_seed = [expected_target] if expected_target in retrieved else retrieved[:1]
+    candidate_set = build_candidate_set(
+        retrieved,
+        graph_payload["tools"],
+        expansion_seed=expansion_seed,
+        max_hops=0,
+    )
     if expand_producers:
-        candidates = list(retrieved)
-        candidates = expand_candidates_with_producers(
+        candidate_set = build_candidate_set(
             retrieved,
             graph_payload["tools"],
+            expansion_seed=expansion_seed,
             max_producers_per_field=3,
+            max_hops=max(1, depth),
         )
+    candidates = [str(name) for name in candidate_set["candidates"]]
 
     target_rank = _rank_of(retrieved, expected_target)
     target_recall = recall_at_k(retrieved, {expected_target}, top_k)
     target_mrr = mrr(retrieved, {expected_target})
+    producer_needed = bool(expected_producers)
+    producer_added_count = int(candidate_set.get("producer_added_count") or 0)
+    adaptive_expansion_applied = bool(
+        expand_producers and candidate_set.get("adaptive_expansion_applied")
+    )
+    unneeded_expansion_applied = bool(adaptive_expansion_applied and not producer_needed)
     producer_recall = recall_at_k(candidates, expected_producers, len(candidates))
     candidate_plan_coverage = recall_at_k(candidates, set(expected_plan), len(candidates))
     candidate_binding_support = recall_at_k(
@@ -241,6 +448,13 @@ def evaluate_case(
     binding_accuracy = 1.0
     slot_recall = 1.0
     failure_reason = ""
+    diagnostics = _base_synthesis_diagnostics(
+        target=expected_target,
+        stage="target_selection",
+        retrieval=retrieval,
+        target_rank=target_rank,
+        target_selector=target_selector,
+    )
     if expected_target in candidates:
         try:
             plan = PathSynthesizer(
@@ -256,20 +470,65 @@ def evaluate_case(
             plan_recall = recall_at_k(plan_steps, set(expected_plan), len(plan_steps))
             binding_accuracy = _binding_accuracy(plan, expected_bindings)
             slot_recall = _slot_recall(plan, expected_slots)
+            diagnostics = _plan_synthesis_diagnostics(
+                plan,
+                retrieval=retrieval,
+                target_rank=target_rank,
+                target_selector=target_selector,
+            )
         except PlanSynthesisError as exc:
-            failure_reason = exc.to_dict().get("reason", type(exc).__name__)
+            failure = exc.to_dict()
+            failure_reason = failure.get("reason", type(exc).__name__)
+            diagnostics = _failure_synthesis_diagnostics(
+                target=expected_target,
+                retrieval=retrieval,
+                target_rank=target_rank,
+                target_selector=target_selector,
+                failure=failure,
+            )
         except Exception as exc:  # pragma: no cover - defensive benchmark diagnostics
             failure_reason = type(exc).__name__
+            diagnostics = _failure_synthesis_diagnostics(
+                target=expected_target,
+                retrieval=retrieval,
+                target_rank=target_rank,
+                target_selector=target_selector,
+                failure={
+                    "stage": "synthesize",
+                    "reason": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+    else:
+        diagnostics["failure"] = {
+            "stage": "target_selection",
+            "reason": "target_not_in_candidates",
+            "message": "expected target was not present in the candidate set",
+        }
+        failure_reason = "target_not_in_candidates"
 
     return QueryEvaluation(
         case_id=str(case["id"]),
         query=query,
         expected_target=expected_target,
         retrieved=retrieved,
+        selected_target=selected_target,
+        target_selector_candidates=selector_candidates,
+        target_selector_rank=target_selector_rank,
+        target_selector_exact=target_selector_exact,
+        target_selector_strategy="query_action_priority",
+        target_action_priority=target_action_priority,
+        target_equivalence_group_count=len(target_equivalence_groups),
         candidates=candidates,
+        expansion_seed=expansion_seed,
+        candidate_count=len(candidates),
         target_rank=target_rank,
         target_recall_at_k=target_recall,
         target_mrr=target_mrr,
+        producer_needed=producer_needed,
+        producer_added_count=producer_added_count,
+        adaptive_expansion_applied=adaptive_expansion_applied,
+        unneeded_expansion_applied=unneeded_expansion_applied,
         producer_recall=producer_recall,
         candidate_plan_coverage=candidate_plan_coverage,
         candidate_binding_support=candidate_binding_support,
@@ -282,7 +541,199 @@ def evaluate_case(
         token_budget_used=int((retrieval.get("stats") or {}).get("token_budget_used") or 0),
         latency_ms=round(latency_ms, 3),
         failure_reason=failure_reason,
+        synthesis_diagnostics=diagnostics,
     )
+
+
+def _base_synthesis_diagnostics(
+    *,
+    target: str,
+    stage: str,
+    retrieval: dict[str, Any],
+    target_rank: int | None,
+    target_selector: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "stage": stage,
+        "target": target,
+        "plan_id": "",
+        "selected_producers": [],
+        "candidate_signals": {},
+        "user_input_slots": [],
+        "missing_fields": [],
+        "failure": {},
+        "retrieval_evidence": _retrieval_evidence(retrieval, target_rank),
+        "target_selector": target_selector,
+    }
+
+
+def _plan_synthesis_diagnostics(
+    plan: Plan,
+    *,
+    retrieval: dict[str, Any],
+    target_rank: int | None,
+    target_selector: dict[str, Any],
+) -> dict[str, Any]:
+    metadata = plan.metadata or {}
+    synthesis = metadata.get("synthesis") or {}
+    user_input_slots = [
+        dict(slot) for slot in metadata.get("user_input_slots") or [] if isinstance(slot, dict)
+    ]
+    fallbacks = [dict(row) for row in synthesis.get("fallbacks") or [] if isinstance(row, dict)]
+    return {
+        "stage": "synthesize",
+        "target": str(synthesis.get("target") or metadata.get("target") or ""),
+        "plan_id": plan.id,
+        "step_count": len(plan.steps),
+        "selected_producers": [
+            dict(row) for row in synthesis.get("selected_producers") or [] if isinstance(row, dict)
+        ],
+        "candidate_signals": dict(synthesis.get("candidate_signals") or {}),
+        "user_input_slots": user_input_slots,
+        "missing_fields": _missing_fields_from_slots(user_input_slots, fallbacks),
+        "failure": {},
+        "retrieval_evidence": _retrieval_evidence(retrieval, target_rank),
+        "target_selector": target_selector,
+    }
+
+
+def _failure_synthesis_diagnostics(
+    *,
+    target: str,
+    retrieval: dict[str, Any],
+    target_rank: int | None,
+    target_selector: dict[str, Any],
+    failure: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "stage": str(failure.get("stage") or "synthesize"),
+        "target": target,
+        "plan_id": "",
+        "selected_producers": [],
+        "candidate_signals": {},
+        "user_input_slots": [],
+        "missing_fields": _missing_fields_from_failure(failure),
+        "failure": dict(failure),
+        "retrieval_evidence": _retrieval_evidence(retrieval, target_rank),
+        "target_selector": target_selector,
+    }
+
+
+def _retrieval_evidence(retrieval: dict[str, Any], target_rank: int | None) -> dict[str, Any]:
+    stats = retrieval.get("stats") or {}
+    return {
+        "target_rank": target_rank,
+        "result_count": len(retrieval.get("results") or []),
+        "token_budget_used": int(stats.get("token_budget_used") or 0),
+        "seed_count": len(stats.get("seeds") or []),
+        "expanded_from_count": len(stats.get("expanded_from") or []),
+    }
+
+
+def _target_selector_evidence(
+    *,
+    expected_target: str,
+    selected_target: str,
+    selector_candidates: list[str],
+    target_selector_rank: int | None,
+    target_selector_exact: float,
+    selector_set: dict[str, Any],
+    target_equivalence_groups: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "strategy": "query_action_priority",
+        "expected_target": expected_target,
+        "selected_target": selected_target,
+        "target_selector_rank": target_selector_rank,
+        "target_selector_exact": target_selector_exact,
+        "target_candidates": selector_candidates,
+        "target_action_priority": dict(selector_set.get("target_action_priority") or {}),
+        "target_equivalence_groups": target_equivalence_groups,
+        "target_equivalence_group_count": len(target_equivalence_groups),
+        "target_rank_signals": [
+            dict(row)
+            for row in selector_set.get("target_rank_signals") or []
+            if isinstance(row, dict)
+        ],
+    }
+
+
+def _missing_fields_from_slots(
+    user_input_slots: list[dict[str, Any]],
+    fallbacks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    fallback_by_key = {
+        (
+            str(row.get("tool") or ""),
+            str(row.get("field_name") or ""),
+        ): row
+        for row in fallbacks
+    }
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for slot in user_input_slots:
+        key = (
+            str(slot.get("tool") or ""),
+            str(slot.get("field_name") or ""),
+        )
+        fallback = fallback_by_key.get(key) or {}
+        out.append(
+            {
+                "stage": "synthesize",
+                "tool": key[0],
+                "field_name": key[1],
+                "step_id": str(slot.get("step_id") or ""),
+                "semantic_tag": str(fallback.get("semantic_tag") or ""),
+                "reason": str(fallback.get("reason") or "user_input_required"),
+                "cause": str(fallback.get("cause") or ""),
+            }
+        )
+        seen.add(key)
+    for key, fallback in fallback_by_key.items():
+        if key in seen:
+            continue
+        out.append(
+            {
+                "stage": "synthesize",
+                "tool": key[0],
+                "field_name": key[1],
+                "step_id": "",
+                "semantic_tag": str(fallback.get("semantic_tag") or ""),
+                "reason": str(fallback.get("reason") or "user_input_required"),
+                "cause": str(fallback.get("cause") or ""),
+            }
+        )
+    return out
+
+
+def _missing_fields_from_failure(failure: dict[str, Any]) -> list[dict[str, Any]]:
+    field_name = str(failure.get("field_name") or "")
+    if not field_name:
+        return []
+    return [
+        {
+            "stage": str(failure.get("stage") or "synthesize"),
+            "tool": str(failure.get("tool") or ""),
+            "field_name": field_name,
+            "step_id": "",
+            "semantic_tag": str(failure.get("semantic_tag") or ""),
+            "reason": str(failure.get("reason") or "synthesis_error"),
+            "cause": "",
+        }
+    ]
+
+
+def _diagnostics_coverage(diagnostics: dict[str, Any]) -> float:
+    if not diagnostics:
+        return 0.0
+    if not diagnostics.get("stage") or not diagnostics.get("target"):
+        return 0.0
+    if not isinstance(diagnostics.get("retrieval_evidence"), dict):
+        return 0.0
+    failure = diagnostics.get("failure") or {}
+    if failure and not (failure.get("stage") and failure.get("reason")):
+        return 0.0
+    return 1.0
 
 
 def _summarize(
@@ -295,15 +746,37 @@ def _summarize(
         "pipeline": name,
         "cases": len(rows),
         "target_recall_at_k": _mean(r.target_recall_at_k for r in rows),
+        "target_selector_exact": _mean(r.target_selector_exact for r in rows),
         "mean_target_mrr": _mean(r.target_mrr for r in rows),
         "producer_recall": _mean(r.producer_recall for r in rows),
         "candidate_plan_coverage": _mean(r.candidate_plan_coverage for r in rows),
         "candidate_binding_support": _mean(r.candidate_binding_support for r in rows),
+        "avg_candidate_count": _mean(r.candidate_count for r in rows),
+        "max_candidate_count": max((r.candidate_count for r in rows), default=0),
+        "avg_target_equivalence_group_count": _mean(r.target_equivalence_group_count for r in rows),
+        "target_equivalence_group_case_count": sum(
+            1 for r in rows if r.target_equivalence_group_count > 0
+        ),
+        "producer_needed_case_count": sum(1 for r in rows if r.producer_needed),
+        "adaptive_expansion_case_count": sum(1 for r in rows if r.adaptive_expansion_applied),
+        "unneeded_expansion_case_count": sum(1 for r in rows if r.unneeded_expansion_applied),
+        "avg_producer_added_count": _mean(r.producer_added_count for r in rows),
         "plan_exact_match": _mean(r.plan_exact_match for r in rows),
         "plan_step_recall": _mean(r.plan_step_recall for r in rows),
         "binding_accuracy": _mean(r.binding_accuracy for r in rows),
         "user_input_slot_recall": _mean(r.user_input_slot_recall for r in rows),
         "evidence_coverage": _mean(r.evidence_coverage for r in rows),
+        "synthesis_diagnostics_coverage": _mean(
+            _diagnostics_coverage(r.synthesis_diagnostics) for r in rows
+        ),
+        "synthesis_failure_count": sum(1 for r in rows if r.failure_reason),
+        "target_selector_miss_count": sum(1 for r in rows if r.target_selector_exact < 1.0),
+        "user_input_slot_case_count": sum(
+            1 for r in rows if (r.synthesis_diagnostics or {}).get("user_input_slots")
+        ),
+        "missing_field_count": sum(
+            len((r.synthesis_diagnostics or {}).get("missing_fields") or []) for r in rows
+        ),
         "avg_token_budget_used": round(_mean(r.token_budget_used for r in rows), 1),
         "avg_latency_ms": round(_mean(r.latency_ms for r in rows), 3),
     }
@@ -336,6 +809,129 @@ def _compare(pipelines: list[PipelineEvaluation]) -> dict[str, float]:
         f"{metric}_delta": round(float(graph.get(metric, 0.0)) - float(base.get(metric, 0.0)), 6)
         for metric in metrics
     }
+
+
+def _producer_expansion_lift(pipelines: list[PipelineEvaluation]) -> dict[str, Any]:
+    by_name = {p.name: p for p in pipelines}
+    base = by_name.get("target_only")
+    graph = by_name.get("graph_with_producers")
+    if base is None or graph is None:
+        return {}
+
+    metrics = [
+        "producer_recall",
+        "candidate_plan_coverage",
+        "candidate_binding_support",
+        "plan_exact_match",
+        "plan_step_recall",
+    ]
+    lift: dict[str, Any] = {
+        "baseline_pipeline": base.name,
+        "expanded_pipeline": graph.name,
+        "cases": min(len(base.cases), len(graph.cases)),
+        "producer_needed_cases": sum(1 for row in graph.cases if row.producer_needed),
+        "adaptive_expansion_cases": sum(1 for row in graph.cases if row.adaptive_expansion_applied),
+        "unneeded_expansion_cases": sum(1 for row in graph.cases if row.unneeded_expansion_applied),
+        "lifted_cases": _lifted_case_counts(base.cases, graph.cases),
+    }
+    for metric in metrics:
+        before = float(base.summary.get(metric, 0.0))
+        after = float(graph.summary.get(metric, 0.0))
+        lift[metric] = {
+            "before": round(before, 6),
+            "after": round(after, 6),
+            "delta": round(after - before, 6),
+        }
+    return lift
+
+
+def _lifted_case_counts(
+    baseline_cases: list[QueryEvaluation],
+    expanded_cases: list[QueryEvaluation],
+) -> dict[str, int]:
+    base_by_id = {row.case_id: row for row in baseline_cases}
+    lifted = {
+        "producer_recall": 0,
+        "candidate_plan_coverage": 0,
+        "candidate_binding_support": 0,
+        "any": 0,
+    }
+    for expanded in expanded_cases:
+        base = base_by_id.get(expanded.case_id)
+        if base is None:
+            continue
+        producer = expanded.producer_recall > base.producer_recall
+        plan = expanded.candidate_plan_coverage > base.candidate_plan_coverage
+        binding = expanded.candidate_binding_support > base.candidate_binding_support
+        if producer:
+            lifted["producer_recall"] += 1
+        if plan:
+            lifted["candidate_plan_coverage"] += 1
+        if binding:
+            lifted["candidate_binding_support"] += 1
+        if producer or plan or binding:
+            lifted["any"] += 1
+    return lifted
+
+
+def _aggregate_producer_expansion_lift(lifts: list[dict[str, Any]]) -> dict[str, Any]:
+    active = [lift for lift in lifts if lift]
+    total_cases = sum(int(lift.get("cases") or 0) for lift in active)
+    out: dict[str, Any] = {
+        "baseline_pipeline": "target_only",
+        "expanded_pipeline": "graph_with_producers",
+        "cases": total_cases,
+        "producer_needed_cases": sum(
+            int(lift.get("producer_needed_cases") or 0) for lift in active
+        ),
+        "adaptive_expansion_cases": sum(
+            int(lift.get("adaptive_expansion_cases") or 0) for lift in active
+        ),
+        "unneeded_expansion_cases": sum(
+            int(lift.get("unneeded_expansion_cases") or 0) for lift in active
+        ),
+        "lifted_cases": {
+            "producer_recall": sum(
+                int((lift.get("lifted_cases") or {}).get("producer_recall") or 0) for lift in active
+            ),
+            "candidate_plan_coverage": sum(
+                int((lift.get("lifted_cases") or {}).get("candidate_plan_coverage") or 0)
+                for lift in active
+            ),
+            "candidate_binding_support": sum(
+                int((lift.get("lifted_cases") or {}).get("candidate_binding_support") or 0)
+                for lift in active
+            ),
+            "any": sum(int((lift.get("lifted_cases") or {}).get("any") or 0) for lift in active),
+        },
+    }
+    for metric in (
+        "producer_recall",
+        "candidate_plan_coverage",
+        "candidate_binding_support",
+        "plan_exact_match",
+        "plan_step_recall",
+    ):
+        before = _weighted_mean(
+            (
+                float((lift.get(metric) or {}).get("before") or 0.0),
+                int(lift.get("cases") or 0),
+            )
+            for lift in active
+        )
+        after = _weighted_mean(
+            (
+                float((lift.get(metric) or {}).get("after") or 0.0),
+                int(lift.get("cases") or 0),
+            )
+            for lift in active
+        )
+        out[metric] = {
+            "before": before,
+            "after": after,
+            "delta": round(after - before, 6),
+        }
+    return out
 
 
 def _operation_index(spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -448,6 +1044,21 @@ def _mean(values: Any) -> float:
     return round(sum(vals) / len(vals), 6)
 
 
+def _weighted_mean(values: Any) -> float:
+    vals = [(float(value), int(weight)) for value, weight in values if int(weight) > 0]
+    if not vals:
+        return 0.0
+    weight_sum = sum(weight for _value, weight in vals)
+    return round(sum(value * weight for value, weight in vals) / weight_sum, 6)
+
+
+def _common_value(reports: list[dict[str, Any]], key: str) -> Any:
+    values = {json.dumps(report.get(key), sort_keys=True) for report in reports}
+    if len(values) != 1:
+        return None
+    return json.loads(next(iter(values)))
+
+
 def _threshold_passed(
     summary: dict[str, float | int | str],
     metric: str,
@@ -460,6 +1071,78 @@ def _threshold_passed(
 
 
 def _print_report(report: dict[str, Any]) -> None:
+    if "suites" in report:
+        summary = report["summary"]
+        print(
+            f"{report['benchmark']} "
+            f"({summary['suite_count']} suites, {summary['cases']} cases, "
+            f"{summary['tool_count']} tools, {summary['edge_count']} edges)"
+        )
+        print(
+            f"model={report['model']} methodology={report['methodology']} "
+            f"graph-tool-call={report['graph_tool_call_version']}"
+        )
+        print(f"status={summary['status']} families={','.join(summary['fixture_families'])}")
+        print(
+            "  target@K={target:.2f} selector={selector:.2f} mrr={mrr_:.2f} "
+            "producers={prod:.2f} "
+            "candidate_plan={cand_plan:.2f} plan_exact={plan:.2f} "
+            "bindings={bind:.2f} diagnostics={diag:.2f} candidates={cand:.2f} "
+            "latency={latency:.2f}ms".format(
+                target=summary["target_recall_at_k"],
+                selector=summary["target_selector_exact"],
+                mrr_=summary["mean_target_mrr"],
+                prod=summary["producer_recall"],
+                cand_plan=summary["candidate_plan_coverage"],
+                plan=summary["plan_exact_match"],
+                bind=summary["binding_accuracy"],
+                diag=summary["synthesis_diagnostics_coverage"],
+                cand=summary["avg_candidate_count"],
+                latency=summary["avg_latency_ms"],
+            )
+        )
+        print(
+            "  adaptive expansion: applied={applied} producer_needed={needed} "
+            "unneeded={unneeded} max_candidates={max_candidates}".format(
+                applied=summary["adaptive_expansion_case_count"],
+                needed=summary["producer_needed_case_count"],
+                unneeded=summary["unneeded_expansion_case_count"],
+                max_candidates=summary["max_candidate_count"],
+            )
+        )
+        lift = report.get("producer_expansion_lift") or {}
+        if lift:
+            print(
+                "  producer expansion lift: producer_recall={prod:+.2f} "
+                "candidate_plan={plan:+.2f} binding_support={bind:+.2f} "
+                "lifted_cases={cases}".format(
+                    prod=lift["producer_recall"]["delta"],
+                    plan=lift["candidate_plan_coverage"]["delta"],
+                    bind=lift["candidate_binding_support"]["delta"],
+                    cases=lift["lifted_cases"]["any"],
+                )
+            )
+        print()
+        for suite_report in report["suites"]:
+            graph = next(
+                p for p in suite_report["pipelines"] if p["name"] == "graph_with_producers"
+            )
+            row = graph["summary"]
+            print(
+                "  [{suite}] status={status} cases={cases} target@K={target:.2f} "
+                "selector={selector:.2f} plan_exact={plan:.2f} "
+                "unneeded_expansion={unneeded}".format(
+                    suite=suite_report["suite"],
+                    status=row.get("status", "n/a"),
+                    cases=row["cases"],
+                    target=row["target_recall_at_k"],
+                    selector=row["target_selector_exact"],
+                    plan=row["plan_exact_match"],
+                    unneeded=row["unneeded_expansion_case_count"],
+                )
+            )
+        return
+
     print(f"{report['benchmark']} ({report['tool_count']} tools, {report['edge_count']} edges)")
     print(
         f"model={report['model']} methodology={report['methodology']} "
@@ -470,26 +1153,58 @@ def _print_report(report: dict[str, Any]) -> None:
         summary = pipeline["summary"]
         print(f"[{pipeline['name']}] status={summary.get('status', 'n/a')}")
         print(
-            "  target@K={target:.2f} mrr={mrr_:.2f} producers={prod:.2f} "
+            "  target@K={target:.2f} selector={selector:.2f} mrr={mrr_:.2f} "
+            "producers={prod:.2f} "
             "candidate_plan={cand_plan:.2f} plan_exact={plan:.2f} "
-            "bindings={bind:.2f} latency={latency:.2f}ms".format(
+            "bindings={bind:.2f} diagnostics={diag:.2f} candidates={cand:.2f} "
+            "latency={latency:.2f}ms".format(
                 target=summary["target_recall_at_k"],
+                selector=summary["target_selector_exact"],
                 mrr_=summary["mean_target_mrr"],
                 prod=summary["producer_recall"],
                 cand_plan=summary["candidate_plan_coverage"],
                 plan=summary["plan_exact_match"],
                 bind=summary["binding_accuracy"],
+                diag=summary["synthesis_diagnostics_coverage"],
+                cand=summary["avg_candidate_count"],
                 latency=summary["avg_latency_ms"],
+            )
+        )
+        print(
+            "  adaptive expansion: applied={applied} producer_needed={needed} "
+            "unneeded={unneeded} max_candidates={max_candidates}".format(
+                applied=summary["adaptive_expansion_case_count"],
+                needed=summary["producer_needed_case_count"],
+                unneeded=summary["unneeded_expansion_case_count"],
+                max_candidates=summary["max_candidate_count"],
             )
         )
     print()
     print("Improvement over target_only:")
     for key, value in report["improvements"].items():
         print(f"  {key}: {value:+.2f}")
+    lift = report.get("producer_expansion_lift") or {}
+    if lift:
+        print(
+            "Producer expansion lift cases: "
+            "producer_recall={producer} candidate_plan={plan} "
+            "binding_support={binding} any={any_}".format(
+                producer=lift["lifted_cases"]["producer_recall"],
+                plan=lift["lifted_cases"]["candidate_plan_coverage"],
+                binding=lift["lifted_cases"]["candidate_binding_support"],
+                any_=lift["lifted_cases"]["any"],
+            )
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--suite",
+        choices=[*SUITE_CONFIGS.keys(), "all"],
+        default=None,
+        help="Run a named built-in XGEN fixture suite. Use 'all' for product-readiness coverage.",
+    )
     parser.add_argument("--spec", type=Path, default=DEFAULT_SPEC_PATH)
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_PATH)
     parser.add_argument("--top-k", type=int, default=None)
@@ -497,17 +1212,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="Print raw JSON report")
     args = parser.parse_args(argv)
 
-    report = run_benchmark(
-        spec_path=args.spec,
-        cases_path=args.cases,
-        top_k=args.top_k,
-        token_budget=args.token_budget,
-    )
+    if args.suite:
+        report = run_benchmark_suite(
+            suite=args.suite,
+            top_k=args.top_k,
+            token_budget=args.token_budget,
+        )
+    else:
+        report = run_benchmark(
+            spec_path=args.spec,
+            cases_path=args.cases,
+            top_k=args.top_k,
+            token_budget=args.token_budget,
+        )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         _print_report(report)
 
+    if "suites" in report:
+        return 0 if report["summary"].get("status") == "pass" else 1
     graph_pipeline = next(p for p in report["pipelines"] if p["name"] == "graph_with_producers")
     return 0 if graph_pipeline["summary"].get("status") == "pass" else 1
 

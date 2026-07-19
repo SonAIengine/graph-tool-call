@@ -10,7 +10,9 @@ from graph_tool_call.graphify import (
     COLLECTION_GRAPH_VERSION,
     EVIDENCE_API_CONTRACT,
     EVIDENCE_OPENAPI_LINK,
+    build_candidate_set,
     build_io_contract,
+    build_tool_equivalence_groups,
     derive_plan_trace_edges,
     expand_candidates_with_producers,
     ingest_openapi_graphify,
@@ -18,6 +20,7 @@ from graph_tool_call.graphify import (
     normalize_graph_edge,
     promote_api_contract_signals,
     retrieve_graphify,
+    target_action_priority_for_query,
 )
 from graph_tool_call.ingest.openapi import ingest_openapi
 from graph_tool_call.ontology.schema import RelationType
@@ -33,8 +36,11 @@ from graph_tool_call.tool_graph import ToolGraph
 
 def test_graphify_public_contract_imports():
     assert COLLECTION_GRAPH_VERSION == "2"
+    assert callable(build_candidate_set)
     assert callable(build_io_contract)
+    assert callable(build_tool_equivalence_groups)
     assert callable(expand_candidates_with_producers)
+    assert callable(target_action_priority_for_query)
     assert callable(normalize_graph_edge)
     assert callable(merge_graph_edges)
     assert callable(derive_plan_trace_edges)
@@ -483,6 +489,68 @@ def test_ingest_openapi_graphify_can_promote_contracts_into_data_flow_edges():
     assert plan.steps[-1].args["goodsNo"] == "${s1.items[0].goodsNo}"
 
 
+def test_ingest_openapi_graphify_matches_identifier_description_aliases():
+    producer = ToolSchema(
+        name="getMarketDisplayList",
+        description="기획전 목록",
+        metadata={
+            "api_contract": {
+                "produces": [
+                    {
+                        "field_name": "mkdpNo",
+                        "json_path": "$.items[*].mkdpNo",
+                        "field_type": "string",
+                        "description": "기획전번호",
+                    }
+                ],
+                "consumes": [],
+            },
+        },
+    )
+    target = ToolSchema(
+        name="getDeliveryAmountInfo",
+        description="배송비 정보",
+        metadata={
+            "api_contract": {
+                "produces": [],
+                "consumes": [
+                    {
+                        "field_name": "marketingDisplayNo",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "body",
+                        "description": "기획전번호",
+                    }
+                ],
+            },
+        },
+    )
+
+    tg, stats = ingest_openapi_graphify(
+        [producer, target],
+        promote_contract_signals=True,
+    )
+    edge = tg.graph.get_edge_attrs("getDeliveryAmountInfo", "getMarketDisplayList")
+
+    assert stats["contract_signals"]["produces_added"] == 1
+    assert stats["contract_edges"]["added"] == 1
+    assert edge["relation"] == "requires"
+    assert edge["kind"] == "data"
+    assert edge["data_flow"]["from_field"] == "mkdpNo"
+    assert edge["data_flow"]["to_field"] == "marketingDisplayNo"
+
+    graph_payload = {
+        "graph": tg.graph.to_dict(),
+        "tools": {name: tool.to_dict() for name, tool in tg.tools.items()},
+    }
+    plan = PathSynthesizer(graph_payload).synthesize(
+        target="getDeliveryAmountInfo",
+        goal="배송비 정보",
+    )
+    assert [step.tool for step in plan.steps] == ["getMarketDisplayList", "getDeliveryAmountInfo"]
+    assert plan.steps[-1].args["marketingDisplayNo"] == "${s1.items[0].mkdpNo}"
+
+
 def test_ingest_openapi_graphify_uses_openapi_links_for_cross_field_data_flow():
     spec = {
         "openapi": "3.0.0",
@@ -864,6 +932,486 @@ def test_expand_candidates_with_producers_uses_required_data_only_and_action_pri
     assert expanded == ["getProductDetail", "searchProduct", "readProduct"]
 
 
+def test_expand_candidates_with_producers_can_follow_target_specific_chain():
+    tools = {
+        "getInventory": {
+            "metadata": {
+                "consumes": [
+                    {"field_name": "skuId", "semantic_tag": "sku_id", "required": True},
+                ]
+            }
+        },
+        "getProductDetail": {
+            "metadata": {
+                "consumes": [
+                    {"field_name": "productId", "semantic_tag": "product_id", "required": True},
+                ],
+                "produces": [{"field_name": "skuId", "semantic_tag": "sku_id"}],
+                "ai_metadata": {"canonical_action": "read"},
+            }
+        },
+        "searchProducts": {
+            "metadata": {
+                "produces": [{"field_name": "productId", "semantic_tag": "product_id"}],
+                "ai_metadata": {"canonical_action": "search"},
+            }
+        },
+        "listProducts": {
+            "metadata": {
+                "produces": [{"field_name": "productId", "semantic_tag": "product_id"}],
+                "ai_metadata": {"canonical_action": "read"},
+            }
+        },
+    }
+
+    one_hop = expand_candidates_with_producers(["getInventory"], tools, max_hops=1)
+    two_hops = expand_candidates_with_producers(["getInventory"], tools, max_hops=2)
+
+    assert one_hop == ["getInventory", "getProductDetail"]
+    assert two_hops == ["getInventory", "getProductDetail", "searchProducts", "listProducts"]
+
+
+def test_build_candidate_set_separates_target_candidates_from_producers():
+    tools = {
+        "searchProducts": {
+            "metadata": {
+                "produces": [{"field_name": "productId", "semantic_tag": "product_id"}],
+                "ai_metadata": {"canonical_action": "search"},
+            }
+        },
+        "getProductDetail": {
+            "metadata": {
+                "consumes": [
+                    {"field_name": "productId", "semantic_tag": "product_id", "required": True},
+                ],
+            }
+        },
+        "getCart": {
+            "metadata": {
+                "consumes": [
+                    {"field_name": "cartId", "semantic_tag": "cart_id", "required": True},
+                ],
+            }
+        },
+        "getCurrentCart": {
+            "metadata": {
+                "produces": [{"field_name": "cartId", "semantic_tag": "cart_id"}],
+                "ai_metadata": {"canonical_action": "read"},
+            }
+        },
+    }
+
+    result = build_candidate_set(
+        ["getProductDetail", "getCart"],
+        tools,
+        expansion_seed=["getProductDetail"],
+        max_hops=1,
+    )
+
+    assert result["target_candidates"] == ["getProductDetail", "getCart"]
+    assert result["expansion_seed"] == ["getProductDetail"]
+    assert result["producer_candidates"] == ["searchProducts"]
+    assert result["candidates"] == ["getProductDetail", "searchProducts"]
+    assert result["target_candidate_count"] == 2
+    assert result["candidate_count"] == 2
+    assert result["producer_added_count"] == 1
+    assert result["adaptive_expansion_applied"] is True
+
+
+def test_build_candidate_set_can_cap_sibling_target_groups_without_touching_producers():
+    tools = {
+        "getButtonByPageRoleList": {
+            "metadata": {
+                "consumes": [
+                    {"field_name": "pageRoleId", "semantic_tag": "page_role_id", "required": True}
+                ],
+                "ai_metadata": {"primary_resource": "page_role_button", "canonical_action": "read"},
+            }
+        },
+        "getEnabledButtonByPageRoleList": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "page_role_button", "canonical_action": "read"},
+            }
+        },
+        "getUserButtonByPageRoleList": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "page_role_button", "canonical_action": "read"},
+            }
+        },
+        "getUserDetail": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "user", "canonical_action": "read"},
+            }
+        },
+        "searchPageRoles": {
+            "metadata": {
+                "produces": [{"field_name": "pageRoleId", "semantic_tag": "page_role_id"}],
+                "ai_metadata": {"primary_resource": "page_role", "canonical_action": "search"},
+            }
+        },
+    }
+
+    result = build_candidate_set(
+        [
+            "getButtonByPageRoleList",
+            "getEnabledButtonByPageRoleList",
+            "getUserButtonByPageRoleList",
+            "getUserDetail",
+        ],
+        tools,
+        expansion_seed=["getButtonByPageRoleList"],
+        max_targets_per_group=2,
+        max_hops=1,
+    )
+
+    assert result["raw_target_candidates"] == [
+        "getButtonByPageRoleList",
+        "getEnabledButtonByPageRoleList",
+        "getUserButtonByPageRoleList",
+        "getUserDetail",
+    ]
+    assert result["target_candidates"] == [
+        "getButtonByPageRoleList",
+        "getEnabledButtonByPageRoleList",
+        "getUserDetail",
+    ]
+    assert result["suppressed_target_candidates"] == ["getUserButtonByPageRoleList"]
+    assert result["sibling_control_applied"] is True
+    assert result["producer_candidates"] == ["searchPageRoles"]
+    assert result["candidates"] == ["getButtonByPageRoleList", "searchPageRoles"]
+    page_role_group = next(
+        row
+        for row in result["target_candidate_groups"]
+        if row["key"] == "resource_action:page_role_button:read"
+    )
+    assert page_role_group["member_count"] == 3
+    assert page_role_group["suppressed_count"] == 1
+
+
+def test_build_candidate_set_can_diversify_limited_multi_intent_target_groups():
+    tools = {
+        "getOrderDetail": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "order", "canonical_action": "read"},
+            }
+        },
+        "getOrderPayments": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "order", "canonical_action": "read"},
+            }
+        },
+        "getOrderMemos": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "order", "canonical_action": "read"},
+            }
+        },
+        "validateCoupon": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "coupon", "canonical_action": "read"},
+            }
+        },
+        "getShipmentTracking": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "shipment", "canonical_action": "read"},
+            }
+        },
+    }
+
+    plain = build_candidate_set(
+        [
+            "getOrderDetail",
+            "getOrderPayments",
+            "getOrderMemos",
+            "validateCoupon",
+            "getShipmentTracking",
+        ],
+        tools,
+        max_target_candidates=4,
+        max_hops=0,
+    )
+    diverse = build_candidate_set(
+        [
+            "getOrderDetail",
+            "getOrderPayments",
+            "getOrderMemos",
+            "validateCoupon",
+            "getShipmentTracking",
+        ],
+        tools,
+        max_target_candidates=4,
+        diversify_target_groups=True,
+        max_hops=0,
+    )
+
+    assert plain["target_candidates"] == [
+        "getOrderDetail",
+        "getOrderPayments",
+        "getOrderMemos",
+        "validateCoupon",
+    ]
+    assert plain["suppressed_target_candidates"] == ["getShipmentTracking"]
+    assert diverse["target_candidates"] == [
+        "getOrderDetail",
+        "validateCoupon",
+        "getShipmentTracking",
+        "getOrderPayments",
+    ]
+    assert diverse["suppressed_target_candidates"] == ["getOrderMemos"]
+    assert diverse["target_diversity_applied"] is True
+    assert diverse["max_target_candidates"] == 4
+    assert {row["key"] for row in diverse["target_candidate_groups"]} == {
+        "resource_action:order:read",
+        "resource_action:coupon:read",
+        "resource_action:shipment:read",
+    }
+
+
+def test_build_candidate_set_can_rerank_targets_by_action_priority_with_signals():
+    tools = {
+        "listProducts": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "product", "canonical_action": "search"},
+            }
+        },
+        "getProductDetail": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "product", "canonical_action": "read"},
+            }
+        },
+        "createProductReview": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "review", "canonical_action": "create"},
+            }
+        },
+        "deleteProductReview": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "review", "canonical_action": "delete"},
+            }
+        },
+    }
+
+    result = build_candidate_set(
+        ["listProducts", "getProductDetail", "createProductReview", "deleteProductReview"],
+        tools,
+        target_action_priority={"create": 5, "delete": 4, "read": 2, "search": 1},
+        max_target_candidates=3,
+        max_hops=0,
+    )
+
+    assert result["raw_target_candidates"] == [
+        "listProducts",
+        "getProductDetail",
+        "createProductReview",
+        "deleteProductReview",
+    ]
+    assert result["ranked_target_candidates"] == [
+        "createProductReview",
+        "deleteProductReview",
+        "getProductDetail",
+        "listProducts",
+    ]
+    assert result["target_candidates"] == [
+        "createProductReview",
+        "deleteProductReview",
+        "getProductDetail",
+    ]
+    assert result["suppressed_target_candidates"] == ["listProducts"]
+    assert result["target_rerank_applied"] is True
+    signals = {row["name"]: row for row in result["target_rank_signals"]}
+    assert signals["createProductReview"]["original_rank"] == 3
+    assert signals["createProductReview"]["reranked_rank"] == 1
+    assert signals["createProductReview"]["action_priority"] == 5
+    assert signals["listProducts"]["suppressed"] is True
+
+
+def test_build_tool_equivalence_groups_returns_surface_evidence_without_suppressing():
+    tools = {
+        "solve_quadratic": {
+            "name": "solve_quadratic",
+            "description": "Find the roots of a quadratic equation. Returns both roots.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "a": {"description": "Coefficient of x squared"},
+                    "b": {"description": "Coefficient of x"},
+                    "c": {"description": "Constant term"},
+                },
+                "required": ["a", "b", "c"],
+            },
+        },
+        "solve_quadratic_equation": {
+            "name": "solve_quadratic_equation",
+            "description": "Function solves the quadratic equation and returns its roots.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "a": {"description": "Coefficient of x squared"},
+                    "b": {"description": "Coefficient of x"},
+                    "c": {"description": "Constant term"},
+                },
+                "required": ["a", "b", "c"],
+            },
+        },
+        "restaurant_finder": {
+            "name": "restaurant_finder",
+            "description": "Locate restaurants based on cuisine and city.",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {}, "cuisine": {}},
+                "required": ["city", "cuisine"],
+            },
+        },
+    }
+
+    groups = build_tool_equivalence_groups(list(tools), tools)
+    candidate_set = build_candidate_set(list(tools), tools, max_target_candidates=2, max_hops=0)
+
+    assert len(groups) == 1
+    assert groups[0]["kind"] == "surface_equivalence"
+    assert groups[0]["members"] == ["solve_quadratic", "solve_quadratic_equation"]
+    assert groups[0]["evidence_sources"] == ["tool_surface"]
+    assert groups[0]["pair_evidence"][0]["tool_a"] == "solve_quadratic"
+    assert groups[0]["pair_evidence"][0]["tool_b"] == "solve_quadratic_equation"
+    assert "quadratic" in groups[0]["pair_evidence"][0]["shared_terms"]
+    assert candidate_set["target_candidates"] == ["solve_quadratic", "solve_quadratic_equation"]
+    assert candidate_set["suppressed_target_candidates"] == ["restaurant_finder"]
+    assert candidate_set["target_equivalence_group_count"] == 1
+    assert candidate_set["target_equivalence_groups"][0]["selected"] == [
+        "solve_quadratic",
+        "solve_quadratic_equation",
+    ]
+    assert candidate_set["target_equivalence_groups"][0]["suppressed"] == []
+
+
+def test_build_tool_equivalence_groups_recognizes_domain_surface_siblings():
+    tools = {
+        "currency_exchange.convert": {
+            "name": "currency_exchange.convert",
+            "description": (
+                "Converts a value from one currency to another using the latest exchange rate."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "amount": {},
+                    "from_currency": {},
+                    "to_currency": {},
+                    "live_conversion": {},
+                },
+                "required": ["amount", "from_currency", "to_currency"],
+            },
+        },
+        "currency_conversion": {
+            "name": "currency_conversion",
+            "description": "Convert a specific amount from one currency to another.",
+            "parameters": {
+                "type": "object",
+                "properties": {"amount": {}, "from_currency": {}, "to_currency": {}},
+                "required": ["amount", "from_currency", "to_currency"],
+            },
+        },
+        "integral": {
+            "name": "integral",
+            "description": "Calculate the definite integral for a function between bounds.",
+            "parameters": {
+                "type": "object",
+                "properties": {"function": {}, "start_x": {}, "end_x": {}},
+                "required": ["function", "start_x", "end_x"],
+            },
+        },
+        "calculate_area_under_curve": {
+            "name": "calculate_area_under_curve",
+            "description": "Calculate the area under a mathematical function within an interval.",
+            "parameters": {
+                "type": "object",
+                "properties": {"function": {}, "interval": {}, "method": {}},
+                "required": ["function", "interval"],
+            },
+        },
+        "get_fibonacci_sequence": {
+            "name": "get_fibonacci_sequence",
+            "description": "Generate a Fibonacci sequence up to a specific number of items.",
+            "parameters": {
+                "type": "object",
+                "properties": {"count": {}},
+                "required": ["count"],
+            },
+        },
+        "calculate_fibonacci": {
+            "name": "calculate_fibonacci",
+            "description": "Calculate the Fibonacci series up to a specific position.",
+            "parameters": {
+                "type": "object",
+                "properties": {"position": {}},
+                "required": ["position"],
+            },
+        },
+    }
+
+    groups = build_tool_equivalence_groups(list(tools), tools)
+    group_members = {tuple(group["members"]) for group in groups}
+
+    assert ("currency_exchange.convert", "currency_conversion") in group_members
+    assert ("integral", "calculate_area_under_curve") in group_members
+    assert ("get_fibonacci_sequence", "calculate_fibonacci") in group_members
+
+
+def test_target_action_priority_for_query_maps_generic_korean_and_english_intent():
+    search = target_action_priority_for_query("상품 검색")
+    read = target_action_priority_for_query("상품 상세 확인")
+    create = target_action_priority_for_query("리뷰 작성")
+    update = target_action_priority_for_query("권한 수정")
+    delete = target_action_priority_for_query("세션 revoke")
+    action = target_action_priority_for_query("send notification")
+    detail_after_search = target_action_priority_for_query("상품명으로 검색해서 상품 상세를 보여줘")
+    audit_read = target_action_priority_for_query("사용자 계정 변경 감사 로그 조회")
+    notification = target_action_priority_for_query("워크플로우 담당자에게 알림 보내줘")
+
+    assert search["search"] > search["read"]
+    assert read["read"] > read["search"]
+    assert create["create"] > create["read"]
+    assert update["update"] > update["read"]
+    assert delete["delete"] > delete["read"]
+    assert action["action"] > action["read"]
+    assert detail_after_search["read"] > detail_after_search["search"]
+    assert audit_read["read"] > audit_read.get("update", 0)
+    assert notification["create"] > notification["update"]
+    assert notification["action"] > notification["update"]
+    assert target_action_priority_for_query("nonsense") == {}
+
+
+def test_build_candidate_set_can_use_query_derived_action_priority():
+    tools = {
+        "searchProducts": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "product", "canonical_action": "search"},
+            }
+        },
+        "getProductDetail": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "product", "canonical_action": "read"},
+            }
+        },
+        "createProductReview": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "review", "canonical_action": "create"},
+            }
+        },
+    }
+
+    result = build_candidate_set(
+        ["searchProducts", "getProductDetail", "createProductReview"],
+        tools,
+        target_action_priority=target_action_priority_for_query("상품 리뷰 작성"),
+        max_target_candidates=2,
+        max_hops=0,
+    )
+
+    assert result["target_candidates"] == ["createProductReview", "getProductDetail"]
+    assert result["target_rank_signals"][0]["name"] == "createProductReview"
+    assert result["target_rank_signals"][0]["action_priority"] == 6
+
+
 def test_edge_normalize_merge_and_trace_derivation_contract():
     structural = normalize_graph_edge(
         {
@@ -1019,6 +1567,39 @@ def test_retrieve_with_scores_expands_korean_business_field_aliases():
 
     assert results[0].tool.name == "opaqueGoodsDetail"
     assert results[0].keyword_score > 0
+
+
+def test_retrieve_with_scores_maps_korean_inquiry_to_qa_label():
+    tg = ToolGraph()
+    tg.add_tool(ToolSchema(name="getProductQa", description="상품QA 목록 조회"))
+    tg.add_tool(ToolSchema(name="getQnAStatus", description="상품문의 현황 조회"))
+    tg.add_tool(ToolSchema(name="getProductReview", description="상품리뷰 목록 조회"))
+
+    results = tg.retrieve_with_scores("상품 문의 조회", top_k=1)
+
+    assert results[0].tool.name == "getProductQa"
+
+
+def test_retrieve_with_scores_prefers_core_korean_action_phrase_over_subscope():
+    tg = ToolGraph()
+    tg.add_tool(ToolSchema(name="getOrderQueryList", description="주문/결제 > 주문관리 > 주문조회"))
+    tg.add_tool(ToolSchema(name="getExchangeOrderList", description="교환주문목록 조회"))
+    tg.add_tool(ToolSchema(name="getCustomerOrderPopup", description="고객 주문 목록 조회 팝업"))
+
+    results = tg.retrieve_with_scores("주문 목록 조회", top_k=1)
+
+    assert results[0].tool.name == "getOrderQueryList"
+
+
+def test_retrieve_with_scores_keeps_exact_korean_list_phrase_above_subscope():
+    tg = ToolGraph()
+    tg.add_tool(ToolSchema(name="getMemberList", description="회원 목록 조회"))
+    tg.add_tool(ToolSchema(name="getCouponIssuedMemberList", description="쿠폰 발급회원 조회"))
+    tg.add_tool(ToolSchema(name="getMemberHistoryList", description="회원 이력 목록 조회"))
+
+    results = tg.retrieve_with_scores("회원 목록 조회", top_k=1)
+
+    assert results[0].tool.name == "getMemberList"
 
 
 def test_retrieve_with_scores_indexes_parameter_descriptions_for_example_fields():

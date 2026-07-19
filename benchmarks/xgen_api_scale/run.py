@@ -19,8 +19,15 @@ from typing import Any
 from urllib.parse import unquote
 
 from benchmarks.metrics import mrr, recall_at_k
+from benchmarks.xgen_api_scale.gate import DEFAULT_GATE_PROFILE, evaluate_gate
+from benchmarks.xgen_api_scale.manifest import load_snapshot_manifest
 from graph_tool_call import ToolGraph, __version__
-from graph_tool_call.graphify import promote_api_contract_signals
+from graph_tool_call.core.contract_matching import description_alias_key
+from graph_tool_call.graphify import (
+    build_candidate_set,
+    promote_api_contract_signals,
+    target_action_priority_for_query,
+)
 from graph_tool_call.ingest.openapi import _load_spec, ingest_openapi
 from graph_tool_call.tool_graph import _discover_spec_urls
 
@@ -72,7 +79,35 @@ class SearchEvaluation:
     query: str
     expected_tools: list[str]
     expected_any: list[str]
+    expected_producers: list[str]
+    expected_plan: list[str]
     retrieved: list[str]
+    selected_target: str
+    target_selector_candidates: list[str]
+    target_selector_rank: int | None
+    target_selector_exact: float
+    target_action_priority: dict[str, int]
+    target_equivalence_groups: list[dict[str, Any]]
+    target_equivalence_group_count: int
+    plan_candidates: list[str]
+    producer_candidates: list[str]
+    producer_added_count: int
+    candidate_count: int
+    candidate_schema_chars: int
+    full_tool_schema_chars: int
+    candidate_schema_char_fraction: float
+    schema_context_reduction: float
+    target_data_input_count: int
+    target_required_data_input_count: int
+    target_producible_input_count: int
+    target_required_producible_input_count: int
+    target_required_resolved_input_count: int
+    producible_input_coverage: float
+    required_input_coverage: float
+    required_input_resolution_coverage: float
+    producer_recall_at_k: float
+    candidate_plan_coverage: float
+    input_support: list[dict[str, Any]]
     expected_ranks: dict[str, int | None]
     primary_expected_rank: int | None
     best_expected_rank: int | None
@@ -118,11 +153,27 @@ def run_benchmark(
 
     cases_doc = load_cases(cases_path)
     selected_top_k = int(top_k or cases_doc.get("top_k") or 10)
+    tools_by_name = _tools_by_name(prepared.graph)
+    schema_char_counts = _tool_schema_char_counts(tools_by_name)
+    full_schema_chars = sum(schema_char_counts.values())
+    producer_index = _contract_producer_index(tools_by_name)
     cases = [
-        evaluate_search_case(case, tg=prepared.graph, top_k=selected_top_k)
+        evaluate_search_case(
+            case,
+            tg=prepared.graph,
+            tools_by_name=tools_by_name,
+            producer_index=producer_index,
+            top_k=selected_top_k,
+            schema_char_counts=schema_char_counts,
+            full_schema_chars=full_schema_chars,
+        )
         for case in cases_doc.get("cases", [])
     ]
-    search_summary = summarize_search(cases, thresholds=cases_doc.get("thresholds") or {})
+    search_summary = summarize_search(
+        cases,
+        thresholds=cases_doc.get("thresholds") or {},
+        full_tool_count=len(prepared.graph.tools),
+    )
     scale_summary = summarize_scale(
         prepared.profiles,
         loaded_specs=prepared.loaded_specs,
@@ -137,7 +188,7 @@ def run_benchmark(
     if cases and search_summary.get("status") != "pass":
         status = "fail"
 
-    return {
+    report = {
         "benchmark": cases_doc.get("name") or "XGEN API Scale Acceptance",
         "description": cases_doc.get("description") or "",
         "methodology": "xgen_large_openapi_acceptance",
@@ -154,6 +205,8 @@ def run_benchmark(
         "specs": [asdict(profile) for profile in prepared.profiles],
         "cases": [asdict(case) for case in cases],
     }
+    report["gate"] = evaluate_gate(report)
+    return report
 
 
 def run_top_k_sweep(
@@ -203,16 +256,29 @@ def run_top_k_sweep(
         max_build_seconds=max_build_seconds,
     )
     thresholds = cases_doc.get("thresholds") or {}
+    tools_by_name = _tools_by_name(prepared.graph)
+    schema_char_counts = _tool_schema_char_counts(tools_by_name)
+    full_schema_chars = sum(schema_char_counts.values())
+    producer_index = _contract_producer_index(tools_by_name)
     sweep: list[dict[str, Any]] = []
     acceptance_search_status = "skipped"
     for top_k in selected_top_ks:
         cases = [
-            evaluate_search_case(case, tg=prepared.graph, top_k=top_k)
+            evaluate_search_case(
+                case,
+                tg=prepared.graph,
+                tools_by_name=tools_by_name,
+                producer_index=producer_index,
+                top_k=top_k,
+                schema_char_counts=schema_char_counts,
+                full_schema_chars=full_schema_chars,
+            )
             for case in cases_doc.get("cases", [])
         ]
         search_summary = summarize_search(
             cases,
             thresholds=thresholds if top_k == selected_acceptance_top_k else {},
+            full_tool_count=len(prepared.graph.tools),
         )
         search_summary["thresholds_applied"] = bool(
             top_k == selected_acceptance_top_k and thresholds
@@ -233,7 +299,7 @@ def run_top_k_sweep(
     if cases_doc.get("cases") and acceptance_search_status != "pass":
         status = "fail"
 
-    return {
+    report = {
         "benchmark": cases_doc.get("name") or "XGEN API Scale Acceptance",
         "description": cases_doc.get("description") or "",
         "methodology": "xgen_large_openapi_top_k_sweep",
@@ -250,6 +316,8 @@ def run_top_k_sweep(
         "sweep": sweep,
         "specs": [asdict(profile) for profile in prepared.profiles],
     }
+    report["gate"] = evaluate_gate(report)
+    return report
 
 
 def run_contract_signal_ablation(
@@ -308,11 +376,27 @@ def run_contract_signal_ablation(
             min_unique_tools=min_unique_tools,
             max_build_seconds=max_build_seconds,
         )
+        tools_by_name = _tools_by_name(graph)
+        schema_char_counts = _tool_schema_char_counts(tools_by_name)
+        full_schema_chars = sum(schema_char_counts.values())
+        producer_index = _contract_producer_index(tools_by_name)
         cases = [
-            evaluate_search_case(case, tg=graph, top_k=selected_top_k)
+            evaluate_search_case(
+                case,
+                tg=graph,
+                tools_by_name=tools_by_name,
+                producer_index=producer_index,
+                top_k=selected_top_k,
+                schema_char_counts=schema_char_counts,
+                full_schema_chars=full_schema_chars,
+            )
             for case in cases_doc.get("cases", [])
         ]
-        search_summary = summarize_search(cases, thresholds=thresholds)
+        search_summary = summarize_search(
+            cases,
+            thresholds=thresholds,
+            full_tool_count=len(graph.tools),
+        )
         variant_status = "pass" if scale_summary["status"] == "pass" else "fail"
         if cases and search_summary.get("status") != "pass":
             variant_status = "fail"
@@ -569,11 +653,17 @@ def evaluate_search_case(
     case: dict[str, Any],
     *,
     tg: ToolGraph,
+    tools_by_name: dict[str, dict[str, Any]],
+    producer_index: dict[str, list[str]],
     top_k: int,
+    schema_char_counts: dict[str, int] | None = None,
+    full_schema_chars: int = 0,
 ) -> SearchEvaluation:
     query = str(case["query"])
     expected_tools = [str(name) for name in case.get("expected_tools") or []]
     expected_any = [str(name) for name in case.get("expected_any") or []]
+    expected_producers = [str(name) for name in case.get("expected_producers") or []]
+    expected_plan = [str(name) for name in case.get("expected_plan") or []]
     expected_union = set(expected_tools) | set(expected_any)
 
     started = time.perf_counter()
@@ -581,6 +671,31 @@ def evaluate_search_case(
     latency_ms = round((time.perf_counter() - started) * 1000, 3)
     retrieved = [result.tool.name for result in results]
     retrieved_set = set(retrieved)
+    target_action_priority = target_action_priority_for_query(query)
+    selector_set = build_candidate_set(
+        retrieved,
+        tools_by_name,
+        target_action_priority=target_action_priority,
+        max_hops=0,
+    )
+    selector_candidates = [str(name) for name in selector_set.get("target_candidates") or []]
+    selected_target = selector_candidates[0] if selector_candidates else ""
+    target_equivalence_groups = [
+        dict(row)
+        for row in selector_set.get("target_equivalence_groups") or []
+        if isinstance(row, dict)
+    ]
+    readiness = _plan_readiness(
+        selected_target,
+        tools_by_name,
+        producer_index=producer_index,
+    )
+    plan_candidates = [str(name) for name in readiness["plan_candidates"]]
+    candidate_schema_chars = sum(
+        (schema_char_counts or {}).get(name, 0) for name in plan_candidates
+    )
+    schema_char_fraction = _ratio(candidate_schema_chars, full_schema_chars)
+    schema_context_reduction = round(1.0 - schema_char_fraction, 6)
 
     required_ok = set(expected_tools).issubset(retrieved_set) if expected_tools else True
     any_ok = bool(set(expected_any) & retrieved_set) if expected_any else True
@@ -591,6 +706,18 @@ def evaluate_search_case(
         else recall_at_k(retrieved, expected_union, top_k)
     )
     expected_ranks = {name: _rank_of(retrieved, name) for name in sorted(expected_union)}
+    target_selector_rank = _best_rank(selector_candidates, expected_union)
+    target_selector_exact = 1.0 if not expected_union or selected_target in expected_union else 0.0
+    producer_recall = recall_at_k(
+        readiness["plan_candidates"],
+        set(expected_producers),
+        len(readiness["plan_candidates"]),
+    )
+    candidate_plan_coverage = recall_at_k(
+        readiness["plan_candidates"],
+        set(expected_plan),
+        len(readiness["plan_candidates"]),
+    )
     primary_expected_rank = _rank_of(retrieved, expected_tools[0]) if expected_tools else None
     ranked_expected = [rank for rank in expected_ranks.values() if rank is not None]
     best_expected_rank = min(ranked_expected) if ranked_expected else None
@@ -600,13 +727,52 @@ def evaluate_search_case(
         retrieved_set=retrieved_set,
         best_expected_rank=best_expected_rank,
     )
+    if target_selector_exact < 1.0:
+        issues = [issue for issue in issues if issue != "pass"]
+        issues.append("target_selector_miss")
+    if (
+        int(readiness["target_required_data_input_count"]) > 0
+        and float(readiness["required_input_coverage"]) < 1.0
+    ):
+        issues = [issue for issue in issues if issue != "pass"]
+        issues.append("required_input_not_producible")
 
     return SearchEvaluation(
         case_id=str(case["id"]),
         query=query,
         expected_tools=expected_tools,
         expected_any=expected_any,
+        expected_producers=expected_producers,
+        expected_plan=expected_plan,
         retrieved=retrieved,
+        selected_target=selected_target,
+        target_selector_candidates=selector_candidates,
+        target_selector_rank=target_selector_rank,
+        target_selector_exact=target_selector_exact,
+        target_action_priority=target_action_priority,
+        target_equivalence_groups=target_equivalence_groups,
+        target_equivalence_group_count=len(target_equivalence_groups),
+        plan_candidates=plan_candidates,
+        producer_candidates=[str(name) for name in readiness["producer_candidates"]],
+        producer_added_count=int(readiness["producer_added_count"]),
+        candidate_count=int(readiness["candidate_count"]),
+        candidate_schema_chars=candidate_schema_chars,
+        full_tool_schema_chars=int(full_schema_chars),
+        candidate_schema_char_fraction=schema_char_fraction,
+        schema_context_reduction=schema_context_reduction,
+        target_data_input_count=int(readiness["target_data_input_count"]),
+        target_required_data_input_count=int(readiness["target_required_data_input_count"]),
+        target_producible_input_count=int(readiness["target_producible_input_count"]),
+        target_required_producible_input_count=int(
+            readiness["target_required_producible_input_count"]
+        ),
+        target_required_resolved_input_count=int(readiness["target_required_resolved_input_count"]),
+        producible_input_coverage=float(readiness["producible_input_coverage"]),
+        required_input_coverage=float(readiness["required_input_coverage"]),
+        required_input_resolution_coverage=float(readiness["required_input_resolution_coverage"]),
+        producer_recall_at_k=producer_recall,
+        candidate_plan_coverage=candidate_plan_coverage,
+        input_support=[dict(row) for row in readiness["input_support"]],
         expected_ranks=expected_ranks,
         primary_expected_rank=primary_expected_rank,
         best_expected_rank=best_expected_rank,
@@ -687,6 +853,7 @@ def summarize_search(
     cases: list[SearchEvaluation],
     *,
     thresholds: dict[str, Any],
+    full_tool_count: int | None = None,
 ) -> dict[str, Any]:
     if not cases:
         return {"status": "skipped", "cases": 0}
@@ -695,6 +862,75 @@ def summarize_search(
         "cases": len(cases),
         "case_hit_at_k": _mean(case.hit_at_k for case in cases),
         "expected_tool_recall_at_k": _mean(case.expected_tool_recall_at_k for case in cases),
+        "target_selector_exact_at_k": _mean(case.target_selector_exact for case in cases),
+        "target_selector_miss_count": sum(1 for case in cases if case.target_selector_exact < 1.0),
+        "avg_target_equivalence_group_count": _mean(
+            case.target_equivalence_group_count for case in cases
+        ),
+        "target_equivalence_group_case_count": sum(
+            1 for case in cases if case.target_equivalence_group_count > 0
+        ),
+        "avg_candidate_count": _mean(case.candidate_count for case in cases),
+        "max_candidate_count": max((case.candidate_count for case in cases), default=0),
+        "full_tool_schema_chars": max((case.full_tool_schema_chars for case in cases), default=0),
+        "avg_candidate_schema_chars": _mean(case.candidate_schema_chars for case in cases),
+        "max_candidate_schema_chars": max(
+            (case.candidate_schema_chars for case in cases), default=0
+        ),
+        "avg_candidate_schema_char_fraction": _mean(
+            case.candidate_schema_char_fraction for case in cases
+        ),
+        "avg_schema_context_reduction": _mean(case.schema_context_reduction for case in cases),
+        "min_schema_context_reduction": min(
+            (case.schema_context_reduction for case in cases), default=0.0
+        ),
+        "avg_producer_added_count": _mean(case.producer_added_count for case in cases),
+        "producer_added_case_count": sum(1 for case in cases if case.producer_added_count > 0),
+        "expected_producer_case_count": sum(1 for case in cases if case.expected_producers),
+        "producer_recall_at_k": _mean(
+            case.producer_recall_at_k for case in cases if case.expected_producers
+        ),
+        "expected_plan_case_count": sum(1 for case in cases if case.expected_plan),
+        "candidate_plan_coverage": _mean(
+            case.candidate_plan_coverage for case in cases if case.expected_plan
+        ),
+        "avg_target_data_input_count": _mean(case.target_data_input_count for case in cases),
+        "avg_target_required_data_input_count": _mean(
+            case.target_required_data_input_count for case in cases
+        ),
+        "avg_producible_input_coverage": _mean(case.producible_input_coverage for case in cases),
+        "avg_required_input_coverage": _mean(case.required_input_coverage for case in cases),
+        "avg_required_input_resolution_coverage": _mean(
+            case.required_input_resolution_coverage for case in cases
+        ),
+        "required_input_ready_case_count": sum(
+            1 for case in cases if case.required_input_coverage >= 1.0
+        ),
+        "required_input_resolved_case_count": sum(
+            1 for case in cases if case.required_input_resolution_coverage >= 1.0
+        ),
+        "unresolved_required_input_count": sum(
+            1
+            for case in cases
+            for row in case.input_support
+            if row.get("required") and row.get("resolution") == "unresolved"
+        ),
+        "input_resolution_counts": dict(
+            Counter(
+                row["resolution"]
+                for case in cases
+                for row in case.input_support
+                if row.get("required") and row.get("resolution")
+            ).most_common()
+        ),
+        "readiness_issue_counts": dict(
+            Counter(
+                row["issue_code"]
+                for case in cases
+                for row in case.input_support
+                if row.get("issue_code")
+            ).most_common()
+        ),
         "top_1_hit_at_k": _mean(case.top_1_hit for case in cases),
         "top_3_hit_at_k": _mean(case.top_3_hit for case in cases),
         "mean_mrr": _mean(case.mrr for case in cases),
@@ -708,10 +944,13 @@ def summarize_search(
         "avg_latency_ms": round(_mean(case.latency_ms for case in cases), 3),
         "p50_latency_ms": _percentile([case.latency_ms for case in cases], 0.5),
         "max_latency_ms": max(case.latency_ms for case in cases),
+        "case_rank_buckets": _case_rank_buckets(cases),
+        "target_selector_rank_buckets": _selector_rank_buckets(cases),
         "rank_buckets": _rank_buckets(cases),
         "missing_expected_tools": _missing_expected_tools(cases),
         "issues": dict(Counter(issue for case in cases for issue in case.issues).most_common()),
     }
+    _add_tool_surface_reduction(summary, full_tool_count=full_tool_count)
     if thresholds:
         checks = {
             metric: _threshold_passed(summary, metric, float(threshold))
@@ -722,6 +961,26 @@ def summarize_search(
     else:
         summary["status"] = "pass"
     return summary
+
+
+def _add_tool_surface_reduction(
+    summary: dict[str, Any],
+    *,
+    full_tool_count: int | None,
+) -> None:
+    if not full_tool_count or full_tool_count <= 0:
+        return
+    avg_fraction = _ratio(float(summary.get("avg_candidate_count", 0.0)), full_tool_count)
+    max_fraction = _ratio(float(summary.get("max_candidate_count", 0.0)), full_tool_count)
+    summary.update(
+        {
+            "full_tool_count": int(full_tool_count),
+            "avg_candidate_tool_fraction": avg_fraction,
+            "avg_tool_surface_reduction": round(1.0 - avg_fraction, 6),
+            "max_candidate_tool_fraction": max_fraction,
+            "min_tool_surface_reduction": round(1.0 - max_fraction, 6),
+        }
+    )
 
 
 def _compare_contract_signal_variants(variants: list[dict[str, Any]]) -> dict[str, Any]:
@@ -738,6 +997,12 @@ def _compare_contract_signal_variants(variants: list[dict[str, Any]]) -> dict[st
         "mean_mrr",
         "avg_latency_ms",
         "p50_latency_ms",
+        "target_selector_exact_at_k",
+        "avg_candidate_count",
+        "producer_recall_at_k",
+        "candidate_plan_coverage",
+        "avg_required_input_coverage",
+        "avg_required_input_resolution_coverage",
     ]
     deltas = {
         f"{metric}_delta": round(
@@ -803,6 +1068,325 @@ def _case_issues(
     return issues or ["pass"]
 
 
+def _plan_readiness(
+    selected_target: str,
+    tools_by_name: dict[str, dict[str, Any]],
+    *,
+    producer_index: dict[str, list[str]],
+    max_producers_per_field: int = 3,
+) -> dict[str, Any]:
+    target_tool = tools_by_name.get(selected_target) or {}
+    consumes = _data_consumes(target_tool)
+    input_support: list[dict[str, Any]] = []
+    supported = 0
+    required_total = 0
+    required_supported = 0
+    required_resolved = 0
+    required_producer_choices: list[list[str]] = []
+
+    for consume in consumes:
+        required = bool(consume.get("required"))
+        if required:
+            required_total += 1
+        producers = _producer_candidates_for_field(
+            consume,
+            producer_index=producer_index,
+            tools_by_name=tools_by_name,
+            exclude={selected_target},
+            max_producers=max_producers_per_field,
+        )
+        if producers:
+            supported += 1
+            if required:
+                required_supported += 1
+                required_producer_choices.append(producers)
+        issue_code = _readiness_issue_code(consume, supported=bool(producers))
+        resolution = _input_resolution(issue_code, supported=bool(producers))
+        if required and resolution != "unresolved":
+            required_resolved += 1
+        input_support.append(
+            {
+                "field_name": str(consume.get("field_name") or ""),
+                "semantic_tag": str(consume.get("semantic_tag") or ""),
+                "location": str(consume.get("location") or ""),
+                "field_type": str(consume.get("field_type") or ""),
+                "required": required,
+                "producer_candidates": producers,
+                "supported": bool(producers),
+                "issue_code": issue_code,
+                "resolution": resolution,
+            }
+        )
+
+    producers = _select_representative_producers(required_producer_choices, tools_by_name)
+    plan_candidates = _dedupe([selected_target, *producers])
+    return {
+        "plan_candidates": plan_candidates,
+        "producer_candidates": producers,
+        "producer_added_count": len(producers),
+        "candidate_count": len(plan_candidates),
+        "target_data_input_count": len(consumes),
+        "target_required_data_input_count": required_total,
+        "target_producible_input_count": supported,
+        "target_required_producible_input_count": required_supported,
+        "target_required_resolved_input_count": required_resolved,
+        "producible_input_coverage": _ratio(supported, len(consumes)),
+        "required_input_coverage": _ratio(required_supported, required_total),
+        "required_input_resolution_coverage": _ratio(required_resolved, required_total),
+        "input_support": input_support,
+    }
+
+
+def _input_resolution(issue_code: str, *, supported: bool) -> str:
+    if supported:
+        return "producer"
+    if issue_code == "required_request_wrapper":
+        return "request_wrapper"
+    if issue_code == "required_context_input":
+        return "context"
+    if issue_code in {"required_enum_input", "required_filter_input"}:
+        return "user_input"
+    return "unresolved"
+
+
+def _readiness_issue_code(consume: dict[str, Any], *, supported: bool) -> str:
+    if supported or not bool(consume.get("required")):
+        return ""
+    if _is_request_wrapper_input(consume):
+        return "required_request_wrapper"
+    if _is_context_like_input(consume):
+        return "required_context_input"
+    if consume.get("enum"):
+        return "required_enum_input"
+    if _is_filter_like_input(consume):
+        return "required_filter_input"
+    return "required_producer_missing"
+
+
+def _is_request_wrapper_input(row: dict[str, Any]) -> bool:
+    name = _normalized_field_name(row.get("field_name"))
+    description = str(row.get("description") or "").lower()
+    return name.endswith("request") or " request" in description
+
+
+def _is_context_like_input(row: dict[str, Any]) -> bool:
+    name = _normalized_field_name(row.get("field_name"))
+    return name in {
+        "systemtype",
+        "systype",
+        "sysgbcd",
+        "siteno",
+        "tenantid",
+        "langcd",
+        "locale",
+        "channel",
+    }
+
+
+def _is_filter_like_input(row: dict[str, Any]) -> bool:
+    name = _normalized_field_name(row.get("field_name"))
+    description = str(row.get("description") or "").lower()
+    if str(row.get("location") or "").lower() != "query":
+        return False
+    return (
+        "search" in name
+        or "filter" in name
+        or "date" in name
+        or name.endswith("type")
+        or name.endswith("cd")
+        or "검색" in description
+        or "코드" in description
+    )
+
+
+def _normalized_field_name(value: Any) -> str:
+    return re.sub(r"[^a-z0-9가-힣]+", "", str(value or "").strip().lower())
+
+
+def _data_consumes(tool: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = _contract_rows(tool, "consumes")
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for row in rows:
+        kind = str(row.get("kind") or "data").strip().lower()
+        if kind != "data":
+            continue
+        key = (
+            str(row.get("field_name") or ""),
+            str(row.get("semantic_tag") or ""),
+            str(row.get("location") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(dict(row))
+    return out
+
+
+def _contract_producer_index(
+    tools_by_name: dict[str, dict[str, Any]],
+) -> dict[str, list[str]]:
+    index: dict[str, list[str]] = {}
+    for name, tool in tools_by_name.items():
+        for produce in _contract_rows(tool, "produces"):
+            for token in _contract_tokens(produce):
+                index.setdefault(token, []).append(name)
+    return {token: _dedupe(names) for token, names in index.items()}
+
+
+def _producer_candidates_for_field(
+    consume: dict[str, Any],
+    *,
+    producer_index: dict[str, list[str]],
+    tools_by_name: dict[str, dict[str, Any]],
+    exclude: set[str],
+    max_producers: int,
+) -> list[str]:
+    producers: list[str] = []
+    for token in _contract_tokens(consume):
+        producers.extend(name for name in producer_index.get(token, []) if name not in exclude)
+    return _rank_producer_candidates(_dedupe(producers), tools_by_name)[: max(0, max_producers)]
+
+
+def _rank_producer_candidates(
+    producer_names: list[str],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[str]:
+    return sorted(
+        producer_names,
+        key=lambda name: (
+            -_producer_quality_score(name, tools_by_name),
+            producer_names.index(name),
+            name,
+        ),
+    )
+
+
+def _select_representative_producers(
+    per_field_candidates: list[list[str]],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[str]:
+    selected: list[str] = []
+    uncovered = {index for index, candidates in enumerate(per_field_candidates) if any(candidates)}
+    while uncovered:
+        scored: list[tuple[int, int, int, str]] = []
+        candidate_names = _dedupe(
+            [
+                name
+                for index in sorted(uncovered)
+                for name in per_field_candidates[index]
+                if name not in selected
+            ]
+        )
+        if not candidate_names:
+            break
+        for name in candidate_names:
+            covered = {index for index in uncovered if name in per_field_candidates[index]}
+            if not covered:
+                continue
+            first_rank = min(per_field_candidates[index].index(name) for index in covered)
+            scored.append(
+                (
+                    len(covered),
+                    _producer_quality_score(name, tools_by_name),
+                    -first_rank,
+                    name,
+                )
+            )
+        if not scored:
+            break
+        _coverage, _quality, _rank, name = max(scored)
+        selected.append(name)
+        uncovered = {index for index in uncovered if name not in per_field_candidates[index]}
+    return selected
+
+
+def _producer_quality_score(name: str, tools_by_name: dict[str, dict[str, Any]]) -> int:
+    tool = tools_by_name.get(name) or {}
+    metadata = tool.get("metadata") or {}
+    ai = metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
+    action = str(ai.get("canonical_action") or "").strip().lower()
+    method = str(metadata.get("method") or "").strip().lower()
+    lower_name = name.lower()
+    score = 0
+    if action in {"search", "list", "lookup"}:
+        score += 80
+    elif action == "read":
+        score += 70
+    elif action in {"create", "update", "delete"}:
+        score -= 60
+    elif action == "action":
+        score -= 20
+    if lower_name.startswith(("get", "list", "search", "find", "query", "select", "fetch")):
+        score += 40
+    if any(term in lower_name for term in ("list", "search", "query", "lookup")):
+        score += 15
+    if lower_name.startswith(
+        (
+            "save",
+            "insert",
+            "update",
+            "modify",
+            "delete",
+            "remove",
+            "reject",
+            "withdraw",
+            "approve",
+            "cancel",
+            "create",
+            "register",
+            "send",
+            "upload",
+        )
+    ):
+        score -= 50
+    if method == "get":
+        score += 10
+    return score
+
+
+def _contract_rows(tool: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    metadata = tool.get("metadata") or {}
+    rows = [dict(row) for row in metadata.get(key) or [] if isinstance(row, dict)]
+    api_contract = metadata.get("api_contract") or {}
+    rows.extend(dict(row) for row in api_contract.get(key) or [] if isinstance(row, dict))
+    return rows
+
+
+def _contract_tokens(row: dict[str, Any]) -> list[str]:
+    values = [
+        row.get("semantic_tag"),
+        row.get("field_name"),
+        row.get("json_path"),
+        *(row.get("value_path_aliases") or []),
+    ]
+    tokens: list[str] = []
+    description_key = description_alias_key(row)
+    if description_key:
+        tokens.append(f"description:{description_key}")
+    for value in values:
+        if not value:
+            continue
+        text = str(value).strip().lower()
+        if not text:
+            continue
+        tokens.append(text)
+        normalized = re.sub(r"[^a-z0-9가-힣]+", "", text)
+        if normalized:
+            tokens.append(normalized)
+    return _dedupe(tokens)
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(str(value) for value in values if str(value)))
+
+
+def _ratio(numerator: float, denominator: float) -> float:
+    if denominator <= 0:
+        return 1.0
+    return round(numerator / denominator, 6)
+
+
 def _result_row(result: Any) -> dict[str, Any]:
     return {
         "name": result.tool.name,
@@ -840,6 +1424,31 @@ def _rank_of(names: list[str], expected: str) -> int | None:
         return None
 
 
+def _best_rank(names: list[str], expected_names: set[str]) -> int | None:
+    ranks = [_rank_of(names, name) for name in expected_names]
+    found = [rank for rank in ranks if rank is not None]
+    return min(found) if found else None
+
+
+def _tools_by_name(graph: ToolGraph) -> dict[str, dict[str, Any]]:
+    return {name: tool.to_dict() for name, tool in graph.tools.items()}
+
+
+def _tool_schema_char_counts(tools_by_name: dict[str, dict[str, Any]]) -> dict[str, int]:
+    return {
+        name: len(
+            json.dumps(
+                tool,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+        )
+        for name, tool in tools_by_name.items()
+    }
+
+
 def _mean(values: Any) -> float:
     vals = [float(v) for v in values]
     if not vals:
@@ -872,6 +1481,40 @@ def _rank_buckets(cases: list[SearchEvaluation]) -> dict[str, int]:
     return buckets
 
 
+def _case_rank_buckets(cases: list[SearchEvaluation]) -> dict[str, int]:
+    buckets = {"top_1": 0, "top_3": 0, "top_5": 0, "top_10": 0, "missing": 0}
+    for case in cases:
+        rank = case.best_expected_rank
+        if rank == 1:
+            buckets["top_1"] += 1
+        elif rank is not None and rank <= 3:
+            buckets["top_3"] += 1
+        elif rank is not None and rank <= 5:
+            buckets["top_5"] += 1
+        elif rank is not None and rank <= 10:
+            buckets["top_10"] += 1
+        else:
+            buckets["missing"] += 1
+    return buckets
+
+
+def _selector_rank_buckets(cases: list[SearchEvaluation]) -> dict[str, int]:
+    buckets = {"top_1": 0, "top_3": 0, "top_5": 0, "top_10": 0, "missing": 0}
+    for case in cases:
+        rank = case.target_selector_rank
+        if rank == 1:
+            buckets["top_1"] += 1
+        elif rank is not None and rank <= 3:
+            buckets["top_3"] += 1
+        elif rank is not None and rank <= 5:
+            buckets["top_5"] += 1
+        elif rank is not None and rank <= 10:
+            buckets["top_10"] += 1
+        else:
+            buckets["missing"] += 1
+    return buckets
+
+
 def _missing_expected_tools(cases: list[SearchEvaluation]) -> dict[str, int]:
     missing = Counter(
         name
@@ -884,7 +1527,8 @@ def _missing_expected_tools(cases: list[SearchEvaluation]) -> dict[str, int]:
 
 def _threshold_passed(summary: dict[str, Any], metric: str, threshold: float) -> bool:
     if metric.startswith("max_"):
-        value = float(summary.get(metric.removeprefix("max_"), 0.0))
+        source_metric = metric if metric in summary else metric.removeprefix("max_")
+        value = float(summary.get(source_metric, 0.0))
         return value <= threshold
     return float(summary.get(metric, 0.0)) >= threshold
 
@@ -927,14 +1571,25 @@ def _print_report(report: dict[str, Any]) -> None:
     if search["status"] != "skipped":
         print(
             "search: status={status} cases={cases} hit@K={hit:.2f} recall@K={recall:.2f} "
-            "top1={top1:.2f} top3={top3:.2f} mrr={mrr_:.2f} avg_latency={latency:.2f}ms".format(
+            "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
+            "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
+            "tool_reduction={reduction:.2%} schema_reduction={schema_reduction:.2%} "
+            "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
+            "avg_latency={latency:.2f}ms".format(
                 status=search["status"],
                 cases=search["cases"],
                 hit=search["case_hit_at_k"],
                 recall=search["expected_tool_recall_at_k"],
+                selector=search["target_selector_exact_at_k"],
                 top1=search["top_1_hit_at_k"],
                 top3=search["top_3_hit_at_k"],
                 mrr_=search["mean_mrr"],
+                candidates=search["avg_candidate_count"],
+                producers=search["avg_producer_added_count"],
+                reduction=search.get("avg_tool_surface_reduction", 0.0),
+                schema_reduction=search.get("avg_schema_context_reduction", 0.0),
+                required=search["avg_required_input_coverage"],
+                resolved=search["avg_required_input_resolution_coverage"],
                 latency=search["avg_latency_ms"],
             )
         )
@@ -948,6 +1603,22 @@ def _print_report(report: dict[str, Any]) -> None:
                     top=", ".join(case["retrieved"][:3]),
                 )
             )
+            print(
+                "    selector={selected} selector_rank={rank} candidates={count} "
+                "producers={producers} required_inputs={required:.2f} "
+                "resolved_inputs={resolved:.2f}".format(
+                    selected=case["selected_target"],
+                    rank=case["target_selector_rank"],
+                    count=case["candidate_count"],
+                    producers=case["producer_added_count"],
+                    required=case["required_input_coverage"],
+                    resolved=case["required_input_resolution_coverage"],
+                )
+            )
+        if search.get("readiness_issue_counts"):
+            print(f"readiness issues: {search['readiness_issue_counts']}")
+        if search.get("input_resolution_counts"):
+            print(f"input resolutions: {search['input_resolution_counts']}")
 
 
 def _print_sweep_report(report: dict[str, Any]) -> None:
@@ -984,18 +1655,31 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
         suffix = " acceptance" if run["top_k"] == report["acceptance_top_k"] else ""
         print(
             "k={top_k:<2}{suffix}: status={status} hit@K={hit:.2f} recall@K={recall:.2f} "
-            "top1={top1:.2f} top3={top3:.2f} mrr={mrr_:.2f} avg_latency={latency:.2f}ms "
-            "issues={issues}".format(
+            "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
+            "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
+            "tool_reduction={reduction:.2%} schema_reduction={schema_reduction:.2%} "
+            "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
+            "avg_latency={latency:.2f}ms issues={issues} readiness={readiness} "
+            "resolutions={resolutions}".format(
                 top_k=run["top_k"],
                 suffix=suffix,
                 status=search["status"],
                 hit=search["case_hit_at_k"],
                 recall=search["expected_tool_recall_at_k"],
+                selector=search["target_selector_exact_at_k"],
                 top1=search["top_1_hit_at_k"],
                 top3=search["top_3_hit_at_k"],
                 mrr_=search["mean_mrr"],
+                candidates=search["avg_candidate_count"],
+                producers=search["avg_producer_added_count"],
+                reduction=search.get("avg_tool_surface_reduction", 0.0),
+                schema_reduction=search.get("avg_schema_context_reduction", 0.0),
+                required=search["avg_required_input_coverage"],
+                resolved=search["avg_required_input_resolution_coverage"],
                 latency=search["avg_latency_ms"],
                 issues=search["issues"],
+                readiness=search["readiness_issue_counts"],
+                resolutions=search["input_resolution_counts"],
             )
         )
 
@@ -1026,12 +1710,23 @@ def _print_ablation_report(report: dict[str, Any]) -> None:
         if search["status"] != "skipped":
             print(
                 "  search: hit@K={hit:.2f} recall@K={recall:.2f} top1={top1:.2f} "
-                "top3={top3:.2f} mrr={mrr_:.2f} avg_latency={latency:.2f}ms".format(
+                "top3={top3:.2f} selector={selector:.2f} mrr={mrr_:.2f} "
+                "candidates={candidates:.2f} producers={producers:.2f} "
+                "tool_reduction={reduction:.2%} schema_reduction={schema_reduction:.2%} "
+                "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
+                "avg_latency={latency:.2f}ms".format(
                     hit=search["case_hit_at_k"],
                     recall=search["expected_tool_recall_at_k"],
                     top1=search["top_1_hit_at_k"],
                     top3=search["top_3_hit_at_k"],
+                    selector=search["target_selector_exact_at_k"],
                     mrr_=search["mean_mrr"],
+                    candidates=search["avg_candidate_count"],
+                    producers=search["avg_producer_added_count"],
+                    reduction=search.get("avg_tool_surface_reduction", 0.0),
+                    schema_reduction=search.get("avg_schema_context_reduction", 0.0),
+                    required=search["avg_required_input_coverage"],
+                    resolved=search["avg_required_input_resolution_coverage"],
                     latency=search["avg_latency_ms"],
                 )
             )
@@ -1103,6 +1798,12 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="Direct spec URL or local spec file. May be repeated. Skips Swagger discovery.",
     )
+    parser.add_argument(
+        "--manifest",
+        action="append",
+        default=[],
+        help="Snapshot manifest JSON from benchmarks.xgen_api_scale.snapshot. May be repeated.",
+    )
     parser.add_argument("--cases", type=Path, default=DEFAULT_X2BEE_CASES_PATH)
     parser.add_argument("--no-cases", action="store_true")
     parser.add_argument("--top-k", type=int, default=None)
@@ -1170,14 +1871,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Index promoted raw contract fields in BM25. Diagnostic; may add target-search noise.",
     )
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument(
+        "--gate-profile",
+        default=DEFAULT_GATE_PROFILE,
+        help="Gate profile to embed in acceptance/sweep reports.",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     contract_signal_options = _contract_signal_options_from_args(args)
+    spec_sources, snapshot_manifests = _spec_sources_from_args(args)
 
     if args.compare_contract_signals:
         report = run_contract_signal_ablation(
             swagger_url=args.swagger_url,
-            spec_sources=args.spec or None,
+            spec_sources=spec_sources,
             cases_path=None if args.no_cases else args.cases,
             top_k=args.top_k,
             detect_dependencies=not args.no_detect_dependencies,
@@ -1192,7 +1899,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.top_ks:
         report = run_top_k_sweep(
             swagger_url=args.swagger_url,
-            spec_sources=args.spec or None,
+            spec_sources=spec_sources,
             cases_path=None if args.no_cases else args.cases,
             top_ks=_parse_top_ks(args.top_ks),
             acceptance_top_k=args.acceptance_top_k,
@@ -1209,7 +1916,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         report = run_benchmark(
             swagger_url=args.swagger_url,
-            spec_sources=args.spec or None,
+            spec_sources=spec_sources,
             cases_path=None if args.no_cases else args.cases,
             top_k=args.top_k,
             detect_dependencies=not args.no_detect_dependencies,
@@ -1222,6 +1929,10 @@ def main(argv: list[str] | None = None) -> int:
             promote_contract_signals=args.promote_contract_signals,
             contract_signal_options=contract_signal_options,
         )
+    if snapshot_manifests:
+        report["snapshot_manifests"] = snapshot_manifests
+    if "gate" in report:
+        report["gate"] = evaluate_gate(report, profile=args.gate_profile)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1234,6 +1945,51 @@ def main(argv: list[str] | None = None) -> int:
     else:
         _print_report(report)
     return 0 if report["status"] == "pass" else 1
+
+
+def _spec_sources_from_args(
+    args: argparse.Namespace,
+) -> tuple[list[str] | None, list[dict[str, Any]]]:
+    sources: list[str] = []
+    snapshot_manifests: list[dict[str, Any]] = []
+    for manifest_path in args.manifest or []:
+        manifest = load_snapshot_manifest(manifest_path)
+        sources.extend(str(row["path"]) for row in manifest["specs"])
+        snapshot_manifests.append(_snapshot_manifest_provenance(manifest))
+    sources.extend(args.spec or [])
+    return sources or None, snapshot_manifests
+
+
+def _snapshot_manifest_provenance(manifest: dict[str, Any]) -> dict[str, Any]:
+    spec_keys = [
+        "index",
+        "label",
+        "source",
+        "path",
+        "sha256",
+        "bytes",
+        "title",
+        "version",
+        "openapi_version",
+        "path_count",
+        "operation_count",
+    ]
+    return {
+        "snapshot": manifest.get("snapshot"),
+        "manifest_path": manifest.get("manifest_path"),
+        "created_at": manifest.get("created_at"),
+        "graph_tool_call_version": manifest.get("graph_tool_call_version"),
+        "source_url": manifest.get("source_url"),
+        "spec_count": manifest.get("spec_count"),
+        "operation_count": manifest.get("operation_count"),
+        "path_count": manifest.get("path_count"),
+        "specs_csv": manifest.get("specs_csv"),
+        "specs": [
+            {key: row.get(key) for key in spec_keys if key in row}
+            for row in manifest.get("specs", [])
+            if isinstance(row, dict)
+        ],
+    }
 
 
 if __name__ == "__main__":  # pragma: no cover

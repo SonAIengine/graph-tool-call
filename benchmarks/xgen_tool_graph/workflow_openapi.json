@@ -1,0 +1,292 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "XGEN Workflow Tool Graph Benchmark API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/workflow/instances/search": {
+      "get": {
+        "operationId": "searchWorkflowInstances",
+        "summary": "워크플로우 인스턴스 검색 Search workflow instances by order or business key",
+        "tags": ["workflow", "instances"],
+        "parameters": [
+          {"name": "businessKey", "in": "query", "schema": {"type": "string"}},
+          {"name": "orderNo", "in": "query", "schema": {"type": "string"}},
+          {"name": "siteNo", "in": "query", "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "instances": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "workflowId": {"type": "string"},
+                          "businessKey": {"type": "string"},
+                          "statusCode": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "context_field_names": ["siteNo"],
+          "search_filter_field_names": ["businessKey", "orderNo"],
+          "ai_metadata": {
+            "one_line_summary": "주문번호나 업무키로 워크플로우 인스턴스와 workflowId를 검색한다",
+            "when_to_use": "승인, 상태 변경, 알림 전에 대상 워크플로우 인스턴스를 찾을 때 사용",
+            "primary_resource": "workflow_instance",
+            "canonical_action": "search",
+            "produces_semantics": [
+              {"json_path": "$.instances[*].workflowId", "semantic": "workflow_id"},
+              {"json_path": "$.instances[*].businessKey", "semantic": "business_key"}
+            ],
+            "consumes_semantics": [
+              {"field": "businessKey", "semantic": "business_key", "kind": "data"},
+              {"field": "orderNo", "semantic": "order_no", "kind": "data"},
+              {"field": "siteNo", "semantic": "site_id", "kind": "context"}
+            ]
+          }
+        }
+      }
+    },
+    "/workflow/instances/{workflowId}/tasks/current": {
+      "get": {
+        "operationId": "getCurrentWorkflowTask",
+        "summary": "현재 워크플로우 작업 조회 Get current workflow task",
+        "tags": ["workflow", "tasks"],
+        "parameters": [
+          {"name": "workflowId", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "siteNo", "in": "query", "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {"type": "string"},
+                    "workflowId": {"type": "string"},
+                    "assigneeId": {"type": "string"},
+                    "statusCode": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "context_field_names": ["siteNo"],
+          "ai_metadata": {
+            "one_line_summary": "workflowId로 현재 승인 작업, 담당자, taskId를 조회한다",
+            "when_to_use": "승인, 반려, 에스컬레이션, 담당자 알림 전에 taskId나 assigneeId가 필요할 때 사용",
+            "primary_resource": "task",
+            "canonical_action": "read",
+            "pairs_well_with": [
+              {"tool": "searchWorkflowInstances", "reason": "searchWorkflowInstances discovers workflowId", "source": "auto"}
+            ],
+            "produces_semantics": [
+              {"json_path": "$.taskId", "semantic": "task_id"},
+              {"json_path": "$.workflowId", "semantic": "workflow_id"},
+              {"json_path": "$.assigneeId", "semantic": "assignee_id"}
+            ],
+            "consumes_semantics": [
+              {"field": "workflowId", "semantic": "workflow_id", "kind": "data"},
+              {"field": "siteNo", "semantic": "site_id", "kind": "context"}
+            ]
+          }
+        }
+      }
+    },
+    "/workflow/tasks/{taskId}/approve": {
+      "post": {
+        "operationId": "approveWorkflowTask",
+        "summary": "워크플로우 작업 승인 Approve workflow task",
+        "tags": ["workflow", "tasks"],
+        "parameters": [
+          {"name": "taskId", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "siteNo", "in": "query", "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "comment": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {"type": "string"},
+                    "approved": {"type": "boolean"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "context_field_names": ["siteNo"],
+          "ai_metadata": {
+            "one_line_summary": "현재 workflow taskId를 승인 처리한다",
+            "when_to_use": "승인 요청, 결재 작업, workflow task를 approve 처리할 때 사용",
+            "primary_resource": "workflow_task",
+            "canonical_action": "update",
+            "pairs_well_with": [
+              {"tool": "getCurrentWorkflowTask", "reason": "getCurrentWorkflowTask discovers taskId", "source": "auto"}
+            ],
+            "consumes_semantics": [
+              {"field": "taskId", "semantic": "task_id", "kind": "data"},
+              {"field": "siteNo", "semantic": "site_id", "kind": "context"}
+            ]
+          }
+        }
+      }
+    },
+    "/workflow/tasks/{taskId}/notify": {
+      "post": {
+        "operationId": "sendTaskNotification",
+        "summary": "워크플로우 담당자 알림 발송 Send notification to task assignee",
+        "tags": ["workflow", "notifications"],
+        "parameters": [
+          {"name": "taskId", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "siteNo", "in": "query", "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["assigneeId", "message"],
+                "properties": {
+                  "assigneeId": {"type": "string"},
+                  "message": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notificationId": {"type": "string"},
+                    "taskId": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "context_field_names": ["siteNo"],
+          "ai_metadata": {
+            "one_line_summary": "워크플로우 task 담당자에게 알림 메시지를 발송한다",
+            "when_to_use": "담당자에게 처리 요청, 상태 변경, 승인 대기 알림을 보낼 때 사용",
+            "primary_resource": "notification",
+            "canonical_action": "create",
+            "pairs_well_with": [
+              {"tool": "getCurrentWorkflowTask", "reason": "getCurrentWorkflowTask discovers taskId and assigneeId", "source": "auto"}
+            ],
+            "produces_semantics": [
+              {"json_path": "$.notificationId", "semantic": "notification_id"}
+            ],
+            "consumes_semantics": [
+              {"field": "taskId", "semantic": "task_id", "kind": "data"},
+              {"field": "assigneeId", "semantic": "assignee_id", "kind": "data"},
+              {"field": "message", "semantic": "message", "kind": "data"},
+              {"field": "siteNo", "semantic": "site_id", "kind": "context"}
+            ]
+          }
+        }
+      }
+    },
+    "/workflow/tasks/{taskId}/escalate": {
+      "post": {
+        "operationId": "escalateWorkflowTask",
+        "summary": "워크플로우 작업 에스컬레이션 Escalate overdue workflow task",
+        "tags": ["workflow", "tasks"],
+        "parameters": [
+          {"name": "taskId", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "siteNo", "in": "query", "schema": {"type": "string"}}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["reason"],
+                "properties": {
+                  "reason": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {"type": "string"},
+                    "escalated": {"type": "boolean"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-graph-tool-call": {
+          "context_field_names": ["siteNo"],
+          "ai_metadata": {
+            "one_line_summary": "지연되거나 막힌 workflow task를 상위 단계로 에스컬레이션한다",
+            "when_to_use": "지연, 장애, 처리 지연 workflow task를 escalation 처리할 때 사용",
+            "primary_resource": "workflow_task",
+            "canonical_action": "update",
+            "pairs_well_with": [
+              {"tool": "getCurrentWorkflowTask", "reason": "getCurrentWorkflowTask discovers taskId", "source": "auto"}
+            ],
+            "consumes_semantics": [
+              {"field": "taskId", "semantic": "task_id", "kind": "data"},
+              {"field": "reason", "semantic": "reason", "kind": "data"},
+              {"field": "siteNo", "semantic": "site_id", "kind": "context"}
+            ]
+          }
+        }
+      }
+    }
+  }
+}

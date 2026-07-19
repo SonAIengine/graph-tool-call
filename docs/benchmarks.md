@@ -407,6 +407,96 @@ greater than one, the JSON `summary.repeat_groups` and text output include
 mean/std/min/max for exact match, strict exact match, retrieval recall, and
 latency by `(tool_source, top_k)`.
 
+The sweep artifact also includes `summary.milestone_gate`. By default it uses
+the `xgen-0.27` profile and checks the next product-readiness target directly:
+retrieved-source exact match at `k=5`, retrieval recall at `k=5`, row-source
+upper-bound preservation, and `parallel_multiple` exact match. This is the
+fastest way to decide whether a full expensive run produced evidence strong
+enough for the next XGEN milestone, or whether work should return to a smaller
+failure subset first.
+
+For paper-ready rerun candidates, use the stricter `xgen-0.28` profile. It
+keeps the same core quality metrics but also requires at least `3` repeats and
+`1000` retrieved-source cases per repeat, so a 100-case smoke cannot be mistaken
+for broad-distribution evidence.
+
+```bash
+poetry run python -m benchmarks.bfcl_tool_selection.sweep \
+  --categories simple_python,multiple,parallel,parallel_multiple \
+  --tool-sources row,retrieved \
+  --top-ks 5 \
+  --model qwen3.6-27b \
+  --llm-url http://127.0.0.1:8000/v1 \
+  --disable-thinking \
+  --milestone-profile xgen-0.27 \
+  --output /tmp/gtc-bfcl-xgen-027-sweep.json
+```
+
+```bash
+make bfcl-028-gate
+make bfcl-028-gate-check REPORT=/tmp/gtc-bfcl-028-gate.json
+```
+
+For diagnostic sweeps that do not include the row-source baseline or
+`parallel_multiple`, pass `--milestone-profile none` or treat the gate status
+`incomplete` as expected.
+
+When the milestone gate fails because expected tools are retrieved but the
+model selects a nearby sibling, run a candidate-presentation ablation with
+`--retrieval-rank-hints`. This leaves retrieval unchanged and only prefixes
+retrieved-source tool descriptions with graph rank hints. Treat those numbers
+as a separate ablation until the report explicitly records the option:
+
+```bash
+poetry run python -m benchmarks.bfcl_tool_selection.sweep \
+  --categories simple_python,multiple,parallel,parallel_multiple \
+  --tool-sources row,retrieved \
+  --top-ks 5 \
+  --model qwen3.6-27b \
+  --llm-url http://127.0.0.1:8000/v1 \
+  --disable-thinking \
+  --retrieval-rank-hints \
+  --output /tmp/gtc-bfcl-xgen-027-rank-hints.json
+```
+
+For call-count mismatches and generic-helper over-selection, run
+`--candidate-selection-guidance`. This leaves the candidate set unchanged and
+only strengthens the model's selection policy: prefer exact/specific tools,
+cohesive API families for related multi-call requests, and avoid decomposing one
+operation when a single provided tool already satisfies it.
+
+```bash
+poetry run python -m benchmarks.bfcl_tool_selection.sweep \
+  --categories simple_python,multiple,parallel,parallel_multiple \
+  --tool-sources row,retrieved \
+  --top-ks 5 \
+  --model qwen3.6-27b \
+  --llm-url http://127.0.0.1:8000/v1 \
+  --disable-thinking \
+  --candidate-selection-guidance \
+  --output /tmp/gtc-bfcl-xgen-027-selection-guidance.json
+```
+
+If the remaining failures are sibling choices inside a multi-action retrieved
+set, run `--cohesive-namespace-candidates`. This ablation leaves raw retrieval
+metrics unchanged but compresses the LLM-facing retrieved tools: when a
+multi-action query has a dotted namespace family with at least two retrieved
+tools, singleton sibling families are hidden from the model. The report still
+records raw `retrieved` names and the compressed `tools_presented` per case.
+
+```bash
+poetry run python -m benchmarks.bfcl_tool_selection.sweep \
+  --categories simple_python,multiple,parallel,parallel_multiple \
+  --tool-sources row,retrieved \
+  --top-ks 5 \
+  --model qwen3.6-27b \
+  --llm-url http://127.0.0.1:8000/v1 \
+  --disable-thinking \
+  --candidate-selection-guidance \
+  --cohesive-namespace-candidates \
+  --output /tmp/gtc-bfcl-xgen-027-cohesive-namespace.json
+```
+
 Recommended smoke with a native function-calling endpoint:
 
 ```bash
@@ -486,7 +576,10 @@ The row-source baseline passes the official per-case BFCL tool list to the
 model. The retrieved-source runs pass only graph-tool-call top-K candidates.
 The retrieved-source full result export was also re-scored with
 `bfcl_eval evaluate --partial-eval`; per-category score JSON files matched the
-runner summary for `k=3`, `k=5`, and `k=10`.
+runner summary for `k=3`, `k=5`, and `k=10`. These 1000-case numbers are the
+last broad-distribution baseline before the later 0.27 hardening passes; they
+remain useful as the paper-ready rerun target, but the current product-candidate
+gate is tracked separately below.
 
 ```text
 row       k=5  cases=1000 retrieval@K=0.91 exact=0.90 strict=0.89
@@ -545,6 +638,62 @@ publish-candidate run. BFCL-compatible result export now exists for local
 official-checker reruns; it should be used to keep future numbers tied to
 auditable model outputs.
 
+Latest 0.27 candidate gate evidence on 2026-07-19:
+
+```bash
+make bfcl-027-gate-check \
+  REPORT=/tmp/gtc-bfcl-date-guidance-limit25-repeat3-row-retrieved-qwen.json
+```
+
+```text
+milestone xgen-0.27 status=pass
+retrieved_exact@5=1.000 retrieval@5=1.000
+row_preservation=1.000 parallel_multiple=1.000
+```
+
+This artifact uses qwen3.6-27B, `simple_python,multiple,parallel,parallel_multiple`,
+`limit=25` per category, row/retrieved tool sources, top-k=5, and repeat 3.
+Across all three repeats, both row-source and retrieved-source exact mean/std
+are `1.00 / 0.000`, `parallel_multiple` exact is `1.00`, and
+`row_pass_retrieved_fail=0`. This is the XGEN 0.27 product-candidate gate, not a
+replacement for a fresh full 1000-case paper-ready run.
+
+Latest full 0.28 paper-ready attempt on 2026-07-19:
+
+```bash
+make bfcl-028-gate-check \
+  REPORT=/tmp/gtc-bfcl-028-gate-full-qwen.json
+```
+
+```text
+milestone xgen-0.28 status=fail
+retrieved_exact@5=0.865 retrieval@5=0.953
+row_preservation=0.904497 parallel_multiple=0.730
+repeats=3 cases_per_repeat=1000
+```
+
+This is a local BFCL-compatible qwen3.6-27B run, not a BFCL leaderboard score.
+It is not strong enough for a README/public paper headline. The saved failure
+inspection artifact `/tmp/gtc-bfcl-028-failure-inspect.json` shows that many
+expected tools are present within depth 30 but not top 5, and that
+`parallel_multiple` loses too much of the row-source upper bound. Treat this as
+the next research target for rank compression, multi-tool candidate-set
+preservation, and optional embedding/rerank ablation.
+
+The deterministic BFCL tool-selection runner now reports requested-depth
+`recall_at_k`, `all_tools_found_at_k`, and `argument_schema_coverage_at_k`
+alongside the fixed top-5 metrics. On the same 91-case 0.28 failure subset,
+`top_k=30` gives `all_tools_found_at_5=0.274725` but
+`all_tools_found_at_k=0.901099` and `recall_at_k=0.937729`. This makes the
+selector upper bound visible in seconds, before another expensive model run.
+
+No-LLM deterministic retrieval experiments use the validation loop in
+[`docs/research/validation-loop.md`](research/validation-loop.md). The current
+hard-case bundle sequence improved deterministic `recall@5` from `0.9325` to
+`0.95200`, `all_tools_found@5` from `0.908` to `0.930`, and reduced hard cases
+from `92` to `70`. This is not a BFCL leaderboard/model score; it is the fast
+retrieval gate used before expensive model-in-the-loop validation.
+
 ## XGEN-style Tool Graph Search
 
 The XGEN-style benchmark lives in
@@ -558,10 +707,81 @@ Model used: **none**. This runner is deterministic and reports
 `methodology=deterministic_engine_contract`.
 
 It intentionally avoids live HTTP and LLM calls so a PR can prove whether search
-quality improved or regressed with deterministic numbers. The default runner
-compares `target_only` with `graph_with_producers` and fails when the graph
-pipeline misses quality thresholds or exceeds latency/token budgets recorded in
-`cases.json`.
+quality improved or regressed with deterministic numbers. The default built-in
+suite compares `target_only` with `graph_with_producers` and fails when the
+graph pipeline misses quality thresholds or exceeds latency/token budgets
+recorded in the suite's cases file.
+
+Run the full product-readiness fixture set:
+
+```bash
+poetry run python -m benchmarks.xgen_tool_graph.run --suite all
+```
+
+Current built-in fixture families:
+
+| Suite | API pattern | Cases |
+|---|---|---:|
+| `commerce` | search/detail/order/shipping/refund | `7` |
+| `admin` | user, role, session, audit | `4` |
+| `workflow` | search/current-task/approve/notify/escalate | `4` |
+
+Latest local deterministic suite result on 2026-07-19:
+
+| Metric | Value |
+|---|---:|
+| Fixture families | `3` |
+| Cases | `15` |
+| Tools | `22` |
+| Graph edges | `35` |
+| Target recall@5 | `1.00` |
+| Target selector exact@5 | `1.00` |
+| Target selector misses | `0` |
+| Producer recall | `1.00` |
+| Candidate plan coverage | `1.00` |
+| Producer-needed cases | `12` |
+| Adaptive expansion cases | `12` |
+| Unneeded expansion cases | `0` |
+| Average candidate count | `2.60` |
+| Max candidate count | `4` |
+| Plan exact match | `1.00` |
+| Binding accuracy | `1.00` |
+| Synthesis diagnostics coverage | `1.00` |
+| User-input slot cases | `1` |
+| Missing fields surfaced | `2` |
+| Producer recall lift vs target-only | `+0.80` |
+| Candidate plan coverage lift vs target-only | `+0.50` |
+| Binding support lift vs target-only | `+0.80` |
+| Producer expansion lifted cases | `12/15` |
+| Average retrieval latency | `0.21ms` |
+
+Each case includes `synthesis_diagnostics` in the JSON artifact. The diagnostic
+block records the synthesis `stage`, `target`, `plan_id`, selected producers,
+candidate signals, user-input or missing fields, failure details when present,
+retrieval evidence such as target rank and token budget used, and the
+deterministic target selector evidence. The selector evidence records
+`selected_target`, `target_selector_rank`, `target_selector_exact`,
+`target_action_priority`, and per-candidate rank signals. This is the XGEN-facing
+trace shape for explaining why a plan was synthesized, why a field requires a
+popup/resume input, or where target selection failed.
+
+The JSON artifact also includes `producer_expansion_lift`, which compares the
+`target_only` baseline with `graph_with_producers`. This makes producer
+expansion measurable as plan-readiness lift instead of a hidden implementation
+detail: in the current suite it raises producer recall by `+0.80`, candidate
+plan coverage by `+0.50`, and binding support by `+0.80` overall. The lift is
+concentrated in the `12` producer-needed cases; the `3` direct search/list cases
+keep their target-only candidate set, so `unneeded_expansion_cases=0`.
+
+The target selector metric is intentionally separate from target recall. The
+current deterministic suite has `target_recall_at_k=1.00`, so the expected tool
+is always present in the retrieved top-5, and the query-action selector now
+picks the exact target in `15/15` fixture cases (`1.00`). This improved from the
+previous `12/15` baseline after adding deterministic disambiguation for
+detail-after-search, audit-log-read, and notification-send queries. Producer
+expansion and plan synthesis still use the expected target as the controlled
+seed in this benchmark so future selector regressions do not hide
+producer-chain regressions.
 
 ### XGEN Scale Acceptance
 
@@ -624,7 +844,7 @@ The same diagnostic previously showed that indexing all promoted raw contract
 fields degraded target ranking on X2BEE, which is why the default keeps
 contract fields available for planning without adding them directly to BM25.
 
-Verified local result on 2026-07-19:
+Initial smoke-scale local result on 2026-07-19:
 
 | Metric | Value |
 |---|---:|
@@ -653,6 +873,136 @@ Top-K sweep from the same live target on 2026-07-19:
 | `3` | `0.75` | `0.8125` | `0.75` | `0.875` | `0.792` | `order_query`, secondary page-role button |
 | `5` | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | rank-4/5 compression |
 | `10` | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | acceptance baseline |
+
+The product-level X2BEE case set now covers 19 Korean BO queries across product
+QA, brand, order, page-role buttons, settlement, FAQ, delivery region, returns,
+member, mileage, event, goods, coupon, notice, restock, delivery policy,
+promotion, and market display flows. The runner reports both `rank_buckets`
+over all expected tool names and `case_rank_buckets` over each case's best
+acceptable expected tool, so `expected_any` alternatives do not make passing
+cases look missing. It also records `target_selector_exact_at_k`,
+`target_selector_miss_count`, and `target_selector_rank_buckets` by reranking
+the retrieved top-K through the same query-action candidate contract used by the
+deterministic fixture benchmark. After target selection, the runner also derives
+contract-based plan-readiness metrics without indexing raw contract fields into
+BM25: `plan_candidates`, `producer_candidates`, input support evidence,
+producer-only `avg_required_input_coverage`, execution-oriented
+`avg_required_input_resolution_coverage`, and stable readiness issue /
+resolution counts.
+
+Latest product-level sweep on 2026-07-19 after Korean top-1 ambiguity and
+selector instrumentation fixes:
+
+| Top-K | Cases | Hit@K | Expected recall@K | Selector exact@K | Top-1 hit | Top-3 hit | Mean MRR | Case rank buckets | Selector rank buckets |
+|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| `3` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
+| `5` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
+| `10` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
+
+Latest schema-context sweep on 2026-07-19:
+
+```bash
+OUT=/tmp/gtc-x2bee-schema-context-threshold-sweep.json TOP_KS=3,5,10 make xgen-scale-sweep
+make xgen-scale-gate-check REPORT=/tmp/gtc-x2bee-schema-context-threshold-sweep.json
+```
+
+| Metric | Value |
+|---|---:|
+| Full compact tool schema chars | `56,756,400` |
+| Average candidate schema chars | `157,320` |
+| Max candidate schema chars | `865,608` |
+| Average candidate schema fraction | `0.002772` |
+| Average schema context reduction | `99.72%` |
+| Minimum schema context reduction | `98.47%` |
+
+This is a deterministic compact-JSON character-count proxy, not a tokenizer
+claim. It measures how much model-facing tool schema payload remains after
+graph-tool-call selects the target plus required producers, compared with
+passing all 1,084 tool schemas to the model.
+The X2BEE acceptance thresholds now require
+`avg_schema_context_reduction >= 0.99` and
+`min_schema_context_reduction >= 0.98`, so broadening the LLM-facing candidate
+schema surface becomes a gate failure instead of an after-the-fact observation.
+
+For paper-ready or externally cited XGEN-scale claims, use the stricter
+`xgen-scale-0.28` profile. It requires the report to be generated from a saved
+OpenAPI snapshot manifest and checks that every referenced spec has sha256
+provenance:
+
+```bash
+make xgen-scale-snapshot \
+  OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot
+
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
+GATE_PROFILE=xgen-scale-0.28 \
+OUT=/tmp/gtc-x2bee-scale-snapshot-sweep.json \
+make xgen-scale-sweep
+
+make xgen-scale-028-gate-check \
+  REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep.json
+```
+
+Latest snapshot-provenance sweep on 2026-07-19:
+
+```bash
+OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot-028 make xgen-scale-snapshot
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot-028/manifest.json make xgen-scale-snapshot-check
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot-028/manifest.json \
+  GATE_PROFILE=xgen-scale-0.28 \
+  OUT=/tmp/gtc-x2bee-scale-snapshot-sweep-028.json \
+  TOP_KS=3,5,10 \
+  make xgen-scale-sweep
+make xgen-scale-028-gate-check REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep-028.json
+```
+
+| Metric | Value |
+|---|---:|
+| Snapshot specs / sha256 entries | `15 / 15` |
+| Raw operations | `2,173` |
+| Unique tools after operationId dedupe | `1,084` |
+| Duplicate tools skipped | `1,077` |
+| Graph edges | `8,579` |
+| Build time | `11.62s` |
+| Acceptance Top-K | `10` |
+| Product cases | `19` |
+| Hit@10 / expected recall@10 / selector exact@10 | `1.00 / 1.00 / 1.00` |
+| Average / max candidate count | `2.00 / 6` |
+| Average schema context reduction | `99.78%` |
+| Minimum schema context reduction | `98.30%` |
+| Average retrieval latency | `31.79ms` |
+
+The saved report embeds `gate.profile=xgen-scale-0.28`,
+`snapshot_provenance_complete=true`, and passes the external
+`xgen-scale-028-gate-check`.
+
+The routine `xgen-scale-0.27` profile remains useful for fast replay of saved
+live artifacts; `xgen-scale-0.28` is the provenance gate for public numbers.
+
+The same sweep now exposes the next bottleneck after target selection. Across
+the 19 product-level cases, average plan candidate count is `2.16`, max
+candidate count is `7`, average producer candidates added is `1.16`, and
+average required input coverage is `0.872`. That coverage is deliberately
+producer-only: it asks whether a required target input can be filled from a
+previous response field. The execution-oriented resolution metric is now
+complete, with average required input resolution coverage at `1.00` and
+unresolved required input count at `0`.
+
+Plan candidates include only producers that fill required target inputs.
+Optional input producers remain visible in `input_support` evidence, but they
+are not added to the executable candidate set. For required inputs, the runner
+uses a greedy representative-producer policy: pick producers that cover the
+most unresolved required fields, then prefer read/search/list-style operations.
+This keeps the LLM-facing plan surface compact without hiding optional field
+support diagnostics.
+
+Fifteen cases have all required data inputs matched to at least one
+response-field producer; four rows are classified with stable readiness issue
+codes. The issue breakdown is `required_request_wrapper=2`,
+`required_context_input=1`, and `required_filter_input=1`. Required input
+resolution counts are `producer=42`, `request_wrapper=2`, `context=1`, and
+`user_input=1`. The previous `marketingDisplayNo` / `mkdpNo` gap is resolved
+by conservative identifier description alias matching: both fields share the
+specific OpenAPI description `기획전번호`.
 
 OpenAPI request/response contract is preserved under `metadata.api_contract`
 and `metadata.openapi`. It is intentionally not promoted into top-level

@@ -91,3 +91,46 @@ def test_failures_cli_writes_case_id_file(tmp_path):
 
     assert main(["--report", str(report_path), "--output", str(output_path)]) == 0
     assert output_path.read_text(encoding="utf-8") == "simple_python_0\n"
+
+
+def test_extract_failure_cases_infers_deterministic_retrieval_miss():
+    report = {
+        "benchmark": "BFCL v4 Tool Selection",
+        "top_k": 5,
+        "categories": [
+            {
+                "category": "parallel_multiple",
+                "cases": [
+                    {
+                        "case_id": "parallel_multiple_1",
+                        "recall_at_5": 0.5,
+                        "all_tools_found_at_5": 0.0,
+                    },
+                    {
+                        "case_id": "parallel_multiple_2",
+                        "recall_at_5": 1.0,
+                        "all_tools_found_at_5": 1.0,
+                    },
+                ],
+            }
+        ],
+    }
+
+    rows = extract_failure_cases(
+        report,
+        failure_categories={"retrieval_miss"},
+        categories={"parallel_multiple"},
+        top_ks={5},
+    )
+
+    assert rows == [
+        {
+            "case_id": "parallel_multiple_1",
+            "category": "parallel_multiple",
+            "failure_category": "retrieval_miss",
+            "tool_source": "",
+            "top_k": 5,
+            "retrieval_recall_at_k": 0.5,
+            "evaluator_exact_match": None,
+        }
+    ]

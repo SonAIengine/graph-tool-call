@@ -52,10 +52,12 @@ from benchmarks.xgen_tool_graph.llm_loop import (
     _redacted_url,
 )
 from graph_tool_call import ToolGraph, __version__
+from graph_tool_call.graphify import build_tool_equivalence_groups
+from graph_tool_call.retrieval.keyword import BM25Scorer
 
 DEFAULT_OFFICIAL_MODEL_NAME = "qwen3-32b-FC"
 BFCL_RESULT_ARGUMENT_FORMATS = ("json-string", "decoded")
-MODEL_CASE_CACHE_VERSION = 8
+MODEL_CASE_CACHE_VERSION = 19
 
 
 @dataclass(frozen=True)
@@ -89,6 +91,7 @@ class BFCLModelCaseEvaluation:
     strict_exact_match: float
     official_ast_exact_match: float
     evaluator_exact_match: float
+    equivalence_adjusted_exact_match: float
     input_tokens: int
     output_tokens: int
     latency_ms: float
@@ -97,6 +100,7 @@ class BFCLModelCaseEvaluation:
     official_error_type: str = ""
     official_error: str = ""
     raw_content: str = ""
+    failure_tags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -131,6 +135,9 @@ def run_model_benchmark(
     concurrency: int = 1,
     progress: bool = False,
     progress_every: int = 25,
+    retrieval_rank_hints: bool = False,
+    candidate_selection_guidance: bool = False,
+    cohesive_namespace_candidates: bool = False,
 ) -> dict[str, Any]:
     """Run BFCL-compatible native tool-call evaluation with a real model."""
     if evaluator == "official":
@@ -160,6 +167,9 @@ def run_model_benchmark(
             concurrency=concurrency,
             progress=progress,
             progress_every=progress_every,
+            retrieval_rank_hints=retrieval_rank_hints,
+            candidate_selection_guidance=candidate_selection_guidance,
+            cohesive_namespace_candidates=cohesive_namespace_candidates,
         )
         for category in selected
     ]
@@ -184,6 +194,9 @@ def run_model_benchmark(
         "cache_namespace": cache_namespace,
         "concurrency": max(1, concurrency),
         "progress": progress,
+        "retrieval_rank_hints": retrieval_rank_hints,
+        "candidate_selection_guidance": candidate_selection_guidance,
+        "cohesive_namespace_candidates": cohesive_namespace_candidates,
         "categories": [asdict(category) for category in evaluated],
         "summary": _summarize(overall_rows, min_exact_match=min_exact_match),
     }
@@ -212,6 +225,9 @@ def evaluate_category_model(
     concurrency: int = 1,
     progress: bool = False,
     progress_every: int = 25,
+    retrieval_rank_hints: bool = False,
+    candidate_selection_guidance: bool = False,
+    cohesive_namespace_candidates: bool = False,
 ) -> BFCLModelCategoryEvaluation:
     question_rows = _load_jsonl(category, kind="question", data_root=data_root, ref=ref)
     answer_rows = _load_jsonl(category, kind="answer", data_root=data_root, ref=ref)
@@ -244,6 +260,9 @@ def evaluate_category_model(
         concurrency=concurrency,
         progress=progress,
         progress_every=progress_every,
+        retrieval_rank_hints=retrieval_rank_hints,
+        candidate_selection_guidance=candidate_selection_guidance,
+        cohesive_namespace_candidates=cohesive_namespace_candidates,
     )
     rows = [row for row in rows if row.expected_calls]
     return BFCLModelCategoryEvaluation(
@@ -278,6 +297,9 @@ def _evaluate_category_cases(
     concurrency: int,
     progress: bool,
     progress_every: int,
+    retrieval_rank_hints: bool,
+    candidate_selection_guidance: bool,
+    cohesive_namespace_candidates: bool,
 ) -> list[BFCLModelCaseEvaluation]:
     max_workers = max(1, concurrency)
     started = time.perf_counter()
@@ -305,6 +327,9 @@ def _evaluate_category_cases(
                 refresh_cache=refresh_cache,
                 timeout=timeout,
                 disable_thinking=disable_thinking,
+                retrieval_rank_hints=retrieval_rank_hints,
+                candidate_selection_guidance=candidate_selection_guidance,
+                cohesive_namespace_candidates=cohesive_namespace_candidates,
             )
             rows[index] = row
             cache_hits += int(cache_hit)
@@ -343,6 +368,9 @@ def _evaluate_category_cases(
                 refresh_cache=refresh_cache,
                 timeout=timeout,
                 disable_thinking=disable_thinking,
+                retrieval_rank_hints=retrieval_rank_hints,
+                candidate_selection_guidance=candidate_selection_guidance,
+                cohesive_namespace_candidates=cohesive_namespace_candidates,
             ): index
             for index, question_row in enumerate(case_rows)
         }
@@ -385,6 +413,9 @@ def _evaluate_or_read_case(
     refresh_cache: bool,
     timeout: int,
     disable_thinking: bool,
+    retrieval_rank_hints: bool,
+    candidate_selection_guidance: bool,
+    cohesive_namespace_candidates: bool,
 ) -> tuple[BFCLModelCaseEvaluation, bool]:
     answer_row = answers_by_id.get(str(question_row.get("id"))) or {}
     cache_path = _case_cache_path(
@@ -402,9 +433,13 @@ def _evaluate_or_read_case(
         timeout=timeout,
         disable_thinking=disable_thinking,
         cache_namespace=cache_namespace,
+        retrieval_rank_hints=retrieval_rank_hints,
+        candidate_selection_guidance=candidate_selection_guidance,
+        cohesive_namespace_candidates=cohesive_namespace_candidates,
     )
     row = None if refresh_cache else _read_case_cache(cache_path)
     if row is not None:
+        _ensure_failure_tags(row, tools_by_name=tools_by_name)
         return row, True
 
     row = evaluate_model_case(
@@ -422,6 +457,9 @@ def _evaluate_or_read_case(
         official_model_name=official_model_name,
         timeout=timeout,
         disable_thinking=disable_thinking,
+        retrieval_rank_hints=retrieval_rank_hints,
+        candidate_selection_guidance=candidate_selection_guidance,
+        cohesive_namespace_candidates=cohesive_namespace_candidates,
     )
     _write_case_cache(cache_path, row)
     return row, False
@@ -470,6 +508,9 @@ def evaluate_model_case(
     official_model_name: str,
     timeout: int,
     disable_thinking: bool,
+    retrieval_rank_hints: bool,
+    candidate_selection_guidance: bool,
+    cohesive_namespace_candidates: bool,
 ) -> BFCLModelCaseEvaluation:
     query = _question_text(question_row)
     expected_calls = _expected_calls(answer_row)
@@ -480,16 +521,57 @@ def evaluate_model_case(
     if tool_source == "row":
         presented_tools = _case_tool_names(question_row)
     elif tool_source == "retrieved":
-        presented_tools = retrieved
+        presented_tools = _cohesive_namespace_candidates(
+            retrieved,
+            query=query,
+            enabled=cohesive_namespace_candidates,
+        )
     else:
         raise ValueError(f"Unknown tool_source: {tool_source}")
 
-    raw_tools = [tools_by_name[name] for name in presented_tools if name in tools_by_name]
-    model_tools, safe_name_map = _prepare_tools_for_model(raw_tools)
+    preferred_equivalent_names = _case_local_equivalence_priority_names(
+        presented_tools,
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
+    presented_tools = _suppress_non_priority_equivalent_names(
+        presented_tools,
+        preferred_equivalent_names,
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
+    presented_tools = _suppress_subsumed_partial_tools(
+        presented_tools,
+        query=query,
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
+    presented_tools = _suppress_contextual_extra_tools(
+        presented_tools,
+        query=query,
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
+    presented_tools = _prioritize_candidate_names(presented_tools, preferred_equivalent_names)
+    raw_tools = _presented_raw_tools(
+        presented_tools,
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
+    model_tools, safe_name_map = _prepare_tools_for_model(
+        raw_tools,
+        query=query,
+        preferred_equivalent_names=preferred_equivalent_names,
+        rank_hints=retrieval_rank_hints and tool_source == "retrieved",
+        rank_by_name={name: index + 1 for index, name in enumerate(retrieved)},
+    )
     response = _chat(
         model=model,
         llm_url=llm_url,
-        messages=_messages_for_case(query),
+        messages=_messages_for_case(
+            query,
+            candidate_selection_guidance=candidate_selection_guidance,
+        ),
         tools=model_tools,
         tool_choice=tool_choice,
         timeout=timeout,
@@ -513,6 +595,13 @@ def evaluate_model_case(
         if evaluator == "official"
         else match["strict_exact_match"]
     )
+    equivalence_adjusted_exact_match = _equivalence_adjusted_exact_match(
+        expected_calls,
+        predicted_calls,
+        tools_by_name=tools_by_name,
+        category=category,
+        strict_exact_match=match["strict_exact_match"],
+    )
     error = response.error or official["official_error"] or match["error"]
     failure_category = _classify_failure(
         expected_calls=expected_calls,
@@ -523,6 +612,12 @@ def evaluate_model_case(
         official=official,
         evaluator_exact_match=evaluator_exact_match,
         response_error=response.error,
+    )
+    failure_tags = _failure_tags(
+        expected_calls=expected_calls,
+        predicted_calls=predicted_calls,
+        tools_by_name=tools_by_name,
+        failure_category=failure_category,
     )
     latency_ms = (time.perf_counter() - started) * 1000
 
@@ -544,6 +639,7 @@ def evaluate_model_case(
         strict_exact_match=match["strict_exact_match"],
         official_ast_exact_match=official["official_ast_exact_match"],
         evaluator_exact_match=evaluator_exact_match,
+        equivalence_adjusted_exact_match=equivalence_adjusted_exact_match,
         input_tokens=response.input_tokens,
         output_tokens=response.output_tokens,
         latency_ms=round(latency_ms, 3),
@@ -552,18 +648,119 @@ def evaluate_model_case(
         official_error_type=official["official_error_type"],
         official_error=official["official_error"],
         raw_content=response.content,
+        failure_tags=failure_tags,
     )
 
 
-def _messages_for_case(query: str) -> list[dict[str, str]]:
+def _messages_for_case(
+    query: str,
+    *,
+    candidate_selection_guidance: bool = False,
+) -> list[dict[str, str]]:
     system = (
         "You are evaluating function calling. Use only the provided tools. "
         "Emit native tool calls only, with no prose. If the request needs "
         "multiple independent actions, emit one tool call for each action. "
         "Use exact argument values from the user request. Omit optional "
-        "arguments unless the request explicitly sets them."
+        "arguments unless the request explicitly sets them. Use only argument "
+        "keys declared in the selected tool's JSON schema; never invent extra "
+        "argument names, even when the user mentions units or formatting. For "
+        "object or dict arguments, keep nested fields inside that argument value; "
+        "do not flatten them into top-level arguments. Preserve symbolic data "
+        "references such as data['sales'] exactly as strings; do not replace "
+        "them with made-up arrays or sample values. If the same tool must be "
+        "applied to multiple distinct entities, times, or parameter sets, emit "
+        "one tool call per distinct set; do not merge them into array arguments "
+        "just because the schema uses array fields. When the request gives paired "
+        "values such as item A at time A and item B at time B, emit one tool call "
+        "per pair and put only that pair's values in each call. Use the minimum "
+        "number of tool calls that satisfies the request. Do not add a second "
+        "tool call merely because another tool is related to a context word, "
+        "background phrase, or possible downstream analysis."
     )
+    if candidate_selection_guidance:
+        system += (
+            " Candidate selection guidance: if several tools look similar, prefer the most "
+            "specific tool whose name and description match the exact requested action. "
+            "For related multi-call requests, prefer tools from the same namespace or API "
+            "family when their actions match. Avoid adding a generic all-in-one or lower-level "
+            "helper tool when one provided tool already satisfies the requested operation. "
+            "Do not decompose one requested operation into multiple tool calls unless the user "
+            "asks for separate actions."
+        )
     return [{"role": "system", "content": system}, {"role": "user", "content": query}]
+
+
+def _cohesive_namespace_candidates(
+    names: list[str],
+    *,
+    query: str,
+    enabled: bool,
+) -> list[str]:
+    """Prefer a cohesive dotted namespace family for multi-action retrieved sets.
+
+    This is an opt-in model-loop ablation. It does not change graph retrieval:
+    the report still records the raw retrieved names, while ``tools_presented``
+    shows the compressed LLM-facing set.
+    """
+
+    if not enabled or not _looks_multi_intent(query):
+        return list(names)
+
+    query_terms = _candidate_query_terms(query)
+    groups: dict[str, list[str]] = {}
+    for name in names:
+        namespace = _dotted_namespace(name)
+        if namespace:
+            groups.setdefault(namespace, []).append(name)
+    first_namespace = _dotted_namespace(names[0]) if names else ""
+    cohesive_namespaces = {
+        namespace
+        for namespace, members in groups.items()
+        if len(members) >= 2 and (namespace == first_namespace or namespace in query_terms)
+    }
+    if not cohesive_namespaces:
+        return list(names)
+
+    selected = [
+        name
+        for name in names
+        if _dotted_namespace(name) in cohesive_namespaces or _dotted_namespace(name) in query_terms
+    ]
+    return selected or list(names)
+
+
+def _looks_multi_intent(query: str) -> bool:
+    text = f" {str(query or '').lower()} "
+    if any(marker in text for marker in (" also ", " as well ", " then ", "그리고", "또")):
+        return True
+    return bool(
+        re.search(
+            r"\band\s+(also\s+)?"
+            r"(analyze|assess|calculate|check|compute|determine|estimate|find|forecast|get|"
+            r"predict|retrieve|search|show)\b",
+            text,
+        )
+    )
+
+
+def _dotted_namespace(name: str) -> str:
+    text = str(name or "")
+    if "." not in text:
+        return ""
+    namespace, _sep, _rest = text.partition(".")
+    return namespace.strip().lower()
+
+
+def _candidate_query_terms(query: str) -> set[str]:
+    text = str(query or "").strip().lower()
+    terms = {term for term in re.split(r"[^a-z0-9]+", text) if term}
+    singular_terms = {
+        term[:-1]
+        for term in terms
+        if len(term) > 3 and term.endswith("s") and not term.endswith("ss")
+    }
+    return terms | singular_terms
 
 
 def _chat(
@@ -680,10 +877,16 @@ def _chat_ollama(
 
 def _prepare_tools_for_model(
     raw_tools: list[dict[str, Any]],
+    *,
+    query: str = "",
+    preferred_equivalent_names: set[str] | None = None,
+    rank_hints: bool = False,
+    rank_by_name: dict[str, int] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, str]]:
     used_names: dict[str, str] = {}
     safe_to_original: dict[str, str] = {}
     model_tools: list[dict[str, Any]] = []
+    preferred_equivalent_names = preferred_equivalent_names or set()
     for raw_tool in raw_tools:
         original_name = str(raw_tool.get("name") or "")
         if not original_name:
@@ -695,12 +898,355 @@ def _prepare_tools_for_model(
                 "type": "function",
                 "function": {
                     "name": safe_name,
-                    "description": str(raw_tool.get("description") or ""),
-                    "parameters": _normalize_parameters(raw_tool.get("parameters") or {}),
+                    "description": _model_tool_description(
+                        raw_tool,
+                        rank_hints=rank_hints,
+                        rank=rank_by_name.get(original_name) if rank_by_name else None,
+                        preferred_equivalent=original_name in preferred_equivalent_names,
+                    ),
+                    "parameters": _normalize_parameters(
+                        raw_tool.get("parameters") or {},
+                        query=query,
+                    ),
                 },
             }
         )
     return model_tools, safe_to_original
+
+
+def _presented_raw_tools(
+    presented_tools: list[str],
+    *,
+    question_row: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    case_tools_by_name = _tools_by_name([question_row])
+    raw_tools: list[dict[str, Any]] = []
+    for name in presented_tools:
+        tool = case_tools_by_name.get(name) or tools_by_name.get(name)
+        if tool:
+            raw_tools.append(tool)
+    return raw_tools
+
+
+def _case_local_equivalence_priority_names(
+    presented_tools: list[str],
+    *,
+    question_row: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> set[str]:
+    case_tool_names = set(_case_tool_names(question_row))
+    presented_names = set(presented_tools)
+    candidates = case_tool_names & presented_names
+    if not candidates:
+        return set()
+
+    combined_tools = dict(tools_by_name)
+    combined_tools.update(_tools_by_name([question_row]))
+    priority_names: set[str] = set()
+    for group in build_tool_equivalence_groups(presented_tools, combined_tools):
+        members = set(group.get("members") or [])
+        case_members = members & candidates
+        if case_members and members - case_tool_names:
+            priority_names.update(case_members)
+    return priority_names
+
+
+def _prioritize_candidate_names(names: list[str], priority_names: set[str]) -> list[str]:
+    if not priority_names:
+        return list(names)
+    priority = [name for name in names if name in priority_names]
+    remaining = [name for name in names if name not in priority_names]
+    return priority + remaining
+
+
+def _suppress_non_priority_equivalent_names(
+    names: list[str],
+    priority_names: set[str],
+    *,
+    question_row: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[str]:
+    if not priority_names:
+        return list(names)
+
+    combined_tools = dict(tools_by_name)
+    combined_tools.update(_tools_by_name([question_row]))
+    suppressed: set[str] = set()
+    for group in build_tool_equivalence_groups(names, combined_tools):
+        members = set(group.get("members") or [])
+        if not members & priority_names:
+            continue
+        suppressed.update(members - priority_names)
+    return [name for name in names if name not in suppressed]
+
+
+_SUBSUMPTION_STOPWORDS = frozenset(
+    {
+        "and",
+        "also",
+        "encoded",
+        "for",
+        "from",
+        "get",
+        "human",
+        "interest",
+        "list",
+        "model",
+        "models",
+        "name",
+        "normal",
+        "of",
+        "public",
+        "rat",
+        "retrieve",
+        "retrive",
+        "set",
+        "the",
+        "their",
+        "true",
+        "with",
+    }
+)
+_SUBSUMPTION_FACET_GROUPS: dict[str, frozenset[str]] = {
+    "sequence": frozenset({"sequence"}),
+    "3d_model": frozenset({"3d", "model", "models", "structure", "structures"}),
+}
+_SUBSUMPTION_FACET_TERMS = frozenset(
+    term for terms in _SUBSUMPTION_FACET_GROUPS.values() for term in terms
+)
+
+
+def _suppress_subsumed_partial_tools(
+    names: list[str],
+    *,
+    query: str,
+    question_row: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Hide lower-level helpers when a richer case-local candidate covers the request."""
+    if len(names) < 2:
+        return list(names)
+
+    query_terms = _subsumption_terms(query)
+    query_facets = _covered_subsumption_facets(query_terms)
+    if len(query_facets) < 2:
+        return list(names)
+
+    combined_tools = dict(tools_by_name)
+    combined_tools.update(_tools_by_name([question_row]))
+    case_tool_names = set(_case_tool_names(question_row))
+    suppressed: set[str] = set()
+
+    tool_terms = {
+        name: _tool_subsumption_terms(name, combined_tools.get(name) or {}) for name in names
+    }
+    tool_facets = {
+        name: _covered_subsumption_facets(terms & query_terms) for name, terms in tool_terms.items()
+    }
+
+    for keeper in names:
+        if keeper in suppressed or keeper not in case_tool_names:
+            continue
+        for candidate in names:
+            if candidate == keeper or candidate in suppressed or candidate in case_tool_names:
+                continue
+            if _query_tool_subsumes(
+                keeper,
+                candidate,
+                query_terms=query_terms,
+                tool_terms=tool_terms,
+                tool_facets=tool_facets,
+            ):
+                suppressed.add(candidate)
+
+    if not suppressed:
+        return list(names)
+    return [name for name in names if name not in suppressed]
+
+
+def _query_tool_subsumes(
+    keeper: str,
+    candidate: str,
+    *,
+    query_terms: set[str],
+    tool_terms: dict[str, set[str]],
+    tool_facets: dict[str, set[str]],
+) -> bool:
+    keeper_facets = tool_facets.get(keeper, set())
+    candidate_facets = tool_facets.get(candidate, set())
+    if len(keeper_facets) < 2 or not candidate_facets or not candidate_facets < keeper_facets:
+        return False
+
+    keeper_matches = tool_terms.get(keeper, set()) & query_terms
+    candidate_matches = tool_terms.get(candidate, set()) & query_terms
+    if not candidate_matches:
+        return False
+    shared_topic_terms = (keeper_matches & candidate_matches) - _SUBSUMPTION_FACET_TERMS
+    shared_topic_terms -= _SUBSUMPTION_STOPWORDS
+    if not shared_topic_terms:
+        return False
+
+    missing_facets = keeper_facets - candidate_facets
+    return bool(missing_facets)
+
+
+def _covered_subsumption_facets(terms: set[str]) -> set[str]:
+    return {
+        facet for facet, facet_terms in _SUBSUMPTION_FACET_GROUPS.items() if terms & facet_terms
+    }
+
+
+def _tool_subsumption_terms(name: str, tool: dict[str, Any]) -> set[str]:
+    parts = [name, str(tool.get("name") or ""), str(tool.get("description") or "")]
+    params = tool.get("parameters") if isinstance(tool.get("parameters"), dict) else {}
+    properties = params.get("properties") if isinstance(params, dict) else {}
+    if isinstance(properties, dict):
+        for property_name, schema in properties.items():
+            parts.append(str(property_name))
+            if not isinstance(schema, dict):
+                continue
+            parts.append(str(schema.get("description") or ""))
+            enum_values = schema.get("enum")
+            if isinstance(enum_values, list):
+                parts.extend(str(value) for value in enum_values if value is not None)
+    return _subsumption_terms(" ".join(parts))
+
+
+def _subsumption_terms(text: str) -> set[str]:
+    return {
+        token
+        for token in BM25Scorer._tokenize(str(text or ""))  # noqa: SLF001
+        if token and (len(token) > 1 or token.isdigit()) and token not in _SUBSUMPTION_STOPWORDS
+    }
+
+
+_PRIMARY_ACTION_ALIASES: dict[str, frozenset[str]] = {
+    "analyze": frozenset({"analyse", "analyze", "analysis"}),
+    "assess": frozenset({"assess", "assesses", "assessment", "evaluate", "evaluates"}),
+    "calculate": frozenset({"calculate", "calculates", "computation", "compute", "computed"}),
+    "estimate": frozenset({"estimate", "estimates", "estimation"}),
+    "find": frozenset({"find", "finder", "locate", "lookup"}),
+    "forecast": frozenset({"forecast", "forecasts", "predict", "prediction"}),
+    "get": frozenset({"fetch", "get", "retrieve", "retrieves", "retrive"}),
+    "search": frozenset({"search", "searches"}),
+}
+_ACTION_ALIAS_LOOKUP = {
+    alias: action for action, aliases in _PRIMARY_ACTION_ALIASES.items() for alias in aliases
+}
+
+
+def _suppress_contextual_extra_tools(
+    names: list[str],
+    *,
+    query: str,
+    question_row: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Hide related background/action tools for single-action contextual queries."""
+    if len(names) < 2 or _looks_multi_intent(query):
+        return list(names)
+    if not _has_contextual_trailing_noun_phrase(query):
+        return list(names)
+
+    primary_action = _primary_query_action(query)
+    if not primary_action:
+        return list(names)
+
+    combined_tools = dict(tools_by_name)
+    combined_tools.update(_tools_by_name([question_row]))
+    tool_terms = {
+        name: _tool_subsumption_terms(name, combined_tools.get(name) or {}) for name in names
+    }
+    primary_candidates = [
+        name
+        for name in names
+        if _tool_supports_primary_action(tool_terms.get(name, set()), primary_action)
+    ]
+    if len(primary_candidates) != 1:
+        return list(names)
+
+    keeper = primary_candidates[0]
+    suppressed = {
+        name
+        for name in names
+        if name != keeper
+        and _looks_like_contextual_extra_tool(
+            tool_terms.get(name, set()),
+            query_terms=_subsumption_terms(query),
+            primary_action=primary_action,
+        )
+    }
+    if not suppressed:
+        return list(names)
+    return [name for name in names if name not in suppressed]
+
+
+def _primary_query_action(query: str) -> str:
+    text = str(query or "").strip().lower()
+    text = re.sub(r"^\s*(how\s+(?:do|can|to|would|should)\s+|please\s+|can\s+you\s+)", "", text)
+    tokens = [token for token in re.split(r"[^a-z0-9]+", text) if token]
+    for token in tokens[:8]:
+        action = _ACTION_ALIAS_LOOKUP.get(token)
+        if action:
+            return action
+    return ""
+
+
+def _has_contextual_trailing_noun_phrase(query: str) -> bool:
+    text = f" {str(query or '').lower()} "
+    return bool(
+        re.search(
+            r"\band\s+(?:their|its|his|her|the|possible|potential)\s+"
+            r"(impact|effect|effects|influence|risk|risks|outcome|outcomes)\b",
+            text,
+        )
+    )
+
+
+def _tool_supports_primary_action(terms: set[str], primary_action: str) -> bool:
+    aliases = _PRIMARY_ACTION_ALIASES.get(primary_action, frozenset())
+    return bool(terms & aliases)
+
+
+def _looks_like_contextual_extra_tool(
+    terms: set[str],
+    *,
+    query_terms: set[str],
+    primary_action: str,
+) -> bool:
+    if not terms:
+        return False
+    if _tool_supports_primary_action(terms, primary_action):
+        return False
+    if not ((terms & query_terms) - _SUBSUMPTION_STOPWORDS):
+        return False
+    tool_actions = {
+        action for term in terms if (action := _ACTION_ALIAS_LOOKUP.get(term)) is not None
+    }
+    return not tool_actions or bool(tool_actions - {primary_action})
+
+
+def _model_tool_description(
+    raw_tool: dict[str, Any],
+    *,
+    rank_hints: bool,
+    rank: int | None,
+    preferred_equivalent: bool = False,
+) -> str:
+    description = str(raw_tool.get("description") or "")
+    prefixes: list[str] = []
+    if preferred_equivalent:
+        prefixes.append(
+            "Case-local tool surface for this request. If an equivalent sibling "
+            "candidate is also present, prefer this exact function name."
+        )
+    if rank_hints and rank is not None:
+        prefixes.append(
+            f"Graph retrieval rank #{rank} for the current user query. "
+            "Prefer lower rank numbers when multiple tools look similar."
+        )
+    return " ".join([*prefixes, description]).strip()
 
 
 def _safe_tool_name(original_name: str, used_names: dict[str, str]) -> str:
@@ -722,7 +1268,7 @@ def _hash(value: str) -> str:
     return hashlib.sha1(value.encode()).hexdigest()[:8]  # noqa: S324
 
 
-def _normalize_parameters(schema: dict[str, Any]) -> dict[str, Any]:
+def _normalize_parameters(schema: dict[str, Any], *, query: str = "") -> dict[str, Any]:
     normalized = _normalize_schema(schema)
     normalized["type"] = "object"
     normalized.setdefault("properties", {})
@@ -730,6 +1276,7 @@ def _normalize_parameters(schema: dict[str, Any]) -> dict[str, Any]:
         name for name in normalized.get("required", []) if name in normalized["properties"]
     ]
     normalized.setdefault("additionalProperties", False)
+    _add_argument_value_hints(normalized, query=query)
     return normalized
 
 
@@ -785,6 +1332,182 @@ def _json_schema_type(value: Any) -> Any:
         "any": "string",
     }
     return mapping.get(str(value), "string")
+
+
+def _add_argument_value_hints(schema: dict[str, Any], *, query: str = "") -> None:
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        for name, child in properties.items():
+            if not isinstance(child, dict):
+                continue
+            _add_property_value_hint(str(name), child, query=query)
+            _add_argument_value_hints(child, query=query)
+
+    items = schema.get("items")
+    if isinstance(items, dict):
+        _add_argument_value_hints(items, query=query)
+
+
+def _add_property_value_hint(name: str, schema: dict[str, Any], *, query: str) -> None:
+    hints: list[str] = []
+    boolean_default = _boolean_default(schema)
+    if boolean_default is not None:
+        literal = "true" if boolean_default else "false"
+        opposite = "false" if boolean_default else "true"
+        hints.append(f"If the user does not explicitly request {opposite}, pass {literal}.")
+    if _json_schema_type(schema.get("type")) == "object":
+        schema.setdefault("additionalProperties", True)
+        hints.append(
+            "Pass a JSON object as this argument's value; keep nested fields inside "
+            "this argument, not as top-level arguments."
+        )
+    if _json_schema_type(schema.get("type")) == "array":
+        hints.append(
+            "If the user gives separate entity/time or item/value pairings for repeated "
+            "calls, include only the values for one pairing in this array for the current "
+            "tool call; emit another tool call for the next pairing."
+        )
+    symbolic_reference = _symbolic_argument_reference(name, query)
+    if symbolic_reference:
+        _prefer_symbolic_reference_value(schema)
+        hints.append(
+            f"The current user request sets this argument to {symbolic_reference}; "
+            f"pass exactly the string {json.dumps(symbolic_reference)} for this argument."
+        )
+    date_reference = _query_iso_date_reference(name, schema, query)
+    if date_reference:
+        hints.append(
+            f"The current user request refers to date {date_reference}; pass exactly "
+            f"{json.dumps(date_reference)} for this date argument, including when the "
+            "request later says the same date or same day."
+        )
+    if _looks_like_decimal_rate_field(name, schema):
+        hints.append(
+            "If the user writes a percentage such as 4%, pass the decimal fraction "
+            "0.04 unless this schema explicitly says to pass percent points."
+        )
+    if hints:
+        _append_description(schema, " ".join(hints))
+
+
+def _symbolic_argument_reference(name: str, query: str) -> str:
+    if not name or not query:
+        return ""
+    pattern = rf"(?<![A-Za-z0-9_]){re.escape(name)}\s*=\s*(data\s*\[[^\]]+\])"
+    match = re.search(pattern, query)
+    if not match:
+        return ""
+    return re.sub(r"\s+", "", match.group(1))
+
+
+def _prefer_symbolic_reference_value(schema: dict[str, Any]) -> None:
+    if _json_schema_type(schema.get("type")) in {"array", "object", "number", "integer"}:
+        schema["type"] = "string"
+        schema.pop("items", None)
+        schema.pop("properties", None)
+        schema.pop("additionalProperties", None)
+
+
+_MONTH_NUMBERS: dict[str, int] = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
+}
+
+
+def _query_iso_date_reference(name: str, schema: dict[str, Any], query: str) -> str:
+    if not query or not _looks_like_date_field(name, schema):
+        return ""
+
+    text = str(query or "")
+    iso_matches = re.findall(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", text)
+    if len(iso_matches) == 1:
+        year, month, day = (int(part) for part in iso_matches[0])
+        return _format_iso_date(year, month, day)
+
+    month_names = "|".join(sorted(_MONTH_NUMBERS, key=len, reverse=True))
+    month_matches = re.findall(
+        rf"\b({month_names})\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,)?\s+(\d{{4}})\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if len(month_matches) == 1:
+        month_name, day, year = month_matches[0]
+        return _format_iso_date(int(year), _MONTH_NUMBERS[month_name.lower()], int(day))
+    return ""
+
+
+def _looks_like_date_field(name: str, schema: dict[str, Any]) -> bool:
+    field_type = _json_schema_type(schema.get("type"))
+    if field_type != "string":
+        return False
+    tokens = {token for token in re.split(r"[^a-z0-9]+", str(name).lower()) if token}
+    description = str(schema.get("description") or "").lower()
+    return "date" in tokens or " date " in f" {description} " or "yyyy-mm-dd" in description
+
+
+def _format_iso_date(year: int, month: int, day: int) -> str:
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return ""
+    return f"{year:04d}-{month:02d}-{day:02d}"
+
+
+def _append_description(schema: dict[str, Any], hint: str) -> None:
+    description = str(schema.get("description") or "").strip()
+    if hint in description:
+        return
+    schema["description"] = f"{description} {hint}".strip()
+
+
+def _boolean_default(schema: dict[str, Any]) -> bool | None:
+    if _json_schema_type(schema.get("type")) != "boolean":
+        return None
+    default = schema.get("default")
+    if isinstance(default, bool):
+        return default
+    if isinstance(default, str) and default.lower() in {"true", "false"}:
+        return default.lower() == "true"
+    description = str(schema.get("description") or "")
+    match = re.search(r"\bdefault\s+(?:is|=|:)?\s*(true|false)\b", description, re.IGNORECASE)
+    if match:
+        return match.group(1).lower() == "true"
+    return None
+
+
+def _looks_like_decimal_rate_field(name: str, schema: dict[str, Any]) -> bool:
+    field_type = _json_schema_type(schema.get("type"))
+    if field_type not in {"number", "integer"}:
+        return False
+    tokens = {token for token in re.split(r"[^a-z0-9]+", name.lower()) if token}
+    if "rate" not in tokens:
+        return False
+    description = str(schema.get("description") or "").lower()
+    if any(marker in description for marker in ("percent point", "percentage point")):
+        return False
+    if re.search(r"\bin\s+(percent|percentage)\b|\bas\s+(a\s+)?percent(age)?\b", description):
+        return False
+    return True
 
 
 def _extract_predicted_calls(
@@ -908,6 +1631,261 @@ def _classify_failure(
     if official_error_type:
         return _classify_official_error_type(official_error_type)
     return "checker_mismatch"
+
+
+def _ensure_failure_tags(
+    row: BFCLModelCaseEvaluation,
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+) -> None:
+    if row.failure_tags:
+        return
+    row.failure_tags = _failure_tags(
+        expected_calls=row.expected_calls,
+        predicted_calls=row.predicted_calls,
+        tools_by_name=tools_by_name,
+        failure_category=row.failure_category,
+    )
+
+
+def _failure_tags(
+    *,
+    expected_calls: list[ExpectedToolCall],
+    predicted_calls: list[PredictedToolCall],
+    tools_by_name: dict[str, dict[str, Any]],
+    failure_category: str,
+) -> list[str]:
+    tags: list[str] = []
+    if failure_category == "candidate_ambiguity" and _has_equivalent_expected_and_predicted_tool(
+        expected_calls,
+        predicted_calls,
+        tools_by_name=tools_by_name,
+    ):
+        tags.append("near_duplicate_tool_surface")
+    if failure_category == "argument_value_mismatch":
+        tags.extend(_argument_failure_tags(expected_calls, predicted_calls))
+    return list(dict.fromkeys(tags))
+
+
+def _argument_failure_tags(
+    expected_calls: list[ExpectedToolCall],
+    predicted_calls: list[PredictedToolCall],
+) -> list[str]:
+    tags: list[str] = []
+    for expected, predicted in _paired_calls_by_name(expected_calls, predicted_calls):
+        unexpected_args = set(predicted.arguments) - set(expected.arguments)
+        if unexpected_args:
+            tags.append("unexpected_argument")
+
+        for arg_name, possible_values in expected.arguments.items():
+            if arg_name not in predicted.arguments:
+                if _structured_possible_values(possible_values):
+                    tags.append("structured_value_missing")
+                continue
+            value = predicted.arguments[arg_name]
+            if _value_matches(value, possible_values):
+                continue
+            if _allows_missing(possible_values):
+                tags.append("optional_value_mismatch")
+            if _structured_value_missing(value, possible_values):
+                tags.append("structured_value_missing")
+            if _percentage_scale_mismatch(value, possible_values):
+                tags.append("percentage_scale_mismatch")
+            if _data_reference_substitution(value, possible_values):
+                tags.append("data_reference_substitution")
+    return list(dict.fromkeys(tags))
+
+
+def _paired_calls_by_name(
+    expected_calls: list[ExpectedToolCall],
+    predicted_calls: list[PredictedToolCall],
+) -> list[tuple[ExpectedToolCall, PredictedToolCall]]:
+    pairs: list[tuple[ExpectedToolCall, PredictedToolCall]] = []
+    used: set[int] = set()
+    for expected in expected_calls:
+        for index, predicted in enumerate(predicted_calls):
+            if index in used or predicted.name != expected.name:
+                continue
+            pairs.append((expected, predicted))
+            used.add(index)
+            break
+    return pairs
+
+
+def _structured_possible_values(possible_values: list[Any]) -> bool:
+    return any(isinstance(value, dict) for value in possible_values)
+
+
+def _structured_value_missing(value: Any, possible_values: list[Any]) -> bool:
+    if not _structured_possible_values(possible_values):
+        return False
+    return value is None or value == "" or value == [] or value == {}
+
+
+def _percentage_scale_mismatch(value: Any, possible_values: list[Any]) -> bool:
+    numeric = _coerce_number(value)
+    if numeric is None:
+        return False
+    for possible in possible_values:
+        expected = _coerce_number(possible)
+        if expected is None or expected == 0:
+            continue
+        if _numbers_close(numeric, expected * 100) or _numbers_close(numeric * 100, expected):
+            return True
+    return False
+
+
+def _data_reference_substitution(value: Any, possible_values: list[Any]) -> bool:
+    if not isinstance(value, list | dict):
+        return False
+    return any(_looks_like_data_reference(possible) for possible in possible_values)
+
+
+def _looks_like_data_reference(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    return bool(re.search(r"\bdata\s*\[[^\]]+\]", value))
+
+
+def _coerce_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def _numbers_close(left: float, right: float) -> bool:
+    return abs(left - right) <= max(1e-9, abs(right) * 1e-9)
+
+
+def _equivalence_adjusted_exact_match(
+    expected_calls: list[ExpectedToolCall],
+    predicted_calls: list[PredictedToolCall],
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+    category: str,
+    strict_exact_match: float,
+) -> float:
+    """Return exact-match credit after high-confidence equivalent tool surfaces.
+
+    BFCL contains near-duplicate tools whose names differ while their function
+    surface is effectively identical. This metric keeps the strict BFCL-style
+    exact score intact, but also reports whether a miss is semantically the same
+    tool surface with matching argument values.
+    """
+
+    if strict_exact_match == 1.0:
+        return 1.0
+    if len(expected_calls) != len(predicted_calls):
+        return 0.0
+
+    if "parallel" in category:
+        used: set[int] = set()
+        for expected in expected_calls:
+            matched = False
+            for index, predicted in enumerate(predicted_calls):
+                if index in used:
+                    continue
+                if _equivalent_call_matches(expected, predicted, tools_by_name=tools_by_name):
+                    used.add(index)
+                    matched = True
+                    break
+            if not matched:
+                return 0.0
+        return 1.0
+
+    return float(
+        all(
+            _equivalent_call_matches(expected, predicted, tools_by_name=tools_by_name)
+            for expected, predicted in zip(expected_calls, predicted_calls, strict=True)
+        )
+    )
+
+
+def _equivalent_call_matches(
+    expected: ExpectedToolCall,
+    predicted: PredictedToolCall,
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+) -> bool:
+    if expected.name == predicted.name:
+        return _single_call_matches(expected, predicted)
+    if not _tool_names_are_equivalent(expected.name, predicted.name, tools_by_name=tools_by_name):
+        return False
+    return _semantic_argument_values_match(expected, predicted)
+
+
+def _tool_names_are_equivalent(
+    left: str,
+    right: str,
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+) -> bool:
+    groups = build_tool_equivalence_groups([left, right], tools_by_name)
+    return any({left, right}.issubset(set(group.get("members") or [])) for group in groups)
+
+
+def _semantic_argument_values_match(
+    expected: ExpectedToolCall,
+    predicted: PredictedToolCall,
+) -> bool:
+    predicted_values = list(predicted.arguments.values())
+    used: set[int] = set()
+
+    for possible_values in expected.arguments.values():
+        if _allows_missing(possible_values):
+            continue
+        index = _find_matching_argument_value(predicted_values, possible_values, used)
+        if index is None:
+            return False
+        used.add(index)
+
+    for possible_values in expected.arguments.values():
+        if not _allows_missing(possible_values):
+            continue
+        index = _find_matching_argument_value(predicted_values, possible_values, used)
+        if index is not None:
+            used.add(index)
+
+    return len(used) == len(predicted_values)
+
+
+def _find_matching_argument_value(
+    values: list[Any],
+    possible_values: list[Any],
+    used: set[int],
+) -> int | None:
+    for index, value in enumerate(values):
+        if index in used:
+            continue
+        if _value_matches(value, possible_values):
+            return index
+    return None
+
+
+def _has_equivalent_expected_and_predicted_tool(
+    expected_calls: list[ExpectedToolCall],
+    predicted_calls: list[PredictedToolCall],
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+) -> bool:
+    expected_names = {call.name for call in expected_calls}
+    predicted_names = {call.name for call in predicted_calls}
+    equivalence_groups = build_tool_equivalence_groups(
+        sorted(expected_names | predicted_names),
+        tools_by_name,
+    )
+    for group in equivalence_groups:
+        members = set(group.get("members") or [])
+        for expected_name in expected_names - predicted_names:
+            if expected_name not in members:
+                continue
+            if any(
+                predicted_name in members for predicted_name in predicted_names - expected_names
+            ):
+                return True
+    return False
 
 
 def _classify_official_error_type(error_type: str) -> str:
@@ -1167,8 +2145,35 @@ def _allows_missing(possible_values: list[Any]) -> bool:
 
 
 def _value_matches(value: Any, possible_values: list[Any]) -> bool:
-    normalized_value = _normalize_value(value)
-    return any(normalized_value == _normalize_value(possible) for possible in possible_values)
+    return any(_possible_value_matches(value, possible) for possible in possible_values)
+
+
+def _possible_value_matches(value: Any, possible: Any) -> bool:
+    if isinstance(possible, dict):
+        return _dict_possible_value_matches(value, possible)
+    return _normalize_value(value) == _normalize_value(possible)
+
+
+def _dict_possible_value_matches(value: Any, possible: dict[str, Any]) -> bool:
+    if not isinstance(value, dict):
+        return False
+
+    possible_keys = {str(key) for key in possible}
+    value_keys = {str(key) for key in value}
+    if value_keys - possible_keys:
+        return False
+
+    value_by_key = {str(key): item for key, item in value.items()}
+    for key, nested_possible in possible.items():
+        name = str(key)
+        nested_values = nested_possible if isinstance(nested_possible, list) else [nested_possible]
+        if name not in value_by_key:
+            if _allows_missing(nested_values):
+                continue
+            return False
+        if not _value_matches(value_by_key[name], nested_values):
+            return False
+    return True
 
 
 def _normalize_value(value: Any) -> Any:
@@ -1220,6 +2225,9 @@ def _case_cache_path(
     timeout: int,
     disable_thinking: bool,
     cache_namespace: str,
+    retrieval_rank_hints: bool,
+    candidate_selection_guidance: bool,
+    cohesive_namespace_candidates: bool,
 ) -> Path | None:
     if cache_dir is None:
         return None
@@ -1240,6 +2248,9 @@ def _case_cache_path(
         "official_model_name": official_model_name if evaluator == "official" else "",
         "timeout": timeout,
         "disable_thinking": disable_thinking,
+        "retrieval_rank_hints": retrieval_rank_hints,
+        "candidate_selection_guidance": candidate_selection_guidance,
+        "cohesive_namespace_candidates": cohesive_namespace_candidates,
     }
     key = hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]  # noqa: S324
     safe_case_id = re.sub(r"[^a-zA-Z0-9_.-]", "_", case_id)
@@ -1276,6 +2287,11 @@ def _case_from_dict(payload: dict[str, Any]) -> BFCLModelCaseEvaluation:
     data.setdefault("failure_category", "pass" if data.get("evaluator_exact_match") == 1.0 else "")
     data.setdefault("official_error_type", "")
     data.setdefault("official_error", "")
+    data.setdefault("failure_tags", [])
+    data.setdefault(
+        "equivalence_adjusted_exact_match",
+        float(data.get("evaluator_exact_match") or 0.0),
+    )
     return BFCLModelCaseEvaluation(**data)
 
 
@@ -1295,10 +2311,22 @@ def _summarize(
         "strict_exact_match": _mean(row.strict_exact_match for row in rows),
         "official_ast_exact_match": _mean(row.official_ast_exact_match for row in rows),
         "evaluator_exact_match": _mean(row.evaluator_exact_match for row in rows),
+        "equivalence_adjusted_exact_match": _mean(
+            row.equivalence_adjusted_exact_match for row in rows
+        ),
+        "equivalence_adjusted_exact_gain": _mean(
+            row.equivalence_adjusted_exact_match - row.evaluator_exact_match for row in rows
+        ),
+        "equivalence_adjusted_exact_case_count": sum(
+            int(row.equivalence_adjusted_exact_match > row.evaluator_exact_match) for row in rows
+        ),
         "avg_input_tokens": round(_mean(row.input_tokens for row in rows), 1),
         "avg_output_tokens": round(_mean(row.output_tokens for row in rows), 1),
         "avg_latency_ms": round(_mean(row.latency_ms for row in rows), 1),
         "failure_breakdown": dict(sorted(Counter(row.failure_category for row in rows).items())),
+        "failure_tag_breakdown": dict(
+            sorted(Counter(tag for row in rows for tag in row.failure_tags).items())
+        ),
     }
     summary["status"] = "pass" if summary["evaluator_exact_match"] >= min_exact_match else "fail"
     return summary
@@ -1347,7 +2375,11 @@ def bfcl_result_rows(
                         "retrieved": list(case.get("retrieved") or []),
                         "tools_presented": list(case.get("tools_presented") or []),
                         "failure_category": str(case.get("failure_category") or ""),
+                        "failure_tags": list(case.get("failure_tags") or []),
                         "evaluator_exact_match": float(case.get("evaluator_exact_match") or 0.0),
+                        "equivalence_adjusted_exact_match": float(
+                            case.get("equivalence_adjusted_exact_match") or 0.0
+                        ),
                     },
                 }
             )
@@ -1411,6 +2443,7 @@ def print_report(report: dict[str, Any]) -> None:
         "retrieval@K={retrieval:.2f} call_rate={call:.2f} "
         "func_exact={func:.2f} arg_names={arg_names:.2f} "
         "arg_values={arg_values:.2f} strict={strict:.2f} exact={exact:.2f} "
+        "equiv_exact={equiv_exact:.2f} "
         "latency={latency:.1f}ms".format(
             retrieval=summary["retrieval_recall_at_k"],
             call=summary["model_tool_call_rate"],
@@ -1419,6 +2452,7 @@ def print_report(report: dict[str, Any]) -> None:
             arg_values=summary["argument_value_exact_match"],
             strict=summary["strict_exact_match"],
             exact=summary["evaluator_exact_match"],
+            equiv_exact=summary["equivalence_adjusted_exact_match"],
             latency=summary["avg_latency_ms"],
         )
     )
@@ -1426,17 +2460,23 @@ def print_report(report: dict[str, Any]) -> None:
     if breakdown:
         formatted = ", ".join(f"{name}={count}" for name, count in breakdown.items())
         print(f"failure_breakdown: {formatted}")
+    tag_breakdown = summary.get("failure_tag_breakdown") or {}
+    if tag_breakdown:
+        formatted = ", ".join(f"{name}={count}" for name, count in tag_breakdown.items())
+        print(f"failure_tag_breakdown: {formatted}")
     for category in report["categories"]:
         cat = category["summary"]
         print(
             "  {name}: cases={cases} tools={tools} retrieval@K={retrieval:.2f} "
-            "strict={strict:.2f} exact={exact:.2f} call_rate={call:.2f} failures={failures}".format(
+            "strict={strict:.2f} exact={exact:.2f} equiv_exact={equiv_exact:.2f} "
+            "call_rate={call:.2f} failures={failures}".format(
                 name=category["category"],
                 cases=category["case_count"],
                 tools=category["corpus_tool_count"],
                 retrieval=cat["retrieval_recall_at_k"],
                 strict=cat["strict_exact_match"],
                 exact=cat["evaluator_exact_match"],
+                equiv_exact=cat["equivalence_adjusted_exact_match"],
                 call=cat["model_tool_call_rate"],
                 failures=_format_failure_breakdown(cat.get("failure_breakdown") or {}),
             )
@@ -1500,6 +2540,31 @@ def main(argv: list[str] | None = None) -> int:
         "--disable-thinking",
         action="store_true",
         help="Pass chat-template thinking disable options for Qwen/vLLM-style reasoning models.",
+    )
+    parser.add_argument(
+        "--retrieval-rank-hints",
+        action="store_true",
+        help=(
+            "For retrieved tool-source runs, prefix tool descriptions with graph retrieval rank "
+            "hints. Use as an ablation for candidate ambiguity."
+        ),
+    )
+    parser.add_argument(
+        "--candidate-selection-guidance",
+        action="store_true",
+        help=(
+            "Add deterministic candidate-selection guidance to the system prompt. "
+            "Use as an ablation for call-count mismatch and sibling ambiguity."
+        ),
+    )
+    parser.add_argument(
+        "--cohesive-namespace-candidates",
+        action="store_true",
+        help=(
+            "For retrieved multi-action queries, present only candidate tools from dotted "
+            "namespaces that contribute at least two retrieved tools. Use as an ablation for "
+            "sibling ambiguity."
+        ),
     )
     parser.add_argument(
         "--concurrency",
@@ -1566,6 +2631,9 @@ def main(argv: list[str] | None = None) -> int:
             concurrency=args.concurrency,
             progress=args.progress,
             progress_every=args.progress_every,
+            retrieval_rank_hints=args.retrieval_rank_hints,
+            candidate_selection_guidance=args.candidate_selection_guidance,
+            cohesive_namespace_candidates=args.cohesive_namespace_candidates,
         )
     except ImportError as exc:
         parser.error(str(exc))

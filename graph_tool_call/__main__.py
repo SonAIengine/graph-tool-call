@@ -92,6 +92,71 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    # --- build-openapi-collection ---
+    p_build_collection = sub.add_parser(
+        "build-openapi-collection",
+        help="Build a storage-ready OpenAPI collection graph artifact",
+    )
+    p_build_collection.add_argument(
+        "source",
+        help="OpenAPI spec URL, Swagger UI URL, or file path",
+    )
+    p_build_collection.add_argument(
+        "-o",
+        "--output",
+        default="collection.json",
+        help="Output artifact path, or '-' for stdout",
+    )
+    p_build_collection.add_argument("--required-only", action="store_true")
+    p_build_collection.add_argument("--include-deprecated", action="store_true")
+    p_build_collection.add_argument(
+        "--allow-private-hosts",
+        action="store_true",
+        help="Allow localhost/private IP URLs for remote spec loading",
+    )
+    p_build_collection.add_argument(
+        "--no-promote-contract-signals",
+        action="store_true",
+        help="Do not promote selected IO contract fields into graphify signals",
+    )
+    p_build_collection.add_argument(
+        "--context-field",
+        action="append",
+        dest="context_fields",
+        default=[],
+        help="Field name to classify as context (repeatable or comma-separated)",
+    )
+    p_build_collection.add_argument(
+        "--paging-field",
+        action="append",
+        dest="paging_fields",
+        default=[],
+        help="Field name to classify as context paging (repeatable or comma-separated)",
+    )
+    p_build_collection.add_argument(
+        "--search-filter-field",
+        action="append",
+        dest="search_filter_fields",
+        default=[],
+        help=(
+            "Field name to classify as optional search/filter data (repeatable or comma-separated)"
+        ),
+    )
+    p_build_collection.add_argument(
+        "--auth-field",
+        action="append",
+        dest="auth_fields",
+        default=[],
+        help="Field name to classify as auth (repeatable or comma-separated)",
+    )
+    p_build_collection.add_argument(
+        "--user-input-field",
+        action="append",
+        dest="user_input_fields",
+        default=[],
+        help="Field name to keep as user-provided data (repeatable or comma-separated)",
+    )
+
     # --- search (one-liner: ingest + retrieve) ---
     p_search = sub.add_parser("search", help="Search tools from source (no pre-build needed)")
     p_search.add_argument("query", help="Search query")
@@ -463,6 +528,43 @@ def cmd_inspect_openapi(args: argparse.Namespace) -> None:
         print(f"  - {recommendation}")
 
 
+def cmd_build_openapi_collection(args: argparse.Namespace) -> None:
+    from pathlib import Path
+
+    from graph_tool_call.graphify import build_openapi_collection_artifact
+
+    artifact = build_openapi_collection_artifact(
+        args.source,
+        required_only=args.required_only,
+        skip_deprecated=not args.include_deprecated,
+        allow_private_hosts=args.allow_private_hosts,
+        promote_contract_signals=not args.no_promote_contract_signals,
+        context_field_names=_split_option_values(args.context_fields),
+        paging_field_names=_split_option_values(args.paging_fields),
+        search_filter_field_names=_split_option_values(args.search_filter_fields),
+        auth_field_names=_split_option_values(args.auth_fields),
+        user_input_field_names=_split_option_values(args.user_input_fields),
+    )
+    rendered = json.dumps(artifact, indent=2, ensure_ascii=False, default=str)
+    if args.output == "-":
+        print(rendered)
+        return
+
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(rendered, encoding="utf-8")
+    summary = artifact.get("readiness_report", {}).get("summary", {})
+    graph = artifact.get("graph", {})
+    edges = graph.get("edges") if isinstance(graph, dict) else []
+    print(
+        "Built OpenAPI collection: "
+        f"{summary.get('status', 'unknown')} "
+        f"({summary.get('readiness_score', '?')}/100), "
+        f"{len(artifact.get('tools') or {})} tools, {len(edges or [])} edges"
+    )
+    print(f"Saved to {output}")
+
+
 def _load_source(
     source: str,
     *,
@@ -742,6 +844,7 @@ def main() -> None:
         "ingest": cmd_ingest,
         "analyze": cmd_analyze,
         "inspect-openapi": cmd_inspect_openapi,
+        "build-openapi-collection": cmd_build_openapi_collection,
         "search": cmd_search,
         "retrieve": cmd_retrieve,
         "visualize": cmd_visualize,

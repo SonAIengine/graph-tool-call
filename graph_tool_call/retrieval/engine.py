@@ -14,6 +14,57 @@ from graph_tool_call.ontology.schema import NodeType, RelationType
 from graph_tool_call.retrieval.graph_search import GraphSearcher
 from graph_tool_call.retrieval.keyword import BM25Scorer
 
+_CLAUSE_ACTION_PATTERN = re.compile(
+    r"\b("
+    r"find|get|retrieve|search|calculate|compute|convert|make|create|return|fit|"
+    r"book|check|estimate|determine|identify|generate|translate|summarize|compare|"
+    r"recommend|provide|fetch|order|rent(?:ing)?|stay(?:ing)?|fly(?:ing)?|visit|"
+    r"plot|perform|run|solve|predict|analy[sz]e|mix|divide|tell|know|need|want|"
+    r"curious|interested|like|help"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+_CLAUSE_QUESTION_PATTERN = re.compile(
+    r"(?:^|[.!?]\s*)\b(what|when|where|who|which)\b|"
+    r"\bhow\s+(?:many|much|long|tall|far)\b",
+    flags=re.IGNORECASE,
+)
+_CLAUSE_SIGNATURE_STOPWORDS = frozenset(
+    {
+        "about",
+        "api",
+        "between",
+        "calculate",
+        "compute",
+        "could",
+        "fetch",
+        "find",
+        "first",
+        "fourth",
+        "function",
+        "geometry",
+        "get",
+        "help",
+        "know",
+        "math",
+        "need",
+        "please",
+        "provide",
+        "retrieve",
+        "search",
+        "second",
+        "service",
+        "specific",
+        "tell",
+        "third",
+        "tool",
+        "using",
+        "want",
+        "with",
+        "would",
+    }
+)
+
 
 class SearchMode(str, Enum):
     """Retrieval search modes."""
@@ -331,7 +382,7 @@ class RetrievalEngine:
         # Post-fusion boosts
         self._boost_name_overlap(query, final_scores)
         self._boost_semantic_phrase_matches(query, final_scores)
-        self._inject_clause_candidates(final_scores, clause_scores, top_k)
+        self._inject_clause_candidates(final_scores, clause_scores, top_k, query=query)
         self._boost_method_intent(query_intent, final_scores)
         self._boost_embedding_rerank(query, final_scores)
         if history:
@@ -382,11 +433,14 @@ class RetrievalEngine:
 
         bm25 = self._get_bm25()
         merged: dict[str, float] = {}
+        clause_candidate_depth = 5 if len(clauses) >= 3 else 3
         for clause in clauses[:8]:
             scores = bm25.score(clause)
             if not scores:
                 scores = self._keyword_match(clause)
-            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]
+            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[
+                :clause_candidate_depth
+            ]
             if not ranked:
                 continue
             top_clause_score = ranked[0][1]
@@ -417,11 +471,35 @@ class RetrievalEngine:
             flags=re.IGNORECASE,
         )
         marked = marker_pattern.sub(".", text)
-        parts = re.split(r"[.;?!]\s+|\n+", marked)
+        initial_parts = RetrievalEngine._split_query_clause_parts(marked)
+        if len(initial_parts) < 4:
+            marked = re.sub(
+                r"\s+(?:and|plus)\s+(?="
+                r"(?:please\s+)?"
+                r"(?:find|get|retrieve|search|calculate|compute|convert|make|create|"
+                r"return|fit|book|check|estimate|determine|identify|generate|"
+                r"translate|summarize|compare|recommend|use)\b"
+                r")",
+                ". ",
+                marked,
+                flags=re.IGNORECASE,
+            )
+        parts = RetrievalEngine._split_query_clause_parts(marked)
+        return RetrievalEngine._dedupe_query_clauses(parts)
+
+    @staticmethod
+    def _split_query_clause_parts(text: str) -> list[str]:
+        """Split clause text on sentence-like separators without filtering."""
+        parts = re.split(r"[.;?!]\s+|\n+", text)
+        return [part.strip(" \t\r\n'\"`[]{}().,;:!?") for part in parts]
+
+    @staticmethod
+    def _dedupe_query_clauses(parts: list[str]) -> list[str]:
+        """Filter tiny/duplicate clause fragments while preserving order."""
         clauses: list[str] = []
         seen: set[str] = set()
         for part in parts:
-            clause = part.strip(" \t\r\n'\"`[]{}()")
+            clause = part.strip(" \t\r\n'\"`[]{}().,;:!?")
             if not clause:
                 continue
             token_count = len(re.findall(r"[a-zA-Z0-9가-힣]+", clause))
@@ -653,6 +731,9 @@ class RetrievalEngine:
                 scores[name] *= 1.5
             if "fibonacci series" in q and ("sequence" in tool_text or "series" in tool_text):
                 scores[name] *= 1.25
+            korean_multiplier = BM25Scorer._semantic_phrase_multiplier(query, name, tool)
+            if korean_multiplier > 1.0:
+                scores[name] *= min(korean_multiplier, 1.5)
 
     def _inject_graph_candidates(
         self,
@@ -707,6 +788,8 @@ class RetrievalEngine:
         final_scores: dict[str, float],
         clause_scores: dict[str, float],
         top_k: int,
+        *,
+        query: str = "",
     ) -> None:
         """Keep top explicit sub-intent matches near the final top-K boundary."""
         if not clause_scores or not final_scores:
@@ -723,14 +806,82 @@ class RetrievalEngine:
         if boundary_score <= 0 or top_clause_score <= 0:
             return
 
-        max_inject = max(3, min(top_k, len(ranked_clause)))
-        floor = boundary_score * 1.05
+        if self._has_diverse_actionable_clauses(query):
+            max_inject = max(3, min(top_k * 2, len(ranked_clause)))
+            floor = boundary_score * 1.08
+            min_relative_score = 0.10
+            min_norm_score = 0.75
+        else:
+            max_inject = max(3, min(top_k, len(ranked_clause)))
+            floor = boundary_score * 1.05
+            min_relative_score = 0.18
+            min_norm_score = 0.6
+
         for name, score in ranked_clause[:max_inject]:
-            if name not in self._tools or score < top_clause_score * 0.25:
+            if name not in self._tools or score < top_clause_score * min_relative_score:
                 continue
             norm_score = score / top_clause_score
-            candidate_score = floor * max(norm_score, 0.6)
+            candidate_score = floor * max(norm_score, min_norm_score)
             final_scores[name] = max(final_scores.get(name, 0.0), candidate_score)
+
+    def _has_diverse_actionable_clauses(self, query: str) -> bool:
+        """Return true when a long request clearly contains varied sub-tasks.
+
+        Clause boosting is useful when each clause represents a different
+        requested tool. It is noisy for story/background clauses or repeated
+        arguments for a single task, so the stronger path is gated by
+        actionable clause count plus diverse top-candidate signatures.
+        """
+        clauses = [
+            clause
+            for clause in self._split_query_clauses(query)
+            if self._is_actionable_clause(clause)
+        ]
+        if len(clauses) < 3:
+            return False
+
+        signatures: list[frozenset[str]] = []
+        bm25 = self._get_bm25()
+        for clause in clauses[:8]:
+            scores = bm25.score(clause)
+            if not scores:
+                scores = self._keyword_match(clause)
+            for name, _score in sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]:
+                if name not in self._tools:
+                    continue
+                signatures.append(self._tool_signature(name))
+                break
+
+        distinct: list[frozenset[str]] = []
+        for signature in signatures:
+            if not signature:
+                continue
+            if all(self._signature_similarity(signature, known) < 0.5 for known in distinct):
+                distinct.append(signature)
+        return len(distinct) >= 3
+
+    @staticmethod
+    def _is_actionable_clause(clause: str) -> bool:
+        """Detect clauses that look like requested actions, not background."""
+        return bool(
+            _CLAUSE_ACTION_PATTERN.search(clause) or _CLAUSE_QUESTION_PATTERN.search(clause)
+        )
+
+    @staticmethod
+    def _tool_signature(tool_name: str) -> frozenset[str]:
+        """Compact resource-ish signature for clause diversity gating."""
+        tokens = [
+            token
+            for token in re.split(r"[._\-\s]+", tool_name.lower())
+            if token and token not in _CLAUSE_SIGNATURE_STOPWORDS
+        ]
+        return frozenset(tokens[:2] or tokens or [tool_name.lower()])
+
+    @staticmethod
+    def _signature_similarity(left: frozenset[str], right: frozenset[str]) -> float:
+        if not left or not right:
+            return 0.0
+        return len(left & right) / len(left | right)
 
     def _boost_method_intent(self, query_intent: Any, scores: dict[str, float]) -> None:
         """Boost scores based on HTTP method-intent alignment."""

@@ -40,26 +40,93 @@ def extract_failure_cases(
             if categories is not None and category_name not in categories:
                 continue
             for case in category.get("cases") or []:
-                failure = str(case.get("failure_category") or "")
+                failure = _failure_category(case)
                 if not failure or failure == "pass":
                     continue
                 if failure_categories is not None and failure not in failure_categories:
                     continue
                 case_id = str(case.get("case_id") or case.get("id") or "")
                 if not case_id or case_id in selected:
+                    if case_id in selected:
+                        _merge_failure_tags(selected[case_id], _failure_tags(case))
                     continue
-                selected[case_id] = {
+                row = {
                     "case_id": case_id,
                     "category": category_name,
                     "failure_category": failure,
                     "tool_source": run_tool_source,
                     "top_k": run_top_k,
-                    "retrieval_recall_at_k": case.get("retrieval_recall_at_k"),
+                    "retrieval_recall_at_k": _retrieval_recall(case),
                     "evaluator_exact_match": case.get("evaluator_exact_match"),
                 }
+                tags = _failure_tags(case)
+                if tags:
+                    row["failure_tags"] = tags
+                selected[case_id] = row
                 if limit is not None and len(selected) >= max(0, limit):
                     return list(selected.values())
     return list(selected.values())
+
+
+def _failure_category(case: dict[str, Any]) -> str:
+    explicit = str(case.get("failure_category") or "")
+    if explicit:
+        return explicit
+
+    recall = _retrieval_recall(case)
+    if recall is not None and recall < 1.0:
+        return "retrieval_miss"
+    all_found = case.get("all_tools_found_at_5")
+    if all_found is not None:
+        try:
+            if float(all_found) < 1.0:
+                return "retrieval_miss"
+        except (TypeError, ValueError):
+            pass
+    missing = case.get("missing_at_k")
+    if isinstance(missing, list) and missing:
+        return "retrieval_miss"
+    return "pass"
+
+
+def _retrieval_recall(case: dict[str, Any]) -> float | None:
+    for key in ("retrieval_recall_at_k", "recall_at_5", "recall_at_3", "recall_at_1"):
+        value = case.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _failure_tags(case: dict[str, Any]) -> list[str]:
+    values = case.get("failure_tags")
+    if not isinstance(values, list):
+        return []
+    tags: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        tag = str(value).strip()
+        if not tag or tag in seen:
+            continue
+        seen.add(tag)
+        tags.append(tag)
+    return tags
+
+
+def _merge_failure_tags(row: dict[str, Any], tags: list[str]) -> None:
+    if not tags:
+        return
+    merged = _failure_tags(row)
+    seen = set(merged)
+    for tag in tags:
+        if tag in seen:
+            continue
+        seen.add(tag)
+        merged.append(tag)
+    row["failure_tags"] = merged
 
 
 def _iter_reports(report: dict[str, Any]) -> list[dict[str, Any]]:

@@ -310,6 +310,7 @@ graph-tool-call inspect-openapi openapi.json --json
 
 Adapters such as XGEN should pass product-specific context/paging/search field
 names as options instead of hard-coding them in `graph-tool-call`.
+
 - branch-local missing fields are reported as `source=request_body_branch` when
   the caller supplied a discriminator value that selects that branch
 - explicit JSON body `None` values are treated as present body fields; nullable
@@ -388,6 +389,126 @@ BM25 still indexes parameter descriptions and curated/indexable field metadata,
 including aliases and enum values. This lets example-derived object parameters
 such as `filters` match field-level queries like `brandNo` / "브랜드번호"
 without turning every raw contract leaf into a search token.
+
+### OpenAPI Collection Build Artifact
+
+For API Collection builders that need one persisted object, use
+`build_openapi_collection_artifact`. It accepts a raw spec dict, a file path, a
+direct OpenAPI URL, a Swagger UI URL, or a sequence of those sources. The result
+keeps the normal `ToolGraph` JSON shape and adds readiness/provenance fields, so
+it can be stored by product code and still loaded by `ToolGraph.load()`.
+
+```python
+from graph_tool_call.graphify import build_openapi_collection_artifact
+
+artifact = build_openapi_collection_artifact(
+    "https://api.example.com/swagger-ui/index.html",
+    allow_private_hosts=True,
+    context_field_names={"siteNo", "tenantId"},
+    paging_field_names={"pageNo", "pageSize"},
+    search_filter_field_names={"keyword", "searchWord"},
+    promote_contract_signals=True,
+)
+```
+
+The artifact includes:
+
+- `graph`, `tools`, `metadata`: compatible with `ToolGraph.load()`
+- `graph_tool_call_version`, `collection_graph_version`, `enrichment_status`
+- `readiness_report`: deterministic `OpenAPICollectionReport.to_dict()`
+- `source_snapshot_manifest`: source labels, operation counts, and canonical
+  JSON sha256 values
+- `ingest_summary`: total/registered/duplicate tool counts
+- `edge_stats`: graphify edge and contract-promotion statistics
+
+The CLI equivalent is:
+
+```bash
+graph-tool-call build-openapi-collection openapi.json -o collection.json
+```
+
+Use `build_candidate_set()` when an adapter has a target-selection step. The
+retrieved top-K stays visible as target candidates, while producer expansion is
+scoped to the selected target:
+
+```python
+from graph_tool_call.graphify import build_candidate_set, retrieve_graphify
+
+retrieval = retrieve_graphify(tg, "상품 sku 재고 수량 확인", top_k=5, include_evidence=True)
+target_candidates = [row["name"] for row in retrieval["results"]]
+selected_target = target_candidates[0]
+candidate_set = build_candidate_set(
+    target_candidates,
+    graph_payload["tools"],
+    expansion_seed=[selected_target],
+    max_hops=2,
+)
+
+assert candidate_set["target_candidates"] == target_candidates
+assert selected_target in candidate_set["expansion_seed"]
+```
+
+When near-duplicate target tools crowd the target surface, pass
+`max_targets_per_group` to cap siblings by `primary_resource` +
+`canonical_action`. This is opt-in; the returned report keeps the raw target
+list and the suppressed sibling evidence:
+
+```python
+candidate_set = build_candidate_set(
+    target_candidates,
+    graph_payload["tools"],
+    expansion_seed=[selected_target],
+    max_targets_per_group=2,
+)
+
+suppressed = candidate_set["suppressed_target_candidates"]
+groups = candidate_set["target_candidate_groups"]
+```
+
+For multi-intent queries where the adapter is trimming a larger target surface
+down to a smaller LLM-visible budget, add `diversify_target_groups=True`.
+Selection then round-robins across target groups before taking a second sibling
+from the same group:
+
+```python
+candidate_set = build_candidate_set(
+    target_candidates,
+    graph_payload["tools"],
+    max_target_candidates=5,
+    diversify_target_groups=True,
+)
+```
+
+When the adapter has deterministic intent evidence, pass
+`target_action_priority` to rerank target candidates before trimming or
+diversity selection. The returned `target_rank_signals` keeps original rank,
+reranked rank, action priority, group key, and selected/suppressed flags:
+
+```python
+from graph_tool_call.graphify import target_action_priority_for_query
+
+priority = target_action_priority_for_query("상품 리뷰 작성")
+candidate_set = build_candidate_set(
+    target_candidates,
+    graph_payload["tools"],
+    target_action_priority=priority,
+    max_target_candidates=5,
+)
+
+signals = candidate_set["target_rank_signals"]
+```
+
+`build_candidate_set()` also returns `target_equivalence_groups`, an
+evidence-only list of high-confidence near-duplicate target surfaces. It does
+not merge, suppress, or rerank tools. Use `build_tool_equivalence_groups()`
+directly when an adapter wants duplicate/equivalence evidence for an arbitrary
+candidate surface:
+
+```python
+from graph_tool_call.graphify import build_tool_equivalence_groups
+
+groups = build_tool_equivalence_groups(target_candidates, graph_payload["tools"])
+```
 
 ---
 

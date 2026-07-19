@@ -5,6 +5,14 @@
   "thresholds": {
     "case_hit_at_k": 1.0,
     "expected_tool_recall_at_k": 0.85,
+    "target_selector_exact_at_k": 0.85,
+    "avg_required_input_coverage": 0.85,
+    "avg_required_input_resolution_coverage": 1.0,
+    "max_unresolved_required_input_count": 0,
+    "max_avg_candidate_count": 3.0,
+    "max_candidate_count": 8.0,
+    "avg_schema_context_reduction": 0.99,
+    "min_schema_context_reduction": 0.98,
     "max_avg_latency_ms": 50.0
   },
   "cases": [
@@ -47,6 +55,84 @@
       "id": "return_withdrawal_ko",
       "query": "반품철회",
       "expected_tools": ["withdrawalReturn"]
+    },
+    {
+      "id": "member_list_ko",
+      "query": "회원 목록 조회",
+      "expected_any": ["getMemberList_1", "getMemberList", "getMemberListNoMasking"]
+    },
+    {
+      "id": "member_mileage_history_ko",
+      "query": "회원 마일리지 내역 조회",
+      "expected_any": ["getMilgEtctMgmtList_1", "getMbrMilg", "getMbrMilg_1"]
+    },
+    {
+      "id": "event_list_ko",
+      "query": "이벤트 목록 조회",
+      "expected_any": [
+        "getEventList_1",
+        "getEventMgmtTrgmnInfoList",
+        "getParticipationEvent"
+      ]
+    },
+    {
+      "id": "goods_list_ko",
+      "query": "상품 목록 조회",
+      "expected_any": [
+        "getGoodsList",
+        "getGoodsList_1",
+        "getGoodsListDetail",
+        "getTmdlGoodsList"
+      ]
+    },
+    {
+      "id": "coupon_list_ko",
+      "query": "쿠폰 목록 조회",
+      "expected_any": [
+        "getCouponList",
+        "getCouponListByMember",
+        "getCouponCostList",
+        "getCustomerCouponGrid",
+        "getValidCouponListForSameAutoIssueType"
+      ]
+    },
+    {
+      "id": "faq_list_ko",
+      "query": "FAQ 목록 조회",
+      "expected_tools": ["getFaqList"]
+    },
+    {
+      "id": "notice_list_ko",
+      "query": "공지사항 목록 조회",
+      "expected_any": [
+        "getCustomerNoticeList",
+        "getCsNoticeList",
+        "getCsDashboardNoticeList"
+      ]
+    },
+    {
+      "id": "restock_notice_list_ko",
+      "query": "재입고 알림 목록 조회",
+      "expected_tools": ["getRestockNotiList"]
+    },
+    {
+      "id": "delivery_policy_list_ko",
+      "query": "배송비 정책 조회",
+      "expected_any": [
+        "getDeliveryPolicyList",
+        "getDeliveryPolicySearchList",
+        "getDeliveryAmountInfo"
+      ]
+    },
+    {
+      "id": "promotion_list_ko",
+      "query": "프로모션 목록 조회",
+      "expected_tools": ["getPromotionManagingList"]
+    },
+    {
+      "id": "market_display_list_ko",
+      "query": "기획전 목록 조회",
+      "expected_any": ["getPrMkdpBaseList", "getMarketDisplayList", "getDivobjGoodsGridList"]
     }
   ]
 }

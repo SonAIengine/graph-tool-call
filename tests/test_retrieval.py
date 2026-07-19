@@ -1,5 +1,6 @@
 """Tests for retrieval engine."""
 
+from graph_tool_call.retrieval.engine import RetrievalEngine
 from graph_tool_call.tool_graph import ToolGraph
 
 
@@ -106,6 +107,130 @@ def test_retrieve_math_synonym_hypotenuse_matches_hypot_operation():
     assert "math.hypot" in names
 
 
+def test_retrieve_geographic_distance_prefers_geo_distance_operation():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "geo_distance.calculate",
+                "description": "Calculate the geographic distance between two locations.",
+            },
+            {
+                "name": "get_shortest_driving_distance",
+                "description": "Calculate the shortest driving distance between two locations.",
+            },
+            {
+                "name": "distance_calculator.calculate",
+                "description": "Calculate the distance between two locations considering terrain.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+
+    names = [
+        tool.name
+        for tool in tg.retrieve(
+            "Calculate the geographic distance from Los Angeles to New York.",
+            top_k=2,
+        )
+    ]
+
+    assert names[0] == "geo_distance.calculate"
+
+
+def test_retrieve_fastest_route_uses_route_planner_despite_event_context():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "route_planner.calculate_route",
+                "description": "Determines the best route between two points.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {
+                        "start": {
+                            "type": "string",
+                            "description": "The starting point of the journey.",
+                        },
+                        "destination": {
+                            "type": "string",
+                            "description": "The destination of the journey.",
+                        },
+                        "method": {
+                            "type": "string",
+                            "enum": ["fastest", "shortest", "balanced"],
+                            "description": "The method to use when calculating the route.",
+                        },
+                    },
+                    "required": ["start", "destination"],
+                },
+            },
+            {
+                "name": "route.estimate_time",
+                "description": "Estimate the travel time for a specific route with optional stops.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {
+                        "start_location": {"type": "string"},
+                        "end_location": {"type": "string"},
+                        "stops": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["start_location", "end_location"],
+                },
+            },
+            {
+                "name": "chess.rating",
+                "description": "Fetches the current chess rating of a given player.",
+            },
+            {
+                "name": "chess_club_details.find",
+                "description": "Provides details about a chess club, including location.",
+            },
+            {
+                "name": "traffic_estimate",
+                "description": "Estimate traffic from one location to another.",
+            },
+            {
+                "name": "get_directions",
+                "description": "Retrieve directions from one location to another.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {
+                        "start_location": {"type": "string"},
+                        "end_location": {"type": "string"},
+                        "route_type": {
+                            "type": "string",
+                            "enum": ["fastest", "scenic"],
+                            "description": "Type of route to use.",
+                        },
+                    },
+                    "required": ["start_location", "end_location"],
+                },
+            },
+            {
+                "name": "calculate_shortest_distance",
+                "description": "Calculate the shortest driving distance between two locations.",
+            },
+            {
+                "name": "maps.get_distance_duration",
+                "description": "Retrieve the travel distance and estimated travel time.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+
+    names = [
+        tool.name
+        for tool in tg.retrieve(
+            "What is the fastest route from London to Edinburgh for playing a chess "
+            "championship? Also provide an estimate of the distance.",
+            top_k=5,
+        )
+    ]
+
+    assert names[0] == "route_planner.calculate_route"
+
+
 def test_retrieve_boosts_explicit_dotted_tool_name_inside_long_query():
     tg = ToolGraph()
     tg.add_tools(
@@ -185,3 +310,133 @@ def test_retrieve_keeps_clause_level_tools_for_multi_intent_query():
     ]
 
     assert {"traffic_estimate", "calculate_distance", "weather_forecast"}.issubset(names)
+
+
+def test_split_query_clauses_handles_and_before_new_action():
+    clauses = RetrievalEngine._split_query_clauses(
+        "I need to convert 10 dollars to Euros and make a 10 dollar deposit "
+        "in my local bank account."
+    )
+
+    assert clauses == [
+        "I need to convert 10 dollars to Euros",
+        "make a 10 dollar deposit in my local bank account",
+    ]
+
+
+def test_retrieve_keeps_and_joined_clause_tool_in_top_k():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "currency_conversion",
+                "description": "Convert an amount of money from one currency to another.",
+            },
+            {
+                "name": "banking_service",
+                "description": "Make a deposit into a local bank account.",
+            },
+            {
+                "name": "bank_account.transfer",
+                "description": "Transfer money between bank accounts.",
+            },
+            {
+                "name": "bank.calculate_balance",
+                "description": "Calculate the balance of a bank account.",
+            },
+            {
+                "name": "latest_exchange_rate",
+                "description": "Retrieve the latest exchange rate for a currency pair.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+
+    names = [
+        tool.name
+        for tool in tg.retrieve(
+            "I need to convert 10 dollars to Euros and make a 10 dollar deposit "
+            "in my local bank account.",
+            top_k=5,
+        )
+    ]
+
+    assert {"currency_conversion", "banking_service"}.issubset(names)
+
+
+def test_clause_diversity_gate_ignores_background_story_clauses():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "calculate_triangle_area",
+                "description": "Calculate the area of a triangle from base and height.",
+            },
+            {
+                "name": "geometry.area_triangle",
+                "description": "Calculate triangle area for geometry problems.",
+            },
+            {
+                "name": "geometry.area_circle",
+                "description": "Calculate the area of a circle.",
+            },
+            {
+                "name": "get_stock_data",
+                "description": "Get stock market data for a ticker.",
+            },
+            {
+                "name": "concert.find_nearby",
+                "description": "Find nearby concerts.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+    engine = tg._get_retrieval_engine()
+
+    query = (
+        "John is a geometry teacher who is preparing a quiz. "
+        "The first triangle has a base of 10 units and a height of 5 units. "
+        "The second triangle has a base of 8 units and a height of 6 units. "
+        "John wants to know the total area of the two triangles combined. "
+        "Can you help him calculate this?"
+    )
+
+    assert not engine._has_diverse_actionable_clauses(query)
+
+
+def test_clause_diversity_gate_detects_distinct_subtasks():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "traffic_estimate",
+                "description": "Estimate traffic between two locations.",
+            },
+            {
+                "name": "calculate_distance",
+                "description": "Calculate distance between two locations.",
+            },
+            {
+                "name": "weather_forecast",
+                "description": "Get a weather forecast for a city.",
+            },
+            {
+                "name": "weather_forecast_humidity",
+                "description": "Get humidity forecast for a city.",
+            },
+            {
+                "name": "event_finder.find_upcoming",
+                "description": "Find upcoming events in a city.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+    engine = tg._get_retrieval_engine()
+
+    query = (
+        "I need to know the estimated traffic from San Francisco to Palo Alto. "
+        "Also, I am curious about the distance between these two locations. "
+        "Furthermore, I would like a 5-day weather forecast for Los Angeles."
+    )
+
+    assert engine._has_diverse_actionable_clauses(query)

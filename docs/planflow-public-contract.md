@@ -33,7 +33,28 @@ The graphify package owns product-neutral collection graph logic.
 - `additionalProperties` map leaves are represented additively with
   `additional_properties`, `map_value`, and `map_key_placeholder` hints; map
   value paths use `*` as a sorted-key first-value placeholder, not fan-out.
-- `expand_candidates_with_producers(...)` expands retrieval candidates with deterministic 1-hop producers for required `kind=data` inputs.
+- `build_candidate_set(...)` returns a structured candidate contract with
+  `target_candidates`, `expansion_seed`, `producer_candidates`, and flat
+  `candidates` so adapters can keep target search separate from producer-chain
+  expansion. Its optional `max_targets_per_group` cap suppresses same
+  `primary_resource` + `canonical_action` target siblings and reports
+  `raw_target_candidates`, `suppressed_target_candidates`, and
+  `target_candidate_groups`; the default leaves target candidates unchanged.
+  Its optional `max_target_candidates` + `diversify_target_groups` path keeps
+  multi-intent target surfaces from being filled by the first group only.
+  Its optional `target_action_priority` path deterministically reranks target
+  candidates by `ai_metadata.canonical_action` and reports
+  `target_rank_signals` with original/reranked ranks and selected/suppressed
+  evidence.
+- `build_candidate_set(...)` also reports evidence-only
+  `target_equivalence_groups` for high-confidence near-duplicate target
+  surfaces. `build_tool_equivalence_groups(...)` exposes the same deterministic
+  grouping for adapters that want to inspect or display duplicate/equivalent
+  tool candidates without changing candidate order.
+- `target_action_priority_for_query(...)` derives the same
+  `target_action_priority` map from generic Korean/English query action terms
+  without an LLM.
+- `expand_candidates_with_producers(...)` expands retrieval candidates with deterministic producers for required `kind=data` inputs; `max_hops` defaults to `1` for backward compatibility and can be raised for target-specific producer chains.
 - `normalize_graph_edge(...)`, `merge_graph_edges(...)`, and `derive_plan_trace_edges(...)` normalize structural, LLM-curated, manual, and run-observed signals into graph version 2 edge metadata.
 - `retrieve_graphify(..., include_evidence=True)` keeps the legacy response keys and adds score/evidence details for logs and UI.
 
