@@ -240,6 +240,22 @@ plan/binding/evidence coverage `1.00`을 유지했다. 이 역시 deterministic
 retrieval gate 개선 근거이며, model-loop exact 개선 여부는 qwen3.6-27B subset
 smoke와 full repeat gate에서 별도로 검증해야 한다.
 
+같은 날 qwen3.6-27B model-loop subset smoke도 실행했다. Artifact는
+`/tmp/gtc-domain-hardcases-model-sweep-v2.json`이고, scope는 위 15개
+simple-python domain hardcase, row/retrieved source, top-k `5`, repeat `1`,
+`--candidate-selection-guidance`, `--cohesive-namespace-candidates`다. 전체 15건은
+row-source exact `0.93`, retrieved-source exact `0.27`, equivalent-adjusted exact
+`0.33`으로, 모델이 target tool을 받으면 대부분 실행할 수 있지만 아직 retrieved
+candidate set이 병목임을 보였다. 단, dominant-keyword pass가 top-5로 회복한
+5건만 보면 row-source exact `1.00`, retrieved-source retrieval `1.00`,
+retrieved-source exact `0.80`이다. Pass한 4건은 `lawsuit_info`,
+`get_team_rank`, `gamespot.getAverageUserScore`, `restaurant_search`이고, 남은
+1건은 `sports_stats.get_performance`가 top-5에 있었지만 모델이
+`soccer_stat.get_player_stats`를 고른 `candidate_ambiguity`다. 따라서 다음
+작은 개선은 15건 전체의 `retrieval_miss` 10건을 alias/contract evidence로
+회복하는 workstream과, sports/player statistics sibling ambiguity를 줄이는
+candidate presentation workstream으로 분리한다.
+
 ## Product Maturity Levels
 
 | Level | Meaning | Expected Use |
