@@ -161,7 +161,11 @@ def run_benchmark(
         )
         for case in cases_doc.get("cases", [])
     ]
-    search_summary = summarize_search(cases, thresholds=cases_doc.get("thresholds") or {})
+    search_summary = summarize_search(
+        cases,
+        thresholds=cases_doc.get("thresholds") or {},
+        full_tool_count=len(prepared.graph.tools),
+    )
     scale_summary = summarize_scale(
         prepared.profiles,
         loaded_specs=prepared.loaded_specs,
@@ -262,6 +266,7 @@ def run_top_k_sweep(
         search_summary = summarize_search(
             cases,
             thresholds=thresholds if top_k == selected_acceptance_top_k else {},
+            full_tool_count=len(prepared.graph.tools),
         )
         search_summary["thresholds_applied"] = bool(
             top_k == selected_acceptance_top_k and thresholds
@@ -371,7 +376,11 @@ def run_contract_signal_ablation(
             )
             for case in cases_doc.get("cases", [])
         ]
-        search_summary = summarize_search(cases, thresholds=thresholds)
+        search_summary = summarize_search(
+            cases,
+            thresholds=thresholds,
+            full_tool_count=len(graph.tools),
+        )
         variant_status = "pass" if scale_summary["status"] == "pass" else "fail"
         if cases and search_summary.get("status") != "pass":
             variant_status = "fail"
@@ -816,6 +825,7 @@ def summarize_search(
     cases: list[SearchEvaluation],
     *,
     thresholds: dict[str, Any],
+    full_tool_count: int | None = None,
 ) -> dict[str, Any]:
     if not cases:
         return {"status": "skipped", "cases": 0}
@@ -900,6 +910,7 @@ def summarize_search(
         "missing_expected_tools": _missing_expected_tools(cases),
         "issues": dict(Counter(issue for case in cases for issue in case.issues).most_common()),
     }
+    _add_tool_surface_reduction(summary, full_tool_count=full_tool_count)
     if thresholds:
         checks = {
             metric: _threshold_passed(summary, metric, float(threshold))
@@ -910,6 +921,26 @@ def summarize_search(
     else:
         summary["status"] = "pass"
     return summary
+
+
+def _add_tool_surface_reduction(
+    summary: dict[str, Any],
+    *,
+    full_tool_count: int | None,
+) -> None:
+    if not full_tool_count or full_tool_count <= 0:
+        return
+    avg_fraction = _ratio(float(summary.get("avg_candidate_count", 0.0)), full_tool_count)
+    max_fraction = _ratio(float(summary.get("max_candidate_count", 0.0)), full_tool_count)
+    summary.update(
+        {
+            "full_tool_count": int(full_tool_count),
+            "avg_candidate_tool_fraction": avg_fraction,
+            "avg_tool_surface_reduction": round(1.0 - avg_fraction, 6),
+            "max_candidate_tool_fraction": max_fraction,
+            "min_tool_surface_reduction": round(1.0 - max_fraction, 6),
+        }
+    )
 
 
 def _compare_contract_signal_variants(variants: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1310,7 +1341,7 @@ def _dedupe(values: list[str]) -> list[str]:
     return list(dict.fromkeys(str(value) for value in values if str(value)))
 
 
-def _ratio(numerator: int, denominator: int) -> float:
+def _ratio(numerator: float, denominator: float) -> float:
     if denominator <= 0:
         return 1.0
     return round(numerator / denominator, 6)
@@ -1487,6 +1518,7 @@ def _print_report(report: dict[str, Any]) -> None:
             "search: status={status} cases={cases} hit@K={hit:.2f} recall@K={recall:.2f} "
             "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
             "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
+            "tool_reduction={reduction:.2%} "
             "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
             "avg_latency={latency:.2f}ms".format(
                 status=search["status"],
@@ -1499,6 +1531,7 @@ def _print_report(report: dict[str, Any]) -> None:
                 mrr_=search["mean_mrr"],
                 candidates=search["avg_candidate_count"],
                 producers=search["avg_producer_added_count"],
+                reduction=search.get("avg_tool_surface_reduction", 0.0),
                 required=search["avg_required_input_coverage"],
                 resolved=search["avg_required_input_resolution_coverage"],
                 latency=search["avg_latency_ms"],
@@ -1568,6 +1601,7 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
             "k={top_k:<2}{suffix}: status={status} hit@K={hit:.2f} recall@K={recall:.2f} "
             "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
             "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
+            "tool_reduction={reduction:.2%} "
             "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
             "avg_latency={latency:.2f}ms issues={issues} readiness={readiness} "
             "resolutions={resolutions}".format(
@@ -1582,6 +1616,7 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
                 mrr_=search["mean_mrr"],
                 candidates=search["avg_candidate_count"],
                 producers=search["avg_producer_added_count"],
+                reduction=search.get("avg_tool_surface_reduction", 0.0),
                 required=search["avg_required_input_coverage"],
                 resolved=search["avg_required_input_resolution_coverage"],
                 latency=search["avg_latency_ms"],
@@ -1620,6 +1655,7 @@ def _print_ablation_report(report: dict[str, Any]) -> None:
                 "  search: hit@K={hit:.2f} recall@K={recall:.2f} top1={top1:.2f} "
                 "top3={top3:.2f} selector={selector:.2f} mrr={mrr_:.2f} "
                 "candidates={candidates:.2f} producers={producers:.2f} "
+                "tool_reduction={reduction:.2%} "
                 "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
                 "avg_latency={latency:.2f}ms".format(
                     hit=search["case_hit_at_k"],
@@ -1630,6 +1666,7 @@ def _print_ablation_report(report: dict[str, Any]) -> None:
                     mrr_=search["mean_mrr"],
                     candidates=search["avg_candidate_count"],
                     producers=search["avg_producer_added_count"],
+                    reduction=search.get("avg_tool_surface_reduction", 0.0),
                     required=search["avg_required_input_coverage"],
                     resolved=search["avg_required_input_resolution_coverage"],
                     latency=search["avg_latency_ms"],

@@ -44,6 +44,8 @@ live acceptance run을 별도로 둔다.
 | X2BEE target selector exact@3 | `1.00` |
 | X2BEE avg plan candidate count | `2.16` |
 | X2BEE max plan candidate count | `7` |
+| X2BEE avg tool surface reduction | `99.80%` |
+| X2BEE min tool surface reduction | `99.35%` |
 | X2BEE required input coverage | `0.872` |
 | X2BEE required input resolution coverage | `1.00` |
 | X2BEE unresolved required inputs | `0` |
@@ -67,6 +69,10 @@ live-scale 연구는 producer 후보 폭을 줄이고, request/response field ma
 실행 전 readiness를 더 정확하게 만드는 것이다. producer-only 미지원 4건은
 `required_request_wrapper=2`, `required_context_input=1`,
 `required_filter_input=1`로 분류된다.
+Tool surface 관점에서는 전체 1084개 tool 중 평균 2.16개, 최대 7개 후보만
+Planflow 후보로 남기므로 평균 `99.80%`, worst-case `99.35%`의 tool surface
+reduction을 만든다. 이 값은 tokenizer token count가 아니라 tool 개수 기반
+reduction이다.
 
 `2026-07-19` rank-compression branch에서는 X2BEE live sweep에서 기존 hard
 case인 `order_query_ko`, `page_role_buttons_ko`, `settlement_compare_ko`,

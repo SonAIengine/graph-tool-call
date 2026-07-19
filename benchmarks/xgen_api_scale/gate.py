@@ -120,6 +120,10 @@ def _gate_metrics(scale: dict[str, Any], search: dict[str, Any]) -> dict[str, An
         "avg_required_input_resolution_coverage",
         "unresolved_required_input_count",
         "avg_latency_ms",
+        "avg_candidate_tool_fraction",
+        "avg_tool_surface_reduction",
+        "max_candidate_tool_fraction",
+        "min_tool_surface_reduction",
     ]
     metrics: dict[str, Any] = {
         "spec_count": scale.get("spec_count"),
