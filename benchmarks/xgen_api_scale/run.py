@@ -85,6 +85,8 @@ class SearchEvaluation:
     target_selector_rank: int | None
     target_selector_exact: float
     target_action_priority: dict[str, int]
+    target_equivalence_groups: list[dict[str, Any]]
+    target_equivalence_group_count: int
     plan_candidates: list[str]
     producer_candidates: list[str]
     producer_added_count: int
@@ -645,6 +647,11 @@ def evaluate_search_case(
     )
     selector_candidates = [str(name) for name in selector_set.get("target_candidates") or []]
     selected_target = selector_candidates[0] if selector_candidates else ""
+    target_equivalence_groups = [
+        dict(row)
+        for row in selector_set.get("target_equivalence_groups") or []
+        if isinstance(row, dict)
+    ]
     readiness = _plan_readiness(
         selected_target,
         tools_by_name,
@@ -704,6 +711,8 @@ def evaluate_search_case(
         target_selector_rank=target_selector_rank,
         target_selector_exact=target_selector_exact,
         target_action_priority=target_action_priority,
+        target_equivalence_groups=target_equivalence_groups,
+        target_equivalence_group_count=len(target_equivalence_groups),
         plan_candidates=[str(name) for name in readiness["plan_candidates"]],
         producer_candidates=[str(name) for name in readiness["producer_candidates"]],
         producer_added_count=int(readiness["producer_added_count"]),
@@ -811,6 +820,12 @@ def summarize_search(
         "expected_tool_recall_at_k": _mean(case.expected_tool_recall_at_k for case in cases),
         "target_selector_exact_at_k": _mean(case.target_selector_exact for case in cases),
         "target_selector_miss_count": sum(1 for case in cases if case.target_selector_exact < 1.0),
+        "avg_target_equivalence_group_count": _mean(
+            case.target_equivalence_group_count for case in cases
+        ),
+        "target_equivalence_group_case_count": sum(
+            1 for case in cases if case.target_equivalence_group_count > 0
+        ),
         "avg_candidate_count": _mean(case.candidate_count for case in cases),
         "max_candidate_count": max((case.candidate_count for case in cases), default=0),
         "avg_producer_added_count": _mean(case.producer_added_count for case in cases),

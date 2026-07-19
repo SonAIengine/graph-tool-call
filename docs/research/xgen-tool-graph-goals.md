@@ -287,7 +287,8 @@ Required work:
     `near_duplicate_tool_surface` tag 기준 high-confidence duplicate surface는
     4건이다. 이 tag는 `build_tool_equivalence_groups(...)`와
     `build_candidate_set(...).target_equivalence_groups`로 같은 surface evidence를
-    사용한다.
+    사용한다. XGEN deterministic benchmark는 같은 evidence를 target selector
+    diagnostics와 summary count로 기록한다.
     다음 병목은 `solve_quadratic` vs `solve_quadratic_equation`,
     `geometry.circumference` vs `calculate_circumference`, `math.gcd` vs
     `number_theory.gcd` 같은 near-duplicate disambiguation과 argument-value

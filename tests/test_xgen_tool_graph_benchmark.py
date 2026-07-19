@@ -141,6 +141,11 @@ def test_xgen_tool_graph_records_synthesis_diagnostics_for_user_input_slots():
     assert diagnostics["retrieval_evidence"]["target_rank"] == case["target_rank"]
     assert diagnostics["target_selector"]["selected_target"] == case["selected_target"]
     assert diagnostics["target_selector"]["target_selector_exact"] == 1.0
+    assert (
+        diagnostics["target_selector"]["target_equivalence_group_count"]
+        == case["target_equivalence_group_count"]
+    )
+    assert isinstance(diagnostics["target_selector"]["target_equivalence_groups"], list)
     assert {row["producer"] for row in diagnostics["selected_producers"]} == {"searchProducts"}
     assert "createProductReview.productId" in diagnostics["candidate_signals"]
 
@@ -162,6 +167,8 @@ def test_xgen_tool_graph_reports_target_selector_exactness_separately_from_targe
     assert report["summary"]["target_recall_at_k"] == 1.0
     assert report["summary"]["target_selector_exact"] == 1.0
     assert report["summary"]["target_selector_miss_count"] == 0
+    assert "avg_target_equivalence_group_count" in report["summary"]
+    assert "target_equivalence_group_case_count" in report["summary"]
     for case in graph_cases:
         assert case["selected_target"] == case["expected_target"]
         assert case["target_selector_exact"] == 1.0
@@ -170,3 +177,5 @@ def test_xgen_tool_graph_reports_target_selector_exactness_separately_from_targe
         assert selector["selected_target"] == case["selected_target"]
         assert selector["expected_target"] == case["expected_target"]
         assert selector["target_candidates"] == case["target_selector_candidates"]
+        assert selector["target_equivalence_group_count"] == case["target_equivalence_group_count"]
+        assert isinstance(selector["target_equivalence_groups"], list)

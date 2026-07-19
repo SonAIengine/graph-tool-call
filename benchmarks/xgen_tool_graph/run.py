@@ -61,6 +61,7 @@ class QueryEvaluation:
     target_selector_exact: float
     target_selector_strategy: str
     target_action_priority: dict[str, int]
+    target_equivalence_group_count: int
     candidates: list[str]
     expansion_seed: list[str]
     candidate_count: int
@@ -268,6 +269,7 @@ def run_all_benchmarks(
         "candidate_plan_coverage",
         "candidate_binding_support",
         "avg_candidate_count",
+        "avg_target_equivalence_group_count",
         "avg_producer_added_count",
         "plan_exact_match",
         "plan_step_recall",
@@ -290,6 +292,9 @@ def run_all_benchmarks(
         ),
         "target_selector_miss_count": sum(
             int(row.get("target_selector_miss_count") or 0) for row in graph_summaries
+        ),
+        "target_equivalence_group_case_count": sum(
+            int(row.get("target_equivalence_group_case_count") or 0) for row in graph_summaries
         ),
         "user_input_slot_case_count": sum(
             int(row.get("user_input_slot_case_count") or 0) for row in graph_summaries
@@ -387,6 +392,11 @@ def evaluate_case(
     selected_target = selector_candidates[0] if selector_candidates else ""
     target_selector_rank = _rank_of(selector_candidates, expected_target)
     target_selector_exact = 1.0 if selected_target == expected_target else 0.0
+    target_equivalence_groups = [
+        dict(row)
+        for row in selector_set.get("target_equivalence_groups") or []
+        if isinstance(row, dict)
+    ]
     target_selector = _target_selector_evidence(
         expected_target=expected_target,
         selected_target=selected_target,
@@ -394,6 +404,7 @@ def evaluate_case(
         target_selector_rank=target_selector_rank,
         target_selector_exact=target_selector_exact,
         selector_set=selector_set,
+        target_equivalence_groups=target_equivalence_groups,
     )
     # The baseline isolates what happens after a target selector has picked the
     # expected target but before producer expansion adds prerequisite tools.
@@ -507,6 +518,7 @@ def evaluate_case(
         target_selector_exact=target_selector_exact,
         target_selector_strategy="query_action_priority",
         target_action_priority=target_action_priority,
+        target_equivalence_group_count=len(target_equivalence_groups),
         candidates=candidates,
         expansion_seed=expansion_seed,
         candidate_count=len(candidates),
@@ -626,6 +638,7 @@ def _target_selector_evidence(
     target_selector_rank: int | None,
     target_selector_exact: float,
     selector_set: dict[str, Any],
+    target_equivalence_groups: list[dict[str, Any]],
 ) -> dict[str, Any]:
     return {
         "strategy": "query_action_priority",
@@ -635,6 +648,8 @@ def _target_selector_evidence(
         "target_selector_exact": target_selector_exact,
         "target_candidates": selector_candidates,
         "target_action_priority": dict(selector_set.get("target_action_priority") or {}),
+        "target_equivalence_groups": target_equivalence_groups,
+        "target_equivalence_group_count": len(target_equivalence_groups),
         "target_rank_signals": [
             dict(row)
             for row in selector_set.get("target_rank_signals") or []
@@ -738,6 +753,10 @@ def _summarize(
         "candidate_binding_support": _mean(r.candidate_binding_support for r in rows),
         "avg_candidate_count": _mean(r.candidate_count for r in rows),
         "max_candidate_count": max((r.candidate_count for r in rows), default=0),
+        "avg_target_equivalence_group_count": _mean(r.target_equivalence_group_count for r in rows),
+        "target_equivalence_group_case_count": sum(
+            1 for r in rows if r.target_equivalence_group_count > 0
+        ),
         "producer_needed_case_count": sum(1 for r in rows if r.producer_needed),
         "adaptive_expansion_case_count": sum(1 for r in rows if r.adaptive_expansion_applied),
         "unneeded_expansion_case_count": sum(1 for r in rows if r.unneeded_expansion_applied),
