@@ -348,9 +348,13 @@ Required work:
     system prompt와 array argument description을 보강했다. BFCL `parallel_9`는
     row/retrieved qwen3.6-27B smoke 모두 exact `1.00`으로 회복됐고, 대표 복구
     3-case smoke `/tmp/gtc-bfcl-paired-array-recovered3-qwen.json`도 exact `1.00`이다.
-    다음 병목은 `multiple_7`처럼 Row-source에서도 발생하는 extra related tool call이다.
-    이 영역은 retrieval layer 손실과 분리해서 모델 상한 및 tool schema
-    표현 문제로 본다.
+    contextual extra-tool guard pass에서는 `multiple_7`처럼 single-action query 뒤에
+    trailing impact/effect phrase가 붙어 관련 downstream tool을 추가 호출하는 문제를
+    model-facing 후보 정리로 막았다. Row/retrieved qwen3.6-27B smoke 모두 exact
+    `1.00`으로 회복됐고, 대표 복구 4-case smoke
+    `/tmp/gtc-bfcl-extra-tool-recovered4-qwen.json`도 exact `1.00`이다. 다음 병목은
+    이 guard가 full sweep에서 candidate suppression 부작용 없이 유지되는지 확인하고,
+    남은 hard-case bundle에서 새로운 failure family를 추출하는 것이다.
 
 ## Paper-Ready Target
 

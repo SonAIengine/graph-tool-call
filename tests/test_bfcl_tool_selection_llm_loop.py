@@ -22,6 +22,7 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     _prepare_tools_for_model,
     _presented_raw_tools,
     _prioritize_candidate_names,
+    _suppress_contextual_extra_tools,
     _suppress_non_priority_equivalent_names,
     _suppress_subsumed_partial_tools,
     run_model_benchmark,
@@ -314,6 +315,88 @@ def test_suppress_subsumed_partial_tools_hides_sequence_only_helper():
     assert names == ["protein_info.get_sequence_and_3D", "fetch_DNA_sequence"]
 
 
+def test_suppress_contextual_extra_tools_hides_trailing_impact_helper():
+    question_row = {
+        "id": "multiple_7",
+        "function": [
+            {
+                "name": "wildlife_population.assess_growth",
+                "description": (
+                    "Assesses the population growth of a specific species in a specified "
+                    "location over a period."
+                ),
+                "parameters": {
+                    "type": "dict",
+                    "properties": {
+                        "species": {"type": "string"},
+                        "location": {"type": "string"},
+                        "duration": {"type": "integer"},
+                    },
+                    "required": ["species", "location", "duration"],
+                },
+            },
+            {
+                "name": "ecological_impact.analyze",
+                "description": "Analyzes the impact of a species on a particular ecosystem.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {
+                        "species": {"type": "string"},
+                        "ecosystem": {"type": "string"},
+                        "location": {"type": "string"},
+                        "timeframe": {"type": "integer"},
+                    },
+                    "required": ["species", "ecosystem", "location", "timeframe"],
+                },
+            },
+        ],
+    }
+    tools_by_name = llm_loop._tools_by_name([question_row])
+
+    names = _suppress_contextual_extra_tools(
+        ["wildlife_population.assess_growth", "ecological_impact.analyze"],
+        query=(
+            "How to assess the population growth in deer and their impact on woodland in "
+            "Washington state over the past decade?"
+        ),
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
+
+    assert names == ["wildlife_population.assess_growth"]
+
+
+def test_suppress_contextual_extra_tools_keeps_explicit_second_action():
+    question_row = {
+        "id": "multiple_7_explicit",
+        "function": [
+            {
+                "name": "wildlife_population.assess_growth",
+                "description": "Assesses the population growth of a specific species.",
+                "parameters": {"type": "dict", "properties": {}, "required": []},
+            },
+            {
+                "name": "ecological_impact.analyze",
+                "description": "Analyzes the impact of a species on a particular ecosystem.",
+                "parameters": {"type": "dict", "properties": {}, "required": []},
+            },
+        ],
+    }
+    tools_by_name = llm_loop._tools_by_name([question_row])
+
+    names = _suppress_contextual_extra_tools(
+        ["wildlife_population.assess_growth", "ecological_impact.analyze"],
+        query=(
+            "Assess the population growth in deer and analyze their impact on woodland in "
+            "Washington state."
+        ),
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
+
+    assert names == ["wildlife_population.assess_growth", "ecological_impact.analyze"]
+
+
 def test_normalized_parameters_add_argument_value_preservation_hints():
     schema = _normalize_parameters(
         {
@@ -384,6 +467,8 @@ def test_messages_can_include_candidate_selection_guidance():
     assert "Preserve symbolic data references" in plain[0]["content"]
     assert "one tool call per distinct set" in plain[0]["content"]
     assert "item A at time A and item B at time B" in plain[0]["content"]
+    assert "minimum number of tool calls" in plain[0]["content"]
+    assert "context word" in plain[0]["content"]
     assert "Candidate selection guidance" not in plain[0]["content"]
     assert "Candidate selection guidance" in guided[0]["content"]
     assert "same namespace or API family" in guided[0]["content"]

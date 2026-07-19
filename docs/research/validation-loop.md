@@ -236,8 +236,20 @@ description을 보강했다. BFCL `parallel_9`는 before artifacts
 `/tmp/gtc-bfcl-paired-array-after-parallel9-row-qwen.json`,
 `/tmp/gtc-bfcl-paired-array-after-parallel9-retrieved-qwen.json`에서 row/retrieved
 모두 exact `1.00`으로 회복됐다. Route, subsumption, paired-array 대표 3-case smoke
-`/tmp/gtc-bfcl-paired-array-recovered3-qwen.json`도 exact `1.00`이다. 남은 대표
-row-source failure는 `multiple_7`의 extra related analysis call이다.
+`/tmp/gtc-bfcl-paired-array-recovered3-qwen.json`도 exact `1.00`이다.
+
+`2026-07-19` contextual extra-tool guard pass는 `multiple_7`처럼 single-action
+query 뒤에 `and their impact/effect...` 형태의 trailing contextual noun phrase가
+붙어 모델이 관련 downstream tool을 추가 호출하는 문제를 model-facing 후보 정리로
+막는다. Retrieval evidence는 그대로 기록하고, LLM에 노출되는 후보만 줄인다. Fresh
+qwen3.6-27B smoke는 before artifacts
+`/tmp/gtc-bfcl-extra-tool-before-multiple7-row-qwen.json`,
+`/tmp/gtc-bfcl-extra-tool-before-multiple7-retrieved-qwen.json`의
+`call_count_mismatch`에서 after artifacts
+`/tmp/gtc-bfcl-extra-tool-fixed-multiple7-row-qwen.json`,
+`/tmp/gtc-bfcl-extra-tool-fixed-multiple7-retrieved-qwen.json` row/retrieved exact
+`1.00` pass로 회복됐다. Route, subsumption, paired-array, contextual-extra 대표
+4-case smoke `/tmp/gtc-bfcl-extra-tool-recovered4-qwen.json`도 exact `1.00`이다.
 
 ## 실행 타깃
 
