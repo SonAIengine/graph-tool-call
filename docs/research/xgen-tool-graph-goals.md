@@ -295,6 +295,12 @@ Required work:
     metric은 공식 BFCL leaderboard 점수가 아니라, XGEN처럼 equivalent API
     surface가 공존하는 제품 환경에서 "실제 기능 선택은 맞았는가"를 분리해서
     보기 위한 연구 지표다.
+    그 다음 nested argument matcher hardening에서는 BFCL possible-answer의
+    nested dict value list를 재귀적으로 해석해 cached 100-case artifact의
+    false negative 3건을 correction했다. 별도 6-case argument subset smoke
+    `/tmp/gtc-bfcl-argument-matcher-subset.json` 기준 fresh qwen3.6-27B exact는
+    `0.166667`이며, 남은 실패는 optional argument hallucination, boolean default
+    inversion, percentage scale mismatch, data-reference vs synthetic array mismatch다.
     다음 병목은 `solve_quadratic` vs `solve_quadratic_equation`,
     `geometry.circumference` vs `calculate_circumference`, `math.gcd` vs
     `number_theory.gcd` 같은 near-duplicate disambiguation과 argument-value

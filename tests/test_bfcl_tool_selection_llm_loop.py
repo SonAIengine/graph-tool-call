@@ -311,6 +311,50 @@ def test_prediction_matcher_rejects_unexpected_arguments():
     assert result["strict_exact_match"] == 0.0
 
 
+def test_prediction_matcher_accepts_nested_possible_value_dicts():
+    expected = [
+        ExpectedToolCall(
+            name="realestate.find_properties",
+            arguments={
+                "location": ["SD", "San Diego", "San Diego, CA", "CA"],
+                "propertyType": ["villa"],
+                "bedrooms": [3],
+                "budget": [{"min": [300000], "max": [400000]}],
+            },
+        )
+    ]
+    predicted = [
+        PredictedToolCall(
+            name="realestate.find_properties",
+            arguments={
+                "location": "San Diego, CA",
+                "propertyType": "villa",
+                "bedrooms": 3,
+                "budget": {"min": 300000, "max": 400000},
+            },
+        )
+    ]
+    wrong_nested_value = [
+        PredictedToolCall(
+            name="realestate.find_properties",
+            arguments={
+                "location": "San Diego, CA",
+                "propertyType": "villa",
+                "bedrooms": 3,
+                "budget": {"min": 300000, "max": 450000},
+            },
+        )
+    ]
+
+    result = _evaluate_predictions(expected, predicted, category="multiple")
+    wrong = _evaluate_predictions(expected, wrong_nested_value, category="multiple")
+
+    assert result["argument_value_exact_match"] == 1.0
+    assert result["strict_exact_match"] == 1.0
+    assert wrong["argument_value_exact_match"] == 0.0
+    assert wrong["strict_exact_match"] == 0.0
+
+
 def test_failure_taxonomy_separates_retrieval_and_candidate_errors():
     expected = [ExpectedToolCall(name="math.hypot", arguments={"x": [4], "y": [5]})]
     wrong_tool = [PredictedToolCall(name="calculate_area", arguments={"x": 4, "y": 5})]

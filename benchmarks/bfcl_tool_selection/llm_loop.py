@@ -1500,8 +1500,35 @@ def _allows_missing(possible_values: list[Any]) -> bool:
 
 
 def _value_matches(value: Any, possible_values: list[Any]) -> bool:
-    normalized_value = _normalize_value(value)
-    return any(normalized_value == _normalize_value(possible) for possible in possible_values)
+    return any(_possible_value_matches(value, possible) for possible in possible_values)
+
+
+def _possible_value_matches(value: Any, possible: Any) -> bool:
+    if isinstance(possible, dict):
+        return _dict_possible_value_matches(value, possible)
+    return _normalize_value(value) == _normalize_value(possible)
+
+
+def _dict_possible_value_matches(value: Any, possible: dict[str, Any]) -> bool:
+    if not isinstance(value, dict):
+        return False
+
+    possible_keys = {str(key) for key in possible}
+    value_keys = {str(key) for key in value}
+    if value_keys - possible_keys:
+        return False
+
+    value_by_key = {str(key): item for key, item in value.items()}
+    for key, nested_possible in possible.items():
+        name = str(key)
+        nested_values = nested_possible if isinstance(nested_possible, list) else [nested_possible]
+        if name not in value_by_key:
+            if _allows_missing(nested_values):
+                continue
+            return False
+        if not _value_matches(value_by_key[name], nested_values):
+            return False
+    return True
 
 
 def _normalize_value(value: Any) -> Any:
