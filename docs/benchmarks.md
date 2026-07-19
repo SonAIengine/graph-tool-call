@@ -547,9 +547,9 @@ auditable model outputs.
 
 No-LLM deterministic retrieval experiments use the validation loop in
 [`docs/research/validation-loop.md`](research/validation-loop.md). The current
-hard-case bundle run improved deterministic `recall@5` from `0.9325` to
-`0.94025`, `all_tools_found@5` from `0.908` to `0.917`, and reduced hard cases
-from `92` to `83`. This is not a BFCL leaderboard/model score; it is the fast
+hard-case bundle sequence improved deterministic `recall@5` from `0.9325` to
+`0.94200`, `all_tools_found@5` from `0.908` to `0.920`, and reduced hard cases
+from `92` to `80`. This is not a BFCL leaderboard/model score; it is the fast
 retrieval gate used before expensive model-in-the-loop validation.
 
 ## XGEN-style Tool Graph Search

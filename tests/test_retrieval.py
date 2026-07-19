@@ -269,3 +269,81 @@ def test_retrieve_keeps_and_joined_clause_tool_in_top_k():
     ]
 
     assert {"currency_conversion", "banking_service"}.issubset(names)
+
+
+def test_clause_diversity_gate_ignores_background_story_clauses():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "calculate_triangle_area",
+                "description": "Calculate the area of a triangle from base and height.",
+            },
+            {
+                "name": "geometry.area_triangle",
+                "description": "Calculate triangle area for geometry problems.",
+            },
+            {
+                "name": "geometry.area_circle",
+                "description": "Calculate the area of a circle.",
+            },
+            {
+                "name": "get_stock_data",
+                "description": "Get stock market data for a ticker.",
+            },
+            {
+                "name": "concert.find_nearby",
+                "description": "Find nearby concerts.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+    engine = tg._get_retrieval_engine()
+
+    query = (
+        "John is a geometry teacher who is preparing a quiz. "
+        "The first triangle has a base of 10 units and a height of 5 units. "
+        "The second triangle has a base of 8 units and a height of 6 units. "
+        "John wants to know the total area of the two triangles combined. "
+        "Can you help him calculate this?"
+    )
+
+    assert not engine._has_diverse_actionable_clauses(query)
+
+
+def test_clause_diversity_gate_detects_distinct_subtasks():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "traffic_estimate",
+                "description": "Estimate traffic between two locations.",
+            },
+            {
+                "name": "calculate_distance",
+                "description": "Calculate distance between two locations.",
+            },
+            {
+                "name": "weather_forecast",
+                "description": "Get a weather forecast for a city.",
+            },
+            {
+                "name": "weather_forecast_humidity",
+                "description": "Get humidity forecast for a city.",
+            },
+            {
+                "name": "event_finder.find_upcoming",
+                "description": "Find upcoming events in a city.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+    engine = tg._get_retrieval_engine()
+
+    query = (
+        "I need to know the estimated traffic from San Francisco to Palo Alto. "
+        "Also, I am curious about the distance between these two locations. "
+        "Furthermore, I would like a 5-day weather forecast for Los Angeles."
+    )
+
+    assert engine._has_diverse_actionable_clauses(query)
