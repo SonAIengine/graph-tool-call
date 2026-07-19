@@ -56,7 +56,7 @@ from graph_tool_call.graphify import build_tool_equivalence_groups
 
 DEFAULT_OFFICIAL_MODEL_NAME = "qwen3-32b-FC"
 BFCL_RESULT_ARGUMENT_FORMATS = ("json-string", "decoded")
-MODEL_CASE_CACHE_VERSION = 8
+MODEL_CASE_CACHE_VERSION = 9
 
 
 @dataclass(frozen=True)
@@ -90,6 +90,7 @@ class BFCLModelCaseEvaluation:
     strict_exact_match: float
     official_ast_exact_match: float
     evaluator_exact_match: float
+    equivalence_adjusted_exact_match: float
     input_tokens: int
     output_tokens: int
     latency_ms: float
@@ -563,6 +564,13 @@ def evaluate_model_case(
         if evaluator == "official"
         else match["strict_exact_match"]
     )
+    equivalence_adjusted_exact_match = _equivalence_adjusted_exact_match(
+        expected_calls,
+        predicted_calls,
+        tools_by_name=tools_by_name,
+        category=category,
+        strict_exact_match=match["strict_exact_match"],
+    )
     error = response.error or official["official_error"] or match["error"]
     failure_category = _classify_failure(
         expected_calls=expected_calls,
@@ -600,6 +608,7 @@ def evaluate_model_case(
         strict_exact_match=match["strict_exact_match"],
         official_ast_exact_match=official["official_ast_exact_match"],
         evaluator_exact_match=evaluator_exact_match,
+        equivalence_adjusted_exact_match=equivalence_adjusted_exact_match,
         input_tokens=response.input_tokens,
         output_tokens=response.output_tokens,
         latency_ms=round(latency_ms, 3),
@@ -1105,6 +1114,111 @@ def _failure_tags(
     return tags
 
 
+def _equivalence_adjusted_exact_match(
+    expected_calls: list[ExpectedToolCall],
+    predicted_calls: list[PredictedToolCall],
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+    category: str,
+    strict_exact_match: float,
+) -> float:
+    """Return exact-match credit after high-confidence equivalent tool surfaces.
+
+    BFCL contains near-duplicate tools whose names differ while their function
+    surface is effectively identical. This metric keeps the strict BFCL-style
+    exact score intact, but also reports whether a miss is semantically the same
+    tool surface with matching argument values.
+    """
+
+    if strict_exact_match == 1.0:
+        return 1.0
+    if len(expected_calls) != len(predicted_calls):
+        return 0.0
+
+    if "parallel" in category:
+        used: set[int] = set()
+        for expected in expected_calls:
+            matched = False
+            for index, predicted in enumerate(predicted_calls):
+                if index in used:
+                    continue
+                if _equivalent_call_matches(expected, predicted, tools_by_name=tools_by_name):
+                    used.add(index)
+                    matched = True
+                    break
+            if not matched:
+                return 0.0
+        return 1.0
+
+    return float(
+        all(
+            _equivalent_call_matches(expected, predicted, tools_by_name=tools_by_name)
+            for expected, predicted in zip(expected_calls, predicted_calls, strict=True)
+        )
+    )
+
+
+def _equivalent_call_matches(
+    expected: ExpectedToolCall,
+    predicted: PredictedToolCall,
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+) -> bool:
+    if expected.name == predicted.name:
+        return _single_call_matches(expected, predicted)
+    if not _tool_names_are_equivalent(expected.name, predicted.name, tools_by_name=tools_by_name):
+        return False
+    return _semantic_argument_values_match(expected, predicted)
+
+
+def _tool_names_are_equivalent(
+    left: str,
+    right: str,
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+) -> bool:
+    groups = build_tool_equivalence_groups([left, right], tools_by_name)
+    return any({left, right}.issubset(set(group.get("members") or [])) for group in groups)
+
+
+def _semantic_argument_values_match(
+    expected: ExpectedToolCall,
+    predicted: PredictedToolCall,
+) -> bool:
+    predicted_values = list(predicted.arguments.values())
+    used: set[int] = set()
+
+    for possible_values in expected.arguments.values():
+        if _allows_missing(possible_values):
+            continue
+        index = _find_matching_argument_value(predicted_values, possible_values, used)
+        if index is None:
+            return False
+        used.add(index)
+
+    for possible_values in expected.arguments.values():
+        if not _allows_missing(possible_values):
+            continue
+        index = _find_matching_argument_value(predicted_values, possible_values, used)
+        if index is not None:
+            used.add(index)
+
+    return len(used) == len(predicted_values)
+
+
+def _find_matching_argument_value(
+    values: list[Any],
+    possible_values: list[Any],
+    used: set[int],
+) -> int | None:
+    for index, value in enumerate(values):
+        if index in used:
+            continue
+        if _value_matches(value, possible_values):
+            return index
+    return None
+
+
 def _has_equivalent_expected_and_predicted_tool(
     expected_calls: list[ExpectedToolCall],
     predicted_calls: list[PredictedToolCall],
@@ -1502,6 +1616,10 @@ def _case_from_dict(payload: dict[str, Any]) -> BFCLModelCaseEvaluation:
     data.setdefault("official_error_type", "")
     data.setdefault("official_error", "")
     data.setdefault("failure_tags", [])
+    data.setdefault(
+        "equivalence_adjusted_exact_match",
+        float(data.get("evaluator_exact_match") or 0.0),
+    )
     return BFCLModelCaseEvaluation(**data)
 
 
@@ -1521,6 +1639,15 @@ def _summarize(
         "strict_exact_match": _mean(row.strict_exact_match for row in rows),
         "official_ast_exact_match": _mean(row.official_ast_exact_match for row in rows),
         "evaluator_exact_match": _mean(row.evaluator_exact_match for row in rows),
+        "equivalence_adjusted_exact_match": _mean(
+            row.equivalence_adjusted_exact_match for row in rows
+        ),
+        "equivalence_adjusted_exact_gain": _mean(
+            row.equivalence_adjusted_exact_match - row.evaluator_exact_match for row in rows
+        ),
+        "equivalence_adjusted_exact_case_count": sum(
+            int(row.equivalence_adjusted_exact_match > row.evaluator_exact_match) for row in rows
+        ),
         "avg_input_tokens": round(_mean(row.input_tokens for row in rows), 1),
         "avg_output_tokens": round(_mean(row.output_tokens for row in rows), 1),
         "avg_latency_ms": round(_mean(row.latency_ms for row in rows), 1),
@@ -1578,6 +1705,9 @@ def bfcl_result_rows(
                         "failure_category": str(case.get("failure_category") or ""),
                         "failure_tags": list(case.get("failure_tags") or []),
                         "evaluator_exact_match": float(case.get("evaluator_exact_match") or 0.0),
+                        "equivalence_adjusted_exact_match": float(
+                            case.get("equivalence_adjusted_exact_match") or 0.0
+                        ),
                     },
                 }
             )
@@ -1641,6 +1771,7 @@ def print_report(report: dict[str, Any]) -> None:
         "retrieval@K={retrieval:.2f} call_rate={call:.2f} "
         "func_exact={func:.2f} arg_names={arg_names:.2f} "
         "arg_values={arg_values:.2f} strict={strict:.2f} exact={exact:.2f} "
+        "equiv_exact={equiv_exact:.2f} "
         "latency={latency:.1f}ms".format(
             retrieval=summary["retrieval_recall_at_k"],
             call=summary["model_tool_call_rate"],
@@ -1649,6 +1780,7 @@ def print_report(report: dict[str, Any]) -> None:
             arg_values=summary["argument_value_exact_match"],
             strict=summary["strict_exact_match"],
             exact=summary["evaluator_exact_match"],
+            equiv_exact=summary["equivalence_adjusted_exact_match"],
             latency=summary["avg_latency_ms"],
         )
     )
@@ -1664,13 +1796,15 @@ def print_report(report: dict[str, Any]) -> None:
         cat = category["summary"]
         print(
             "  {name}: cases={cases} tools={tools} retrieval@K={retrieval:.2f} "
-            "strict={strict:.2f} exact={exact:.2f} call_rate={call:.2f} failures={failures}".format(
+            "strict={strict:.2f} exact={exact:.2f} equiv_exact={equiv_exact:.2f} "
+            "call_rate={call:.2f} failures={failures}".format(
                 name=category["category"],
                 cases=category["case_count"],
                 tools=category["corpus_tool_count"],
                 retrieval=cat["retrieval_recall_at_k"],
                 strict=cat["strict_exact_match"],
                 exact=cat["evaluator_exact_match"],
+                equiv_exact=cat["equivalence_adjusted_exact_match"],
                 call=cat["model_tool_call_rate"],
                 failures=_format_failure_breakdown(cat.get("failure_breakdown") or {}),
             )

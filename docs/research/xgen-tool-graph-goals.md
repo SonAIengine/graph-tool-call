@@ -289,6 +289,12 @@ Required work:
     `build_candidate_set(...).target_equivalence_groups`로 같은 surface evidence를
     사용한다. XGEN deterministic benchmark는 같은 evidence를 target selector
     diagnostics와 summary count로 기록한다.
+    별도 4-case subset smoke
+    `/tmp/gtc-bfcl-neardup-adjusted-metric.json`에서는 strict/evaluator exact가
+    `0.00`이지만 `equivalence_adjusted_exact_match`는 `1.00`이다. 이 adjusted
+    metric은 공식 BFCL leaderboard 점수가 아니라, XGEN처럼 equivalent API
+    surface가 공존하는 제품 환경에서 "실제 기능 선택은 맞았는가"를 분리해서
+    보기 위한 연구 지표다.
     다음 병목은 `solve_quadratic` vs `solve_quadratic_equation`,
     `geometry.circumference` vs `calculate_circumference`, `math.gcd` vs
     `number_theory.gcd` 같은 near-duplicate disambiguation과 argument-value

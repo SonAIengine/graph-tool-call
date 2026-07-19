@@ -109,10 +109,12 @@ argument preservation을 우선 보고, row-source에서도 실패한 repeated-c
 `row_vs_retrieved_deltas`가 들어간다. 같은 repeat/top-K의 row-source와
 retrieved-source를 case-id 기준으로 pair해서 `both_pass`,
 `row_pass_retrieved_fail`, `row_fail_retrieved_pass`, `both_fail`,
-`retrieved_exact_on_row_pass`, `row_pass_retrieved_fail_breakdown`,
-`row_pass_retrieved_fail_tags`, `row_pass_retrieved_fail_case_ids`를 남긴다.
-이 값으로 full/smoke 이후 바로 "검색 계층이 실제로 깎은 케이스"만 subset으로
-뽑는다.
+`retrieved_exact_on_row_pass`,
+`retrieved_equivalence_adjusted_exact_on_row_pass`,
+`row_pass_retrieved_fail_breakdown`, `row_pass_retrieved_fail_tags`,
+`row_pass_retrieved_fail_case_ids`를 남긴다. 이 값으로 full/smoke 이후 바로
+"검색 계층이 실제로 깎은 케이스"와 "exact name은 틀렸지만 equivalent tool
+surface로 맞은 케이스"를 분리한다.
 
 `benchmarks.bfcl_tool_selection.llm_loop`는 graphify의
 `build_tool_equivalence_groups(...)`를 사용해 candidate ambiguity 중 tool name,
@@ -130,6 +132,15 @@ case-level `target_equivalence_group_count`, summary-level
 `avg_target_equivalence_group_count`와 `target_equivalence_group_case_count`를
 기록한다. `/tmp/gtc-xgen-equivalence-diagnostics.json` 기준 built-in suite 전체는
 평균 equivalence group count `0.333333`, equivalence group case `5`건이다.
+
+`2026-07-19`부터 BFCL model-loop report는
+`equivalence_adjusted_exact_match`도 함께 남긴다. 이 값은 기존
+`evaluator_exact_match`를 대체하지 않으며, BFCL leaderboard 점수로 사용하지
+않는다. strict exact가 실패했더라도 `build_tool_equivalence_groups(...)` 기준
+high-confidence equivalent surface이고 argument value가 맞을 때만 별도 credit을
+준다. 위 4개 `near_duplicate_tool_surface` subset을 qwen3.6-27B로 재실행한
+`/tmp/gtc-bfcl-neardup-adjusted-metric.json` 기준 strict/evaluator exact는
+`0.00`, equivalence-adjusted exact는 `1.00`이다.
 
 ## 실행 타깃
 
