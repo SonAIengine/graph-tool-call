@@ -45,6 +45,26 @@ def test_safe_tool_name_round_trip_for_dotted_bfcl_names():
     assert tools[0]["function"]["parameters"]["type"] == "object"
 
 
+def test_prepare_tools_can_prefix_retrieval_rank_hints():
+    tools, _name_map = _prepare_tools_for_model(
+        [
+            {
+                "name": "circle.calculate_area",
+                "description": "Calculate area of a circle.",
+                "parameters": {"type": "dict", "properties": {}, "required": []},
+            }
+        ],
+        rank_hints=True,
+        rank_by_name={"circle.calculate_area": 4},
+    )
+
+    description = tools[0]["function"]["description"]
+
+    assert description.startswith("Graph retrieval rank #4")
+    assert "Prefer lower rank numbers" in description
+    assert description.endswith("Calculate area of a circle.")
+
+
 def test_prediction_matcher_allows_optional_missing_and_parallel_order():
     expected = [
         ExpectedToolCall(

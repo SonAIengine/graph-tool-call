@@ -431,6 +431,24 @@ For diagnostic sweeps that do not include the row-source baseline or
 `parallel_multiple`, pass `--milestone-profile none` or treat the gate status
 `incomplete` as expected.
 
+When the milestone gate fails because expected tools are retrieved but the
+model selects a nearby sibling, run a candidate-presentation ablation with
+`--retrieval-rank-hints`. This leaves retrieval unchanged and only prefixes
+retrieved-source tool descriptions with graph rank hints. Treat those numbers
+as a separate ablation until the report explicitly records the option:
+
+```bash
+poetry run python -m benchmarks.bfcl_tool_selection.sweep \
+  --categories simple_python,multiple,parallel,parallel_multiple \
+  --tool-sources row,retrieved \
+  --top-ks 5 \
+  --model qwen3.6-27b \
+  --llm-url http://127.0.0.1:8000/v1 \
+  --disable-thinking \
+  --retrieval-rank-hints \
+  --output /tmp/gtc-bfcl-xgen-027-rank-hints.json
+```
+
 Recommended smoke with a native function-calling endpoint:
 
 ```bash

@@ -131,6 +131,7 @@ def run_model_benchmark(
     concurrency: int = 1,
     progress: bool = False,
     progress_every: int = 25,
+    retrieval_rank_hints: bool = False,
 ) -> dict[str, Any]:
     """Run BFCL-compatible native tool-call evaluation with a real model."""
     if evaluator == "official":
@@ -160,6 +161,7 @@ def run_model_benchmark(
             concurrency=concurrency,
             progress=progress,
             progress_every=progress_every,
+            retrieval_rank_hints=retrieval_rank_hints,
         )
         for category in selected
     ]
@@ -184,6 +186,7 @@ def run_model_benchmark(
         "cache_namespace": cache_namespace,
         "concurrency": max(1, concurrency),
         "progress": progress,
+        "retrieval_rank_hints": retrieval_rank_hints,
         "categories": [asdict(category) for category in evaluated],
         "summary": _summarize(overall_rows, min_exact_match=min_exact_match),
     }
@@ -212,6 +215,7 @@ def evaluate_category_model(
     concurrency: int = 1,
     progress: bool = False,
     progress_every: int = 25,
+    retrieval_rank_hints: bool = False,
 ) -> BFCLModelCategoryEvaluation:
     question_rows = _load_jsonl(category, kind="question", data_root=data_root, ref=ref)
     answer_rows = _load_jsonl(category, kind="answer", data_root=data_root, ref=ref)
@@ -244,6 +248,7 @@ def evaluate_category_model(
         concurrency=concurrency,
         progress=progress,
         progress_every=progress_every,
+        retrieval_rank_hints=retrieval_rank_hints,
     )
     rows = [row for row in rows if row.expected_calls]
     return BFCLModelCategoryEvaluation(
@@ -278,6 +283,7 @@ def _evaluate_category_cases(
     concurrency: int,
     progress: bool,
     progress_every: int,
+    retrieval_rank_hints: bool,
 ) -> list[BFCLModelCaseEvaluation]:
     max_workers = max(1, concurrency)
     started = time.perf_counter()
@@ -305,6 +311,7 @@ def _evaluate_category_cases(
                 refresh_cache=refresh_cache,
                 timeout=timeout,
                 disable_thinking=disable_thinking,
+                retrieval_rank_hints=retrieval_rank_hints,
             )
             rows[index] = row
             cache_hits += int(cache_hit)
@@ -343,6 +350,7 @@ def _evaluate_category_cases(
                 refresh_cache=refresh_cache,
                 timeout=timeout,
                 disable_thinking=disable_thinking,
+                retrieval_rank_hints=retrieval_rank_hints,
             ): index
             for index, question_row in enumerate(case_rows)
         }
@@ -385,6 +393,7 @@ def _evaluate_or_read_case(
     refresh_cache: bool,
     timeout: int,
     disable_thinking: bool,
+    retrieval_rank_hints: bool,
 ) -> tuple[BFCLModelCaseEvaluation, bool]:
     answer_row = answers_by_id.get(str(question_row.get("id"))) or {}
     cache_path = _case_cache_path(
@@ -402,6 +411,7 @@ def _evaluate_or_read_case(
         timeout=timeout,
         disable_thinking=disable_thinking,
         cache_namespace=cache_namespace,
+        retrieval_rank_hints=retrieval_rank_hints,
     )
     row = None if refresh_cache else _read_case_cache(cache_path)
     if row is not None:
@@ -422,6 +432,7 @@ def _evaluate_or_read_case(
         official_model_name=official_model_name,
         timeout=timeout,
         disable_thinking=disable_thinking,
+        retrieval_rank_hints=retrieval_rank_hints,
     )
     _write_case_cache(cache_path, row)
     return row, False
@@ -470,6 +481,7 @@ def evaluate_model_case(
     official_model_name: str,
     timeout: int,
     disable_thinking: bool,
+    retrieval_rank_hints: bool,
 ) -> BFCLModelCaseEvaluation:
     query = _question_text(question_row)
     expected_calls = _expected_calls(answer_row)
@@ -485,7 +497,11 @@ def evaluate_model_case(
         raise ValueError(f"Unknown tool_source: {tool_source}")
 
     raw_tools = [tools_by_name[name] for name in presented_tools if name in tools_by_name]
-    model_tools, safe_name_map = _prepare_tools_for_model(raw_tools)
+    model_tools, safe_name_map = _prepare_tools_for_model(
+        raw_tools,
+        rank_hints=retrieval_rank_hints and tool_source == "retrieved",
+        rank_by_name={name: index + 1 for index, name in enumerate(retrieved)},
+    )
     response = _chat(
         model=model,
         llm_url=llm_url,
@@ -680,6 +696,9 @@ def _chat_ollama(
 
 def _prepare_tools_for_model(
     raw_tools: list[dict[str, Any]],
+    *,
+    rank_hints: bool = False,
+    rank_by_name: dict[str, int] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, str]]:
     used_names: dict[str, str] = {}
     safe_to_original: dict[str, str] = {}
@@ -695,12 +714,31 @@ def _prepare_tools_for_model(
                 "type": "function",
                 "function": {
                     "name": safe_name,
-                    "description": str(raw_tool.get("description") or ""),
+                    "description": _model_tool_description(
+                        raw_tool,
+                        rank_hints=rank_hints,
+                        rank=rank_by_name.get(original_name) if rank_by_name else None,
+                    ),
                     "parameters": _normalize_parameters(raw_tool.get("parameters") or {}),
                 },
             }
         )
     return model_tools, safe_to_original
+
+
+def _model_tool_description(
+    raw_tool: dict[str, Any],
+    *,
+    rank_hints: bool,
+    rank: int | None,
+) -> str:
+    description = str(raw_tool.get("description") or "")
+    if not rank_hints or rank is None:
+        return description
+    return (
+        f"Graph retrieval rank #{rank} for the current user query. "
+        f"Prefer lower rank numbers when multiple tools look similar. {description}"
+    ).strip()
 
 
 def _safe_tool_name(original_name: str, used_names: dict[str, str]) -> str:
@@ -1220,6 +1258,7 @@ def _case_cache_path(
     timeout: int,
     disable_thinking: bool,
     cache_namespace: str,
+    retrieval_rank_hints: bool,
 ) -> Path | None:
     if cache_dir is None:
         return None
@@ -1240,6 +1279,7 @@ def _case_cache_path(
         "official_model_name": official_model_name if evaluator == "official" else "",
         "timeout": timeout,
         "disable_thinking": disable_thinking,
+        "retrieval_rank_hints": retrieval_rank_hints,
     }
     key = hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]  # noqa: S324
     safe_case_id = re.sub(r"[^a-zA-Z0-9_.-]", "_", case_id)
@@ -1502,6 +1542,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Pass chat-template thinking disable options for Qwen/vLLM-style reasoning models.",
     )
     parser.add_argument(
+        "--retrieval-rank-hints",
+        action="store_true",
+        help=(
+            "For retrieved tool-source runs, prefix tool descriptions with graph retrieval rank "
+            "hints. Use as an ablation for candidate ambiguity."
+        ),
+    )
+    parser.add_argument(
         "--concurrency",
         type=int,
         default=1,
@@ -1566,6 +1614,7 @@ def main(argv: list[str] | None = None) -> int:
             concurrency=args.concurrency,
             progress=args.progress,
             progress_every=args.progress_every,
+            retrieval_rank_hints=args.retrieval_rank_hints,
         )
     except ImportError as exc:
         parser.error(str(exc))
