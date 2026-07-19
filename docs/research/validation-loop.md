@@ -163,6 +163,18 @@ data-reference vs synthetic array mismatch.
 `tag_structured_value_missing.txt`, `tag_percentage_scale_mismatch.txt`,
 `tag_data_reference_substitution.txt`를 생성한다.
 
+`2026-07-19` case-local schema pass는 BFCL corpus에서 같은 tool name이 서로
+다른 schema로 반복될 때, model-facing schema를 category-wide 첫 definition이
+아니라 현재 case row의 definition으로 우선 선택하게 했다.
+`simple_python_11`의 `calculate_triangle_area`는 corpus 첫 definition에는 optional
+`unit`이 있지만 해당 case row에는 `base`, `height`만 있으므로, 이전 run에서
+Qwen이 만들던 `unit="units"`가 제거된다. 1-case smoke
+`/tmp/gtc-bfcl-case-local-schema-final.json` 기준 exact는 `0.00 -> 1.00`,
+6-case argument subset `/tmp/gtc-bfcl-case-local-schema-argument-subset.json`
+기준 exact는 `0.166667 -> 0.5`다. 남은 tag는
+`optional_value_mismatch`, `percentage_scale_mismatch`이고,
+`parallel_multiple_21`은 fresh output에서 `call_count_mismatch`로 이동했다.
+
 ## 실행 타깃
 
 ```bash

@@ -528,7 +528,11 @@ def evaluate_model_case(
     else:
         raise ValueError(f"Unknown tool_source: {tool_source}")
 
-    raw_tools = [tools_by_name[name] for name in presented_tools if name in tools_by_name]
+    raw_tools = _presented_raw_tools(
+        presented_tools,
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
     model_tools, safe_name_map = _prepare_tools_for_model(
         raw_tools,
         rank_hints=retrieval_rank_hints and tool_source == "retrieved",
@@ -631,7 +635,9 @@ def _messages_for_case(
         "Emit native tool calls only, with no prose. If the request needs "
         "multiple independent actions, emit one tool call for each action. "
         "Use exact argument values from the user request. Omit optional "
-        "arguments unless the request explicitly sets them."
+        "arguments unless the request explicitly sets them. Use only argument "
+        "keys declared in the selected tool's JSON schema; never invent extra "
+        "argument names, even when the user mentions units or formatting."
     )
     if candidate_selection_guidance:
         system += (
@@ -858,6 +864,21 @@ def _prepare_tools_for_model(
             }
         )
     return model_tools, safe_to_original
+
+
+def _presented_raw_tools(
+    presented_tools: list[str],
+    *,
+    question_row: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    case_tools_by_name = _tools_by_name([question_row])
+    raw_tools: list[dict[str, Any]] = []
+    for name in presented_tools:
+        tool = case_tools_by_name.get(name) or tools_by_name.get(name)
+        if tool:
+            raw_tools.append(tool)
+    return raw_tools
 
 
 def _model_tool_description(
