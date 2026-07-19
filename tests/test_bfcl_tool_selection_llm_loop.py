@@ -16,12 +16,12 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     _evaluate_predictions,
     _failure_tags,
     _messages_for_case,
-    _near_duplicate_tool_surface,
     _prepare_tools_for_model,
     run_model_benchmark,
     write_bfcl_result_files,
 )
 from benchmarks.xgen_tool_graph.llm_loop import ChatResponse
+from graph_tool_call.graphify import build_tool_equivalence_groups
 
 
 def test_safe_tool_name_round_trip_for_dotted_bfcl_names():
@@ -181,14 +181,10 @@ def test_near_duplicate_tool_surface_tags_candidate_ambiguity():
         },
     }
 
-    assert _near_duplicate_tool_surface(
-        tools_by_name["solve_quadratic"],
-        tools_by_name["solve_quadratic_equation"],
-    )
-    assert not _near_duplicate_tool_surface(
-        tools_by_name["solve_quadratic"],
-        tools_by_name["restaurant_finder"],
-    )
+    groups = build_tool_equivalence_groups(list(tools_by_name), tools_by_name)
+    assert [group["members"] for group in groups] == [
+        ["solve_quadratic", "solve_quadratic_equation"]
+    ]
     assert _failure_tags(
         expected_calls=[ExpectedToolCall("solve_quadratic", {"a": [2]})],
         predicted_calls=[PredictedToolCall("solve_quadratic_equation", {"a": 2})],

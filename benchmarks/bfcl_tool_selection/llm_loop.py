@@ -52,39 +52,11 @@ from benchmarks.xgen_tool_graph.llm_loop import (
     _redacted_url,
 )
 from graph_tool_call import ToolGraph, __version__
+from graph_tool_call.graphify import build_tool_equivalence_groups
 
 DEFAULT_OFFICIAL_MODEL_NAME = "qwen3-32b-FC"
 BFCL_RESULT_ARGUMENT_FORMATS = ("json-string", "decoded")
 MODEL_CASE_CACHE_VERSION = 8
-_SURFACE_STOPWORDS = frozenset(
-    {
-        "and",
-        "are",
-        "based",
-        "can",
-        "for",
-        "from",
-        "function",
-        "given",
-        "into",
-        "its",
-        "one",
-        "optional",
-        "parameter",
-        "parameters",
-        "return",
-        "returns",
-        "specific",
-        "the",
-        "this",
-        "two",
-        "use",
-        "used",
-        "using",
-        "value",
-        "with",
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -1124,7 +1096,7 @@ def _failure_tags(
     failure_category: str,
 ) -> list[str]:
     tags: list[str] = []
-    if failure_category == "candidate_ambiguity" and _has_near_duplicate_tool_surface(
+    if failure_category == "candidate_ambiguity" and _has_equivalent_expected_and_predicted_tool(
         expected_calls,
         predicted_calls,
         tools_by_name=tools_by_name,
@@ -1133,7 +1105,7 @@ def _failure_tags(
     return tags
 
 
-def _has_near_duplicate_tool_surface(
+def _has_equivalent_expected_and_predicted_tool(
     expected_calls: list[ExpectedToolCall],
     predicted_calls: list[PredictedToolCall],
     *,
@@ -1141,68 +1113,20 @@ def _has_near_duplicate_tool_surface(
 ) -> bool:
     expected_names = {call.name for call in expected_calls}
     predicted_names = {call.name for call in predicted_calls}
-    for expected_name in expected_names - predicted_names:
-        expected_tool = tools_by_name.get(expected_name)
-        if not expected_tool:
-            continue
-        for predicted_name in predicted_names - expected_names:
-            predicted_tool = tools_by_name.get(predicted_name)
-            if predicted_tool and _near_duplicate_tool_surface(expected_tool, predicted_tool):
+    equivalence_groups = build_tool_equivalence_groups(
+        sorted(expected_names | predicted_names),
+        tools_by_name,
+    )
+    for group in equivalence_groups:
+        members = set(group.get("members") or [])
+        for expected_name in expected_names - predicted_names:
+            if expected_name not in members:
+                continue
+            if any(
+                predicted_name in members for predicted_name in predicted_names - expected_names
+            ):
                 return True
     return False
-
-
-def _near_duplicate_tool_surface(left: dict[str, Any], right: dict[str, Any]) -> bool:
-    left_terms = _tool_surface_terms(left)
-    right_terms = _tool_surface_terms(right)
-    if not left_terms or not right_terms:
-        return False
-    overlap = len(left_terms & right_terms) / len(left_terms | right_terms)
-    name_overlap = bool(
-        _identifier_terms(str(left.get("name") or ""))
-        & _identifier_terms(str(right.get("name") or ""))
-    )
-    required_gap = abs(len(_required_fields(left)) - len(_required_fields(right)))
-    if overlap >= 0.42 and required_gap <= 2:
-        return True
-    return bool(overlap >= 0.32 and name_overlap and required_gap <= 2)
-
-
-def _tool_surface_terms(tool: dict[str, Any]) -> set[str]:
-    params = tool.get("parameters") if isinstance(tool.get("parameters"), dict) else {}
-    properties = params.get("properties") if isinstance(params, dict) else {}
-    parts = [str(tool.get("name") or ""), str(tool.get("description") or "")]
-    if isinstance(properties, dict):
-        for name, schema in properties.items():
-            parts.append(str(name))
-            if isinstance(schema, dict):
-                parts.append(str(schema.get("description") or ""))
-    return _surface_terms(" ".join(parts))
-
-
-def _required_fields(tool: dict[str, Any]) -> list[str]:
-    params = tool.get("parameters") if isinstance(tool.get("parameters"), dict) else {}
-    required = params.get("required") if isinstance(params, dict) else []
-    if not isinstance(required, list):
-        return []
-    return [str(name) for name in required]
-
-
-def _surface_terms(text: str) -> set[str]:
-    return {
-        term for term in _identifier_terms(text) if len(term) > 2 and term not in _SURFACE_STOPWORDS
-    }
-
-
-def _identifier_terms(text: str) -> set[str]:
-    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(text or ""))
-    terms = {term for term in re.split(r"[^a-zA-Z0-9]+", spaced.lower()) if term}
-    singular_terms = {
-        term[:-1]
-        for term in terms
-        if len(term) > 3 and term.endswith("s") and not term.endswith("ss")
-    }
-    return terms | singular_terms
 
 
 def _classify_official_error_type(error_type: str) -> str:

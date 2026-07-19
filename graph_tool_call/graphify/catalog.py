@@ -70,6 +70,36 @@ _DELETE_TERMS = frozenset(
         "해제",
     }
 )
+_SURFACE_STOPWORDS = frozenset(
+    {
+        "and",
+        "are",
+        "based",
+        "can",
+        "default",
+        "for",
+        "from",
+        "function",
+        "given",
+        "into",
+        "its",
+        "one",
+        "optional",
+        "parameter",
+        "parameters",
+        "return",
+        "returns",
+        "specific",
+        "the",
+        "this",
+        "two",
+        "use",
+        "used",
+        "using",
+        "value",
+        "with",
+    }
+)
 
 
 def target_action_priority_for_query(query: str) -> dict[str, int]:
@@ -163,6 +193,11 @@ def build_candidate_set(
         diversify_target_groups=diversify_target_groups,
         always_keep=set(explicit_seed),
     )
+    selected_target_set = set(targets)
+    target_equivalence_groups = _enrich_equivalence_groups(
+        build_tool_equivalence_groups(raw_targets, tools_by_name),
+        selected_targets=selected_target_set,
+    )
     candidates = expand_candidates_with_producers(
         seed,
         tools_by_name,
@@ -199,6 +234,8 @@ def build_candidate_set(
         "suppressed_target_count": len(suppressed_targets),
         "sibling_control_applied": bool(suppressed_targets),
         "target_candidate_groups": target_groups,
+        "target_equivalence_groups": target_equivalence_groups,
+        "target_equivalence_group_count": len(target_equivalence_groups),
         "max_target_candidates": max_target_candidates,
         "max_targets_per_group": max_targets_per_group,
         "diversify_target_groups": diversify_target_groups,
@@ -206,6 +243,78 @@ def build_candidate_set(
         "max_hops": max(0, max_hops),
         "max_producers_per_field": max(0, max_producers_per_field),
     }
+
+
+def build_tool_equivalence_groups(
+    candidate_names: list[str],
+    tools_by_name: dict[str, dict[str, Any]],
+    *,
+    threshold: float = 0.42,
+) -> list[dict[str, Any]]:
+    """Return high-confidence near-duplicate/equivalent tool surface groups.
+
+    This helper is intentionally deterministic and evidence-only. It does not
+    merge, suppress, or rerank candidates; adapters can use the returned groups
+    to explain ambiguity, add selector evidence, or decide whether an
+    equivalence-aware UI/model prompt is needed.
+    """
+
+    names = _dedupe_names(candidate_names)
+    if len(names) < 2:
+        return []
+
+    pair_evidence: list[dict[str, Any]] = []
+    adjacency: dict[str, set[str]] = {name: set() for name in names}
+    for index, left_name in enumerate(names):
+        left_tool = tools_by_name.get(left_name) or {}
+        for right_name in names[index + 1 :]:
+            right_tool = tools_by_name.get(right_name) or {}
+            evidence = _surface_equivalence_evidence(
+                left_name,
+                left_tool,
+                right_name,
+                right_tool,
+                threshold=threshold,
+            )
+            if not evidence:
+                continue
+            pair_evidence.append(evidence)
+            adjacency[left_name].add(right_name)
+            adjacency[right_name].add(left_name)
+
+    seen: set[str] = set()
+    groups: list[dict[str, Any]] = []
+    order = {name: index for index, name in enumerate(names)}
+    for name in names:
+        if name in seen or not adjacency[name]:
+            continue
+        stack = [name]
+        members: set[str] = set()
+        while stack:
+            current = stack.pop()
+            if current in members:
+                continue
+            members.add(current)
+            stack.extend(sorted(adjacency[current] - members, key=order.get, reverse=True))
+        seen.update(members)
+        ordered_members = sorted(members, key=order.get)
+        group_pairs = [
+            row for row in pair_evidence if row["tool_a"] in members and row["tool_b"] in members
+        ]
+        max_score = max((float(row["score"]) for row in group_pairs), default=0.0)
+        groups.append(
+            {
+                "key": f"surface_equivalence:{_stable_group_key(ordered_members)}",
+                "kind": "surface_equivalence",
+                "members": ordered_members,
+                "member_count": len(ordered_members),
+                "score": round(max_score, 6),
+                "confidence": "high" if max_score >= 0.5 else "medium",
+                "evidence_sources": ["tool_surface"],
+                "pair_evidence": group_pairs,
+            }
+        )
+    return groups
 
 
 def expand_candidates_with_producers(
@@ -547,6 +656,111 @@ def _target_group_key(name: str, tool: dict[str, Any]) -> str:
     return f"name:{name}"
 
 
+def _enrich_equivalence_groups(
+    groups: list[dict[str, Any]],
+    *,
+    selected_targets: set[str],
+) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for group in groups:
+        members = list(group.get("members") or [])
+        selected = [name for name in members if name in selected_targets]
+        suppressed = [name for name in members if name not in selected_targets]
+        enriched.append(
+            {
+                **group,
+                "selected": selected,
+                "suppressed": suppressed,
+                "suppressed_count": len(suppressed),
+            }
+        )
+    return enriched
+
+
+def _surface_equivalence_evidence(
+    left_name: str,
+    left_tool: dict[str, Any],
+    right_name: str,
+    right_tool: dict[str, Any],
+    *,
+    threshold: float,
+) -> dict[str, Any] | None:
+    left_terms = _tool_surface_terms(left_name, left_tool)
+    right_terms = _tool_surface_terms(right_name, right_tool)
+    if not left_terms or not right_terms:
+        return None
+    shared_terms = left_terms & right_terms
+    surface_overlap = len(shared_terms) / len(left_terms | right_terms)
+    name_overlap = bool(_identifier_terms(left_name) & _identifier_terms(right_name))
+    required_field_gap = abs(len(_required_fields(left_tool)) - len(_required_fields(right_tool)))
+    score = min(1.0, surface_overlap + (0.1 if name_overlap else 0.0))
+    equivalent = required_field_gap <= 2 and (
+        surface_overlap >= threshold or (surface_overlap >= 0.32 and name_overlap)
+    )
+    if not equivalent:
+        return None
+    return {
+        "tool_a": left_name,
+        "tool_b": right_name,
+        "score": round(score, 6),
+        "surface_overlap": round(surface_overlap, 6),
+        "name_overlap": name_overlap,
+        "required_field_gap": required_field_gap,
+        "shared_terms": sorted(shared_terms)[:12],
+    }
+
+
+def _tool_surface_terms(name: str, tool: dict[str, Any]) -> set[str]:
+    params = tool.get("parameters") if isinstance(tool.get("parameters"), dict) else {}
+    properties = params.get("properties") if isinstance(params, dict) else {}
+    parts = [name, str(tool.get("name") or ""), str(tool.get("description") or "")]
+    if isinstance(properties, dict):
+        for property_name, schema in properties.items():
+            parts.append(str(property_name))
+            if isinstance(schema, dict):
+                parts.append(str(schema.get("description") or ""))
+    metadata = tool.get("metadata") if isinstance(tool.get("metadata"), dict) else {}
+    ai = metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
+    parts.extend(
+        [
+            str(ai.get("primary_resource") or ""),
+            str(ai.get("canonical_action") or ""),
+            str(ai.get("one_line_summary") or ""),
+            str(ai.get("when_to_use") or ""),
+        ]
+    )
+    return _surface_terms(" ".join(parts))
+
+
+def _required_fields(tool: dict[str, Any]) -> list[str]:
+    params = tool.get("parameters") if isinstance(tool.get("parameters"), dict) else {}
+    required = params.get("required") if isinstance(params, dict) else []
+    if not isinstance(required, list):
+        return []
+    return [str(name) for name in required]
+
+
+def _surface_terms(text: str) -> set[str]:
+    return {
+        term for term in _identifier_terms(text) if len(term) > 2 and term not in _SURFACE_STOPWORDS
+    }
+
+
+def _identifier_terms(text: str) -> set[str]:
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(text or ""))
+    terms = {term for term in re.split(r"[^a-zA-Z0-9]+", spaced.lower()) if term}
+    singular_terms = {
+        term[:-1]
+        for term in terms
+        if len(term) > 3 and term.endswith("s") and not term.endswith("ss")
+    }
+    return terms | singular_terms
+
+
+def _stable_group_key(names: list[str]) -> str:
+    return re.sub(r"[^a-zA-Z0-9_.:-]+", "_", "__".join(names))[:120]
+
+
 def _build_producer_index(
     tools_by_name: dict[str, dict[str, Any]],
 ) -> dict[str, list[str]]:
@@ -585,6 +799,7 @@ def _producer_score(tool: dict[str, Any], priority: dict[str, int]) -> int:
 
 __all__ = [
     "build_candidate_set",
+    "build_tool_equivalence_groups",
     "expand_candidates_with_producers",
     "target_action_priority_for_query",
 ]

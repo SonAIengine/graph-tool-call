@@ -12,6 +12,7 @@ from graph_tool_call.graphify import (
     EVIDENCE_OPENAPI_LINK,
     build_candidate_set,
     build_io_contract,
+    build_tool_equivalence_groups,
     derive_plan_trace_edges,
     expand_candidates_with_producers,
     ingest_openapi_graphify,
@@ -37,6 +38,7 @@ def test_graphify_public_contract_imports():
     assert COLLECTION_GRAPH_VERSION == "2"
     assert callable(build_candidate_set)
     assert callable(build_io_contract)
+    assert callable(build_tool_equivalence_groups)
     assert callable(expand_candidates_with_producers)
     assert callable(target_action_priority_for_query)
     assert callable(normalize_graph_edge)
@@ -1220,6 +1222,65 @@ def test_build_candidate_set_can_rerank_targets_by_action_priority_with_signals(
     assert signals["createProductReview"]["reranked_rank"] == 1
     assert signals["createProductReview"]["action_priority"] == 5
     assert signals["listProducts"]["suppressed"] is True
+
+
+def test_build_tool_equivalence_groups_returns_surface_evidence_without_suppressing():
+    tools = {
+        "solve_quadratic": {
+            "name": "solve_quadratic",
+            "description": "Find the roots of a quadratic equation. Returns both roots.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "a": {"description": "Coefficient of x squared"},
+                    "b": {"description": "Coefficient of x"},
+                    "c": {"description": "Constant term"},
+                },
+                "required": ["a", "b", "c"],
+            },
+        },
+        "solve_quadratic_equation": {
+            "name": "solve_quadratic_equation",
+            "description": "Function solves the quadratic equation and returns its roots.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "a": {"description": "Coefficient of x squared"},
+                    "b": {"description": "Coefficient of x"},
+                    "c": {"description": "Constant term"},
+                },
+                "required": ["a", "b", "c"],
+            },
+        },
+        "restaurant_finder": {
+            "name": "restaurant_finder",
+            "description": "Locate restaurants based on cuisine and city.",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {}, "cuisine": {}},
+                "required": ["city", "cuisine"],
+            },
+        },
+    }
+
+    groups = build_tool_equivalence_groups(list(tools), tools)
+    candidate_set = build_candidate_set(list(tools), tools, max_target_candidates=2, max_hops=0)
+
+    assert len(groups) == 1
+    assert groups[0]["kind"] == "surface_equivalence"
+    assert groups[0]["members"] == ["solve_quadratic", "solve_quadratic_equation"]
+    assert groups[0]["evidence_sources"] == ["tool_surface"]
+    assert groups[0]["pair_evidence"][0]["tool_a"] == "solve_quadratic"
+    assert groups[0]["pair_evidence"][0]["tool_b"] == "solve_quadratic_equation"
+    assert "quadratic" in groups[0]["pair_evidence"][0]["shared_terms"]
+    assert candidate_set["target_candidates"] == ["solve_quadratic", "solve_quadratic_equation"]
+    assert candidate_set["suppressed_target_candidates"] == ["restaurant_finder"]
+    assert candidate_set["target_equivalence_group_count"] == 1
+    assert candidate_set["target_equivalence_groups"][0]["selected"] == [
+        "solve_quadratic",
+        "solve_quadratic_equation",
+    ]
+    assert candidate_set["target_equivalence_groups"][0]["suppressed"] == []
 
 
 def test_target_action_priority_for_query_maps_generic_korean_and_english_intent():

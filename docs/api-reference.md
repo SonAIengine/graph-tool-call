@@ -460,6 +460,18 @@ candidate_set = build_candidate_set(
 signals = candidate_set["target_rank_signals"]
 ```
 
+`build_candidate_set()` also returns `target_equivalence_groups`, an
+evidence-only list of high-confidence near-duplicate target surfaces. It does
+not merge, suppress, or rerank tools. Use `build_tool_equivalence_groups()`
+directly when an adapter wants duplicate/equivalence evidence for an arbitrary
+candidate surface:
+
+```python
+from graph_tool_call.graphify import build_tool_equivalence_groups
+
+groups = build_tool_equivalence_groups(target_candidates, graph_payload["tools"])
+```
+
 ---
 
 ## Top-level helpers
