@@ -140,6 +140,8 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     assert report["search"]["case_hit_at_k"] == 1.0
     assert report["search"]["target_selector_exact_at_k"] == 1.0
     assert report["search"]["target_selector_miss_count"] == 0
+    assert "avg_target_equivalence_group_count" in report["search"]
+    assert "target_equivalence_group_case_count" in report["search"]
     assert report["search"]["target_selector_rank_buckets"]["top_1"] == 1
     assert report["search"]["top_1_hit_at_k"] == 1.0
     assert report["search"]["top_3_hit_at_k"] == 1.0
@@ -149,6 +151,9 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     assert report["cases"][0]["selected_target"] == "searchBrands"
     assert report["cases"][0]["target_selector_exact"] == 1.0
     assert report["cases"][0]["target_selector_rank"] == 1
+    assert report["cases"][0]["target_equivalence_group_count"] == len(
+        report["cases"][0]["target_equivalence_groups"]
+    )
     assert report["cases"][0]["best_expected_rank"] == 1
     assert report["cases"][0]["required_expected_found_at_k"] is True
 
@@ -316,6 +321,7 @@ def test_xgen_api_scale_reports_contract_plan_readiness(tmp_path):
     assert report["search"]["unresolved_required_input_count"] == 0
     assert report["search"]["input_resolution_counts"] == {"producer": 1}
     assert case["selected_target"] == "getProductDetail"
+    assert case["target_equivalence_group_count"] == len(case["target_equivalence_groups"])
     assert case["producer_candidates"] == ["searchProducts"]
     assert case["plan_candidates"] == ["getProductDetail", "searchProducts"]
     assert case["target_required_data_input_count"] == 1
