@@ -33,6 +33,7 @@ from graph_tool_call.analyze.dependency import (
     DetectedRelation,
     detect_dependencies,
 )
+from graph_tool_call.core.contract_matching import description_alias_key
 from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.graphify.edges import (
     EVIDENCE_API_CONTRACT,
@@ -316,11 +317,13 @@ def _apply_contract_data_flow_edges(
             semantic = str(consume.get("semantic_tag") or "").strip()
             field_name = str(consume.get("field_name") or "").strip()
             field_key = _contract_field_key(field_name)
+            description_key = description_alias_key(consume)
             candidate_names = list(
                 dict.fromkeys(
                     producer_index.get(("semantic", semantic), [])
                     + producer_index.get(("field", field_name), [])
                     + producer_index.get(("loose", field_key), [])
+                    + producer_index.get(("description", description_key), [])
                 )
             )
             if not candidate_names:
@@ -340,6 +343,7 @@ def _apply_contract_data_flow_edges(
                     semantic=semantic,
                     field_name=field_name,
                     field_key=field_key,
+                    description_key=description_key,
                 )
                 if produce is None:
                     continue
@@ -683,12 +687,15 @@ def _contract_producer_index(
             semantic = str(produce.get("semantic_tag") or "").strip()
             field_name = str(produce.get("field_name") or "").strip()
             field_key = _contract_field_key(field_name)
+            description_key = description_alias_key(produce)
             if semantic:
                 index.setdefault(("semantic", semantic), []).append(schema.name)
             if field_name:
                 index.setdefault(("field", field_name), []).append(schema.name)
             if field_key:
                 index.setdefault(("loose", field_key), []).append(schema.name)
+            if description_key:
+                index.setdefault(("description", description_key), []).append(schema.name)
     return index
 
 
@@ -698,6 +705,7 @@ def _matching_produce(
     semantic: str,
     field_name: str,
     field_key: str,
+    description_key: str,
 ) -> dict[str, Any] | None:
     for produce in metadata.get("produces") or []:
         if not isinstance(produce, dict):
@@ -710,6 +718,8 @@ def _matching_produce(
             return produce
         if field_key and _contract_field_key(p_field_name) == field_key:
             return produce
+        if description_key and description_alias_key(produce) == description_key:
+            return produce
     return None
 
 
@@ -717,6 +727,7 @@ def _is_echo_producer(metadata: dict[str, Any], produce: dict[str, Any]) -> bool
     p_semantic = str(produce.get("semantic_tag") or "").strip()
     p_field_name = str(produce.get("field_name") or "").strip()
     p_field_key = _contract_field_key(p_field_name)
+    p_description_key = description_alias_key(produce)
     for consume in metadata.get("consumes") or []:
         if not isinstance(consume, dict):
             continue
@@ -727,6 +738,8 @@ def _is_echo_producer(metadata: dict[str, Any], produce: dict[str, Any]) -> bool
         if p_field_name and c_field_name == p_field_name:
             return True
         if p_field_key and _contract_field_key(c_field_name) == p_field_key:
+            return True
+        if p_description_key and description_alias_key(consume) == p_description_key:
             return True
     return False
 

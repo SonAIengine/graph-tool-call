@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from graph_tool_call.core.contract_matching import description_alias_key
 from graph_tool_call.plan.deps import compute_step_deps
 from graph_tool_call.plan.schema import Plan, PlanStep
 
@@ -199,6 +200,7 @@ class PathSynthesizer:
         # Conservative — only normalises case + separators, never strips
         # tokens (so ``ordNo`` ≠ ``orderNo`` — those need the graph fallback).
         self._producers_by_loose_field: dict[str, list[str]] = {}
+        self._producers_by_description_alias: dict[str, list[str]] = {}
         # graphify-mode adjacency: ``tool_name -> [edge_dict]`` for outgoing
         # workflow edges (REQUIRES / PRECEDES / COMPLEMENTARY). Used as a
         # fallback in ``_find_producer`` when neither semantic_tag nor
@@ -471,6 +473,7 @@ class PathSynthesizer:
             producer = self._find_producer(
                 semantic=semantic,
                 field_name=field_name,
+                consume=consume,
                 target_tool=tool_name,
                 entities=entities,
                 excluded=visiting | exclude_tools,
@@ -515,6 +518,7 @@ class PathSynthesizer:
                     producer,
                     semantic=semantic,
                     field_name=field_name,
+                    consume=consume,
                 )
                 if opt_path and "[*]" in opt_path:
                     raise DynamicOptionRequired(
@@ -567,7 +571,7 @@ class PathSynthesizer:
 
             # Build a placeholder binding — will be rewritten after step_ids
             # are assigned. Format: ${<tool_name>.<jsonpath-sans-root>}
-            prod_path = self._producer_jsonpath(producer, semantic, field_name)
+            prod_path = self._producer_jsonpath(producer, semantic, field_name, consume=consume)
             args[field_name] = f"${{{producer}.{prod_path}}}"
             rationales.append(f"{field_name} ← {producer} ({prod_path})")
             self._selected_producers.append(
@@ -611,23 +615,30 @@ class PathSynthesizer:
             meta = tool.get("metadata") or {}
             consumed_fields: set[str] = set()
             consumed_semantics: set[str] = set()
+            consumed_description_aliases: set[str] = set()
             for c in meta.get("consumes") or []:
                 if not isinstance(c, dict):
                     continue
                 cf = c.get("field_name") or ""
                 cs = c.get("semantic_tag") or ""
+                ca = description_alias_key(c)
                 if cf:
                     consumed_fields.add(cf)
                 if cs:
                     consumed_semantics.add(cs)
+                if ca:
+                    consumed_description_aliases.add(ca)
 
             for produce in meta.get("produces") or []:
                 sem = produce.get("semantic_tag") or ""
                 fname = produce.get("field_name") or ""
+                alias = description_alias_key(produce)
                 # Skip pure echo-back: the field came in, gets relayed out.
                 if fname and fname in consumed_fields:
                     continue
                 if sem and sem in consumed_semantics:
+                    continue
+                if alias and alias in consumed_description_aliases:
                     continue
                 if sem:
                     self._producers_by_semantic.setdefault(sem, []).append(name)
@@ -636,6 +647,8 @@ class PathSynthesizer:
                     loose = _normalize_field_name(fname)
                     if loose and loose != fname:
                         self._producers_by_loose_field.setdefault(loose, []).append(name)
+                if alias:
+                    self._producers_by_description_alias.setdefault(alias, []).append(name)
 
     # ---- graphify edge indexing & traversal ---------------------------------
 
@@ -690,6 +703,7 @@ class PathSynthesizer:
         "graph_EXTRACTED": 50,
         "field_exact": 40,
         "graph_INFERRED": 20,
+        "description_alias": 15,
         "field_loose": 10,
         "graph_AMBIGUOUS": 5,
     }
@@ -699,6 +713,7 @@ class PathSynthesizer:
         *,
         semantic: str,
         field_name: str,
+        consume: dict[str, Any] | None,
         target_tool: str,
         entities: dict[str, Any],
         excluded: set[str] | None = None,
@@ -757,6 +772,18 @@ class PathSynthesizer:
                         continue  # already had a stronger signal
                     _record(n, "field_loose")
 
+        # (a'') schema-side: conservative OpenAPI description alias. This is
+        # only emitted for identifier-like rows with specific descriptions, so
+        # ``marketingDisplayNo`` can match a producer of ``mkdpNo`` when both
+        # are described as ``기획전번호`` without letting generic ``번호`` rows
+        # flood producer selection.
+        description_alias = description_alias_key(consume)
+        if description_alias:
+            for n in self._producers_by_description_alias.get(description_alias, []):
+                if n in candidate_signals:
+                    continue
+                _record(n, "description_alias")
+
         # (b) graph-side: walk outgoing workflow edges, verify each
         # candidate actually has a matching produces entry.
         edges = self._workflow_edges_out.get(target_tool) or []
@@ -778,17 +805,25 @@ class PathSynthesizer:
                 for c in (tool.get("metadata") or {}).get("consumes") or []
                 if isinstance(c, dict)
             }
+            cand_consumes_description_aliases = {
+                description_alias_key(c)
+                for c in (tool.get("metadata") or {}).get("consumes") or []
+                if isinstance(c, dict) and description_alias_key(c)
+            }
             for p in (tool.get("metadata") or {}).get("produces") or []:
                 if not isinstance(p, dict):
                     continue
                 p_sem = p.get("semantic_tag") or ""
                 p_fname = p.get("field_name") or ""
+                p_description_alias = description_alias_key(p)
                 # Echo-back guard for the candidate itself — same rule as
                 # _build_producer_indexes, applied here so graph-edge
                 # discoveries don't sneak in a relayed value.
                 if p_fname and p_fname in cand_consumes_fields:
                     continue
                 if p_sem and p_sem in cand_consumes_semantics:
+                    continue
+                if p_description_alias and p_description_alias in cand_consumes_description_aliases:
                     continue
 
                 matched = False
@@ -797,6 +832,12 @@ class PathSynthesizer:
                 elif field_name and p_fname == field_name:
                     matched = True
                 elif loose_target and _normalize_field_name(p_fname) == loose_target:
+                    matched = True
+                elif (
+                    description_alias
+                    and p_description_alias
+                    and p_description_alias == description_alias
+                ):
                     matched = True
                 if not matched:
                     continue
@@ -887,6 +928,7 @@ class PathSynthesizer:
         *,
         semantic: str,
         field_name: str,
+        consume: dict[str, Any] | None = None,
     ) -> str:
         """Find the producer's json_path that emits the given field — the
         location of the option array in the response (e.g.
@@ -904,6 +946,13 @@ class PathSynthesizer:
                 continue
             if field_name and p.get("field_name") == field_name:
                 return str(p.get("json_path") or "")
+        description_alias = description_alias_key(consume)
+        if description_alias:
+            for p in (producer.get("metadata") or {}).get("produces") or []:
+                if not isinstance(p, dict):
+                    continue
+                if description_alias_key(p) == description_alias:
+                    return str(p.get("json_path") or "")
         return ""
 
     def _label_hints_for(
@@ -1075,6 +1124,8 @@ class PathSynthesizer:
         producer: str,
         semantic: str,
         field_name: str,
+        *,
+        consume: dict[str, Any] | None = None,
     ) -> str:
         """Return a dotted path under the producer's response that yields
         the desired field. Converts ``$.a.b[*].c`` → ``a.b[0].c`` (v1 picks
@@ -1093,6 +1144,12 @@ class PathSynthesizer:
         if match is None and field_name:
             match = next(
                 (p for p in produces if p.get("field_name") == field_name),
+                None,
+            )
+        description_alias = description_alias_key(consume)
+        if match is None and description_alias:
+            match = next(
+                (p for p in produces if description_alias_key(p) == description_alias),
                 None,
             )
         if match is None:

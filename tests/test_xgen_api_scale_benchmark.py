@@ -160,9 +160,9 @@ def test_x2bee_default_cases_cover_product_level_domains():
 
     assert len(cases) >= 18
     assert cases_doc["thresholds"]["target_selector_exact_at_k"] >= 0.85
-    assert cases_doc["thresholds"]["avg_required_input_coverage"] >= 0.8
-    assert cases_doc["thresholds"]["avg_required_input_resolution_coverage"] >= 0.95
-    assert cases_doc["thresholds"]["max_unresolved_required_input_count"] <= 1
+    assert cases_doc["thresholds"]["avg_required_input_coverage"] >= 0.85
+    assert cases_doc["thresholds"]["avg_required_input_resolution_coverage"] >= 1.0
+    assert cases_doc["thresholds"]["max_unresolved_required_input_count"] == 0
     assert cases_doc["thresholds"]["max_avg_candidate_count"] <= 25.0
     assert len(case_ids) == len(set(case_ids))
     for required_id in {
@@ -323,6 +323,76 @@ def test_xgen_api_scale_reports_contract_plan_readiness(tmp_path):
     assert case["required_input_resolution_coverage"] == 1.0
     assert case["input_support"][0]["field_name"] == "productId"
     assert case["input_support"][0]["producer_candidates"] == ["searchProducts"]
+    assert case["input_support"][0]["resolution"] == "producer"
+
+
+def test_xgen_api_scale_matches_identifier_description_aliases(tmp_path):
+    cases_path = tmp_path / "cases.json"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "name": "Description Alias Readiness",
+                "top_k": 2,
+                "thresholds": {
+                    "case_hit_at_k": 1.0,
+                    "target_selector_exact_at_k": 1.0,
+                    "avg_required_input_coverage": 1.0,
+                    "avg_required_input_resolution_coverage": 1.0,
+                    "max_unresolved_required_input_count": 0,
+                },
+                "cases": [
+                    {
+                        "id": "description_alias",
+                        "query": "delivery amount info",
+                        "expected_tools": ["getDeliveryAmountInfo"],
+                        "expected_producers": ["getMarketDisplayList"],
+                        "expected_plan": ["getMarketDisplayList", "getDeliveryAmountInfo"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    spec = _spec(
+        "Description Alias",
+        {
+            "/market-displays": _contract_operation(
+                "getMarketDisplayList",
+                "Market display list",
+                response_fields={"mkdpNo": {"type": "string", "description": "기획전번호"}},
+            ),
+            "/delivery-amount": _contract_operation(
+                "getDeliveryAmountInfo",
+                "Delivery amount info",
+                parameters=[
+                    {
+                        "name": "marketingDisplayNo",
+                        "in": "query",
+                        "required": True,
+                        "description": "기획전번호",
+                        "schema": {"type": "string"},
+                    }
+                ],
+            ),
+        },
+    )
+
+    report = run_benchmark(
+        spec_sources=[spec],
+        cases_path=cases_path,
+        top_k=2,
+        min_unique_tools=2,
+        max_build_seconds=10,
+    )
+    case = report["cases"][0]
+
+    assert report["status"] == "pass"
+    assert report["search"]["avg_required_input_coverage"] == 1.0
+    assert report["search"]["unresolved_required_input_count"] == 0
+    assert case["producer_candidates"] == ["getMarketDisplayList"]
+    assert case["target_required_producible_input_count"] == 1
+    assert case["input_support"][0]["field_name"] == "marketingDisplayNo"
+    assert case["input_support"][0]["producer_candidates"] == ["getMarketDisplayList"]
     assert case["input_support"][0]["resolution"] == "producer"
 
 

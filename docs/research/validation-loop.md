@@ -167,14 +167,14 @@ selector rank bucket도 `top_1=19`, `missing=0`이다. Tool-name 기준
 `rank_buckets`는 `expected_any` 대체 정답까지 모두 세므로 product-level
 gate 해석에는 `case_rank_buckets`와 `target_selector_rank_buckets`를 우선한다.
 같은 artifact는 contract-based plan readiness도 기록한다. 현재 평균 candidate
-count는 `17.16`, 평균 producer candidates added는 `16.16`, 평균 required input
-coverage는 `0.846`이며 `required_input_not_producible` issue는 `5`건이다.
+count는 `17.84`, 평균 producer candidates added는 `16.84`, 평균 required input
+coverage는 `0.872`이며 `required_input_not_producible` issue는 `4`건이다.
 이 값은 producer-only coverage다. 실행 관점에서는 request wrapper, XGEN
 context, user input으로 해결 가능한 required input을 별도 resolution으로 세며,
-평균 required input resolution coverage는 `0.974`, unresolved required input
-count는 `1`이다. Breakdown은 request wrapper `2`, context input `1`, filter
-input `1`, producer missing `1`이고, resolution breakdown은 producer `41`,
-request wrapper `2`, context `1`, user input `1`, unresolved `1`이다.
+평균 required input resolution coverage는 `1.00`, unresolved required input
+count는 `0`이다. Breakdown은 request wrapper `2`, context input `1`, filter
+input `1`이고, resolution breakdown은 producer `42`, request wrapper `2`,
+context `1`, user input `1`이다.
 
 raw OpenAPI contract는 `metadata.api_contract`와 `metadata.openapi`에 보존한다.
 단, plain ingest에서는 top-level `metadata.produces` / `metadata.consumes`로
@@ -290,9 +290,9 @@ BFCL 수학/지리 표현을 keyword scorer에 보강했다. 비교 기준은
 - X2BEE BO Swagger scale sweep은 1084개 unique tool 기준 `hit@3=1.00`,
   `expected recall@3=1.00`, `target selector exact@3=1.00`, `top3=1.00`,
   `mrr=0.83`으로 회귀 없이 통과했다. Scale plan-readiness gate는
-  `avg_required_input_coverage >= 0.8`, `avg_candidate_count <= 25`,
-  `avg_required_input_resolution_coverage >= 0.95`,
-  `unresolved_required_input_count <= 1` 기준을 추가로 확인한다.
+  `avg_required_input_coverage >= 0.85`, `avg_candidate_count <= 25`,
+  `avg_required_input_resolution_coverage >= 1.0`,
+  `unresolved_required_input_count <= 0` 기준을 추가로 확인한다.
 - 전역 sibling suppression은 `parallel_multiple_195` 일부를 개선했지만
   악화 케이스가 크게 늘어 폐기했다. sibling/alias 보정은 앞으로도 broad rule이
   아니라 query/operation evidence가 강한 좁은 규칙으로만 승격한다.

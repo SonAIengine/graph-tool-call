@@ -20,6 +20,7 @@ from urllib.parse import unquote
 
 from benchmarks.metrics import mrr, recall_at_k
 from graph_tool_call import ToolGraph, __version__
+from graph_tool_call.core.contract_matching import description_alias_key
 from graph_tool_call.graphify import (
     build_candidate_set,
     promote_api_contract_signals,
@@ -1169,6 +1170,9 @@ def _contract_tokens(row: dict[str, Any]) -> list[str]:
         *(row.get("value_path_aliases") or []),
     ]
     tokens: list[str] = []
+    description_key = description_alias_key(row)
+    if description_key:
+        tokens.append(f"description:{description_key}")
     for value in values:
         if not value:
             continue

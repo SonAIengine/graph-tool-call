@@ -751,23 +751,22 @@ selector instrumentation fixes:
 | `10` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
 
 The same sweep now exposes the next bottleneck after target selection. Across
-the 19 product-level cases, average plan candidate count is `17.16`, max
-candidate count is `44`, average producer candidates added is `16.16`, and
-average required input coverage is `0.846`. That coverage is deliberately
+the 19 product-level cases, average plan candidate count is `17.84`, max
+candidate count is `46`, average producer candidates added is `16.84`, and
+average required input coverage is `0.872`. That coverage is deliberately
 producer-only: it asks whether a required target input can be filled from a
-previous response field. The execution-oriented resolution metric is higher,
-with average required input resolution coverage at `0.974` and unresolved
-required input count at `1`.
+previous response field. The execution-oriented resolution metric is now
+complete, with average required input resolution coverage at `1.00` and
+unresolved required input count at `0`.
 
-Fourteen cases have all required data inputs matched to at least one
-response-field producer; five rows are classified with stable readiness issue
+Fifteen cases have all required data inputs matched to at least one
+response-field producer; four rows are classified with stable readiness issue
 codes. The issue breakdown is `required_request_wrapper=2`,
-`required_context_input=1`, `required_filter_input=1`, and
-`required_producer_missing=1`. Required input resolution counts are
-`producer=41`, `request_wrapper=2`, `context=1`, `user_input=1`, and
-`unresolved=1`. This separates DTO-wrapper/context/filter inputs from the one
-current response-field producer gap, making the next request/response binding
-work less foggy.
+`required_context_input=1`, and `required_filter_input=1`. Required input
+resolution counts are `producer=42`, `request_wrapper=2`, `context=1`, and
+`user_input=1`. The previous `marketingDisplayNo` / `mkdpNo` gap is resolved
+by conservative identifier description alias matching: both fields share the
+specific OpenAPI description `기획전번호`.
 
 OpenAPI request/response contract is preserved under `metadata.api_contract`
 and `metadata.openapi`. It is intentionally not promoted into top-level
