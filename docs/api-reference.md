@@ -253,8 +253,10 @@ diagnostics for XGEN popup/resume flows:
   violate schema hints such as const, enum, type, numeric bounds, string
   length, pattern, array item count, object property count, or multiple-of
   constraints. JSON request body validation applies to both leaf arguments and
-  explicit raw JSON `body` payloads. Discriminator-selected request bodies also
-  reject fields that belong only to another branch with
+  explicit raw JSON `body` payloads, including root-array bodies and nested
+  array item fields addressed by wildcard JSON paths such as `$[*].quantity`
+  or `$.items[*].goodsNo`. Discriminator-selected request bodies also reject
+  fields that belong only to another branch with
   `reason=discriminator_branch`.
 - branch-local missing fields are reported as `source=request_body_branch` when
   the caller supplied a discriminator value that selects that branch

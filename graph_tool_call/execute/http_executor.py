@@ -721,15 +721,12 @@ def _missing_required_inputs(
             if has_body_argument:
                 continue
         elif has_raw_body_argument:
-            if raw_body_supported:
-                if _body_row_has_value(
-                    row,
-                    body_rows,
-                    arguments,
-                    raw_body_supported=raw_body_supported,
-                ):
-                    continue
-            else:
+            if _body_row_required_present(
+                row,
+                body_rows,
+                arguments,
+                raw_body_supported=raw_body_supported,
+            ):
                 continue
         item = {
             "name": name,
@@ -783,7 +780,7 @@ def _missing_required_inputs(
             continue
         if location == "body" and raw_body_supported:
             row = body_field_metadata.get(param.name)
-            if row and _body_row_has_value(
+            if row and _body_row_required_present(
                 row,
                 body_rows,
                 arguments,
@@ -1127,7 +1124,7 @@ def _contract_values_for_validation(
     *,
     raw_body_supported: bool,
 ) -> list[Any]:
-    if location == "body" and raw_body_supported and row.get("json_path"):
+    if location == "body" and row.get("json_path"):
         return _body_row_values(
             row,
             body_rows,
@@ -1381,7 +1378,7 @@ def _missing_branch_required_inputs(
         name = str(row.get("field_name") or "")
         if not name or name == property_name:
             continue
-        if _body_row_has_value(
+        if _body_row_required_present(
             row,
             body_rows,
             arguments,
@@ -1515,6 +1512,31 @@ def _body_row_has_value(
             raw_body_supported=raw_body_supported,
         )
     )
+
+
+def _body_row_required_present(
+    row: dict[str, Any],
+    body_rows: list[dict[str, Any]],
+    arguments: dict[str, Any],
+    *,
+    raw_body_supported: bool,
+) -> bool:
+    name = str(row.get("field_name") or "")
+    if name in arguments:
+        return True
+
+    raw_present, raw_body = _raw_body_argument_value(
+        body_rows,
+        arguments,
+        raw_body_supported=raw_body_supported,
+    )
+    if not raw_present:
+        return False
+
+    json_path = str(row.get("json_path") or "")
+    if not json_path:
+        return False
+    return _json_path_required_present(raw_body, json_path)
 
 
 def _body_row_values(
@@ -1733,26 +1755,14 @@ def _json_path_descends_from(candidate: str, parent: str) -> bool:
 
 
 def _json_path_values(value: Any, json_path: str) -> list[Any]:
-    if json_path == "$":
+    tokens = _json_path_tokens(json_path)
+    if tokens is None:
+        return []
+    if not tokens:
         return [value]
-    if not json_path.startswith("$"):
-        return []
-
-    if json_path.startswith("$."):
-        raw_tokens = [token for token in json_path.removeprefix("$.").split(".") if token]
-    elif json_path.startswith("$[*]"):
-        suffix = json_path.removeprefix("$[*]")
-        if suffix.startswith("."):
-            raw_tokens = ["[*]", *[token for token in suffix[1:].split(".") if token]]
-        elif not suffix:
-            raw_tokens = ["[*]"]
-        else:
-            return []
-    else:
-        return []
 
     values = [value]
-    for token in raw_tokens:
+    for token in tokens:
         next_values: list[Any] = []
         if token == "[*]":
             for item in values:
@@ -1782,6 +1792,63 @@ def _json_path_values(value: Any, json_path: str) -> list[Any]:
                 next_values.append(child)
         values = next_values
     return values
+
+
+def _json_path_required_present(value: Any, json_path: str) -> bool:
+    tokens = _json_path_tokens(json_path)
+    if tokens is None:
+        return False
+    if not tokens:
+        return True
+    return _json_path_tokens_required_present(value, tokens)
+
+
+def _json_path_tokens_required_present(value: Any, tokens: list[str]) -> bool:
+    if not tokens:
+        return True
+
+    token = tokens[0]
+    remaining = tokens[1:]
+    if token == "[*]":
+        if not isinstance(value, list):
+            return True
+        return all(_json_path_tokens_required_present(item, remaining) for item in value)
+    if token == "*":
+        if not isinstance(value, dict):
+            return True
+        return all(_json_path_tokens_required_present(item, remaining) for item in value.values())
+
+    is_array_token = token.endswith("[*]")
+    key = token.removesuffix("[*]") if is_array_token else token
+    if not key:
+        return False
+    if not isinstance(value, dict):
+        return True
+    if key not in value:
+        return False
+    child = value[key]
+    if is_array_token:
+        if not isinstance(child, list):
+            return True
+        return all(_json_path_tokens_required_present(item, remaining) for item in child)
+    return _json_path_tokens_required_present(child, remaining)
+
+
+def _json_path_tokens(json_path: str) -> list[str] | None:
+    if json_path == "$":
+        return []
+    if not json_path.startswith("$"):
+        return None
+
+    if json_path.startswith("$."):
+        return [token for token in json_path.removeprefix("$.").split(".") if token]
+    if json_path.startswith("$[*]"):
+        suffix = json_path.removeprefix("$[*]")
+        if suffix.startswith("."):
+            return ["[*]", *[token for token in suffix[1:].split(".") if token]]
+        if not suffix:
+            return ["[*]"]
+    return None
 
 
 def _is_request_body_root_row(row: dict[str, Any]) -> bool:

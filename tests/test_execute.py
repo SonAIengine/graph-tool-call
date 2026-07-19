@@ -1775,6 +1775,198 @@ class TestBuildRequest:
             }
         ]
 
+    def test_raw_json_body_validates_array_item_required_and_value_constraints(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Bulk Order API", "version": "1.0.0"},
+            "paths": {
+                "/orders/bulk": {
+                    "post": {
+                        "operationId": "createBulkOrders",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "items": {
+                                            "type": "object",
+                                            "required": ["goodsNo", "quantity", "status"],
+                                            "properties": {
+                                                "goodsNo": {"type": "string"},
+                                                "quantity": {
+                                                    "type": "integer",
+                                                    "minimum": 1,
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": ["ready", "paid"],
+                                                },
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                },
+                "/orders/grouped": {
+                    "post": {
+                        "operationId": "createGroupedOrders",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": ["goodsNo", "quantity"],
+                                                    "properties": {
+                                                        "goodsNo": {"type": "string"},
+                                                        "quantity": {
+                                                            "type": "integer",
+                                                            "minimum": 1,
+                                                        },
+                                                    },
+                                                },
+                                            }
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                },
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        by_name = {tool.name: tool for tool in tools}
+        executor = HttpExecutor("https://api.example.com")
+
+        root_array = executor.validate_request(
+            by_name["createBulkOrders"],
+            {
+                "body": [
+                    {"goodsNo": "G-1", "quantity": 2, "status": "ready"},
+                    {"goodsNo": "G-2", "quantity": 0, "status": "cancelled"},
+                    {"goodsNo": "G-3", "status": "paid"},
+                ]
+            },
+        )
+        nested_array = executor.validate_request(
+            by_name["createGroupedOrders"],
+            {
+                "body": {
+                    "items": [
+                        {"goodsNo": "G-1", "quantity": 2},
+                        {"quantity": "two"},
+                    ]
+                }
+            },
+        )
+
+        def pick(rows, keys):
+            return [{key: row[key] for key in keys if key in row} for row in rows]
+
+        assert root_array["valid"] is False
+        assert pick(
+            root_array["missing_required"],
+            ["name", "location", "source", "content_type", "field_type", "json_path", "minimum"],
+        ) == [
+            {
+                "name": "quantity",
+                "location": "body",
+                "source": "request_body",
+                "content_type": "application/json",
+                "field_type": "integer",
+                "json_path": "$[*].quantity",
+                "minimum": 1,
+            }
+        ]
+        assert pick(
+            root_array["invalid_arguments"],
+            [
+                "name",
+                "location",
+                "source",
+                "reason",
+                "field_type",
+                "json_path",
+                "minimum",
+                "enum",
+                "content_type",
+            ],
+        ) == [
+            {
+                "name": "quantity",
+                "location": "body",
+                "source": "request_body",
+                "reason": "minimum",
+                "field_type": "integer",
+                "json_path": "$[*].quantity",
+                "minimum": 1,
+                "content_type": "application/json",
+            },
+            {
+                "name": "status",
+                "location": "body",
+                "source": "request_body",
+                "reason": "enum",
+                "field_type": "string",
+                "json_path": "$[*].status",
+                "enum": ["ready", "paid"],
+                "content_type": "application/json",
+            },
+        ]
+        assert nested_array["valid"] is False
+        assert pick(
+            nested_array["missing_required"],
+            ["name", "location", "source", "content_type", "field_type", "json_path"],
+        ) == [
+            {
+                "name": "goodsNo",
+                "location": "body",
+                "source": "request_body",
+                "content_type": "application/json",
+                "field_type": "string",
+                "json_path": "$.items[*].goodsNo",
+            }
+        ]
+        assert pick(
+            nested_array["invalid_arguments"],
+            [
+                "name",
+                "location",
+                "source",
+                "reason",
+                "expected_type",
+                "field_type",
+                "json_path",
+                "minimum",
+                "content_type",
+            ],
+        ) == [
+            {
+                "name": "quantity",
+                "location": "body",
+                "source": "request_body",
+                "reason": "type",
+                "expected_type": "integer",
+                "field_type": "integer",
+                "json_path": "$.items[*].quantity",
+                "minimum": 1,
+                "content_type": "application/json",
+            }
+        ]
+
     def test_nullable_json_body_field_preserves_explicit_null(self):
         tool = _make_tool(
             name="updateOrderMemo",
