@@ -708,6 +708,7 @@ def _missing_required_inputs(
         arguments,
         raw_body_supported=raw_body_supported,
     )
+    body_field_metadata = _body_field_metadata_from_rows(body_rows)
     for row in body_rows:
         if not isinstance(row, dict) or not row.get("required"):
             continue
@@ -720,7 +721,16 @@ def _missing_required_inputs(
             if has_body_argument:
                 continue
         elif has_raw_body_argument:
-            continue
+            if raw_body_supported:
+                if _body_row_has_value(
+                    row,
+                    body_rows,
+                    arguments,
+                    raw_body_supported=raw_body_supported,
+                ):
+                    continue
+            else:
+                continue
         item = {
             "name": name,
             "location": "body",
@@ -771,6 +781,15 @@ def _missing_required_inputs(
             location = "query" if method in ("GET", "DELETE", "HEAD", "OPTIONS") else "body"
         if location == "body" and param.name in satisfied_body_container_names:
             continue
+        if location == "body" and raw_body_supported:
+            row = body_field_metadata.get(param.name)
+            if row and _body_row_has_value(
+                row,
+                body_rows,
+                arguments,
+                raw_body_supported=raw_body_supported,
+            ):
+                continue
         if (
             location == "body"
             and has_body_argument
@@ -808,6 +827,12 @@ def _invalid_argument_values(
 ) -> list[dict[str, Any]]:
     invalid: list[dict[str, Any]] = []
     seen_contracts: set[tuple[str, str]] = set()
+    body_rows = _body_rows(
+        api_metadata,
+        content_type=selected_content_type,
+        include_content_type_rows=False,
+    )
+    raw_body_supported = _supports_raw_json_body_argument(api_metadata, body_rows)
 
     def add_contract(row: dict[str, Any]) -> None:
         name = str(row.get("name") or row.get("field_name") or "")
@@ -819,8 +844,16 @@ def _invalid_argument_values(
             return
         seen_contracts.add(key)
 
-        present, value = _contract_value_for_validation(name, location, arguments, headers)
-        if not present:
+        values = _contract_values_for_validation(
+            row,
+            name,
+            location,
+            arguments,
+            headers,
+            body_rows,
+            raw_body_supported=raw_body_supported,
+        )
+        if not values:
             return
 
         contract: dict[str, Any] = {
@@ -833,18 +866,13 @@ def _invalid_argument_values(
         if location == "body" and selected_content_type:
             contract["content_type"] = selected_content_type
         _copy_validation_hint(row, contract)
-        invalid.extend(_validation_issues(value, contract))
+        for value in values:
+            invalid.extend(_validation_issues(value, contract))
 
     for row in api_metadata.get("parameters") or []:
         if isinstance(row, dict):
             add_contract({**row, "location": row.get("in"), "source": "openapi_parameter"})
 
-    body_rows = _body_rows(
-        api_metadata,
-        content_type=selected_content_type,
-        include_content_type_rows=False,
-    )
-    raw_body_supported = _supports_raw_json_body_argument(api_metadata, body_rows)
     for row in body_rows:
         if isinstance(row, dict):
             add_contract({**row, "location": "body", "source": "request_body"})
@@ -1087,6 +1115,27 @@ def _contract_value_for_validation(
     if location == "body" and name in arguments:
         return True, arguments[name]
     return _argument_value_for_validation(name, location, arguments, headers)
+
+
+def _contract_values_for_validation(
+    row: dict[str, Any],
+    name: str,
+    location: str,
+    arguments: dict[str, Any],
+    headers: dict[str, str],
+    body_rows: list[dict[str, Any]],
+    *,
+    raw_body_supported: bool,
+) -> list[Any]:
+    if location == "body" and raw_body_supported and row.get("json_path"):
+        return _body_row_values(
+            row,
+            body_rows,
+            arguments,
+            raw_body_supported=raw_body_supported,
+        )
+    present, value = _contract_value_for_validation(name, location, arguments, headers)
+    return [value] if present else []
 
 
 def _argument_present(
@@ -1458,9 +1507,8 @@ def _body_row_has_value(
     *,
     raw_body_supported: bool,
 ) -> bool:
-    return any(
-        value is not None
-        for value in _body_row_values(
+    return bool(
+        _body_row_values(
             row,
             body_rows,
             arguments,

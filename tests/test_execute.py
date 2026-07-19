@@ -1669,6 +1669,112 @@ class TestBuildRequest:
         with pytest.raises(OpenAPIRequestValidationError, match=r"body:status\(enum\)"):
             executor.build_request(tool, {"status": "cancelled"})
 
+    def test_raw_json_body_validates_required_and_value_constraints(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Order API", "version": "1.0.0"},
+            "paths": {
+                "/orders": {
+                    "post": {
+                        "operationId": "createOrder",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["status", "quantity"],
+                                        "properties": {
+                                            "status": {
+                                                "type": "string",
+                                                "enum": ["paid", "ready"],
+                                            },
+                                            "quantity": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        valid = executor.validate_request(tools[0], {"body": {"status": "paid", "quantity": 2}})
+        missing = executor.validate_request(tools[0], {"body": {"quantity": 2}})
+        invalid = executor.validate_request(
+            tools[0],
+            {"body": {"status": "cancelled", "quantity": "two"}},
+        )
+        null_invalid = executor.validate_request(
+            tools[0],
+            {"body": {"status": None, "quantity": 2}},
+        )
+        req = executor.build_request(tools[0], {"body": {"status": "paid", "quantity": 2}})
+
+        assert valid["valid"] is True
+        assert valid["missing_required"] == []
+        assert valid["invalid_arguments"] == []
+        assert valid["used_arguments"]["body"] == ["body"]
+        assert json.loads(req.data.decode("utf-8")) == {"status": "paid", "quantity": 2}
+        assert missing["valid"] is False
+        assert missing["missing_required"] == [
+            {
+                "name": "status",
+                "location": "body",
+                "source": "request_body",
+                "content_type": "application/json",
+                "field_type": "string",
+                "json_path": "$.status",
+                "enum": ["paid", "ready"],
+            }
+        ]
+        assert invalid["valid"] is False
+        assert invalid["missing_required"] == []
+        assert invalid["invalid_arguments"] == [
+            {
+                "name": "status",
+                "location": "body",
+                "source": "request_body",
+                "reason": "enum",
+                "field_type": "string",
+                "json_path": "$.status",
+                "enum": ["paid", "ready"],
+                "content_type": "application/json",
+            },
+            {
+                "name": "quantity",
+                "location": "body",
+                "source": "request_body",
+                "reason": "type",
+                "expected_type": "integer",
+                "field_type": "integer",
+                "json_path": "$.quantity",
+                "minimum": 1,
+                "content_type": "application/json",
+            },
+        ]
+        assert null_invalid["valid"] is False
+        assert null_invalid["missing_required"] == []
+        assert null_invalid["invalid_arguments"] == [
+            {
+                "name": "status",
+                "location": "body",
+                "source": "request_body",
+                "reason": "null",
+                "field_type": "string",
+                "json_path": "$.status",
+                "enum": ["paid", "ready"],
+                "content_type": "application/json",
+            }
+        ]
+
     def test_nullable_json_body_field_preserves_explicit_null(self):
         tool = _make_tool(
             name="updateOrderMemo",
