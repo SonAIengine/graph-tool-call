@@ -693,9 +693,18 @@ def _surface_equivalence_evidence(
     surface_overlap = len(shared_terms) / len(left_terms | right_terms)
     name_overlap = bool(_identifier_terms(left_name) & _identifier_terms(right_name))
     required_field_gap = abs(len(_required_fields(left_tool)) - len(_required_fields(right_tool)))
+    required_field_overlap = _required_field_overlap(left_tool, right_tool)
     score = min(1.0, surface_overlap + (0.1 if name_overlap else 0.0))
     equivalent = required_field_gap <= 2 and (
-        surface_overlap >= threshold or (surface_overlap >= 0.32 and name_overlap)
+        surface_overlap >= threshold
+        or (surface_overlap >= 0.32 and name_overlap)
+        or _domain_surface_equivalent(
+            left_terms,
+            right_terms,
+            shared_terms,
+            name_overlap=name_overlap,
+            required_field_overlap=required_field_overlap,
+        )
     )
     if not equivalent:
         return None
@@ -706,6 +715,7 @@ def _surface_equivalence_evidence(
         "surface_overlap": round(surface_overlap, 6),
         "name_overlap": name_overlap,
         "required_field_gap": required_field_gap,
+        "required_field_overlap": round(required_field_overlap, 6),
         "shared_terms": sorted(shared_terms)[:12],
     }
 
@@ -738,6 +748,55 @@ def _required_fields(tool: dict[str, Any]) -> list[str]:
     if not isinstance(required, list):
         return []
     return [str(name) for name in required]
+
+
+def _required_field_overlap(left_tool: dict[str, Any], right_tool: dict[str, Any]) -> float:
+    left = set(_required_fields(left_tool))
+    right = set(_required_fields(right_tool))
+    if not left and not right:
+        return 1.0
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _domain_surface_equivalent(
+    left_terms: set[str],
+    right_terms: set[str],
+    shared_terms: set[str],
+    *,
+    name_overlap: bool,
+    required_field_overlap: float,
+) -> bool:
+    union = left_terms | right_terms
+    if {"currency", "convert"}.issubset(shared_terms) and required_field_overlap >= 0.67:
+        return True
+    if {"area", "curve", "under"}.issubset(shared_terms) and union & {
+        "integral",
+        "integrate",
+        "integration",
+    }:
+        return True
+    if (
+        (left_terms & {"integral", "integrate", "integration"})
+        and {"area", "curve", "under"} <= right_terms
+        and shared_terms & {"calculate", "function", "interval"}
+    ) or (
+        (right_terms & {"integral", "integrate", "integration"})
+        and {"area", "curve", "under"} <= left_terms
+        and shared_terms & {"calculate", "function", "interval"}
+    ):
+        return True
+    if (
+        "fibonacci" in shared_terms
+        and name_overlap
+        and ({"sequence", "series", "serie"} & left_terms)
+        and ({"sequence", "series", "serie"} & right_terms)
+    ):
+        return True
+    if "common" in shared_terms and union & {"gcd", "divisor"} and union & {"hcf", "factor"}:
+        return True
+    return False
 
 
 def _surface_terms(text: str) -> set[str]:
