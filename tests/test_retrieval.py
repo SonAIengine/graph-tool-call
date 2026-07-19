@@ -253,6 +253,27 @@ def test_dominant_keyword_candidate_preserved_near_top_k_boundary():
     assert "exact_keyword_target" in ranked[:5]
 
 
+def test_dominant_keyword_leader_just_outside_boundary_can_win_close_sibling():
+    final_scores = {
+        "semantic_sibling": 0.030,
+        "auxiliary_a": 0.029,
+        "auxiliary_b": 0.028,
+        "auxiliary_c": 0.027,
+        "auxiliary_d": 0.026,
+        "exact_keyword_target": 0.0243,
+    }
+    keyword_scores = {
+        "exact_keyword_target": 61.5,
+        "semantic_sibling": 60.0,
+        "auxiliary_a": 20.0,
+    }
+
+    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, top_k=5)
+
+    ranked = sorted(final_scores, key=final_scores.get, reverse=True)
+    assert ranked[0] == "exact_keyword_target"
+
+
 def test_dominant_keyword_candidate_guard_ignores_weak_tail_matches():
     final_scores = {
         "strong_a": 0.030,
@@ -272,6 +293,69 @@ def test_dominant_keyword_candidate_guard_ignores_weak_tail_matches():
 
     ranked = sorted(final_scores, key=final_scores.get, reverse=True)
     assert "weak_keyword_tail" not in ranked[:5]
+
+
+def test_dominant_keyword_leader_can_win_close_sibling_rank():
+    final_scores = {
+        "semantic_sibling": 0.030,
+        "exact_keyword_target": 0.027,
+        "auxiliary_a": 0.024,
+        "auxiliary_b": 0.022,
+        "auxiliary_c": 0.020,
+    }
+    keyword_scores = {
+        "exact_keyword_target": 61.5,
+        "semantic_sibling": 60.0,
+        "auxiliary_a": 20.0,
+    }
+
+    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, top_k=5)
+
+    ranked = sorted(final_scores, key=final_scores.get, reverse=True)
+    assert ranked[0] == "exact_keyword_target"
+
+
+def test_dominant_keyword_leader_top_rank_promotion_can_be_disabled():
+    final_scores = {
+        "semantic_sibling": 0.030,
+        "exact_keyword_target": 0.027,
+        "auxiliary_a": 0.024,
+        "auxiliary_b": 0.022,
+        "auxiliary_c": 0.020,
+    }
+    keyword_scores = {
+        "exact_keyword_target": 61.5,
+        "semantic_sibling": 60.0,
+    }
+
+    RetrievalEngine._preserve_dominant_keyword_candidates(
+        keyword_scores,
+        final_scores,
+        top_k=5,
+        allow_top_rank_promotion=False,
+    )
+
+    ranked = sorted(final_scores, key=final_scores.get, reverse=True)
+    assert ranked[0] == "semantic_sibling"
+
+
+def test_dominant_keyword_leader_does_not_jump_large_score_gap():
+    final_scores = {
+        "semantic_sibling": 0.030,
+        "exact_keyword_target": 0.020,
+        "auxiliary_a": 0.019,
+        "auxiliary_b": 0.018,
+        "auxiliary_c": 0.017,
+    }
+    keyword_scores = {
+        "exact_keyword_target": 61.5,
+        "semantic_sibling": 60.0,
+    }
+
+    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, top_k=5)
+
+    ranked = sorted(final_scores, key=final_scores.get, reverse=True)
+    assert ranked[0] == "semantic_sibling"
 
 
 def test_retrieve_boosts_explicit_dotted_tool_name_inside_long_query():

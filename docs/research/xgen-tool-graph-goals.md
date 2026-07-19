@@ -256,6 +256,20 @@ retrieved-source exact `0.80`이다. Pass한 4건은 `lawsuit_info`,
 회복하는 workstream과, sports/player statistics sibling ambiguity를 줄이는
 candidate presentation workstream으로 분리한다.
 
+`2026-07-20` keyword-leader top-rank pass에서는 dominant-keyword 보정을 한 단계
+더 좁게 확장했다. Strong BM25 leader가 top-K 바로 밖 또는 top-K 내부의 close
+sibling 뒤에 있을 때만 top-rank로 올리며, diverse actionable multi-intent query는
+top-rank promotion을 끄고 기존 top-K 보존만 유지한다. T1 deterministic 기준
+BFCL `recall@1`은 `0.636833 -> 0.685`, `mrr`은 `0.82695 -> 0.85695`로 올랐고,
+`recall@5`, `all_tools_found@5`, `argument_schema_coverage`는 각각
+`0.964583`, `0.938`, `0.937089`로 이전 main 대비 손실 없이 유지됐다. XGEN
+deterministic gate도 status `pass`, target selector exact `1.00`,
+plan/binding/evidence coverage `1.00`을 유지했다. qwen3.6-27B recovered 5-case
+smoke artifact `/tmp/gtc-keyword-leader-recovered5-sweep.json` 기준 row/retrieved
+모두 retrieval `1.00`, exact `1.00`이며, 이전 sports/player statistics
+`candidate_ambiguity`는 pass로 회복됐다. 남은 15-case domain hardcase 병목은
+top-5 밖에 남은 10개 `retrieval_miss`다.
+
 ## Product Maturity Levels
 
 | Level | Meaning | Expected Use |
