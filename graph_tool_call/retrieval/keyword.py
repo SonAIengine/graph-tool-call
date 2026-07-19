@@ -150,6 +150,7 @@ _KO_EN_DICT: dict[str, list[str]] = {
     "메시지": ["messag", "notif", "alert"],
     "알림": ["notif", "alert", "push"],
     "이메일": ["email", "mail"],
+    "문의": ["qa", "inquiry"],
     "댓글": ["comment", "reply"],
     "게시글": ["post", "articl", "content"],
     "태그": ["tag", "label"],
@@ -470,6 +471,7 @@ class BM25Scorer:
         tool_norm = re.sub(r"[^a-z0-9가-힣]+", "", tool_text.lower())
         query_norm = "".join(words)
         phrases = BM25Scorer._korean_intent_phrases(words)
+        core_action_phrases = BM25Scorer._korean_core_action_phrases(words)
         matches = 0
         longest = 0
         for phrase in phrases:
@@ -484,6 +486,12 @@ class BM25Scorer:
             boost *= 1.35
         if matches:
             boost *= min(1.6, 1.0 + 0.18 * matches + min(0.12, longest / 100.0))
+        if any(word in _KO_BRIDGE_TERMS for word in words):
+            core_matches = sum(1 for phrase in core_action_phrases if phrase in tool_text)
+            if core_matches:
+                boost *= min(1.45, 1.15 + 0.15 * core_matches)
+        if "문의" in words and "현황" not in words and re.search(r"qa(?:\b|[^a-z])", tool_text):
+            boost *= 1.35
 
         if "정산" in words and "비교" in words and "정산대사" in tool_norm:
             boost *= 1.35
@@ -515,6 +523,18 @@ class BM25Scorer:
                     phrases.add(word + action)
         if "정산" in words and "비교" in words:
             phrases.add("정산대사")
+        return phrases
+
+    @staticmethod
+    def _korean_core_action_phrases(words: list[str]) -> set[str]:
+        """Return resource+action phrases after removing menu bridge words."""
+        phrases: set[str] = set()
+        for action_index, action in enumerate(words):
+            if action not in _KO_ACTION_TERMS:
+                continue
+            for word in words[:action_index]:
+                if word not in _KO_ACTION_TERMS and word not in _KO_BRIDGE_TERMS:
+                    phrases.add(word + action)
         return phrases
 
     def _tokenize_tool(self, tool: ToolSchema) -> list[str]:

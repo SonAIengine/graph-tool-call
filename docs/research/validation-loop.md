@@ -156,13 +156,13 @@ hard case rank 변화는 다음과 같다.
 
 ```bash
 make xgen-scale-sweep \
-  OUT=/tmp/gtc-x2bee-sweep-product-cases-final.json \
+  OUT=/tmp/gtc-x2bee-sweep-top1-ambiguity.json \
   TOP_KS=3,5,10
 ```
 
 19건 product-level sweep 결과는 `hit@3=1.00`, `expected recall@3=1.00`,
-`top-1 hit=0.895`, `top-3 hit=1.00`, `mean MRR=0.930`이다. 케이스 기준
-rank bucket은 `top_1=17`, `top_3=2`, `missing=0`이다. Tool-name 기준
+`top-1 hit=1.00`, `top-3 hit=1.00`, `mean MRR=1.00`이다. 케이스 기준
+rank bucket은 `top_1=19`, `missing=0`이다. Tool-name 기준
 `rank_buckets`는 `expected_any` 대체 정답까지 모두 세므로 product-level
 gate 해석에는 `case_rank_buckets`를 우선한다.
 

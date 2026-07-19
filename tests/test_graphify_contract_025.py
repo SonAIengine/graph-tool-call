@@ -1021,6 +1021,39 @@ def test_retrieve_with_scores_expands_korean_business_field_aliases():
     assert results[0].keyword_score > 0
 
 
+def test_retrieve_with_scores_maps_korean_inquiry_to_qa_label():
+    tg = ToolGraph()
+    tg.add_tool(ToolSchema(name="getProductQa", description="상품QA 목록 조회"))
+    tg.add_tool(ToolSchema(name="getQnAStatus", description="상품문의 현황 조회"))
+    tg.add_tool(ToolSchema(name="getProductReview", description="상품리뷰 목록 조회"))
+
+    results = tg.retrieve_with_scores("상품 문의 조회", top_k=1)
+
+    assert results[0].tool.name == "getProductQa"
+
+
+def test_retrieve_with_scores_prefers_core_korean_action_phrase_over_subscope():
+    tg = ToolGraph()
+    tg.add_tool(ToolSchema(name="getOrderQueryList", description="주문/결제 > 주문관리 > 주문조회"))
+    tg.add_tool(ToolSchema(name="getExchangeOrderList", description="교환주문목록 조회"))
+    tg.add_tool(ToolSchema(name="getCustomerOrderPopup", description="고객 주문 목록 조회 팝업"))
+
+    results = tg.retrieve_with_scores("주문 목록 조회", top_k=1)
+
+    assert results[0].tool.name == "getOrderQueryList"
+
+
+def test_retrieve_with_scores_keeps_exact_korean_list_phrase_above_subscope():
+    tg = ToolGraph()
+    tg.add_tool(ToolSchema(name="getMemberList", description="회원 목록 조회"))
+    tg.add_tool(ToolSchema(name="getCouponIssuedMemberList", description="쿠폰 발급회원 조회"))
+    tg.add_tool(ToolSchema(name="getMemberHistoryList", description="회원 이력 목록 조회"))
+
+    results = tg.retrieve_with_scores("회원 목록 조회", top_k=1)
+
+    assert results[0].tool.name == "getMemberList"
+
+
 def test_retrieve_with_scores_indexes_parameter_descriptions_for_example_fields():
     tg = ToolGraph()
     tg.add_tool(
