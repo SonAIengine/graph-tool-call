@@ -49,7 +49,10 @@ make research-check-smoke
 `make research-check`는 T1 deterministic tier의 별칭이다. 기본 artifact는
 `/tmp/gtc-research-check`에 남는다. XGEN deterministic artifact는
 `benchmarks.xgen_tool_graph.run --suite all` 결과이며, commerce/admin/workflow
-fixture family를 모두 포함한다.
+fixture family를 모두 포함한다. 각 XGEN case의 `synthesis_diagnostics`에는
+`stage`, `target`, `selected_producers`, `candidate_signals`, `missing_fields`,
+`failure`, `retrieval_evidence`가 남으므로, plan synthesis나 popup/resume 관련
+회귀는 이 블록을 먼저 확인한다.
 
 ## XGEN Scale Acceptance
 

@@ -55,6 +55,9 @@ def test_xgen_tool_graph_all_fixture_suites_pass_thresholds():
     assert summary["producer_recall"] == 1.0
     assert summary["candidate_plan_coverage"] == 1.0
     assert summary["plan_exact_match"] >= 0.9
+    assert summary["synthesis_diagnostics_coverage"] == 1.0
+    assert summary["user_input_slot_case_count"] == 1
+    assert summary["missing_field_count"] == 2
 
     for suite_report in report["suites"]:
         graph = next(
@@ -73,3 +76,24 @@ def test_xgen_tool_graph_benchmark_checks_korean_query_chain():
     assert case["plan_steps"] == ["searchProducts", "getProductDetail", "getInventory"]
     assert case["binding_accuracy"] == 1.0
     assert case["evidence_coverage"] == 1.0
+
+
+def test_xgen_tool_graph_records_synthesis_diagnostics_for_user_input_slots():
+    report = run_benchmark()
+    graph_pipeline = next(p for p in report["pipelines"] if p["name"] == "graph_with_producers")
+    cases = {row["case_id"]: row for row in graph_pipeline["cases"]}
+    case = cases["review_user_slots_ko"]
+    diagnostics = case["synthesis_diagnostics"]
+
+    assert diagnostics["stage"] == "synthesize"
+    assert diagnostics["target"] == "createProductReview"
+    assert diagnostics["plan_id"]
+    assert diagnostics["failure"] == {}
+    assert diagnostics["retrieval_evidence"]["target_rank"] == case["target_rank"]
+    assert {row["producer"] for row in diagnostics["selected_producers"]} == {"searchProducts"}
+    assert "createProductReview.productId" in diagnostics["candidate_signals"]
+
+    missing = {row["field_name"]: row for row in diagnostics["missing_fields"]}
+    assert set(missing) == {"rating", "comment"}
+    assert missing["rating"]["reason"] == "user_input_fallback"
+    assert missing["comment"]["stage"] == "synthesize"
