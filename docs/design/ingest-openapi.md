@@ -246,10 +246,12 @@ argument는 덮어쓰지 않고, 선언된 `apiKey` security credential이나
 위반하면 `build_request()`/`execute()`가 `OpenAPIRequestValidationError`를
 발생시킨다. discriminator 값이 제공된 request body는 선택된 branch의
 `required_in_branch` 필드만 `request_body_branch` missing diagnostic으로
-보고한다. `apiKey` security scheme은 query/header/cookie argument 또는
-executor header/cookie로 충족할 수 있고, bearer/basic/OAuth/OpenID Connect
-계열은 `Authorization` header로 판정한다. XGEN은 이 diagnostics를
-missing-field/auth/value popup과 resume target에 그대로 사용할 수 있다.
+보고하고, 다른 branch 전용 field가 함께 제공되면
+`reason=discriminator_branch` invalid diagnostic으로 보고한다. `apiKey`
+security scheme은 query/header/cookie argument 또는 executor header/cookie로
+충족할 수 있고, bearer/basic/OAuth/OpenID Connect 계열은 `Authorization`
+header로 판정한다. XGEN은 이 diagnostics를 missing-field/auth/value popup과
+resume target에 그대로 사용할 수 있다.
 서버 coercion에 맡겨야 하는 기존 통합은 `validate_values=False`로 value
 blocking만 끄고, `validate_request()` diagnostics는 계속 확인할 수 있다.
 `execute()` 결과에는 기존 `status`/`headers`/`body`에 더해 `ok`,

@@ -828,13 +828,21 @@ def _invalid_argument_values(
         if isinstance(row, dict):
             add_contract({**row, "location": row.get("in"), "source": "openapi_parameter"})
 
-    for row in _body_rows(
+    body_rows = _body_rows(
         api_metadata,
         content_type=selected_content_type,
         include_content_type_rows=False,
-    ):
+    )
+    for row in body_rows:
         if isinstance(row, dict):
             add_contract({**row, "location": "body", "source": "request_body"})
+    invalid.extend(
+        _invalid_branch_argument_values(
+            body_rows,
+            arguments,
+            selected_content_type=selected_content_type,
+        )
+    )
 
     for param in tool.parameters:
         location = location_by_param.get(param.name)
@@ -1320,6 +1328,49 @@ def _missing_branch_required_inputs(
     return missing
 
 
+def _invalid_branch_argument_values(
+    body_rows: list[dict[str, Any]],
+    arguments: dict[str, Any],
+    *,
+    selected_content_type: str,
+) -> list[dict[str, Any]]:
+    discriminator = _selected_discriminator(body_rows, arguments)
+    if not discriminator:
+        return []
+    property_name, value = discriminator
+    branch_rows = [
+        row
+        for row in body_rows
+        if isinstance(row, dict) and _has_discriminator_branch_hint(row, property_name)
+    ]
+    if not any(_branch_row_matches_discriminator(row, property_name, value) for row in branch_rows):
+        return []
+
+    invalid: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in branch_rows:
+        if _branch_row_matches_discriminator(row, property_name, value):
+            continue
+        name = str(row.get("field_name") or "")
+        if not name or name == property_name or name in seen:
+            continue
+        if not _argument_present(name, "body", arguments, {}):
+            continue
+        contract = {
+            "name": name,
+            "location": "body",
+            "source": "request_body_branch",
+        }
+        if selected_content_type:
+            contract["content_type"] = selected_content_type
+        _copy_validation_hint(row, contract)
+        item = _invalid_argument_row(contract, "discriminator_branch")
+        item["selected_discriminator_value"] = value
+        invalid.append(item)
+        seen.add(name)
+    return invalid
+
+
 def _selected_discriminator(
     body_rows: list[dict[str, Any]],
     arguments: dict[str, Any],
@@ -1334,6 +1385,13 @@ def _selected_discriminator(
         if value is not None:
             return property_name, value
     return None
+
+
+def _has_discriminator_branch_hint(row: dict[str, Any], property_name: str) -> bool:
+    if str(row.get("discriminator_property") or "") != property_name:
+        return False
+    values = row.get("discriminator_values")
+    return bool("discriminator_value" in row or (isinstance(values, list) and values))
 
 
 def _branch_row_matches_discriminator(

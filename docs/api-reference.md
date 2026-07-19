@@ -251,7 +251,8 @@ diagnostics for XGEN popup/resume flows:
 - `invalid_arguments`: provided path/query/header/cookie/body values that
   violate schema hints such as const, enum, type, numeric bounds, string
   length, pattern, array item count, object property count, or multiple-of
-  constraints
+  constraints; discriminator-selected request bodies also reject fields that
+  belong only to another branch with `reason=discriminator_branch`
 - branch-local missing fields are reported as `source=request_body_branch` when
   the caller supplied a discriminator value that selects that branch
 - explicit JSON body `None` values are treated as present body fields; nullable
