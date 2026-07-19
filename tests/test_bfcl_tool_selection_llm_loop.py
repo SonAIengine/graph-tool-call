@@ -18,6 +18,7 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     _failure_tags,
     _messages_for_case,
     _prepare_tools_for_model,
+    _presented_raw_tools,
     run_model_benchmark,
     write_bfcl_result_files,
 )
@@ -70,10 +71,54 @@ def test_prepare_tools_can_prefix_retrieval_rank_hints():
     assert description.endswith("Calculate area of a circle.")
 
 
+def test_presented_tools_prefer_case_local_schema_for_duplicate_names():
+    first_row = {
+        "id": "simple_python_0",
+        "function": [
+            {
+                "name": "calculate_triangle_area",
+                "description": "Calculate with optional units.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {"base": {}, "height": {}, "unit": {}},
+                    "required": ["base", "height"],
+                },
+            }
+        ],
+    }
+    current_row = {
+        "id": "simple_python_11",
+        "function": [
+            {
+                "name": "calculate_triangle_area",
+                "description": "Calculate with base and height only.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {"base": {}, "height": {}},
+                    "required": ["base", "height"],
+                },
+            }
+        ],
+    }
+    global_tools = llm_loop._tools_by_name([first_row, current_row])
+
+    raw_tools = _presented_raw_tools(
+        ["calculate_triangle_area"],
+        question_row=current_row,
+        tools_by_name=global_tools,
+    )
+
+    properties = raw_tools[0]["parameters"]["properties"]
+    assert raw_tools[0]["description"] == "Calculate with base and height only."
+    assert set(properties) == {"base", "height"}
+
+
 def test_messages_can_include_candidate_selection_guidance():
     plain = _messages_for_case("calculate area")
     guided = _messages_for_case("calculate area", candidate_selection_guidance=True)
 
+    assert "Use only argument keys declared" in plain[0]["content"]
+    assert "never invent extra argument names" in plain[0]["content"]
     assert "Candidate selection guidance" not in plain[0]["content"]
     assert "Candidate selection guidance" in guided[0]["content"]
     assert "same namespace or API family" in guided[0]["content"]

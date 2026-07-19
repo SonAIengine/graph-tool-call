@@ -306,6 +306,10 @@ Required work:
     `percentage_scale_mismatch`, `data_reference_substitution`를 안정 tag로 추가했다.
     `/tmp/gtc-bfcl-qwen027-argument-tags-hardcases/`는 이 tag별 case-id subset을
     바로 생성하므로 다음 개선은 각 원인별 1-case smoke에서 시작한다.
+    case-local schema pass에서는 duplicate tool name의 schema collision을 줄여
+    `simple_python_11` exact를 `0.00 -> 1.00`으로 바꿨고, 6-case argument subset
+    exact는 `/tmp/gtc-bfcl-case-local-schema-argument-subset.json` 기준
+    `0.166667 -> 0.5`가 됐다.
     다음 병목은 `solve_quadratic` vs `solve_quadratic_equation`,
     `geometry.circumference` vs `calculate_circumference`, `math.gcd` vs
     `number_theory.gcd` 같은 near-duplicate disambiguation과 argument-value
