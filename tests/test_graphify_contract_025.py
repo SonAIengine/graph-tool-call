@@ -10,6 +10,7 @@ from graph_tool_call.graphify import (
     COLLECTION_GRAPH_VERSION,
     EVIDENCE_API_CONTRACT,
     EVIDENCE_OPENAPI_LINK,
+    build_candidate_set,
     build_io_contract,
     derive_plan_trace_edges,
     expand_candidates_with_producers,
@@ -33,6 +34,7 @@ from graph_tool_call.tool_graph import ToolGraph
 
 def test_graphify_public_contract_imports():
     assert COLLECTION_GRAPH_VERSION == "2"
+    assert callable(build_candidate_set)
     assert callable(build_io_contract)
     assert callable(expand_candidates_with_producers)
     assert callable(normalize_graph_edge)
@@ -901,6 +903,53 @@ def test_expand_candidates_with_producers_can_follow_target_specific_chain():
 
     assert one_hop == ["getInventory", "getProductDetail"]
     assert two_hops == ["getInventory", "getProductDetail", "searchProducts", "listProducts"]
+
+
+def test_build_candidate_set_separates_target_candidates_from_producers():
+    tools = {
+        "searchProducts": {
+            "metadata": {
+                "produces": [{"field_name": "productId", "semantic_tag": "product_id"}],
+                "ai_metadata": {"canonical_action": "search"},
+            }
+        },
+        "getProductDetail": {
+            "metadata": {
+                "consumes": [
+                    {"field_name": "productId", "semantic_tag": "product_id", "required": True},
+                ],
+            }
+        },
+        "getCart": {
+            "metadata": {
+                "consumes": [
+                    {"field_name": "cartId", "semantic_tag": "cart_id", "required": True},
+                ],
+            }
+        },
+        "getCurrentCart": {
+            "metadata": {
+                "produces": [{"field_name": "cartId", "semantic_tag": "cart_id"}],
+                "ai_metadata": {"canonical_action": "read"},
+            }
+        },
+    }
+
+    result = build_candidate_set(
+        ["getProductDetail", "getCart"],
+        tools,
+        expansion_seed=["getProductDetail"],
+        max_hops=1,
+    )
+
+    assert result["target_candidates"] == ["getProductDetail", "getCart"]
+    assert result["expansion_seed"] == ["getProductDetail"]
+    assert result["producer_candidates"] == ["searchProducts"]
+    assert result["candidates"] == ["getProductDetail", "searchProducts"]
+    assert result["target_candidate_count"] == 2
+    assert result["candidate_count"] == 2
+    assert result["producer_added_count"] == 1
+    assert result["adaptive_expansion_applied"] is True
 
 
 def test_edge_normalize_merge_and_trace_derivation_contract():

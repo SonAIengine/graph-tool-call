@@ -24,8 +24,8 @@ from graph_tool_call import __version__
 from graph_tool_call.graphify import (
     COLLECTION_GRAPH_VERSION,
     annotate_graphify_metadata,
+    build_candidate_set,
     build_io_contract,
-    expand_candidates_with_producers,
     ingest_openapi_graphify,
     retrieve_graphify,
 )
@@ -368,21 +368,30 @@ def evaluate_case(
     # The baseline isolates what happens after a target selector has picked the
     # expected target but before producer expansion adds prerequisite tools.
     expansion_seed = [expected_target] if expected_target in retrieved else retrieved[:1]
-    candidates = list(expansion_seed)
+    candidate_set = build_candidate_set(
+        retrieved,
+        graph_payload["tools"],
+        expansion_seed=expansion_seed,
+        max_hops=0,
+    )
     if expand_producers:
-        candidates = expand_candidates_with_producers(
-            expansion_seed,
+        candidate_set = build_candidate_set(
+            retrieved,
             graph_payload["tools"],
+            expansion_seed=expansion_seed,
             max_producers_per_field=3,
             max_hops=max(1, depth),
         )
+    candidates = [str(name) for name in candidate_set["candidates"]]
 
     target_rank = _rank_of(retrieved, expected_target)
     target_recall = recall_at_k(retrieved, {expected_target}, top_k)
     target_mrr = mrr(retrieved, {expected_target})
     producer_needed = bool(expected_producers)
-    producer_added_count = max(0, len(candidates) - len(expansion_seed))
-    adaptive_expansion_applied = bool(expand_producers and producer_added_count)
+    producer_added_count = int(candidate_set.get("producer_added_count") or 0)
+    adaptive_expansion_applied = bool(
+        expand_producers and candidate_set.get("adaptive_expansion_applied")
+    )
     unneeded_expansion_applied = bool(adaptive_expansion_applied and not producer_needed)
     producer_recall = recall_at_k(candidates, expected_producers, len(candidates))
     candidate_plan_coverage = recall_at_k(candidates, set(expected_plan), len(candidates))

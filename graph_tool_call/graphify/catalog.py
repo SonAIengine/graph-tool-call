@@ -7,6 +7,49 @@ from typing import Any
 _DEFAULT_ACTION_PRIORITY = {"search": 3, "read": 2, "action": 1}
 
 
+def build_candidate_set(
+    target_candidates: list[str],
+    tools_by_name: dict[str, dict[str, Any]],
+    *,
+    expansion_seed: list[str] | None = None,
+    max_producers_per_field: int = 3,
+    max_hops: int = 1,
+    action_priority: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Build a structured target/producers candidate set.
+
+    ``target_candidates`` is the retrieval/target-selection surface. Producers
+    are expanded only from ``expansion_seed`` so XGEN-style adapters can keep
+    top-K target search separate from the plan candidate set for the selected
+    target. If no seed is provided, the function preserves the legacy behavior
+    and expands from every target candidate.
+    """
+
+    targets = _dedupe_names(target_candidates)
+    seed = _dedupe_names(target_candidates if expansion_seed is None else expansion_seed)
+    candidates = expand_candidates_with_producers(
+        seed,
+        tools_by_name,
+        max_producers_per_field=max_producers_per_field,
+        max_hops=max_hops,
+        action_priority=action_priority,
+    )
+    seed_set = set(seed)
+    producers = [name for name in candidates if name not in seed_set]
+    return {
+        "target_candidates": targets,
+        "expansion_seed": seed,
+        "producer_candidates": producers,
+        "candidates": candidates,
+        "target_candidate_count": len(targets),
+        "candidate_count": len(candidates),
+        "producer_added_count": len(producers),
+        "adaptive_expansion_applied": bool(producers),
+        "max_hops": max(0, max_hops),
+        "max_producers_per_field": max(0, max_producers_per_field),
+    }
+
+
 def expand_candidates_with_producers(
     candidate_names: list[str],
     tools_by_name: dict[str, dict[str, Any]],
@@ -88,6 +131,10 @@ def _producers_for_required_inputs(
     return out
 
 
+def _dedupe_names(names: list[str]) -> list[str]:
+    return list(dict.fromkeys(str(name) for name in names if str(name)))
+
+
 def _build_producer_index(
     tools_by_name: dict[str, dict[str, Any]],
 ) -> dict[str, list[str]]:
@@ -124,4 +171,4 @@ def _producer_score(tool: dict[str, Any], priority: dict[str, int]) -> int:
     return priority.get(action, 0)
 
 
-__all__ = ["expand_candidates_with_producers"]
+__all__ = ["build_candidate_set", "expand_candidates_with_producers"]

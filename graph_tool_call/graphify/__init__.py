@@ -12,7 +12,7 @@ Public API:
   - render_subgraph_text(tg, nodes, edges, budget) -> str
 """
 
-from graph_tool_call.graphify.catalog import expand_candidates_with_producers
+from graph_tool_call.graphify.catalog import build_candidate_set, expand_candidates_with_producers
 from graph_tool_call.graphify.edges import (
     EVIDENCE_API_CONTRACT,
     EVIDENCE_LLM_CURATED,
@@ -62,6 +62,7 @@ __all__ = [
     "_apply_pair_hints",
     "annotate_graphify_metadata",
     "bucket_confidence",
+    "build_candidate_set",
     "build_io_contract",
     "derive_plan_trace_edges",
     "detect_enrichment_status",

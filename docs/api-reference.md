@@ -389,6 +389,27 @@ including aliases and enum values. This lets example-derived object parameters
 such as `filters` match field-level queries like `brandNo` / "브랜드번호"
 without turning every raw contract leaf into a search token.
 
+Use `build_candidate_set()` when an adapter has a target-selection step. The
+retrieved top-K stays visible as target candidates, while producer expansion is
+scoped to the selected target:
+
+```python
+from graph_tool_call.graphify import build_candidate_set, retrieve_graphify
+
+retrieval = retrieve_graphify(tg, "상품 sku 재고 수량 확인", top_k=5, include_evidence=True)
+target_candidates = [row["name"] for row in retrieval["results"]]
+selected_target = target_candidates[0]
+candidate_set = build_candidate_set(
+    target_candidates,
+    graph_payload["tools"],
+    expansion_seed=[selected_target],
+    max_hops=2,
+)
+
+assert candidate_set["target_candidates"] == target_candidates
+assert selected_target in candidate_set["expansion_seed"]
+```
+
 ---
 
 ## Top-level helpers
