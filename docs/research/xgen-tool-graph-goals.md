@@ -215,6 +215,11 @@ Goal: top-K 결과뿐 아니라 탈락 이유를 설명한다.
 Goal: top-K를 단순히 키우지 않고 후보 구성을 좋아지게 한다.
 
 - target 후보와 producer 후보를 분리한다.
+  - `2026-07-19`: `build_candidate_set(...)` public helper가
+    `target_candidates`, `expansion_seed`, `producer_candidates`, flat
+    `candidates`를 분리해 반환한다. XGEN adapter는 retrieved top-K를 target
+    surface로 유지하면서 selected target만 producer expansion seed로 전달할 수
+    있다.
 - near-duplicate/sibling 후보를 제어한다.
 - multi-intent query에서는 category diversity를 보장한다.
 - 복합 query에서만 adaptive expansion을 적용한다.
