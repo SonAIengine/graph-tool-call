@@ -163,8 +163,8 @@ def test_x2bee_default_cases_cover_product_level_domains():
     assert cases_doc["thresholds"]["avg_required_input_coverage"] >= 0.85
     assert cases_doc["thresholds"]["avg_required_input_resolution_coverage"] >= 1.0
     assert cases_doc["thresholds"]["max_unresolved_required_input_count"] == 0
-    assert cases_doc["thresholds"]["max_avg_candidate_count"] <= 5.0
-    assert cases_doc["thresholds"]["max_candidate_count"] <= 15.0
+    assert cases_doc["thresholds"]["max_avg_candidate_count"] <= 3.0
+    assert cases_doc["thresholds"]["max_candidate_count"] <= 8.0
     assert len(case_ids) == len(set(case_ids))
     for required_id in {
         "member_list_ko",
@@ -394,6 +394,166 @@ def test_xgen_api_scale_keeps_optional_producers_out_of_plan_candidates(tmp_path
     assert case["input_support"][0]["required"] is False
     assert case["input_support"][0]["producer_candidates"] == ["listCampaigns"]
     assert case["input_support"][0]["supported"] is True
+
+
+def test_xgen_api_scale_uses_representative_required_producer_per_field(tmp_path):
+    cases_path = tmp_path / "cases.json"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "name": "Representative Producers",
+                "top_k": 3,
+                "thresholds": {
+                    "case_hit_at_k": 1.0,
+                    "target_selector_exact_at_k": 1.0,
+                    "max_avg_candidate_count": 2.0,
+                    "max_candidate_count": 2.0,
+                },
+                "cases": [
+                    {
+                        "id": "representative",
+                        "query": "coupon detail",
+                        "expected_tools": ["getCouponDetail"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    spec = _spec(
+        "Representative Producers",
+        {
+            "/coupons/save": _contract_operation(
+                "saveCoupon",
+                "Coupon save",
+                response_fields={"couponId": {"type": "string"}},
+            ),
+            "/coupons/search": _contract_operation(
+                "searchCoupons",
+                "Coupon search",
+                response_fields={"couponId": {"type": "string"}},
+            ),
+            "/coupons/list": _contract_operation(
+                "listCoupons",
+                "Coupon list",
+                response_fields={"couponId": {"type": "string"}},
+            ),
+            "/coupons/detail": _contract_operation(
+                "getCouponDetail",
+                "Coupon detail",
+                parameters=[
+                    {
+                        "name": "couponId",
+                        "in": "query",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    }
+                ],
+            ),
+        },
+    )
+
+    report = run_benchmark(
+        spec_sources=[spec],
+        cases_path=cases_path,
+        top_k=3,
+        min_unique_tools=4,
+        max_build_seconds=10,
+    )
+    case = report["cases"][0]
+
+    assert report["status"] == "pass"
+    assert report["search"]["avg_candidate_count"] == 2.0
+    assert case["plan_candidates"] == ["getCouponDetail", "searchCoupons"]
+    assert case["producer_candidates"] == ["searchCoupons"]
+    assert case["input_support"][0]["producer_candidates"] == [
+        "searchCoupons",
+        "listCoupons",
+        "saveCoupon",
+    ]
+
+
+def test_xgen_api_scale_representative_producers_cover_multiple_fields(tmp_path):
+    cases_path = tmp_path / "cases.json"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "name": "Representative Producer Set Cover",
+                "top_k": 3,
+                "thresholds": {
+                    "case_hit_at_k": 1.0,
+                    "target_selector_exact_at_k": 1.0,
+                    "max_avg_candidate_count": 2.0,
+                    "max_candidate_count": 2.0,
+                },
+                "cases": [
+                    {
+                        "id": "set_cover",
+                        "query": "coupon issue detail",
+                        "expected_tools": ["issueCoupon"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    spec = _spec(
+        "Representative Producer Set Cover",
+        {
+            "/coupons/search": _contract_operation(
+                "searchCoupons",
+                "Coupon search",
+                response_fields={
+                    "couponId": {"type": "string"},
+                    "promoNo": {"type": "string"},
+                },
+            ),
+            "/coupons/list": _contract_operation(
+                "listCoupons",
+                "Coupon list",
+                response_fields={"couponId": {"type": "string"}},
+            ),
+            "/promotions/list": _contract_operation(
+                "listPromotions",
+                "Promotion list",
+                response_fields={"promoNo": {"type": "string"}},
+            ),
+            "/coupons/issue": _contract_operation(
+                "issueCoupon",
+                "Coupon issue detail",
+                parameters=[
+                    {
+                        "name": "couponId",
+                        "in": "query",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    },
+                    {
+                        "name": "promoNo",
+                        "in": "query",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    },
+                ],
+            ),
+        },
+    )
+
+    report = run_benchmark(
+        spec_sources=[spec],
+        cases_path=cases_path,
+        top_k=3,
+        min_unique_tools=4,
+        max_build_seconds=10,
+    )
+    case = report["cases"][0]
+
+    assert report["status"] == "pass"
+    assert report["search"]["avg_candidate_count"] == 2.0
+    assert case["plan_candidates"] == ["issueCoupon", "searchCoupons"]
+    assert case["producer_candidates"] == ["searchCoupons"]
+    assert case["input_support"][0]["producer_candidates"] == ["searchCoupons", "listCoupons"]
+    assert case["input_support"][1]["producer_candidates"] == ["searchCoupons", "listPromotions"]
 
 
 def test_xgen_api_scale_matches_identifier_description_aliases(tmp_path):

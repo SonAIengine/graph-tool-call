@@ -167,8 +167,8 @@ selector rank bucket도 `top_1=19`, `missing=0`이다. Tool-name 기준
 `rank_buckets`는 `expected_any` 대체 정답까지 모두 세므로 product-level
 gate 해석에는 `case_rank_buckets`와 `target_selector_rank_buckets`를 우선한다.
 같은 artifact는 contract-based plan readiness도 기록한다. 현재 평균 candidate
-count는 `3.53`, 최대 candidate count는 `14`, 평균 producer candidates added는
-`2.53`, 평균 required input
+count는 `2.16`, 최대 candidate count는 `7`, 평균 producer candidates added는
+`1.16`, 평균 required input
 coverage는 `0.872`이며 `required_input_not_producible` issue는 `4`건이다.
 이 값은 producer-only coverage다. 실행 관점에서는 request wrapper, XGEN
 context, user input으로 해결 가능한 required input을 별도 resolution으로 세며,
@@ -291,8 +291,8 @@ BFCL 수학/지리 표현을 keyword scorer에 보강했다. 비교 기준은
 - X2BEE BO Swagger scale sweep은 1084개 unique tool 기준 `hit@3=1.00`,
   `expected recall@3=1.00`, `target selector exact@3=1.00`, `top3=1.00`,
   `mrr=0.83`으로 회귀 없이 통과했다. Scale plan-readiness gate는
-  `avg_required_input_coverage >= 0.85`, `avg_candidate_count <= 5`,
-  `max_candidate_count <= 15`,
+  `avg_required_input_coverage >= 0.85`, `avg_candidate_count <= 3`,
+  `max_candidate_count <= 8`,
   `avg_required_input_resolution_coverage >= 1.0`,
   `unresolved_required_input_count <= 0` 기준을 추가로 확인한다.
 - 전역 sibling suppression은 `parallel_multiple_195` 일부를 개선했지만

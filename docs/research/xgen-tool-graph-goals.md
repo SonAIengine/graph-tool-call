@@ -41,8 +41,8 @@ live acceptance run을 별도로 둔다.
 | X2BEE Korean product cases | `19` |
 | X2BEE Korean product hit@3 | `1.00` |
 | X2BEE target selector exact@3 | `1.00` |
-| X2BEE avg plan candidate count | `3.53` |
-| X2BEE max plan candidate count | `14` |
+| X2BEE avg plan candidate count | `2.16` |
+| X2BEE max plan candidate count | `7` |
 | X2BEE required input coverage | `0.872` |
 | X2BEE required input resolution coverage | `1.00` |
 | X2BEE unresolved required inputs | `0` |
@@ -57,8 +57,8 @@ target recall@5와 query-action target selector exact@5가 모두 `1.00`까지
 target을 고르는 단계가 모두 통과한다. X2BEE-scale에서도 19개 product-level
 Korean BO case 기준 target selector exact@3/5/10이 모두 `1.00`까지 확인됐다.
 이제 live-scale artifact는 선택된 target의 request/response binding readiness도
-보여준다. 현재 평균 plan candidate count는 `3.53`, 최대 candidate count는
-`14`, 평균 required input
+보여준다. 현재 평균 plan candidate count는 `2.16`, 최대 candidate count는
+`7`, 평균 required input
 coverage는 `0.872`이다. 이 값은 producer-only coverage라서, 이전 response
 field가 직접 채울 수 있는 required input만 센다. 실행 관점의 required input
 resolution coverage는 `1.00`이고 unresolved required input은 `0`건이다. 남은
@@ -113,8 +113,14 @@ unresolved required input count는 `0`이다. Acceptance gate는
 후보로 올린다. Optional producer evidence는 `input_support`에 그대로 남긴다.
 X2BEE live sweep 기준 평균 candidate count는 `17.84 -> 3.53`, max candidate
 count는 `46 -> 14`로 줄었고, target selector exact, required input coverage,
-resolution coverage는 유지됐다. Acceptance gate는 `max_avg_candidate_count <= 5`
-와 `max_candidate_count <= 15`를 포함한다.
+resolution coverage는 유지됐다.
+
+`2026-07-19` representative-producer branch에서는 required field별 첫 producer가
+아니라, required field들을 가장 많이 덮는 representative producer set을 greedy로
+고른다. 동률에서는 read/search/list 성격 producer를 우선한다. X2BEE live sweep
+기준 평균 candidate count는 `3.53 -> 2.16`, max candidate count는 `14 -> 7`로
+줄었고, `coupon_list_ko`는 candidate count `14 -> 4`까지 내려갔다. Acceptance
+gate는 `max_avg_candidate_count <= 3`와 `max_candidate_count <= 8`을 포함한다.
 
 ## Product Maturity Levels
 
