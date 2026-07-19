@@ -161,6 +161,8 @@ def test_x2bee_default_cases_cover_product_level_domains():
     assert len(cases) >= 18
     assert cases_doc["thresholds"]["target_selector_exact_at_k"] >= 0.85
     assert cases_doc["thresholds"]["avg_required_input_coverage"] >= 0.8
+    assert cases_doc["thresholds"]["avg_required_input_resolution_coverage"] >= 0.95
+    assert cases_doc["thresholds"]["max_unresolved_required_input_count"] <= 1
     assert cases_doc["thresholds"]["max_avg_candidate_count"] <= 25.0
     assert len(case_ids) == len(set(case_ids))
     for required_id in {
@@ -307,14 +309,21 @@ def test_xgen_api_scale_reports_contract_plan_readiness(tmp_path):
     assert report["search"]["producer_recall_at_k"] == 1.0
     assert report["search"]["candidate_plan_coverage"] == 1.0
     assert report["search"]["avg_required_input_coverage"] == 1.0
+    assert report["search"]["avg_required_input_resolution_coverage"] == 1.0
     assert report["search"]["required_input_ready_case_count"] == 1
+    assert report["search"]["required_input_resolved_case_count"] == 1
+    assert report["search"]["unresolved_required_input_count"] == 0
+    assert report["search"]["input_resolution_counts"] == {"producer": 1}
     assert case["selected_target"] == "getProductDetail"
     assert case["producer_candidates"] == ["searchProducts"]
     assert case["plan_candidates"] == ["getProductDetail", "searchProducts"]
     assert case["target_required_data_input_count"] == 1
     assert case["target_required_producible_input_count"] == 1
+    assert case["target_required_resolved_input_count"] == 1
+    assert case["required_input_resolution_coverage"] == 1.0
     assert case["input_support"][0]["field_name"] == "productId"
     assert case["input_support"][0]["producer_candidates"] == ["searchProducts"]
+    assert case["input_support"][0]["resolution"] == "producer"
 
 
 def test_xgen_api_scale_classifies_required_input_readiness_issues(tmp_path):
@@ -388,8 +397,18 @@ def test_xgen_api_scale_classifies_required_input_readiness_issues(tmp_path):
     )
     case = report["cases"][0]
     issues = {row["field_name"]: row["issue_code"] for row in case["input_support"]}
+    resolutions = {row["field_name"]: row["resolution"] for row in case["input_support"]}
 
     assert report["status"] == "pass"
+    assert report["search"]["avg_required_input_coverage"] == 0.0
+    assert report["search"]["avg_required_input_resolution_coverage"] == 0.75
+    assert report["search"]["unresolved_required_input_count"] == 1
+    assert report["search"]["input_resolution_counts"] == {
+        "request_wrapper": 1,
+        "context": 1,
+        "user_input": 1,
+        "unresolved": 1,
+    }
     assert report["search"]["readiness_issue_counts"] == {
         "required_request_wrapper": 1,
         "required_context_input": 1,
@@ -402,6 +421,12 @@ def test_xgen_api_scale_classifies_required_input_readiness_issues(tmp_path):
         "systemType": "required_context_input",
         "searchDateType": "required_filter_input",
         "marketingDisplayNo": "required_producer_missing",
+    }
+    assert resolutions == {
+        "memberSearchRequest": "request_wrapper",
+        "systemType": "context",
+        "searchDateType": "user_input",
+        "marketingDisplayNo": "unresolved",
     }
 
 

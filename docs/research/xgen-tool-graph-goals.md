@@ -43,6 +43,8 @@ live acceptance run을 별도로 둔다.
 | X2BEE target selector exact@3 | `1.00` |
 | X2BEE avg plan candidate count | `17.16` |
 | X2BEE required input coverage | `0.846` |
+| X2BEE required input resolution coverage | `0.974` |
+| X2BEE unresolved required inputs | `1` |
 | X2BEE expected tool recall@10 | `1.00` |
 | X2BEE mean MRR | `1.00` |
 
@@ -55,9 +57,11 @@ target을 고르는 단계가 모두 통과한다. X2BEE-scale에서도 19개 pr
 Korean BO case 기준 target selector exact@3/5/10이 모두 `1.00`까지 확인됐다.
 이제 live-scale artifact는 선택된 target의 request/response binding readiness도
 보여준다. 현재 평균 plan candidate count는 `17.16`, 평균 required input
-coverage는 `0.846`, `required_input_not_producible` issue는 `5`건이다. 남은
+coverage는 `0.846`이다. 이 값은 producer-only coverage라서, 이전 response
+field가 직접 채울 수 있는 required input만 센다. 실행 관점의 required input
+resolution coverage는 `0.974`이고 unresolved required input은 `1`건이다. 남은
 live-scale 연구는 producer 후보 폭을 줄이고, request/response field matching과
-실행 전 readiness를 더 정확하게 만드는 것이다. 이 5건은
+실행 전 readiness를 더 정확하게 만드는 것이다. producer-only 미지원 5건은
 `required_request_wrapper=2`, `required_context_input=1`,
 `required_filter_input=1`, `required_producer_missing=1`로 분류된다.
 
@@ -83,6 +87,15 @@ X2BEE acceptance gate는 `avg_required_input_coverage >= 0.8`과
 count `17.16`, 평균 required input coverage `0.846`, readiness issue `5`건이다.
 Readiness issue breakdown은 request wrapper `2`, context input `1`, filter
 input `1`, producer missing `1`이다.
+
+`2026-07-19` input-resolution branch에서는 같은 artifact에
+`avg_required_input_resolution_coverage`, `unresolved_required_input_count`,
+`input_resolution_counts`를 추가했다. Acceptance gate는
+`avg_required_input_resolution_coverage >= 0.95`와
+`unresolved_required_input_count <= 1`을 포함한다. 현재 top-K `3,5,10` 모두
+평균 required input resolution coverage `0.974`, unresolved required input
+count `1`이다. Resolution breakdown은 producer `41`, request wrapper `2`,
+context `1`, user input `1`, unresolved `1`이다.
 
 ## Product Maturity Levels
 
