@@ -593,6 +593,10 @@ Latest local deterministic suite result on 2026-07-19:
 | Synthesis diagnostics coverage | `1.00` |
 | User-input slot cases | `1` |
 | Missing fields surfaced | `2` |
+| Producer recall lift vs target-only | `+1.00` |
+| Candidate plan coverage lift vs target-only | `+0.625` |
+| Binding support lift vs target-only | `+1.00` |
+| Producer expansion lifted cases | `12/12` |
 | Average retrieval latency | `0.22ms` |
 
 Each case includes `synthesis_diagnostics` in the JSON artifact. The diagnostic
@@ -601,6 +605,13 @@ candidate signals, user-input or missing fields, failure details when present,
 and retrieval evidence such as target rank and token budget used. This is the
 XGEN-facing trace shape for explaining why a plan was synthesized, why a field
 requires a popup/resume input, or where target selection failed.
+
+The JSON artifact also includes `producer_expansion_lift`, which compares the
+`target_only` baseline with `graph_with_producers`. This makes producer
+expansion measurable as plan-readiness lift instead of a hidden implementation
+detail: in the current suite it raises producer recall by `+1.00`, candidate
+plan coverage by `+0.625`, and binding support by `+1.00` across all `12`
+cases.
 
 ### XGEN Scale Acceptance
 

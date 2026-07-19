@@ -128,6 +128,10 @@ Required work:
     `workflow` 3종으로 확장됐다. `make xgen-benchmark`와
     `make research-check`의 XGEN deterministic gate는 `--suite all`을 실행한다.
 - producer expansion이 plan synthesis까지 실제 이득을 내는지 측정한다.
+  - `2026-07-19`: XGEN deterministic benchmark artifact에
+    `producer_expansion_lift`를 추가했다. `target_only` 대비
+    `graph_with_producers`는 전체 12건에서 producer recall `+1.00`,
+    candidate plan coverage `+0.625`, binding support `+1.00` lift를 만든다.
 - top-k=5를 기본 경로로 유지하되, 복합 query에서만 adaptive expansion을 쓴다.
 - 실패 event에 stage, target, selected producers, missing fields, evidence를 남긴다.
   - `2026-07-19`: XGEN deterministic benchmark artifact의 각 case에
