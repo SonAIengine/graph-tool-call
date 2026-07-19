@@ -315,6 +315,63 @@ class TestBuildRequest:
         assert diagnostics["used_arguments"]["body"] == ["goodsNo", "quantity"]
         assert json.loads(req.data.decode("utf-8")) == [{"goodsNo": "G-1", "quantity": 2}]
 
+    def test_root_array_request_body_zips_leaf_argument_lists(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Bulk API", "version": "1.0.0"},
+            "paths": {
+                "/bulk-products": {
+                    "post": {
+                        "operationId": "bulkCreateProducts",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "required": ["goodsNo", "quantity"],
+                                            "properties": {
+                                                "goodsNo": {"type": "string"},
+                                                "quantity": {"type": "integer", "minimum": 1},
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(
+            tools[0],
+            {"goodsNo": ["G-1", "G-2"], "quantity": [2, 3]},
+        )
+        invalid = executor.validate_request(
+            tools[0],
+            {"goodsNo": ["G-1", "G-2"], "quantity": [2, 0]},
+        )
+        req = executor.build_request(
+            tools[0],
+            {"goodsNo": ["G-1", "G-2"], "quantity": [2, 3]},
+        )
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_required"] == []
+        assert json.loads(req.data.decode("utf-8")) == [
+            {"goodsNo": "G-1", "quantity": 2},
+            {"goodsNo": "G-2", "quantity": 3},
+        ]
+        assert invalid["valid"] is False
+        assert invalid["invalid_arguments"][0]["name"] == "quantity"
+        assert invalid["invalid_arguments"][0]["reason"] == "minimum"
+
     def test_root_primitive_request_body_accepts_raw_body_argument(self):
         spec = {
             "openapi": "3.0.0",
@@ -507,6 +564,85 @@ class TestBuildRequest:
         assert len(partial["missing_required"]) == 1
         assert partial["missing_required"][0]["name"] == "quantity"
         assert partial["missing_required"][0]["json_path"] == "$.items[*].quantity"
+
+    def test_nested_array_request_body_zips_leaf_argument_lists(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Nested Bulk API", "version": "1.0.0"},
+            "paths": {
+                "/batches": {
+                    "post": {
+                        "operationId": "createBatch",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": ["goodsNo", "quantity"],
+                                                    "properties": {
+                                                        "goodsNo": {"type": "string"},
+                                                        "quantity": {
+                                                            "type": "integer",
+                                                            "minimum": 1,
+                                                        },
+                                                        "detail": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "brandName": {"type": "string"}
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                            "memo": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(
+            tools[0],
+            {
+                "goodsNo": ["G-1", "G-2"],
+                "quantity": [2, 3],
+                "brandName": ["Acme", "Bravo"],
+                "memo": "two rows",
+            },
+        )
+        req = executor.build_request(
+            tools[0],
+            {
+                "goodsNo": ["G-1", "G-2"],
+                "quantity": [2, 3],
+                "brandName": ["Acme", "Bravo"],
+                "memo": "two rows",
+            },
+        )
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_required"] == []
+        assert json.loads(req.data.decode("utf-8")) == {
+            "items": [
+                {"goodsNo": "G-1", "quantity": 2, "detail": {"brandName": "Acme"}},
+                {"goodsNo": "G-2", "quantity": 3, "detail": {"brandName": "Bravo"}},
+            ],
+            "memo": "two rows",
+        }
 
     def test_required_object_container_is_satisfied_by_nested_leaf_arguments(self):
         spec = {

@@ -269,6 +269,13 @@ diagnostics for XGEN popup/resume flows:
 - `applied_defaults`: OpenAPI `default` / JSON Schema `const` values applied
   before validation and rendering, with location, source, and value metadata
 
+For JSON request bodies, field-level arguments are rendered through their
+OpenAPI `json_path`. Nested object fields such as `$.shipping.city` become
+`{"shipping": {"city": ...}}`; root or nested array item paths such as
+`$[*].goodsNo` and `$.items[*].quantity` can accept equal-length leaf lists and
+render row-wise array items. The same item values are checked by preflight
+validation before network I/O.
+
 By default, `build_request()` and `execute()` raise
 `OpenAPIRequestValidationError` before network I/O when required inputs,
 declared security credentials, or invalid argument values would make the request

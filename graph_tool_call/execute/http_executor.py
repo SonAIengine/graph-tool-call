@@ -1556,7 +1556,10 @@ def _body_row_values(
 ) -> list[Any]:
     name = str(row.get("field_name") or "")
     if name in arguments:
-        return [arguments[name]]
+        value = arguments[name]
+        if _body_argument_value_selects_many(row, value):
+            return list(value)
+        return [value]
     raw_present, raw_body = _raw_body_argument_value(
         body_rows,
         arguments,
@@ -1565,6 +1568,15 @@ def _body_row_values(
     if not raw_present:
         return []
     return _json_path_values(raw_body, str(row.get("json_path") or ""))
+
+
+def _body_argument_value_selects_many(row: dict[str, Any], value: Any) -> bool:
+    """Whether a direct leaf argument should be validated item-by-item."""
+    if not _is_sequence(value):
+        return False
+    if str(row.get("field_type") or "") == "array":
+        return False
+    return _json_path_selects_many(str(row.get("json_path") or ""))
 
 
 def _has_discriminator_branch_hint(row: dict[str, Any], property_name: str) -> bool:
@@ -3032,43 +3044,57 @@ def _can_assign_single_array_json_path(json_path: str) -> bool:
 
 
 def _assign_single_array_json_path(body: dict[str, Any], json_path: str, value: Any) -> None:
-    parts = [part for part in json_path.removeprefix("$.").split(".") if part]
-    if not parts:
+    parsed = _single_array_json_path_parts(json_path)
+    if parsed is None:
         return
+    prefix_parts, array_name, tail_parts = parsed
+    cursor = _ensure_json_object_path(body, prefix_parts)
+    if not tail_parts:
+        cursor[array_name] = list(value) if _is_sequence(value) else [value]
+        return
+    existing_array = cursor.get(array_name)
+    if not isinstance(existing_array, list):
+        existing_array = []
+        cursor[array_name] = existing_array
+    _assign_json_array_item_values(existing_array, tail_parts, value)
 
+
+def _single_array_json_path_parts(json_path: str) -> tuple[list[str], str, list[str]] | None:
+    if not _can_assign_single_array_json_path(json_path):
+        return None
+    parts = [part for part in json_path.removeprefix("$.").split(".") if part]
+    array_indexes = [index for index, part in enumerate(parts) if part.endswith("[*]")]
+    if len(array_indexes) != 1:
+        return None
+    array_index = array_indexes[0]
+    array_name = parts[array_index].removesuffix("[*]")
+    if not array_name:
+        return None
+    return parts[:array_index], array_name, parts[array_index + 1 :]
+
+
+def _ensure_json_object_path(body: dict[str, Any], parts: list[str]) -> dict[str, Any]:
     cursor = body
-    for index, part in enumerate(parts):
-        if not part.endswith("[*]"):
-            if index == len(parts) - 1:
-                cursor[part] = value
-                return
-            existing = cursor.get(part)
-            if not isinstance(existing, dict):
-                existing = {}
-                cursor[part] = existing
-            cursor = existing
+    for part in parts:
+        existing = cursor.get(part)
+        if not isinstance(existing, dict):
+            existing = {}
+            cursor[part] = existing
+        cursor = existing
+    return cursor
+
+
+def _assign_json_array_item_values(array: list[Any], tail_parts: list[str], value: Any) -> None:
+    values = list(value) if _is_sequence(value) else [value]
+    for index, item_value in enumerate(values):
+        while len(array) <= index:
+            array.append({})
+        if not tail_parts:
+            array[index] = item_value
             continue
-
-        array_name = part.removesuffix("[*]")
-        if not array_name:
-            return
-        if index == len(parts) - 1:
-            cursor[array_name] = list(value) if _is_sequence(value) else [value]
-            return
-
-        existing_array = cursor.get(array_name)
-        if not isinstance(existing_array, list):
-            existing_array = []
-            cursor[array_name] = existing_array
-        if existing_array and isinstance(existing_array[0], dict):
-            array_item = existing_array[0]
-        else:
-            array_item = {}
-            if existing_array:
-                existing_array[0] = array_item
-            else:
-                existing_array.append(array_item)
-        cursor = array_item
+        if not isinstance(array[index], dict):
+            array[index] = {}
+        _assign_json_path_parts(array[index], tail_parts, item_value)
 
 
 _NO_RAW_BODY = object()
@@ -3102,7 +3128,7 @@ def _build_root_array_json_body(
     body_params: dict[str, Any],
     body_field_paths: dict[str, str],
 ) -> list[Any] | None:
-    item: dict[str, Any] = {}
+    items: list[Any] = []
     for name, value in body_params.items():
         json_path = body_field_paths.get(name)
         if not json_path or not json_path.startswith("$[*]"):
@@ -3112,11 +3138,11 @@ def _build_root_array_json_body(
             return list(value) if _is_sequence(value) else [value]
         if not suffix.startswith("."):
             return None
-        item_path = "$" + suffix
-        if not _can_assign_json_path(item_path):
+        tail_parts = [part for part in suffix[1:].split(".") if part]
+        if not tail_parts or any("[*]" in part or part == "*" for part in tail_parts):
             return None
-        _assign_json_path(item, item_path, value)
-    return [item] if item else None
+        _assign_json_array_item_values(items, tail_parts, value)
+    return items if items else None
 
 
 def _can_assign_json_path(json_path: str) -> bool:
@@ -3125,13 +3151,11 @@ def _can_assign_json_path(json_path: str) -> bool:
 
 def _assign_json_path(body: dict[str, Any], json_path: str, value: Any) -> None:
     parts = [part for part in json_path.removeprefix("$.").split(".") if part]
+    _assign_json_path_parts(body, parts, value)
+
+
+def _assign_json_path_parts(body: dict[str, Any], parts: list[str], value: Any) -> None:
     if not parts:
         return
-    cursor = body
-    for part in parts[:-1]:
-        existing = cursor.get(part)
-        if not isinstance(existing, dict):
-            existing = {}
-            cursor[part] = existing
-        cursor = existing
+    cursor = _ensure_json_object_path(body, parts[:-1])
     cursor[parts[-1]] = value

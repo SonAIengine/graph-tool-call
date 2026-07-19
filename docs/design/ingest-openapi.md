@@ -255,9 +255,12 @@ argument는 덮어쓰지 않고, 선언된 `apiKey` security credential이나
 validation과 branch diagnostic은 leaf argument와 explicit raw JSON `body`
 payload 모두에 적용된다. Root array body나 object 안의 nested array도
 `$[*].quantity`, `$.items[*].goodsNo` 같은 wildcard JSON path를 기준으로
-item별 required/value constraint를 preflight에서 검사한다. JSON object request
-body는 schema field 이름이 `body`가 아닐 때 executor에 raw `body` object로
-전달할 수도 있다. `apiKey`
+item별 required/value constraint를 preflight에서 검사한다. Leaf argument가
+리스트로 들어오면 같은 wildcard item path끼리 index 기준으로 묶어
+`[{"goodsNo": "G-1", "quantity": 2}, ...]` 또는
+`{"items": [{"goodsNo": "G-1", "quantity": 2}, ...]}` 형태로 렌더링한다.
+JSON object request body는 schema field 이름이 `body`가 아닐 때 executor에
+raw `body` object로 전달할 수도 있다. `apiKey`
 security scheme은 query/header/cookie argument 또는 executor header/cookie로
 충족할 수 있고, bearer/basic/OAuth/OpenID Connect 계열은 `Authorization`
 header로 판정한다. XGEN은 이 diagnostics를 missing-field/auth/value popup과
