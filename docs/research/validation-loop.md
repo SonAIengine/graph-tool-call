@@ -406,10 +406,11 @@ raw OpenAPI snapshot과 `manifest.json`을 만든 뒤 `MANIFEST=/path/manifest.j
 `SPEC=/path/openapi.json`, 여러 파일은 `SPECS=a.json,b.json`으로 직접 넘길 수도
 있다. `MANIFEST`/`SPEC`/`SPECS`를 쓰면 Swagger UI discovery는 건너뛴다.
 `MANIFEST`는 `benchmarks.xgen_api_scale.run --manifest`로 전달되고 각 spec의
-sha256을 검증한다. `MANIFEST`로 실행한 report에는 `snapshot_manifests`가 들어가
-manifest path, spec path, sha256, operation count를 보존한다. 작은 snapshot
-smoke는 `NO_CASES=1 MIN_UNIQUE_TOOLS=1`처럼 threshold를 낮춰 runner contract만
-확인할 수 있다. report에는 아래를 남긴다.
+sha256을 검증한다. Manifest 내부 spec path는 snapshot directory 기준 상대 경로라
+snapshot folder를 통째로 옮겨도 재사용할 수 있다. `MANIFEST`로 실행한 report에는
+`snapshot_manifests`가 들어가 manifest path, spec path, sha256, operation count를
+보존한다. 작은 snapshot smoke는 `NO_CASES=1 MIN_UNIQUE_TOOLS=1`처럼 threshold를
+낮춰 runner contract만 확인할 수 있다. report에는 아래를 남긴다.
 
 - discovered spec 수, raw operation 수, unique tool 수, duplicate tool 수
 - requestBody/response schema coverage

@@ -52,9 +52,11 @@ def snapshot_specs(
         "specs": rows,
     }
     manifest_path = out_dir / "manifest.json"
-    manifest["manifest_path"] = str(manifest_path)
+    manifest["manifest_path"] = "manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    return manifest
+    result = dict(manifest)
+    result["manifest_path"] = str(manifest_path)
+    return result
 
 
 def _write_snapshot_spec(loaded: LoadedSpec, *, index: int, out_dir: Path) -> dict[str, Any]:
@@ -69,7 +71,7 @@ def _write_snapshot_spec(loaded: LoadedSpec, *, index: int, out_dir: Path) -> di
         "index": index,
         "label": loaded.label,
         "source": loaded.source,
-        "path": str(path),
+        "path": filename,
         "sha256": digest,
         "bytes": len(encoded),
         "title": profile.title,
