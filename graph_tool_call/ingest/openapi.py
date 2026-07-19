@@ -2557,6 +2557,7 @@ def _operation_to_tool(
     tool_name: str | None = None,
     operation_id_duplicate_count: int = 1,
     operation_id_duplicate_index: int = 0,
+    operation_id_generated: bool = False,
 ) -> ToolSchema:
     """Convert a single OpenAPI operation into a ToolSchema."""
     tool_name = tool_name or operation_id
@@ -2710,6 +2711,7 @@ def _operation_to_tool(
         "openapi": {
             "tool_name": tool_name,
             "operation_id": operation_id,
+            **({"operation_id_generated": True} if operation_id_generated else {}),
             "summary": operation.get("summary") or "",
             "description": operation.get("description") or "",
             "deprecated": bool(operation.get("deprecated", False)),
@@ -2841,6 +2843,27 @@ def _operation_id_counts(paths: dict[str, Any], *, skip_deprecated: bool) -> dic
     return counts
 
 
+def _missing_operation_id_keys(
+    paths: dict[str, Any],
+    *,
+    skip_deprecated: bool,
+) -> set[tuple[str, str]]:
+    """Return ``(path, method)`` keys whose raw operationId was absent."""
+    missing: set[tuple[str, str]] = set()
+    for path, path_item in paths.items():
+        if not isinstance(path_item, dict):
+            continue
+        for method in _METHODS:
+            operation = path_item.get(method)
+            if not isinstance(operation, dict):
+                continue
+            if skip_deprecated and operation.get("deprecated", False):
+                continue
+            if not str(operation.get("operationId") or "").strip():
+                missing.add((str(path), method))
+    return missing
+
+
 def _unique_operation_name(
     operation_id: str,
     *,
@@ -2916,6 +2939,10 @@ def ingest_openapi(
         resolved_spec.paths,
         skip_deprecated=skip_deprecated,
     )
+    generated_operation_ids = _missing_operation_id_keys(
+        raw_spec.get("paths", {}),
+        skip_deprecated=skip_deprecated,
+    )
     operation_seen: dict[str, int] = {}
     used_tool_names: set[str] = set()
     for path, path_item in resolved_spec.paths.items():
@@ -2952,6 +2979,7 @@ def ingest_openapi(
                 tool_name=tool_name,
                 operation_id_duplicate_count=operation_counts.get(operation_id, 1),
                 operation_id_duplicate_index=duplicate_index,
+                operation_id_generated=(path, method) in generated_operation_ids,
             )
             tools.append(tool)
 

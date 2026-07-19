@@ -65,6 +65,7 @@ tools = tg.retrieve("create a pet", top_k=5)
 | `merge_duplicates(pairs)` | Merge detected duplicates |
 | `apply_conflicts()` | Detect and add `CONFLICTS_WITH` edges |
 | `analyze()` | Build operational analysis summary |
+| `analyze_openapi()` | Build a deterministic OpenAPI/API Collection readiness report |
 
 ### Persistence
 
@@ -258,6 +259,57 @@ diagnostics for XGEN popup/resume flows:
   or `$.items[*].goodsNo`. Discriminator-selected request bodies also reject
   fields that belong only to another branch with
   `reason=discriminator_branch`.
+
+### OpenAPI readiness report
+
+Use `analyze_openapi_collection()` before exposing a Swagger/OpenAPI collection
+to graph search, Planflow, or an execution adapter:
+
+```python
+from graph_tool_call.analyze import analyze_openapi_collection
+
+report = analyze_openapi_collection("openapi.json")
+print(report.summary["status"], report.summary["readiness_score"])
+for issue in report.issues:
+    print(issue.severity, issue.code, issue.tool, issue.recommendation)
+```
+
+For an already-ingested graph, call `ToolGraph.analyze_openapi()`:
+
+```python
+from graph_tool_call import ToolGraph
+
+tg = ToolGraph()
+tg.ingest_openapi("openapi.json")
+report = tg.analyze_openapi(context_field_names={"siteNo", "tenantId"})
+```
+
+The report is deterministic and does not call an LLM, execute APIs, or inspect
+runtime credentials. It returns:
+
+- `summary`: tool/operation counts, duplicate/deprecated counts, `status`, and
+  `readiness_score`.
+- `coverage`: request/response schema coverage, consumes/produces field counts,
+  auth/context/enum fields, response envelopes, body-view candidates, and
+  OpenAPI link count.
+- `graph_readiness`: edge counts, relation counts, producer-edge count,
+  isolated tools, and producer/consumer field candidates.
+- `issues`: stable `{severity, code, tool, evidence, recommendation}` rows for
+  problems such as `missing_request_schema`, `generic_request_body`,
+  `missing_response_schema`, `duplicate_operation_id`, `missing_operation_id`,
+  `auth_required`, `unsupported_content_type`,
+  `array_leaf_alignment_required`, `response_envelope_detected`,
+  `low_graph_connectivity`, and `no_contract_fields`.
+
+The CLI equivalent is:
+
+```bash
+graph-tool-call inspect-openapi openapi.json
+graph-tool-call inspect-openapi openapi.json --json
+```
+
+Adapters such as XGEN should pass product-specific context/paging/search field
+names as options instead of hard-coding them in `graph-tool-call`.
 - branch-local missing fields are reported as `source=request_body_branch` when
   the caller supplied a discriminator value that selects that branch
 - explicit JSON body `None` values are treated as present body fields; nullable

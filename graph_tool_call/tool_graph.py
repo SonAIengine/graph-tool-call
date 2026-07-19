@@ -1425,6 +1425,30 @@ class ToolGraph:
             conflicts=conflicts,
         )
 
+    def analyze_openapi(
+        self,
+        *,
+        context_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
+        paging_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
+        search_filter_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
+    ) -> Any:
+        """Build a deterministic OpenAPI/API Collection readiness report.
+
+        This convenience method reads the already-ingested tool metadata and
+        graph edges; it does not re-ingest specs, call an LLM, or execute APIs.
+        Product-specific field classifiers can be supplied by adapters such as
+        XGEN without hard-coding them in the library.
+        """
+        from graph_tool_call.analyze.openapi_readiness import analyze_openapi_tools
+
+        return analyze_openapi_tools(
+            self._tools,
+            graph=self._graph,
+            context_field_names=context_field_names,
+            paging_field_names=paging_field_names,
+            search_filter_field_names=search_filter_field_names,
+        )
+
     # --- presets ---
 
     def apply_commerce_preset(self, *, min_confidence: float = 0.7) -> int:
