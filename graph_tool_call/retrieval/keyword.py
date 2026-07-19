@@ -228,6 +228,13 @@ _EN_QUERY_SYNONYMS: dict[str, list[str]] = {
     "series": ["sequence"],
     "covered": ["travel", "traveled"],
     "cover": ["travel", "traveled"],
+    # History/science questions often mention the specific object but not the
+    # generic API resource wording.
+    "signing": ["historical", "event", "date"],
+    "treaty": ["historical", "event", "date"],
+    "invented": ["inven", "invention", "inventor", "science", "historical"],
+    "invent": ["inven", "invention", "inventor", "science", "historical"],
+    "theory": ["science", "inven", "invention", "discovery"],
 }
 
 # Suffix-stripping rules applied in order. Each entry: (suffix, min_stem_len).
@@ -448,6 +455,8 @@ class BM25Scorer:
         ):
             boost *= 2.0
         if "fibonacci series" in q and ("sequence" in tool_text or "series" in tool_text):
+            boost *= 1.6
+        if "current cost" in q and "current cost" in tool_text:
             boost *= 1.6
 
         boost *= BM25Scorer._korean_business_phrase_multiplier(query, tool_text)
@@ -723,6 +732,14 @@ class BM25Scorer:
             extra.extend(["geo", "geographic"])
         if re.search(r"\bfibonacci\s+series\b", q):
             extra.extend(["fibonacci", "sequence"])
+        if re.search(r"\bexchange\s+rate\b", q):
+            extra.extend(["currency", "exchange", "rate", "latest"])
+        elif BM25Scorer._has_currency_conversion_intent(q):
+            extra.extend(["currency", "convert", "conver", "conversion", "exchange", "amount"])
+        if BM25Scorer._has_unit_conversion_intent(q):
+            extra.extend(["unit", "convert", "conver", "conversion", "measurement"])
+        if BM25Scorer._has_card_probability_intent(q):
+            extra.extend(["probability", "event", "outcome", "outcomes"])
 
         # Status/logs
         if re.search(r"\bstatus\b", q):
@@ -751,6 +768,55 @@ class BM25Scorer:
         if extra:
             return tokens + extra
         return tokens
+
+    @staticmethod
+    def _has_currency_conversion_intent(query: str) -> bool:
+        currency = (
+            r"\b("
+            r"dollars?|euros?|yen|usd|eur|jpy|cad|canadian\s+dollars?|"
+            r"british\s+pounds?|pounds?\s+sterling"
+            r")\b"
+        )
+        if not re.search(currency, query):
+            return False
+        return bool(
+            re.search(r"\b(convert|conversion|exchange|exchanged)\b", query)
+            or re.search(r"\bhow\s+(much|many)\b.*\b(be|in|get|for)\b", query)
+            or re.search(r"\bwould\s+be\s+in\b", query)
+            or re.search(r"\bcan\s+i\s+get\b", query)
+            or re.search(r"\bcurrent\s+cost\b", query)
+        )
+
+    @staticmethod
+    def _has_unit_conversion_intent(query: str) -> bool:
+        physical_units = (
+            r"\b("
+            r"ounces?|cups?|tablespoons?|teaspoons?|grams?|kilograms?|"
+            r"inches?|centimeters?|metres?|meters?|feet|foot"
+            r")\b"
+        )
+        if re.search(r"\bbritish\s+pounds?\b", query) and not re.search(physical_units, query):
+            return False
+        units = (
+            r"\b("
+            r"ounces?|pounds?|cups?|tablespoons?|teaspoons?|grams?|kilograms?|"
+            r"inches?|centimeters?|metres?|meters?|feet|foot"
+            r")\b"
+        )
+        if not re.search(units, query):
+            return False
+        return bool(
+            re.search(r"\b(convert|conversion|equivalent|equivalents?)\b", query)
+            or re.search(r"\bhow\s+many\b", query)
+            or re.search(r"\bhow\s+tall\b.*\b(inches?|centimeters?)\b", query)
+        )
+
+    @staticmethod
+    def _has_card_probability_intent(query: str) -> bool:
+        has_card = bool(re.search(r"\b(cards?|deck|king|queen|ace|spades?|hearts?)\b", query))
+        if not has_card:
+            return False
+        return bool(re.search(r"\b(probability|chance|odds|drawing|draw)\b", query))
 
     @staticmethod
     def _korean_bigrams(text: str) -> list[str]:

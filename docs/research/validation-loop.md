@@ -336,6 +336,27 @@ BFCL 수학/지리 표현을 keyword scorer에 보강했다. 비교 기준은
   악화 케이스가 크게 늘어 폐기했다. sibling/alias 보정은 앞으로도 broad rule이
   아니라 query/operation evidence가 강한 좁은 규칙으로만 승격한다.
 
+후속 hard-case bundle 실험에서는 deterministic artifact를 먼저 고정한 뒤
+`weak_or_missing_keyword_signal` subset을 대상으로 도메인 alias query expansion을
+좁게 추가했다. 비교 artifact는 `/tmp/gtc-bfcl-lift-baseline/bfcl-deterministic.json`,
+`/tmp/gtc-bfcl-lift-current-guarded2/bfcl-deterministic.json`,
+`/tmp/gtc-bfcl-lift-hardcases/inspect.json`,
+`/tmp/gtc-bfcl-lift-current-hardcases/inspect.json`이다.
+
+- weak-keyword subset 9건 기준 `recall@5`는 `0.037 -> 0.593`,
+  `all_tools_found@5`는 `0.000 -> 0.556`으로 올랐다.
+- 전체 BFCL deterministic 기준 `recall@5`는 `0.9325 -> 0.94025`,
+  `all_tools_found@5`는 `0.908 -> 0.917`, `mrr`은 `0.8138 -> 0.8212`,
+  `ndcg@5`는 `0.8328 -> 0.8406`으로 올랐다.
+- Deterministic hard-case count는 `92 -> 83`, `weak_or_missing_keyword_signal`
+  issue는 `9 -> 2`로 줄었다.
+- X2BEE BO scale acceptance는 1084개 unique tool 기준 `hit@3=1.00`,
+  `target selector exact@3=1.00`, `avg_candidate_count=2.16`, `max_candidate_count=7`
+  로 통과했다.
+- 악화 케이스 2건은 currency sibling exact-name 차이였고, broad
+  card/unit alias는 guard로 제한했다. 다음 단계에서는 synonym expansion보다
+  sibling-aware target selection 또는 equivalence grouping으로 다룬다.
+
 ## 승격 기준
 
 연구 변경은 아래 순서로 승격한다.
