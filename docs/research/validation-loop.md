@@ -282,6 +282,15 @@ Repeat summary 기준 exact mean/std는 `1.00 / 0.000`, latency mean은
 row-preservation 항목은 `incomplete`로 남지만, retrieved 경로 안정성 확인에는
 충분한 T3 evidence로 둔다.
 
+Row-source preservation까지 포함한 repeat 3 검증
+`/tmp/gtc-bfcl-date-guidance-limit25-repeat3-row-retrieved-qwen.json`은 row와
+retrieved 모두 세 반복에서 exact `1.00`, retrieval@5 `1.00`, failure breakdown
+`{pass: 100}`을 유지했다. Repeat summary 기준 exact mean/std는 row와 retrieved
+모두 `1.00 / 0.000`이고, `xgen-0.27` milestone gate는 `pass`다. Gate metric은
+retrieved exact@5 `1.00`, retrieval@5 `1.00`, row-source preservation `1.00`,
+`parallel_multiple` exact@5 `1.00`이다. Row-vs-retrieved delta도 세 반복 모두
+`row_pass_retrieved_fail=0`이다.
+
 ## 실행 타깃
 
 ```bash

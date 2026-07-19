@@ -373,7 +373,11 @@ Required work:
     mean/std `1.00 / 0.000`, retrieval@5 mean `1.00`, failure breakdown
     `{pass: 100}` per repeat로 안정적이었다. Row-source preservation은 이 repeat
     artifact에 포함되지 않아 gate status는 `incomplete`지만, retrieved 경로
-    안정성 증거로 둔다.
+    안정성 증거로 둔다. Row-source preservation까지 포함한 repeat 3 검증
+    `/tmp/gtc-bfcl-date-guidance-limit25-repeat3-row-retrieved-qwen.json`은
+    row/retrieved 모두 exact mean/std `1.00 / 0.000`, retrieval@5 mean `1.00`,
+    row-source preservation `1.00`, `parallel_multiple` exact `1.00`으로
+    `xgen-0.27` gate를 pass했다. 세 반복 모두 row-pass/retrieved-fail loss는 0건이다.
 
 ## Paper-Ready Target
 
