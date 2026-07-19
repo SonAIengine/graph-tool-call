@@ -104,6 +104,42 @@ def test_cohesive_namespace_candidates_only_compress_multi_intent_sibling_sets()
     )
 
 
+def test_cohesive_namespace_candidates_do_not_drop_undesignaled_namespace_matches():
+    names = [
+        "calculate_magnetic_field",
+        "calculate_voltage_difference",
+        "calculate_electric_field_strength",
+        "physics.electric_field",
+        "physics.magnetic_field",
+    ]
+
+    compressed = _cohesive_namespace_candidates(
+        names,
+        query="Calculate magnetic field and calculate voltage difference",
+        enabled=True,
+    )
+
+    assert compressed == names
+
+
+def test_cohesive_namespace_candidates_preserve_signaled_singleton_namespaces():
+    names = [
+        "vegan_restaurant.find_nearby",
+        "restaurant.find",
+        "restaurant.search",
+        "flight.search",
+        "doctor.search",
+    ]
+
+    compressed = _cohesive_namespace_candidates(
+        names,
+        query="Find restaurants and also find flights",
+        enabled=True,
+    )
+
+    assert compressed == ["restaurant.find", "restaurant.search", "flight.search"]
+
+
 def test_prediction_matcher_allows_optional_missing_and_parallel_order():
     expected = [
         ExpectedToolCall(

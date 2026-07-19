@@ -276,6 +276,16 @@ Required work:
     milestone gate를 pass했다. 이 수치는 작은 smoke evidence이며, 다음 승격은
     같은 옵션을 failure subset과 더 큰 full sweep에서 반복 확인하는 것이다.
     남은 실패는 `parallel_multiple_4`의 integral sibling ambiguity 1건이다.
+  - 같은 옵션을 category별 `limit=25`인 100-case 중간 검증으로 넓히면
+    `/tmp/gtc-bfcl-qwen027-cohesive-guard-limit25.json` 기준 retrieved exact
+    `0.83`, retrieval@5 `0.99`, row-source preservation `0.883`,
+    `parallel_multiple` exact `0.84`로 gate는 아직 `fail`이다. 다만 후보 압축
+    가드를 추가한 뒤 이전 100-case run의 `candidate_not_present` 2건은 0건으로
+    사라졌고, `parallel_multiple` exact는 `0.76 -> 0.84`로 올랐다. 0.27의
+    다음 병목은 `solve_quadratic` vs `solve_quadratic_equation`,
+    `geometry.circumference` vs `calculate_circumference`, `math.gcd` vs
+    `number_theory.gcd` 같은 near-duplicate disambiguation과 repeated-call /
+    argument-value preservation이다.
 
 ## Paper-Ready Target
 

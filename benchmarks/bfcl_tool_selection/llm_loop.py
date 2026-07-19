@@ -643,16 +643,26 @@ def _cohesive_namespace_candidates(
     if not enabled or not _looks_multi_intent(query):
         return list(names)
 
+    query_terms = _candidate_query_terms(query)
     groups: dict[str, list[str]] = {}
     for name in names:
         namespace = _dotted_namespace(name)
         if namespace:
             groups.setdefault(namespace, []).append(name)
-    cohesive_namespaces = {namespace for namespace, members in groups.items() if len(members) >= 2}
+    first_namespace = _dotted_namespace(names[0]) if names else ""
+    cohesive_namespaces = {
+        namespace
+        for namespace, members in groups.items()
+        if len(members) >= 2 and (namespace == first_namespace or namespace in query_terms)
+    }
     if not cohesive_namespaces:
         return list(names)
 
-    selected = [name for name in names if _dotted_namespace(name) in cohesive_namespaces]
+    selected = [
+        name
+        for name in names
+        if _dotted_namespace(name) in cohesive_namespaces or _dotted_namespace(name) in query_terms
+    ]
     return selected or list(names)
 
 
@@ -674,6 +684,17 @@ def _dotted_namespace(name: str) -> str:
         return ""
     namespace, _sep, _rest = text.partition(".")
     return namespace.strip().lower()
+
+
+def _candidate_query_terms(query: str) -> set[str]:
+    text = str(query or "").strip().lower()
+    terms = {term for term in re.split(r"[^a-z0-9]+", text) if term}
+    singular_terms = {
+        term[:-1]
+        for term in terms
+        if len(term) > 3 and term.endswith("s") and not term.endswith("ss")
+    }
+    return terms | singular_terms
 
 
 def _chat(
