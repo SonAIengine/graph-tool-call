@@ -130,6 +130,18 @@ def _write_grouped_case_ids(bundle: dict[str, Any], out_dir: Path) -> dict[str, 
         _write_case_ids(path, ids)
         paths[f"failure_{failure}"] = path
 
+    tag_groups: dict[str, list[str]] = {}
+    for row in bundle["failure_cases"]:
+        case_id = str(row.get("case_id") or "")
+        if not case_id:
+            continue
+        for tag in row.get("failure_tags") or []:
+            tag_groups.setdefault(str(tag), []).append(case_id)
+    for tag, ids in sorted(tag_groups.items()):
+        path = out_dir / f"tag_{_slug(tag)}.txt"
+        _write_case_ids(path, ids)
+        paths[f"tag_{tag}"] = path
+
     issue_groups: dict[str, list[str]] = {}
     for case in bundle["inspection"].get("cases") or []:
         case_id = str(case.get("case_id") or "")
@@ -153,6 +165,7 @@ def _write_case_ids(path: Path, case_ids: list[str]) -> None:
 
 def _summarize(rows: list[dict[str, Any]], inspection: dict[str, Any]) -> dict[str, Any]:
     failures = Counter(str(row.get("failure_category") or "unknown") for row in rows)
+    failure_tags = Counter(str(tag) for row in rows for tag in row.get("failure_tags") or [])
     categories = Counter(str(row.get("category") or "unknown") for row in rows)
     inspect_summary = inspection.get("summary") or {}
     issue_counts = Counter(inspect_summary.get("issues") or {})
@@ -171,6 +184,7 @@ def _summarize(rows: list[dict[str, Any]], inspection: dict[str, Any]) -> dict[s
         "cases": len(rows),
         "inspected_cases": len(inspected_cases),
         "failure_categories": dict(sorted(failures.items())),
+        "failure_tags": dict(sorted(failure_tags.items())),
         "categories": dict(sorted(categories.items())),
         "issues": dict(issue_counts.most_common()),
         "near_miss_case_count": near_miss_cases,
@@ -235,6 +249,8 @@ def print_report(bundle: dict[str, Any], *, paths: dict[str, str] | None = None)
         )
     )
     print(f"failure_categories={summary['failure_categories']}")
+    if summary["failure_tags"]:
+        print(f"failure_tags={summary['failure_tags']}")
     print(f"issues={summary['issues']}")
     if paths:
         print(f"out_dir={Path(paths['bundle']).parent}")

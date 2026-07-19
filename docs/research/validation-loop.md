@@ -344,6 +344,7 @@ make bfcl-hard-cases \
 - `inspect.json`: deterministic rank/distractor/evidence 진단
 - `summary.json`: near-miss, partial multi-tool, weak keyword, outside-depth 요약
 - `failure_<category>.txt`: failure category별 case-id subset
+- `tag_<tag>.txt`: `near_duplicate_tool_surface` 같은 model-loop failure tag별 subset
 - `issue_<issue>.txt`: `expected_present_below_top_k`,
   `partial_multi_tool_at_k`, `weak_or_missing_keyword_signal` 같은 issue별 subset
 
@@ -354,6 +355,7 @@ make bfcl-hard-cases \
 - `distractors`: top-K에서 정답을 밀어낸 후보와 score breakdown
 - `issues`: `expected_present_below_top_k`, `weak_or_missing_keyword_signal`,
   `partial_multi_tool_at_k` 같은 개선 대상 분류
+- `failure_tags`: `near_duplicate_tool_surface` 같은 LLM/evaluator failure 원인 tag
 
 그 subset만 deterministic으로 먼저 본다.
 

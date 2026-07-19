@@ -348,9 +348,10 @@ Goal: "어떤 실패를 고쳤는지"를 항상 재현 가능하게 만든다.
 - 각 subset은 deterministic first, model smoke second, full run last 순서로 검증한다.
 - `2026-07-19`: `make bfcl-hard-cases`를 추가해 full/smoke report 하나에서
   `case_ids.txt`, `cases.json`, `inspect.json`, `summary.json`,
-  `failure_<category>.txt`, `issue_<issue>.txt`를 한 번에 만든다. 다음 검색 실험은
-  deterministic BFCL report의 inferred `retrieval_miss`와, LLM/sweep report
-  bundle의 `expected_present_below_top_k`, `partial_multi_tool_at_k`,
+  `failure_<category>.txt`, `tag_<tag>.txt`, `issue_<issue>.txt`를 한 번에 만든다.
+  다음 검색 실험은 deterministic BFCL report의 inferred `retrieval_miss`와,
+  LLM/sweep report bundle의 `near_duplicate_tool_surface`,
+  `expected_present_below_top_k`, `partial_multi_tool_at_k`,
   `weak_or_missing_keyword_signal` subset을 먼저 개선한다.
 
 ### 2. Search Evidence
