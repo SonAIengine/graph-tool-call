@@ -92,8 +92,10 @@ class SearchEvaluation:
     target_required_data_input_count: int
     target_producible_input_count: int
     target_required_producible_input_count: int
+    target_required_resolved_input_count: int
     producible_input_coverage: float
     required_input_coverage: float
+    required_input_resolution_coverage: float
     producer_recall_at_k: float
     candidate_plan_coverage: float
     input_support: list[dict[str, Any]]
@@ -711,8 +713,10 @@ def evaluate_search_case(
         target_required_producible_input_count=int(
             readiness["target_required_producible_input_count"]
         ),
+        target_required_resolved_input_count=int(readiness["target_required_resolved_input_count"]),
         producible_input_coverage=float(readiness["producible_input_coverage"]),
         required_input_coverage=float(readiness["required_input_coverage"]),
+        required_input_resolution_coverage=float(readiness["required_input_resolution_coverage"]),
         producer_recall_at_k=producer_recall,
         candidate_plan_coverage=candidate_plan_coverage,
         input_support=[dict(row) for row in readiness["input_support"]],
@@ -824,8 +828,28 @@ def summarize_search(
         ),
         "avg_producible_input_coverage": _mean(case.producible_input_coverage for case in cases),
         "avg_required_input_coverage": _mean(case.required_input_coverage for case in cases),
+        "avg_required_input_resolution_coverage": _mean(
+            case.required_input_resolution_coverage for case in cases
+        ),
         "required_input_ready_case_count": sum(
             1 for case in cases if case.required_input_coverage >= 1.0
+        ),
+        "required_input_resolved_case_count": sum(
+            1 for case in cases if case.required_input_resolution_coverage >= 1.0
+        ),
+        "unresolved_required_input_count": sum(
+            1
+            for case in cases
+            for row in case.input_support
+            if row.get("required") and row.get("resolution") == "unresolved"
+        ),
+        "input_resolution_counts": dict(
+            Counter(
+                row["resolution"]
+                for case in cases
+                for row in case.input_support
+                if row.get("required") and row.get("resolution")
+            ).most_common()
         ),
         "readiness_issue_counts": dict(
             Counter(
@@ -885,6 +909,7 @@ def _compare_contract_signal_variants(variants: list[dict[str, Any]]) -> dict[st
         "producer_recall_at_k",
         "candidate_plan_coverage",
         "avg_required_input_coverage",
+        "avg_required_input_resolution_coverage",
     ]
     deltas = {
         f"{metric}_delta": round(
@@ -964,6 +989,7 @@ def _plan_readiness(
     supported = 0
     required_total = 0
     required_supported = 0
+    required_resolved = 0
 
     for consume in consumes:
         required = bool(consume.get("required"))
@@ -981,6 +1007,9 @@ def _plan_readiness(
                 required_supported += 1
         producer_candidates.extend(producers)
         issue_code = _readiness_issue_code(consume, supported=bool(producers))
+        resolution = _input_resolution(issue_code, supported=bool(producers))
+        if required and resolution != "unresolved":
+            required_resolved += 1
         input_support.append(
             {
                 "field_name": str(consume.get("field_name") or ""),
@@ -991,6 +1020,7 @@ def _plan_readiness(
                 "producer_candidates": producers,
                 "supported": bool(producers),
                 "issue_code": issue_code,
+                "resolution": resolution,
             }
         )
 
@@ -1005,10 +1035,24 @@ def _plan_readiness(
         "target_required_data_input_count": required_total,
         "target_producible_input_count": supported,
         "target_required_producible_input_count": required_supported,
+        "target_required_resolved_input_count": required_resolved,
         "producible_input_coverage": _ratio(supported, len(consumes)),
         "required_input_coverage": _ratio(required_supported, required_total),
+        "required_input_resolution_coverage": _ratio(required_resolved, required_total),
         "input_support": input_support,
     }
+
+
+def _input_resolution(issue_code: str, *, supported: bool) -> str:
+    if supported:
+        return "producer"
+    if issue_code == "required_request_wrapper":
+        return "request_wrapper"
+    if issue_code == "required_context_input":
+        return "context"
+    if issue_code in {"required_enum_input", "required_filter_input"}:
+        return "user_input"
+    return "unresolved"
 
 
 def _readiness_issue_code(consume: dict[str, Any], *, supported: bool) -> str:
@@ -1318,7 +1362,8 @@ def _print_report(report: dict[str, Any]) -> None:
             "search: status={status} cases={cases} hit@K={hit:.2f} recall@K={recall:.2f} "
             "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
             "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
-            "required_inputs={required:.2f} avg_latency={latency:.2f}ms".format(
+            "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
+            "avg_latency={latency:.2f}ms".format(
                 status=search["status"],
                 cases=search["cases"],
                 hit=search["case_hit_at_k"],
@@ -1330,6 +1375,7 @@ def _print_report(report: dict[str, Any]) -> None:
                 candidates=search["avg_candidate_count"],
                 producers=search["avg_producer_added_count"],
                 required=search["avg_required_input_coverage"],
+                resolved=search["avg_required_input_resolution_coverage"],
                 latency=search["avg_latency_ms"],
             )
         )
@@ -1345,16 +1391,20 @@ def _print_report(report: dict[str, Any]) -> None:
             )
             print(
                 "    selector={selected} selector_rank={rank} candidates={count} "
-                "producers={producers} required_inputs={required:.2f}".format(
+                "producers={producers} required_inputs={required:.2f} "
+                "resolved_inputs={resolved:.2f}".format(
                     selected=case["selected_target"],
                     rank=case["target_selector_rank"],
                     count=case["candidate_count"],
                     producers=case["producer_added_count"],
                     required=case["required_input_coverage"],
+                    resolved=case["required_input_resolution_coverage"],
                 )
             )
         if search.get("readiness_issue_counts"):
             print(f"readiness issues: {search['readiness_issue_counts']}")
+        if search.get("input_resolution_counts"):
+            print(f"input resolutions: {search['input_resolution_counts']}")
 
 
 def _print_sweep_report(report: dict[str, Any]) -> None:
@@ -1393,8 +1443,9 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
             "k={top_k:<2}{suffix}: status={status} hit@K={hit:.2f} recall@K={recall:.2f} "
             "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
             "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
-            "required_inputs={required:.2f} avg_latency={latency:.2f}ms issues={issues} "
-            "readiness={readiness}".format(
+            "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
+            "avg_latency={latency:.2f}ms issues={issues} readiness={readiness} "
+            "resolutions={resolutions}".format(
                 top_k=run["top_k"],
                 suffix=suffix,
                 status=search["status"],
@@ -1407,9 +1458,11 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
                 candidates=search["avg_candidate_count"],
                 producers=search["avg_producer_added_count"],
                 required=search["avg_required_input_coverage"],
+                resolved=search["avg_required_input_resolution_coverage"],
                 latency=search["avg_latency_ms"],
                 issues=search["issues"],
                 readiness=search["readiness_issue_counts"],
+                resolutions=search["input_resolution_counts"],
             )
         )
 
@@ -1442,7 +1495,8 @@ def _print_ablation_report(report: dict[str, Any]) -> None:
                 "  search: hit@K={hit:.2f} recall@K={recall:.2f} top1={top1:.2f} "
                 "top3={top3:.2f} selector={selector:.2f} mrr={mrr_:.2f} "
                 "candidates={candidates:.2f} producers={producers:.2f} "
-                "required_inputs={required:.2f} avg_latency={latency:.2f}ms".format(
+                "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
+                "avg_latency={latency:.2f}ms".format(
                     hit=search["case_hit_at_k"],
                     recall=search["expected_tool_recall_at_k"],
                     top1=search["top_1_hit_at_k"],
@@ -1452,6 +1506,7 @@ def _print_ablation_report(report: dict[str, Any]) -> None:
                     candidates=search["avg_candidate_count"],
                     producers=search["avg_producer_added_count"],
                     required=search["avg_required_input_coverage"],
+                    resolved=search["avg_required_input_resolution_coverage"],
                     latency=search["avg_latency_ms"],
                 )
             )

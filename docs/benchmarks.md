@@ -737,7 +737,9 @@ the retrieved top-K through the same query-action candidate contract used by the
 deterministic fixture benchmark. After target selection, the runner also derives
 contract-based plan-readiness metrics without indexing raw contract fields into
 BM25: `plan_candidates`, `producer_candidates`, input support evidence,
-`avg_required_input_coverage`, and `required_input_not_producible` issues.
+producer-only `avg_required_input_coverage`, execution-oriented
+`avg_required_input_resolution_coverage`, and stable readiness issue /
+resolution counts.
 
 Latest product-level sweep on 2026-07-19 after Korean top-1 ambiguity and
 selector instrumentation fixes:
@@ -751,13 +753,21 @@ selector instrumentation fixes:
 The same sweep now exposes the next bottleneck after target selection. Across
 the 19 product-level cases, average plan candidate count is `17.16`, max
 candidate count is `44`, average producer candidates added is `16.16`, and
-average required input coverage is `0.846`. Fourteen cases have all required
-data inputs matched to at least one response-field producer; five cases emit
-`required_input_not_producible`. The issue breakdown is
-`required_request_wrapper=2`, `required_context_input=1`,
-`required_filter_input=1`, and `required_producer_missing=1`. This separates
-DTO-wrapper/context/filter inputs from the one current response-field producer
-gap, making the next request/response binding work less foggy.
+average required input coverage is `0.846`. That coverage is deliberately
+producer-only: it asks whether a required target input can be filled from a
+previous response field. The execution-oriented resolution metric is higher,
+with average required input resolution coverage at `0.974` and unresolved
+required input count at `1`.
+
+Fourteen cases have all required data inputs matched to at least one
+response-field producer; five rows are classified with stable readiness issue
+codes. The issue breakdown is `required_request_wrapper=2`,
+`required_context_input=1`, `required_filter_input=1`, and
+`required_producer_missing=1`. Required input resolution counts are
+`producer=41`, `request_wrapper=2`, `context=1`, `user_input=1`, and
+`unresolved=1`. This separates DTO-wrapper/context/filter inputs from the one
+current response-field producer gap, making the next request/response binding
+work less foggy.
 
 OpenAPI request/response contract is preserved under `metadata.api_contract`
 and `metadata.openapi`. It is intentionally not promoted into top-level
