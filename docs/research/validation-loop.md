@@ -110,8 +110,18 @@ argument preservation을 우선 보고, row-source에서도 실패한 repeated-c
 retrieved-source를 case-id 기준으로 pair해서 `both_pass`,
 `row_pass_retrieved_fail`, `row_fail_retrieved_pass`, `both_fail`,
 `retrieved_exact_on_row_pass`, `row_pass_retrieved_fail_breakdown`,
-`row_pass_retrieved_fail_case_ids`를 남긴다. 이 값으로 full/smoke 이후 바로
-"검색 계층이 실제로 깎은 케이스"만 subset으로 뽑는다.
+`row_pass_retrieved_fail_tags`, `row_pass_retrieved_fail_case_ids`를 남긴다.
+이 값으로 full/smoke 이후 바로 "검색 계층이 실제로 깎은 케이스"만 subset으로
+뽑는다.
+
+`benchmarks.bfcl_tool_selection.llm_loop`는 candidate ambiguity 중 tool name,
+description, parameter surface가 충분히 가까운 경우
+`near_duplicate_tool_surface` failure tag를 붙인다. 같은 100-case artifact를
+cache 재사용으로 재요약한 `/tmp/gtc-bfcl-qwen027-cohesive-guard-limit25-tags.json`
+기준 row-pass/retrieved-fail 11건 중 4건이 이 high-confidence duplicate surface다.
+해당 케이스는 `simple_python_6`, `simple_python_12`, `simple_python_21`,
+`simple_python_22`이고, 다음 XGEN 쪽 개선은 exact-name 맞춤보다 duplicate
+group/equivalence evidence와 selector rerank로 처리한다.
 
 ## 실행 타깃
 

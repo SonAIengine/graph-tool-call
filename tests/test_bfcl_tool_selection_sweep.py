@@ -135,7 +135,11 @@ def test_sweep_summary_pairs_row_and_retrieved_failures():
                 "retrieved",
                 [
                     ("simple_python_1", "pass"),
-                    ("simple_python_2", "candidate_ambiguity"),
+                    (
+                        "simple_python_2",
+                        "candidate_ambiguity",
+                        ["near_duplicate_tool_surface"],
+                    ),
                     ("simple_python_3", "pass"),
                     ("simple_python_4", "retrieval_miss"),
                 ],
@@ -154,9 +158,11 @@ def test_sweep_summary_pairs_row_and_retrieved_failures():
     assert delta["retrieved_exact_on_row_pass"] == 0.5
     assert delta["row_pass_retrieved_fail_rate"] == 0.5
     assert delta["row_pass_retrieved_fail_breakdown"] == {"candidate_ambiguity": 1}
+    assert delta["row_pass_retrieved_fail_tags"] == {"near_duplicate_tool_surface": 1}
     assert delta["both_fail_retrieved_breakdown"] == {"retrieval_miss": 1}
     assert delta["row_pass_retrieved_fail_case_ids"] == ["simple_python_2"]
     assert delta["both_fail_case_ids"] == ["simple_python_4"]
+    assert summary["failure_tag_breakdown"] == {"near_duplicate_tool_surface": 1}
 
 
 def test_write_sweep_bfcl_result_files_separates_runs(tmp_path):
@@ -190,8 +196,12 @@ def test_write_sweep_bfcl_result_files_separates_runs(tmp_path):
     assert retrieved_row["graph_tool_call"]["tool_source"] == "retrieved"
 
 
-def _paired_case_run(tool_source: str, cases: list[tuple[str, str]]) -> dict[str, object]:
-    passed = sum(1 for _case_id, failure in cases if failure == "pass")
+def _paired_case_run(tool_source: str, cases: list[tuple]) -> dict[str, object]:
+    passed = sum(1 for row in cases if row[1] == "pass")
+    failure_tag_breakdown = {}
+    for row in cases:
+        for tag in row[2] if len(row) > 2 else []:
+            failure_tag_breakdown[tag] = failure_tag_breakdown.get(tag, 0) + 1
     return {
         "repeat": 1,
         "tool_source": tool_source,
@@ -205,6 +215,7 @@ def _paired_case_run(tool_source: str, cases: list[tuple[str, str]]) -> dict[str
                 "evaluator_exact_match": passed / len(cases),
                 "avg_latency_ms": 100.0,
                 "failure_breakdown": {"pass": passed},
+                "failure_tag_breakdown": failure_tag_breakdown,
             },
             "categories": [
                 {
@@ -217,14 +228,16 @@ def _paired_case_run(tool_source: str, cases: list[tuple[str, str]]) -> dict[str
                         "evaluator_exact_match": passed / len(cases),
                         "avg_latency_ms": 100.0,
                         "failure_breakdown": {"pass": passed},
+                        "failure_tag_breakdown": failure_tag_breakdown,
                     },
                     "cases": [
                         {
-                            "case_id": case_id,
-                            "failure_category": failure,
-                            "evaluator_exact_match": 1.0 if failure == "pass" else 0.0,
+                            "case_id": row[0],
+                            "failure_category": row[1],
+                            "evaluator_exact_match": 1.0 if row[1] == "pass" else 0.0,
+                            "failure_tags": row[2] if len(row) > 2 else [],
                         }
-                        for case_id, failure in cases
+                        for row in cases
                     ],
                 }
             ],
