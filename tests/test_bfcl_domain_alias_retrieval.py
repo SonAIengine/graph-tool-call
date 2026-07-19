@@ -187,6 +187,109 @@ def test_bfcl_displacement_restaurant_and_recipe_aliases_lift_subtasks():
     assert hospital_hits[0] == "hospital.locate"
 
 
+def test_bfcl_distance_aliases_lift_location_and_coordinate_queries():
+    tg = _graph(
+        [
+            _tool(
+                "geo_distance.calculate",
+                "Calculate the geographic distance between two given locations.",
+            ),
+            _tool(
+                "get_shortest_driving_distance",
+                "Calculate the shortest driving distance between two locations.",
+            ),
+            _tool("calculate_distance", "Calculate the distance between two GPS coordinates."),
+            _tool(
+                "distance_calculator.calculate",
+                "Calculate the distance between two locations considering terrain.",
+            ),
+            _tool(
+                "calculate_electrostatic_potential",
+                "Calculate electrostatic potential between charged bodies using distance.",
+            ),
+            _tool(
+                "EuclideanDistance.calculate",
+                "Calculate the Euclidean distance between two points in 2D space.",
+            ),
+            _tool("calculate_velocity", "Calculate velocity for a distance travelled in time."),
+        ]
+    )
+
+    location_distance = [
+        tool.name
+        for tool in tg.retrieve(
+            "What's the approximate distance between Boston, MA and Washington, D.C. in mile?",
+            5,
+        )
+    ]
+    coordinate_distance = [
+        tool.name
+        for tool in tg.retrieve(
+            "What is the total distance in kilometers from Paris (48.8584 N, 2.2945 E) "
+            "to Rome (41.8902 N, 12.4922 E) and Athens (37.9715 N, 23.7257 E)?",
+            5,
+        )
+    ]
+    driving_distance = [
+        tool.name
+        for tool in tg.retrieve(
+            "Calculate the shortest driving distance between Boston and Washington.",
+            3,
+        )
+    ]
+    euclidean_distance = [
+        tool.name
+        for tool in tg.retrieve(
+            "Compute the Euclidean distance between two points A(3,4) and B(1,2).",
+            5,
+        )
+    ]
+    terrain_distance = [
+        tool.name
+        for tool in tg.retrieve(
+            "Find the distance between New York and Boston, accounting for terrain.",
+            5,
+        )
+    ]
+    electrostatic_distance = [
+        tool.name
+        for tool in tg.retrieve(
+            "Calculate the electrostatic potential between two charged bodies using distance.",
+            5,
+        )
+    ]
+
+    assert location_distance[0] == "geo_distance.calculate"
+    assert coordinate_distance[0] == "calculate_distance"
+    assert driving_distance[0] == "get_shortest_driving_distance"
+    assert euclidean_distance[0] == "EuclideanDistance.calculate"
+    assert terrain_distance[0] == "distance_calculator.calculate"
+    assert electrostatic_distance[0] == "calculate_electrostatic_potential"
+
+
+def test_bfcl_distance_alias_keeps_explicit_geodistance_tool_name():
+    tg = _graph(
+        [
+            _tool(
+                "geo_distance.calculate",
+                "Calculate the geographic distance between two given locations.",
+            ),
+            _tool("geodistance.find", "Find the distance between two locations."),
+            _tool("flights.search", "Search available flights for travel planning."),
+        ]
+    )
+
+    names = [
+        tool.name
+        for tool in tg.retrieve(
+            "Plan a trip: use the 'geodistance.find' function for New York to London.",
+            5,
+        )
+    ]
+
+    assert names[0] == "geodistance.find"
+
+
 def test_bfcl_sports_schedule_alias_does_not_swallow_ranking_query():
     tg = _graph(
         [
