@@ -29,9 +29,9 @@ live acceptance run을 별도로 둔다.
 | graph-tool-call retrieved top-k=3 exact | `0.69` |
 | graph-tool-call retrieved top-k=5 exact | `0.764` |
 | graph-tool-call retrieved top-k=10 exact | `0.798` |
-| deterministic BFCL recall@5 | `0.950` |
-| deterministic BFCL all-tools@5 | `0.928` |
-| deterministic BFCL MRR | `0.831` |
+| deterministic BFCL recall@5 | `0.952` |
+| deterministic BFCL all-tools@5 | `0.930` |
+| deterministic BFCL MRR | `0.833` |
 | top-k=5 repeat exact mean/std | `0.764 / 0.000` |
 | weakest category | `parallel_multiple` |
 | parallel_multiple top-k=5 exact | `0.615` |
@@ -144,6 +144,13 @@ instrument availability, grocery-store criteria처럼 query phrase와 tool
 description evidence가 동시에 맞는 경우만 승격한다. 전체 BFCL deterministic 기준
 `recall@5`는 `0.94200 -> 0.95000`, `all_tools_found@5`는 `0.920 -> 0.928`,
 hard-case count는 `80 -> 72`로 개선했고 케이스 단위 recall 악화는 0건이었다.
+
+`2026-07-19` tail hard-case branch에서는 sparse `calculate_density` operation name
+fallback을 `population density` query에만 추가했다. 전체 BFCL deterministic 기준
+`recall@5`는 `0.95000 -> 0.95200`, `all_tools_found@5`는 `0.928 -> 0.930`,
+hard-case count는 `72 -> 70`으로 개선했고 케이스 단위 recall 악화는 0건이었다.
+이로써 0.26 retrieval gate 중 deterministic `recall@5 >= 0.95`와
+`retrieval_miss <= 70`은 달성했다.
 
 ## Product Maturity Levels
 

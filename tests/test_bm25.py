@@ -265,6 +265,21 @@ def test_semantic_phrase_boosts_high_confidence_domain_wording(
     assert scores[target] > scores.get(noisy, 0)
 
 
+def test_population_density_phrase_uses_compact_density_operation_name():
+    """Population-density wording should survive sparse operation descriptions."""
+    target = _make_tool(
+        "calculate_density",
+        "Calculate the density of a substance based on its mass and volume.",
+    )
+    noisy = _make_tool("estimate_population", "Estimate population for a country.")
+    tools = {tool.name: tool for tool in [target, noisy]}
+    scorer = BM25Scorer(tools)
+
+    scores = scorer.score("Calculate the Population Density for Brazil in 2022.")
+
+    assert scores["calculate_density"] > scores["estimate_population"]
+
+
 # ---------------------------------------------------------------------------
 # Korean bigram tokenization tests
 # ---------------------------------------------------------------------------
