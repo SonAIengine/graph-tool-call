@@ -46,6 +46,13 @@ make xgen-scale-gate-check \
 안에 XGEN scale 기준이 깨졌는지 확인할 수 있다. 검색/ingest 품질 자체를 바꾼
 경우에만 `make xgen-scale-sweep`으로 새 artifact를 만든다.
 
+XGEN scale artifact는 전체 tool 개수 대비 후보 tool 개수뿐 아니라 compact JSON
+tool schema 문자량 기준의 context reduction도 함께 기록한다.
+`avg_schema_context_reduction`과 `min_schema_context_reduction`은 tokenizer나 모델
+provider에 의존하지 않는 deterministic proxy다. 이 값으로 "LLM에 전체 API schema를
+던지는 방식" 대비 graph-tool-call 후보 구성이 실제 prompt context를 얼마나 줄였는지
+빠르게 확인한다.
+
 BFCL model sweep artifact에는 `summary.milestone_gate`가 포함된다. 기본
 profile은 `xgen-0.27`이며, retrieved `k=5` exact, retrieval recall, row-source
 upper-bound preservation, `parallel_multiple` exact를 한 번에 판정한다. 이 gate가

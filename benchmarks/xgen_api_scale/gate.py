@@ -124,6 +124,12 @@ def _gate_metrics(scale: dict[str, Any], search: dict[str, Any]) -> dict[str, An
         "avg_tool_surface_reduction",
         "max_candidate_tool_fraction",
         "min_tool_surface_reduction",
+        "full_tool_schema_chars",
+        "avg_candidate_schema_chars",
+        "max_candidate_schema_chars",
+        "avg_candidate_schema_char_fraction",
+        "avg_schema_context_reduction",
+        "min_schema_context_reduction",
     ]
     metrics: dict[str, Any] = {
         "spec_count": scale.get("spec_count"),

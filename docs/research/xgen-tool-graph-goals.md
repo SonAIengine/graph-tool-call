@@ -72,7 +72,11 @@ live-scale 연구는 producer 후보 폭을 줄이고, request/response field ma
 Tool surface 관점에서는 전체 1084개 tool 중 평균 2.16개, 최대 7개 후보만
 Planflow 후보로 남기므로 평균 `99.80%`, worst-case `99.35%`의 tool surface
 reduction을 만든다. 이 값은 tokenizer token count가 아니라 tool 개수 기반
-reduction이다.
+reduction이다. XGEN scale benchmark artifact는 이 개수 기반 지표와 별도로 compact
+JSON tool schema 문자량 기준의 `avg_schema_context_reduction`,
+`min_schema_context_reduction`도 기록한다. 이 값은 실제 tokenizer token count를
+대체하지 않지만, 전체 OpenAPI-derived tool schema를 LLM에 모두 넘기는 방식 대비
+candidate schema context가 얼마나 줄었는지 재현 가능하게 비교하는 proxy다.
 
 `2026-07-19` rank-compression branch에서는 X2BEE live sweep에서 기존 hard
 case인 `order_query_ko`, `page_role_buttons_ko`, `settlement_compare_ko`,

@@ -93,6 +93,10 @@ class SearchEvaluation:
     producer_candidates: list[str]
     producer_added_count: int
     candidate_count: int
+    candidate_schema_chars: int
+    full_tool_schema_chars: int
+    candidate_schema_char_fraction: float
+    schema_context_reduction: float
     target_data_input_count: int
     target_required_data_input_count: int
     target_producible_input_count: int
@@ -150,6 +154,8 @@ def run_benchmark(
     cases_doc = load_cases(cases_path)
     selected_top_k = int(top_k or cases_doc.get("top_k") or 10)
     tools_by_name = _tools_by_name(prepared.graph)
+    schema_char_counts = _tool_schema_char_counts(tools_by_name)
+    full_schema_chars = sum(schema_char_counts.values())
     producer_index = _contract_producer_index(tools_by_name)
     cases = [
         evaluate_search_case(
@@ -158,6 +164,8 @@ def run_benchmark(
             tools_by_name=tools_by_name,
             producer_index=producer_index,
             top_k=selected_top_k,
+            schema_char_counts=schema_char_counts,
+            full_schema_chars=full_schema_chars,
         )
         for case in cases_doc.get("cases", [])
     ]
@@ -249,6 +257,8 @@ def run_top_k_sweep(
     )
     thresholds = cases_doc.get("thresholds") or {}
     tools_by_name = _tools_by_name(prepared.graph)
+    schema_char_counts = _tool_schema_char_counts(tools_by_name)
+    full_schema_chars = sum(schema_char_counts.values())
     producer_index = _contract_producer_index(tools_by_name)
     sweep: list[dict[str, Any]] = []
     acceptance_search_status = "skipped"
@@ -260,6 +270,8 @@ def run_top_k_sweep(
                 tools_by_name=tools_by_name,
                 producer_index=producer_index,
                 top_k=top_k,
+                schema_char_counts=schema_char_counts,
+                full_schema_chars=full_schema_chars,
             )
             for case in cases_doc.get("cases", [])
         ]
@@ -365,6 +377,8 @@ def run_contract_signal_ablation(
             max_build_seconds=max_build_seconds,
         )
         tools_by_name = _tools_by_name(graph)
+        schema_char_counts = _tool_schema_char_counts(tools_by_name)
+        full_schema_chars = sum(schema_char_counts.values())
         producer_index = _contract_producer_index(tools_by_name)
         cases = [
             evaluate_search_case(
@@ -373,6 +387,8 @@ def run_contract_signal_ablation(
                 tools_by_name=tools_by_name,
                 producer_index=producer_index,
                 top_k=selected_top_k,
+                schema_char_counts=schema_char_counts,
+                full_schema_chars=full_schema_chars,
             )
             for case in cases_doc.get("cases", [])
         ]
@@ -640,6 +656,8 @@ def evaluate_search_case(
     tools_by_name: dict[str, dict[str, Any]],
     producer_index: dict[str, list[str]],
     top_k: int,
+    schema_char_counts: dict[str, int] | None = None,
+    full_schema_chars: int = 0,
 ) -> SearchEvaluation:
     query = str(case["query"])
     expected_tools = [str(name) for name in case.get("expected_tools") or []]
@@ -672,6 +690,12 @@ def evaluate_search_case(
         tools_by_name,
         producer_index=producer_index,
     )
+    plan_candidates = [str(name) for name in readiness["plan_candidates"]]
+    candidate_schema_chars = sum(
+        (schema_char_counts or {}).get(name, 0) for name in plan_candidates
+    )
+    schema_char_fraction = _ratio(candidate_schema_chars, full_schema_chars)
+    schema_context_reduction = round(1.0 - schema_char_fraction, 6)
 
     required_ok = set(expected_tools).issubset(retrieved_set) if expected_tools else True
     any_ok = bool(set(expected_any) & retrieved_set) if expected_any else True
@@ -728,10 +752,14 @@ def evaluate_search_case(
         target_action_priority=target_action_priority,
         target_equivalence_groups=target_equivalence_groups,
         target_equivalence_group_count=len(target_equivalence_groups),
-        plan_candidates=[str(name) for name in readiness["plan_candidates"]],
+        plan_candidates=plan_candidates,
         producer_candidates=[str(name) for name in readiness["producer_candidates"]],
         producer_added_count=int(readiness["producer_added_count"]),
         candidate_count=int(readiness["candidate_count"]),
+        candidate_schema_chars=candidate_schema_chars,
+        full_tool_schema_chars=int(full_schema_chars),
+        candidate_schema_char_fraction=schema_char_fraction,
+        schema_context_reduction=schema_context_reduction,
         target_data_input_count=int(readiness["target_data_input_count"]),
         target_required_data_input_count=int(readiness["target_required_data_input_count"]),
         target_producible_input_count=int(readiness["target_producible_input_count"]),
@@ -844,6 +872,18 @@ def summarize_search(
         ),
         "avg_candidate_count": _mean(case.candidate_count for case in cases),
         "max_candidate_count": max((case.candidate_count for case in cases), default=0),
+        "full_tool_schema_chars": max((case.full_tool_schema_chars for case in cases), default=0),
+        "avg_candidate_schema_chars": _mean(case.candidate_schema_chars for case in cases),
+        "max_candidate_schema_chars": max(
+            (case.candidate_schema_chars for case in cases), default=0
+        ),
+        "avg_candidate_schema_char_fraction": _mean(
+            case.candidate_schema_char_fraction for case in cases
+        ),
+        "avg_schema_context_reduction": _mean(case.schema_context_reduction for case in cases),
+        "min_schema_context_reduction": min(
+            (case.schema_context_reduction for case in cases), default=0.0
+        ),
         "avg_producer_added_count": _mean(case.producer_added_count for case in cases),
         "producer_added_case_count": sum(1 for case in cases if case.producer_added_count > 0),
         "expected_producer_case_count": sum(1 for case in cases if case.expected_producers),
@@ -1394,6 +1434,21 @@ def _tools_by_name(graph: ToolGraph) -> dict[str, dict[str, Any]]:
     return {name: tool.to_dict() for name, tool in graph.tools.items()}
 
 
+def _tool_schema_char_counts(tools_by_name: dict[str, dict[str, Any]]) -> dict[str, int]:
+    return {
+        name: len(
+            json.dumps(
+                tool,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+        )
+        for name, tool in tools_by_name.items()
+    }
+
+
 def _mean(values: Any) -> float:
     vals = [float(v) for v in values]
     if not vals:
@@ -1518,7 +1573,7 @@ def _print_report(report: dict[str, Any]) -> None:
             "search: status={status} cases={cases} hit@K={hit:.2f} recall@K={recall:.2f} "
             "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
             "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
-            "tool_reduction={reduction:.2%} "
+            "tool_reduction={reduction:.2%} schema_reduction={schema_reduction:.2%} "
             "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
             "avg_latency={latency:.2f}ms".format(
                 status=search["status"],
@@ -1532,6 +1587,7 @@ def _print_report(report: dict[str, Any]) -> None:
                 candidates=search["avg_candidate_count"],
                 producers=search["avg_producer_added_count"],
                 reduction=search.get("avg_tool_surface_reduction", 0.0),
+                schema_reduction=search.get("avg_schema_context_reduction", 0.0),
                 required=search["avg_required_input_coverage"],
                 resolved=search["avg_required_input_resolution_coverage"],
                 latency=search["avg_latency_ms"],
@@ -1601,7 +1657,7 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
             "k={top_k:<2}{suffix}: status={status} hit@K={hit:.2f} recall@K={recall:.2f} "
             "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
             "mrr={mrr_:.2f} candidates={candidates:.2f} producers={producers:.2f} "
-            "tool_reduction={reduction:.2%} "
+            "tool_reduction={reduction:.2%} schema_reduction={schema_reduction:.2%} "
             "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
             "avg_latency={latency:.2f}ms issues={issues} readiness={readiness} "
             "resolutions={resolutions}".format(
@@ -1617,6 +1673,7 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
                 candidates=search["avg_candidate_count"],
                 producers=search["avg_producer_added_count"],
                 reduction=search.get("avg_tool_surface_reduction", 0.0),
+                schema_reduction=search.get("avg_schema_context_reduction", 0.0),
                 required=search["avg_required_input_coverage"],
                 resolved=search["avg_required_input_resolution_coverage"],
                 latency=search["avg_latency_ms"],
@@ -1655,7 +1712,7 @@ def _print_ablation_report(report: dict[str, Any]) -> None:
                 "  search: hit@K={hit:.2f} recall@K={recall:.2f} top1={top1:.2f} "
                 "top3={top3:.2f} selector={selector:.2f} mrr={mrr_:.2f} "
                 "candidates={candidates:.2f} producers={producers:.2f} "
-                "tool_reduction={reduction:.2%} "
+                "tool_reduction={reduction:.2%} schema_reduction={schema_reduction:.2%} "
                 "required_inputs={required:.2f} resolved_inputs={resolved:.2f} "
                 "avg_latency={latency:.2f}ms".format(
                     hit=search["case_hit_at_k"],
@@ -1667,6 +1724,7 @@ def _print_ablation_report(report: dict[str, Any]) -> None:
                     candidates=search["avg_candidate_count"],
                     producers=search["avg_producer_added_count"],
                     reduction=search.get("avg_tool_surface_reduction", 0.0),
+                    schema_reduction=search.get("avg_schema_context_reduction", 0.0),
                     required=search["avg_required_input_coverage"],
                     resolved=search["avg_required_input_resolution_coverage"],
                     latency=search["avg_latency_ms"],

@@ -150,6 +150,19 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     assert report["search"]["avg_candidate_tool_fraction"] == 0.333333
     assert report["search"]["avg_tool_surface_reduction"] == 0.666667
     assert report["search"]["min_tool_surface_reduction"] == 0.666667
+    assert (
+        report["search"]["full_tool_schema_chars"] > report["search"]["avg_candidate_schema_chars"]
+    )
+    assert report["search"]["avg_candidate_schema_chars"] > 0
+    assert 0 < report["search"]["avg_schema_context_reduction"] < 1
+    assert (
+        report["search"]["min_schema_context_reduction"]
+        == report["search"]["avg_schema_context_reduction"]
+    )
+    assert (
+        report["gate"]["metrics"]["avg_schema_context_reduction"]
+        == report["search"]["avg_schema_context_reduction"]
+    )
     assert "avg_target_equivalence_group_count" in report["search"]
     assert "target_equivalence_group_case_count" in report["search"]
     assert report["search"]["target_selector_rank_buckets"]["top_1"] == 1
@@ -163,6 +176,17 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     assert report["cases"][0]["target_selector_rank"] == 1
     assert report["cases"][0]["target_equivalence_group_count"] == len(
         report["cases"][0]["target_equivalence_groups"]
+    )
+    assert (
+        report["cases"][0]["full_tool_schema_chars"] == report["search"]["full_tool_schema_chars"]
+    )
+    assert (
+        report["cases"][0]["candidate_schema_chars"]
+        == report["search"]["avg_candidate_schema_chars"]
+    )
+    assert (
+        report["cases"][0]["schema_context_reduction"]
+        == report["search"]["avg_schema_context_reduction"]
     )
     assert report["cases"][0]["best_expected_rank"] == 1
     assert report["cases"][0]["required_expected_found_at_k"] is True
