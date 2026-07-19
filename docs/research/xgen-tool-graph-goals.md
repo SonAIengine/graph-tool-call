@@ -46,6 +46,10 @@ live acceptance run을 별도로 둔다.
 | X2BEE max plan candidate count | `7` |
 | X2BEE avg tool surface reduction | `99.80%` |
 | X2BEE min tool surface reduction | `99.35%` |
+| X2BEE full compact tool schema chars | `56,756,400` |
+| X2BEE avg candidate schema chars | `157,320` |
+| X2BEE avg schema context reduction | `99.72%` |
+| X2BEE min schema context reduction | `98.47%` |
 | X2BEE required input coverage | `0.872` |
 | X2BEE required input resolution coverage | `1.00` |
 | X2BEE unresolved required inputs | `0` |
@@ -77,6 +81,9 @@ JSON tool schema 문자량 기준의 `avg_schema_context_reduction`,
 `min_schema_context_reduction`도 기록한다. 이 값은 실제 tokenizer token count를
 대체하지 않지만, 전체 OpenAPI-derived tool schema를 LLM에 모두 넘기는 방식 대비
 candidate schema context가 얼마나 줄었는지 재현 가능하게 비교하는 proxy다.
+`/tmp/gtc-x2bee-schema-context-sweep.json` 기준 전체 compact schema는
+`56,756,400` chars, 평균 후보 schema는 `157,320` chars이며 평균 `99.72%`,
+worst-case `98.47%` context reduction을 만든다.
 
 `2026-07-19` rank-compression branch에서는 X2BEE live sweep에서 기존 hard
 case인 `order_query_ko`, `page_role_buttons_ko`, `settlement_compare_ko`,

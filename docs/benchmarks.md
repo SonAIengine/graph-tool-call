@@ -837,6 +837,27 @@ selector instrumentation fixes:
 | `5` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
 | `10` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
 
+Latest schema-context sweep on 2026-07-19:
+
+```bash
+OUT=/tmp/gtc-x2bee-schema-context-sweep.json TOP_KS=3,5,10 make xgen-scale-sweep
+make xgen-scale-gate-check REPORT=/tmp/gtc-x2bee-schema-context-sweep.json
+```
+
+| Metric | Value |
+|---|---:|
+| Full compact tool schema chars | `56,756,400` |
+| Average candidate schema chars | `157,320` |
+| Max candidate schema chars | `865,608` |
+| Average candidate schema fraction | `0.002772` |
+| Average schema context reduction | `99.72%` |
+| Minimum schema context reduction | `98.47%` |
+
+This is a deterministic compact-JSON character-count proxy, not a tokenizer
+claim. It measures how much model-facing tool schema payload remains after
+graph-tool-call selects the target plus required producers, compared with
+passing all 1,084 tool schemas to the model.
+
 The same sweep now exposes the next bottleneck after target selection. Across
 the 19 product-level cases, average plan candidate count is `2.16`, max
 candidate count is `7`, average producer candidates added is `1.16`, and
