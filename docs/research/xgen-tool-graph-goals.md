@@ -329,8 +329,14 @@ Required work:
     exact는 `0.90 -> 0.96`, row-source preservation은 `0.928 -> 0.98`,
     `parallel_multiple` exact는 `0.88 -> 1.00`으로 올라 `xgen-0.27` gate를
     pass했다.
-    다음 병목은 `multiple_24`처럼 expected tool이 top-5 밖에 있는 route retrieval
-    miss와 `parallel_3`처럼 lower-level sequence-only tool을 sequence+3D tool과
+    route retrieval hardening pass에서는 `fastest route` intent가 operation 설명의
+    `best route`와 parameter enum의 `fastest`로 흩어진 경우를 BM25 expansion과
+    semantic phrase boost로 회복했다. BFCL `multiple_24` 단건 deterministic run은
+    expected `route_planner.calculate_route`를 rank 8에서 rank 1로 올렸고 recall@1/3/5
+    모두 `1.00`으로 통과했다. Fresh qwen3.6-27B single-case smoke
+    `/tmp/gtc-bfcl-route-hardening-multiple24-qwen.json`도 retrieved exact `1.00`으로
+    pass했다.
+    다음 병목은 `parallel_3`처럼 lower-level sequence-only tool을 sequence+3D tool과
     함께 호출하는 over-decomposition이다. Row-source에서도 실패한 repeated-call /
     argument mismatch는 retrieval layer 손실과 분리해서 모델 상한 및 tool schema
     표현 문제로 본다.

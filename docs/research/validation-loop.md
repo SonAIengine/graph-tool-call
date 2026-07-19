@@ -205,6 +205,17 @@ pass로 회복했고, 100-case middle sweep
 retrieval-layer loss는 `multiple_24` route retrieval miss와 `parallel_3`
 sequence-only plus sequence+3D over-decomposition이다.
 
+`2026-07-19` route retrieval hardening pass는 `fastest route` 같은 intent가
+operation 설명의 `best route`와 parameter enum의 `fastest`로 흩어져 있을 때도
+route-planning target을 회복하도록 deterministic BM25 expansion/semantic boost를
+추가했다. BFCL `multiple_24` 단건 deterministic run은 expected
+`route_planner.calculate_route`를 top-5 밖 rank 8에서 rank 1로 올렸고,
+recall@1/3/5 모두 `1.00`으로 통과했다. 남은 대표 retrieval/model bottleneck은
+`parallel_3`의 sequence-only plus sequence+3D over-decomposition이다. Fresh
+qwen3.6-27B single-case smoke
+`/tmp/gtc-bfcl-route-hardening-multiple24-qwen.json`도 retrieved exact `1.00`으로
+pass했다.
+
 ## 실행 타깃
 
 ```bash

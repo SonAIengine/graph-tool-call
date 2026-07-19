@@ -138,6 +138,99 @@ def test_retrieve_geographic_distance_prefers_geo_distance_operation():
     assert names[0] == "geo_distance.calculate"
 
 
+def test_retrieve_fastest_route_uses_route_planner_despite_event_context():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "route_planner.calculate_route",
+                "description": "Determines the best route between two points.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {
+                        "start": {
+                            "type": "string",
+                            "description": "The starting point of the journey.",
+                        },
+                        "destination": {
+                            "type": "string",
+                            "description": "The destination of the journey.",
+                        },
+                        "method": {
+                            "type": "string",
+                            "enum": ["fastest", "shortest", "balanced"],
+                            "description": "The method to use when calculating the route.",
+                        },
+                    },
+                    "required": ["start", "destination"],
+                },
+            },
+            {
+                "name": "route.estimate_time",
+                "description": "Estimate the travel time for a specific route with optional stops.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {
+                        "start_location": {"type": "string"},
+                        "end_location": {"type": "string"},
+                        "stops": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["start_location", "end_location"],
+                },
+            },
+            {
+                "name": "chess.rating",
+                "description": "Fetches the current chess rating of a given player.",
+            },
+            {
+                "name": "chess_club_details.find",
+                "description": "Provides details about a chess club, including location.",
+            },
+            {
+                "name": "traffic_estimate",
+                "description": "Estimate traffic from one location to another.",
+            },
+            {
+                "name": "get_directions",
+                "description": "Retrieve directions from one location to another.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {
+                        "start_location": {"type": "string"},
+                        "end_location": {"type": "string"},
+                        "route_type": {
+                            "type": "string",
+                            "enum": ["fastest", "scenic"],
+                            "description": "Type of route to use.",
+                        },
+                    },
+                    "required": ["start_location", "end_location"],
+                },
+            },
+            {
+                "name": "calculate_shortest_distance",
+                "description": "Calculate the shortest driving distance between two locations.",
+            },
+            {
+                "name": "maps.get_distance_duration",
+                "description": "Retrieve the travel distance and estimated travel time.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+
+    names = [
+        tool.name
+        for tool in tg.retrieve(
+            "What is the fastest route from London to Edinburgh for playing a chess "
+            "championship? Also provide an estimate of the distance.",
+            top_k=5,
+        )
+    ]
+
+    assert names[0] == "route_planner.calculate_route"
+
+
 def test_retrieve_boosts_explicit_dotted_tool_name_inside_long_query():
     tg = ToolGraph()
     tg.add_tools(

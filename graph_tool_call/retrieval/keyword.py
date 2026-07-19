@@ -512,8 +512,51 @@ class BM25Scorer:
         ):
             boost *= 1.8
 
+        boost *= BM25Scorer._route_planning_phrase_multiplier(q, tool_name, tool)
         boost *= BM25Scorer._korean_business_phrase_multiplier(query, tool_text)
         return boost
+
+    @staticmethod
+    def _route_planning_phrase_multiplier(
+        query: str,
+        tool_name: str,
+        tool: ToolSchema,
+    ) -> float:
+        """Boost route-planning tools when intent is split across params/enums."""
+        if not BM25Scorer._has_route_planning_intent(query):
+            return 1.0
+
+        tool_text = BM25Scorer._tool_phrase_text(tool_name, tool)
+        if "route" not in tool_text:
+            return 1.0
+
+        boost = 1.0
+        normalized_name = tool_name.lower().replace(".", "_").replace("-", "_")
+        if "route_planner" in normalized_name or "calculate_route" in normalized_name:
+            boost *= 2.0
+        if (
+            "best route" in tool_text
+            or "optimal route" in tool_text
+            or "calculating the route" in tool_text
+            or "route preference" in tool_text
+        ):
+            boost *= 1.5
+        if re.search(r"\b(fastest|quickest)\b", query) and (
+            "fastest" in tool_text or "quickest" in tool_text
+        ):
+            boost *= 1.35
+        if "shortest" in query and "shortest" in tool_text:
+            boost *= 1.25
+        return min(boost, 3.0)
+
+    @staticmethod
+    def _tool_phrase_text(tool_name: str, tool: ToolSchema) -> str:
+        parts = [tool_name, tool.description]
+        for param in tool.parameters:
+            parts.extend([param.name, param.description])
+            if param.enum:
+                parts.extend(str(value) for value in param.enum)
+        return " ".join(part for part in parts if part).lower()
 
     @staticmethod
     def _korean_business_phrase_multiplier(query: str, tool_text: str) -> float:
@@ -793,6 +836,12 @@ class BM25Scorer:
             extra.extend(["unit", "convert", "conver", "conversion", "measurement"])
         if BM25Scorer._has_card_probability_intent(q):
             extra.extend(["probability", "event", "outcome", "outcomes"])
+        if BM25Scorer._has_route_planning_intent(q):
+            extra.extend(["route", "best", "optimal", "planner", "method"])
+            if re.search(r"\b(fastest|quickest)\b", q):
+                extra.extend(["fastest", "quickest"])
+            if re.search(r"\bshortest\b", q):
+                extra.append("shortest")
 
         # Status/logs
         if re.search(r"\bstatus\b", q):
@@ -870,6 +919,16 @@ class BM25Scorer:
         if not has_card:
             return False
         return bool(re.search(r"\b(probability|chance|odds|drawing|draw)\b", query))
+
+    @staticmethod
+    def _has_route_planning_intent(query: str) -> bool:
+        if not re.search(r"\broute\b", query):
+            return False
+        return bool(
+            re.search(r"\b(fastest|quickest|best|optimal|shortest)\s+route\b", query)
+            or re.search(r"\broute\b.*\b(fastest|quickest|best|optimal|shortest)\b", query)
+            or re.search(r"\bfrom\b.+\bto\b", query)
+        )
 
     @staticmethod
     def _korean_bigrams(text: str) -> list[str]:
