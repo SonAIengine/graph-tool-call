@@ -29,9 +29,9 @@ live acceptance run을 별도로 둔다.
 | graph-tool-call retrieved top-k=3 exact | `0.69` |
 | graph-tool-call retrieved top-k=5 exact | `0.764` |
 | graph-tool-call retrieved top-k=10 exact | `0.798` |
-| deterministic BFCL recall@5 | `0.942` |
-| deterministic BFCL all-tools@5 | `0.920` |
-| deterministic BFCL MRR | `0.822` |
+| deterministic BFCL recall@5 | `0.950` |
+| deterministic BFCL all-tools@5 | `0.928` |
+| deterministic BFCL MRR | `0.831` |
 | top-k=5 repeat exact mean/std | `0.764 / 0.000` |
 | weakest category | `parallel_multiple` |
 | parallel_multiple top-k=5 exact | `0.615` |
@@ -137,6 +137,13 @@ BFCL deterministic 기준 `recall@5`는 `0.9325 -> 0.94025`,
 top-K 경계 위로 조금 더 보존한다. 전체 BFCL deterministic 기준 `recall@5`는
 `0.94025 -> 0.94200`, `all_tools_found@5`는 `0.917 -> 0.920`, hard-case count는
 `83 -> 80`으로 개선했고 케이스 단위 recall 악화는 0건이었다.
+
+`2026-07-19` BFCL near-miss branch에서는 high-confidence semantic phrase boost를
+추가했다. `genetically similar`, `population density`, `highest common factor`,
+instrument availability, grocery-store criteria처럼 query phrase와 tool
+description evidence가 동시에 맞는 경우만 승격한다. 전체 BFCL deterministic 기준
+`recall@5`는 `0.94200 -> 0.95000`, `all_tools_found@5`는 `0.920 -> 0.928`,
+hard-case count는 `80 -> 72`로 개선했고 케이스 단위 recall 악화는 0건이었다.
 
 ## Product Maturity Levels
 

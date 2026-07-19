@@ -381,6 +381,27 @@ top-K 경계 위로 조금 더 보존한다. 비교 artifact는
   `target selector exact@3=1.00`, `avg_candidate_count=2.16`,
   `max_candidate_count=7`로 통과했다.
 
+이어진 near-miss ranking 실험에서는 broad stopword 확장 대신 고신뢰
+semantic phrase boost만 추가했다. 대상은 `genetically similar -> genetic
+similarity`, `population density`, `highest common factor`, `magnetic field`
+with current/distance, lawyer specialization, instrument availability, grocery
+store criteria, state/year historical population, public preference 같은
+사용자 표현과 tool description이 동시에 맞는 경우다. 비교 artifact는
+`/tmp/gtc-bfcl-partial-diversity-current/bfcl-deterministic.json`,
+`/tmp/gtc-bfcl-near-miss-current/bfcl-deterministic.json`,
+`/tmp/gtc-bfcl-partial-diversity-hardcases/inspect.json`,
+`/tmp/gtc-bfcl-near-miss-hardcases/inspect.json`이다.
+
+- 전체 BFCL deterministic 기준 `recall@5`는 `0.94200 -> 0.95000`,
+  `all_tools_found@5`는 `0.920 -> 0.928`, `mrr`은
+  `0.8217 -> 0.8305`, `ndcg@5`는 `0.8421 -> 0.8509`로 올랐다.
+- Deterministic hard-case count는 `80 -> 72`, `expected_present_below_top_k`
+  issue는 `67 -> 59`로 줄었다.
+- 케이스 단위 recall 개선은 8건, recall 악화 케이스는 0건이었다.
+- X2BEE BO scale acceptance는 1084개 unique tool 기준 `hit@3=1.00`,
+  `target selector exact@3=1.00`, `avg_candidate_count=2.16`,
+  `max_candidate_count=7`, `avg_latency=41.81ms`로 통과했다.
+
 ## 승격 기준
 
 연구 변경은 아래 순서로 승격한다.
