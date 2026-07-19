@@ -22,12 +22,27 @@ graph-tool-call search 연구는 full model benchmark를 매번 돌리면 속도
 | T0 unit | public contract와 빠른 회귀 | < 1분 | no | `make research-check-unit` | 거의 모든 수정 |
 | T1 deterministic | retrieval/graph/plan 품질 확인 | 1-3분 | no | `make research-check` | 검색/graph/fixture 수정 |
 | T2 failure subset | 이전 실패 케이스 재검증 | 5-15분 | optional | `CASE_IDS_FILE=/tmp/ids.txt make research-check-smoke` | ranking/rerank 실험 |
-| T2.5 XGEN scale | 실제 대형 OpenAPI acceptance/sweep | < 1분 | no | `make xgen-scale-sweep` | XGEN 적용성 판단 |
+| T2.5 XGEN scale artifact | 저장된 대형 OpenAPI artifact gate 재판정 | < 10초 | no | `make xgen-scale-gate-check REPORT=/tmp/gtc-xgen-scale-sweep.json` | 일반 코드 수정 후 XGEN gate 상태 확인 |
+| T2.6 XGEN scale live | 실제 대형 OpenAPI acceptance/sweep | 환경 의존 | no | `make xgen-scale-sweep` | OpenAPI ingest/search 계약 변경, XGEN 적용 후보 |
 | T3 model smoke | 소량 실제 tool-call 확인 | 5-15분 | yes | `make research-check-smoke` | 후보 구성이 바뀐 경우 |
 | T4 release | publish 후보 검증 | 1-5시간 | yes/manual | `make release-check` + full BFCL commands | README/MR/release |
 
 T0-T1은 매일 자주 돌린다. T2-T3는 실험 branch에서만 선택적으로 돌린다.
 T4는 milestone 또는 publish candidate에서만 허용한다.
+
+XGEN scale live sweep은 X2BEE급 Swagger UI를 다시 발견하고 큰 그래프를 만드는
+비용이 있으므로 일반 개발 루프의 기본값이 아니다. 이미 저장된 acceptance/sweep
+artifact가 있으면 먼저 아래 명령으로 gate를 재판정한다.
+
+```bash
+make xgen-scale-gate-check \
+  REPORT=/tmp/gtc-xgen-scale-sweep.json
+```
+
+이 checker는 live URL을 다시 호출하지 않고 artifact의 `scale.status`와 acceptance
+top-K의 `search.status`를 다시 읽는다. 따라서 검색 로직을 바꾸지 않은 문서, gate,
+분석 코드 수정은 수 초 안에 XGEN scale 기준이 깨졌는지 확인할 수 있다. 검색/ingest
+품질 자체를 바꾼 경우에만 `make xgen-scale-sweep`으로 새 artifact를 만든다.
 
 BFCL model sweep artifact에는 `summary.milestone_gate`가 포함된다. 기본
 profile은 `xgen-0.27`이며, retrieved `k=5` exact, retrieval recall, row-source

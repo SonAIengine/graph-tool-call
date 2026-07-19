@@ -552,6 +552,9 @@ make bfcl-027-gate
 
 make bfcl-027-gate-check \
   REPORT=/tmp/gtc-bfcl-027-gate.json
+
+make xgen-scale-gate-check \
+  REPORT=/tmp/gtc-xgen-scale-sweep.json
 ```
 
 Full model benchmark is allowed only when:
@@ -559,6 +562,11 @@ Full model benchmark is allowed only when:
 - README/docs public numbers will be updated.
 - a release candidate needs publish validation.
 - failure subset metrics show a large enough improvement to justify full distribution checks.
+
+XGEN scale live sweep is also gated. Reuse saved artifacts with
+`make xgen-scale-gate-check` for routine validation, and rerun
+`make xgen-scale-sweep` only when OpenAPI ingest, graph construction, retrieval, or
+candidate planning behavior changes.
 
 ## Non-Goals
 
