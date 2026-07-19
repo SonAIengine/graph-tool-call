@@ -274,6 +274,14 @@ retrieved exact `1.00`, retrieval@5 `1.00`, `parallel_multiple` exact `1.00`,
 failure breakdown `{pass: 100}`이다. 이 pass는 model-facing schema를 바꾸므로
 BFCL model cache version을 `19`로 올렸다.
 
+같은 retrieved-only 100-case 검증을 repeat 3으로 확장한
+`/tmp/gtc-bfcl-date-guidance-limit25-repeat3-retrieved-qwen.json`은 세 반복 모두
+retrieved exact `1.00`, retrieval@5 `1.00`, failure breakdown `{pass: 100}`이다.
+Repeat summary 기준 exact mean/std는 `1.00 / 0.000`, latency mean은
+`4890.4ms`다. 이 artifact는 row-source를 포함하지 않아 milestone gate의
+row-preservation 항목은 `incomplete`로 남지만, retrieved 경로 안정성 확인에는
+충분한 T3 evidence로 둔다.
+
 ## 실행 타깃
 
 ```bash

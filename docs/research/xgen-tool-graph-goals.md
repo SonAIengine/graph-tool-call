@@ -368,7 +368,12 @@ Required work:
     `/tmp/gtc-bfcl-date-guidance-limit25-retrieved-qwen.json`도 exact `1.00`,
     retrieval@5 `1.00`, `parallel_multiple` exact `1.00`으로 pass했다. 이 수치는
     full public benchmark가 아니라 0.27 candidate를 빠르게 검증하기 위한 T2/T3
-    evidence다.
+    evidence다. 같은 retrieved-only 100-case를 repeat 3으로 확장한
+    `/tmp/gtc-bfcl-date-guidance-limit25-repeat3-retrieved-qwen.json`도 exact
+    mean/std `1.00 / 0.000`, retrieval@5 mean `1.00`, failure breakdown
+    `{pass: 100}` per repeat로 안정적이었다. Row-source preservation은 이 repeat
+    artifact에 포함되지 않아 gate status는 `incomplete`지만, retrieved 경로
+    안정성 증거로 둔다.
 
 ## Paper-Ready Target
 
