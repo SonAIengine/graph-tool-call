@@ -14,7 +14,9 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     _cohesive_namespace_candidates,
     _evaluate_official_predictions,
     _evaluate_predictions,
+    _failure_tags,
     _messages_for_case,
+    _near_duplicate_tool_surface,
     _prepare_tools_for_model,
     run_model_benchmark,
     write_bfcl_result_files,
@@ -138,6 +140,61 @@ def test_cohesive_namespace_candidates_preserve_signaled_singleton_namespaces():
     )
 
     assert compressed == ["restaurant.find", "restaurant.search", "flight.search"]
+
+
+def test_near_duplicate_tool_surface_tags_candidate_ambiguity():
+    tools_by_name = {
+        "solve_quadratic": {
+            "name": "solve_quadratic",
+            "description": "Find the roots of a quadratic equation. Returns both roots.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "a": {"description": "Coefficient of x squared"},
+                    "b": {"description": "Coefficient of x"},
+                    "c": {"description": "Constant term"},
+                },
+                "required": ["a", "b", "c"],
+            },
+        },
+        "solve_quadratic_equation": {
+            "name": "solve_quadratic_equation",
+            "description": "Function solves the quadratic equation and returns its roots.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "a": {"description": "Coefficient of x squared"},
+                    "b": {"description": "Coefficient of x"},
+                    "c": {"description": "Constant term"},
+                },
+                "required": ["a", "b", "c"],
+            },
+        },
+        "restaurant_finder": {
+            "name": "restaurant_finder",
+            "description": "Locate restaurants based on cuisine and city.",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {}, "cuisine": {}},
+                "required": ["city", "cuisine"],
+            },
+        },
+    }
+
+    assert _near_duplicate_tool_surface(
+        tools_by_name["solve_quadratic"],
+        tools_by_name["solve_quadratic_equation"],
+    )
+    assert not _near_duplicate_tool_surface(
+        tools_by_name["solve_quadratic"],
+        tools_by_name["restaurant_finder"],
+    )
+    assert _failure_tags(
+        expected_calls=[ExpectedToolCall("solve_quadratic", {"a": [2]})],
+        predicted_calls=[PredictedToolCall("solve_quadratic_equation", {"a": 2})],
+        tools_by_name=tools_by_name,
+        failure_category="candidate_ambiguity",
+    ) == ["near_duplicate_tool_surface"]
 
 
 def test_prediction_matcher_allows_optional_missing_and_parallel_order():

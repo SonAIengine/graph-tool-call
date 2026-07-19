@@ -284,6 +284,8 @@ Required work:
     사라졌고, `parallel_multiple` exact는 `0.76 -> 0.84`로 올랐다. 0.27의
     paired row/retrieved attribution 기준 retrieval/presentation 손실은 11건이며
     `candidate_ambiguity:8`, `argument_value_mismatch:2`, `retrieval_miss:1`이다.
+    `near_duplicate_tool_surface` tag 기준 high-confidence duplicate surface는
+    4건이다.
     다음 병목은 `solve_quadratic` vs `solve_quadratic_equation`,
     `geometry.circumference` vs `calculate_circumference`, `math.gcd` vs
     `number_theory.gcd` 같은 near-duplicate disambiguation과 argument-value

@@ -56,6 +56,35 @@ from graph_tool_call import ToolGraph, __version__
 DEFAULT_OFFICIAL_MODEL_NAME = "qwen3-32b-FC"
 BFCL_RESULT_ARGUMENT_FORMATS = ("json-string", "decoded")
 MODEL_CASE_CACHE_VERSION = 8
+_SURFACE_STOPWORDS = frozenset(
+    {
+        "and",
+        "are",
+        "based",
+        "can",
+        "for",
+        "from",
+        "function",
+        "given",
+        "into",
+        "its",
+        "one",
+        "optional",
+        "parameter",
+        "parameters",
+        "return",
+        "returns",
+        "specific",
+        "the",
+        "this",
+        "two",
+        "use",
+        "used",
+        "using",
+        "value",
+        "with",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -97,6 +126,7 @@ class BFCLModelCaseEvaluation:
     official_error_type: str = ""
     official_error: str = ""
     raw_content: str = ""
+    failure_tags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -435,6 +465,7 @@ def _evaluate_or_read_case(
     )
     row = None if refresh_cache else _read_case_cache(cache_path)
     if row is not None:
+        _ensure_failure_tags(row, tools_by_name=tools_by_name)
         return row, True
 
     row = evaluate_model_case(
@@ -571,6 +602,12 @@ def evaluate_model_case(
         evaluator_exact_match=evaluator_exact_match,
         response_error=response.error,
     )
+    failure_tags = _failure_tags(
+        expected_calls=expected_calls,
+        predicted_calls=predicted_calls,
+        tools_by_name=tools_by_name,
+        failure_category=failure_category,
+    )
     latency_ms = (time.perf_counter() - started) * 1000
 
     return BFCLModelCaseEvaluation(
@@ -599,6 +636,7 @@ def evaluate_model_case(
         official_error_type=official["official_error_type"],
         official_error=official["official_error"],
         raw_content=response.content,
+        failure_tags=failure_tags,
     )
 
 
@@ -1063,6 +1101,110 @@ def _classify_failure(
     return "checker_mismatch"
 
 
+def _ensure_failure_tags(
+    row: BFCLModelCaseEvaluation,
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+) -> None:
+    if row.failure_tags:
+        return
+    row.failure_tags = _failure_tags(
+        expected_calls=row.expected_calls,
+        predicted_calls=row.predicted_calls,
+        tools_by_name=tools_by_name,
+        failure_category=row.failure_category,
+    )
+
+
+def _failure_tags(
+    *,
+    expected_calls: list[ExpectedToolCall],
+    predicted_calls: list[PredictedToolCall],
+    tools_by_name: dict[str, dict[str, Any]],
+    failure_category: str,
+) -> list[str]:
+    tags: list[str] = []
+    if failure_category == "candidate_ambiguity" and _has_near_duplicate_tool_surface(
+        expected_calls,
+        predicted_calls,
+        tools_by_name=tools_by_name,
+    ):
+        tags.append("near_duplicate_tool_surface")
+    return tags
+
+
+def _has_near_duplicate_tool_surface(
+    expected_calls: list[ExpectedToolCall],
+    predicted_calls: list[PredictedToolCall],
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+) -> bool:
+    expected_names = {call.name for call in expected_calls}
+    predicted_names = {call.name for call in predicted_calls}
+    for expected_name in expected_names - predicted_names:
+        expected_tool = tools_by_name.get(expected_name)
+        if not expected_tool:
+            continue
+        for predicted_name in predicted_names - expected_names:
+            predicted_tool = tools_by_name.get(predicted_name)
+            if predicted_tool and _near_duplicate_tool_surface(expected_tool, predicted_tool):
+                return True
+    return False
+
+
+def _near_duplicate_tool_surface(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_terms = _tool_surface_terms(left)
+    right_terms = _tool_surface_terms(right)
+    if not left_terms or not right_terms:
+        return False
+    overlap = len(left_terms & right_terms) / len(left_terms | right_terms)
+    name_overlap = bool(
+        _identifier_terms(str(left.get("name") or ""))
+        & _identifier_terms(str(right.get("name") or ""))
+    )
+    required_gap = abs(len(_required_fields(left)) - len(_required_fields(right)))
+    if overlap >= 0.42 and required_gap <= 2:
+        return True
+    return bool(overlap >= 0.32 and name_overlap and required_gap <= 2)
+
+
+def _tool_surface_terms(tool: dict[str, Any]) -> set[str]:
+    params = tool.get("parameters") if isinstance(tool.get("parameters"), dict) else {}
+    properties = params.get("properties") if isinstance(params, dict) else {}
+    parts = [str(tool.get("name") or ""), str(tool.get("description") or "")]
+    if isinstance(properties, dict):
+        for name, schema in properties.items():
+            parts.append(str(name))
+            if isinstance(schema, dict):
+                parts.append(str(schema.get("description") or ""))
+    return _surface_terms(" ".join(parts))
+
+
+def _required_fields(tool: dict[str, Any]) -> list[str]:
+    params = tool.get("parameters") if isinstance(tool.get("parameters"), dict) else {}
+    required = params.get("required") if isinstance(params, dict) else []
+    if not isinstance(required, list):
+        return []
+    return [str(name) for name in required]
+
+
+def _surface_terms(text: str) -> set[str]:
+    return {
+        term for term in _identifier_terms(text) if len(term) > 2 and term not in _SURFACE_STOPWORDS
+    }
+
+
+def _identifier_terms(text: str) -> set[str]:
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(text or ""))
+    terms = {term for term in re.split(r"[^a-zA-Z0-9]+", spaced.lower()) if term}
+    singular_terms = {
+        term[:-1]
+        for term in terms
+        if len(term) > 3 and term.endswith("s") and not term.endswith("ss")
+    }
+    return terms | singular_terms
+
+
 def _classify_official_error_type(error_type: str) -> str:
     if "wrong_count" in error_type:
         return "call_count_mismatch"
@@ -1435,6 +1577,7 @@ def _case_from_dict(payload: dict[str, Any]) -> BFCLModelCaseEvaluation:
     data.setdefault("failure_category", "pass" if data.get("evaluator_exact_match") == 1.0 else "")
     data.setdefault("official_error_type", "")
     data.setdefault("official_error", "")
+    data.setdefault("failure_tags", [])
     return BFCLModelCaseEvaluation(**data)
 
 
@@ -1458,6 +1601,9 @@ def _summarize(
         "avg_output_tokens": round(_mean(row.output_tokens for row in rows), 1),
         "avg_latency_ms": round(_mean(row.latency_ms for row in rows), 1),
         "failure_breakdown": dict(sorted(Counter(row.failure_category for row in rows).items())),
+        "failure_tag_breakdown": dict(
+            sorted(Counter(tag for row in rows for tag in row.failure_tags).items())
+        ),
     }
     summary["status"] = "pass" if summary["evaluator_exact_match"] >= min_exact_match else "fail"
     return summary
@@ -1506,6 +1652,7 @@ def bfcl_result_rows(
                         "retrieved": list(case.get("retrieved") or []),
                         "tools_presented": list(case.get("tools_presented") or []),
                         "failure_category": str(case.get("failure_category") or ""),
+                        "failure_tags": list(case.get("failure_tags") or []),
                         "evaluator_exact_match": float(case.get("evaluator_exact_match") or 0.0),
                     },
                 }
@@ -1585,6 +1732,10 @@ def print_report(report: dict[str, Any]) -> None:
     if breakdown:
         formatted = ", ".join(f"{name}={count}" for name, count in breakdown.items())
         print(f"failure_breakdown: {formatted}")
+    tag_breakdown = summary.get("failure_tag_breakdown") or {}
+    if tag_breakdown:
+        formatted = ", ".join(f"{name}={count}" for name, count in tag_breakdown.items())
+        print(f"failure_tag_breakdown: {formatted}")
     for category in report["categories"]:
         cat = category["summary"]
         print(

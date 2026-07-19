@@ -144,10 +144,12 @@ def _summarize_sweep(
     rows: list[dict[str, Any]] = []
     category_rows: list[dict[str, Any]] = []
     failure_totals: Counter[str] = Counter()
+    failure_tag_totals: Counter[str] = Counter()
     for run in runs:
         report = run["report"]
         summary = report["summary"]
         failure_totals.update(summary.get("failure_breakdown") or {})
+        failure_tag_totals.update(summary.get("failure_tag_breakdown") or {})
         rows.append(
             {
                 "repeat": run["repeat"],
@@ -170,6 +172,7 @@ def _summarize_sweep(
         "repeat_groups": _summarize_repeat_groups(rows),
         "category_repeat_groups": _summarize_category_repeat_groups(category_rows),
         "failure_breakdown": dict(sorted(failure_totals.items())),
+        "failure_tag_breakdown": dict(sorted(failure_tag_totals.items())),
         "best_retrieved": _best_retrieved(rows),
         "row_vs_retrieved_deltas": _row_vs_retrieved_deltas(runs),
         "milestone_gate": _evaluate_milestone_gate(
@@ -245,6 +248,7 @@ def _row_vs_retrieved_deltas(runs: list[dict[str, Any]]) -> list[dict[str, Any]]
 
         counts: Counter[str] = Counter()
         row_pass_retrieved_fail_breakdown: Counter[str] = Counter()
+        row_pass_retrieved_fail_tags: Counter[str] = Counter()
         both_fail_retrieved_breakdown: Counter[str] = Counter()
         row_pass_retrieved_fail_case_ids: list[str] = []
         both_fail_case_ids: list[str] = []
@@ -260,6 +264,7 @@ def _row_vs_retrieved_deltas(runs: list[dict[str, Any]]) -> list[dict[str, Any]]
                 counts["row_pass_retrieved_fail"] += 1
                 failure = str(retrieved_case.get("failure_category") or "unknown")
                 row_pass_retrieved_fail_breakdown[failure] += 1
+                row_pass_retrieved_fail_tags.update(retrieved_case.get("failure_tags") or [])
                 row_pass_retrieved_fail_case_ids.append(str(retrieved_case.get("case_id") or key))
             elif not row_pass and retrieved_pass:
                 counts["row_fail_retrieved_pass"] += 1
@@ -289,6 +294,7 @@ def _row_vs_retrieved_deltas(runs: list[dict[str, Any]]) -> list[dict[str, Any]]
                 "row_pass_retrieved_fail_breakdown": dict(
                     sorted(row_pass_retrieved_fail_breakdown.items())
                 ),
+                "row_pass_retrieved_fail_tags": dict(sorted(row_pass_retrieved_fail_tags.items())),
                 "both_fail_retrieved_breakdown": dict(
                     sorted(both_fail_retrieved_breakdown.items())
                 ),
@@ -643,6 +649,7 @@ def _format_milestone_gate(gate: dict[str, Any]) -> str:
 
 def _format_row_vs_retrieved_delta(delta: dict[str, Any]) -> str:
     breakdown = _format_failure_breakdown(delta.get("row_pass_retrieved_fail_breakdown") or {})
+    tags = _format_failure_breakdown(delta.get("row_pass_retrieved_fail_tags") or {})
     exact_on_row_pass = _format_optional_metric(delta.get("retrieved_exact_on_row_pass"))
     return (
         "row_vs_retrieved "
@@ -650,7 +657,8 @@ def _format_row_vs_retrieved_delta(delta: dict[str, Any]) -> str:
         f"paired={delta.get('paired_cases')} "
         f"row_pass_loss={delta.get('row_pass_retrieved_fail')} "
         f"retrieved_on_row_pass={exact_on_row_pass} "
-        f"retrieval_layer_failures={breakdown}"
+        f"retrieval_layer_failures={breakdown} "
+        f"retrieval_layer_tags={tags}"
     )
 
 
