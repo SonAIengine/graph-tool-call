@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-acceptance xgen-scale-sweep xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-failure-subset bfcl-inspect-failures release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-acceptance xgen-scale-sweep xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -65,6 +65,21 @@ bfcl-failure-subset:
 bfcl-inspect-failures:
 	@test -n "$(REPORT)" || (echo "Usage: make bfcl-inspect-failures REPORT=/tmp/report.json [OUT=/tmp/inspect.json] [TOP_K=5] [INSPECT_DEPTH=20]" && exit 2)
 	poetry run python -m benchmarks.bfcl_tool_selection.inspect --report "$(REPORT)" --top-k "$${TOP_K:-5}" --inspect-depth "$${INSPECT_DEPTH:-20}" --tool-sources "$${TOOL_SOURCES:-retrieved}" --top-ks "$${REPORT_TOP_KS:-5}" --output "$${OUT:-/tmp/gtc-bfcl-failure-inspect.json}"
+
+bfcl-hard-cases:
+	@test -n "$(REPORT)" || (echo "Usage: make bfcl-hard-cases REPORT=/tmp/report.json [OUT_DIR=/tmp/gtc-bfcl-hard-cases] [DATA_ROOT=/tmp/bfcl-data] [TOP_K=5] [INSPECT_DEPTH=20]" && exit 2)
+	@data_root_args=""; \
+	if [ -n "$${DATA_ROOT:-}" ]; then data_root_args="--data-root $${DATA_ROOT}"; fi; \
+	poetry run python -m benchmarks.bfcl_tool_selection.hard_cases \
+		--report "$(REPORT)" \
+		--out-dir "$${OUT_DIR:-/tmp/gtc-bfcl-hard-cases}" \
+		$$data_root_args \
+		--categories "$${CATEGORIES:-}" \
+		--failure-categories "$${FAILURE_CATEGORIES:-retrieval_miss,candidate_ambiguity}" \
+		--tool-sources "$${TOOL_SOURCES:-}" \
+		--top-ks "$${REPORT_TOP_KS:-5}" \
+		--top-k "$${TOP_K:-5}" \
+		--inspect-depth "$${INSPECT_DEPTH:-20}"
 
 release-check:
 	scripts/release-check.sh
