@@ -343,7 +343,12 @@ Required work:
     `call_count_mismatch`에서 retrieved exact `1.00` pass로 회복됐다. Route +
     subsumption two-case smoke `/tmp/gtc-bfcl-subsumption-route-parallel-qwen.json`도
     exact `1.00`으로 pass했다.
-    다음 병목은 Row-source에서도 실패한 repeated-call / argument mismatch다.
+    paired array repeated-call pass에서는 schema가 array field를 쓰더라도 user query가
+    paired values를 주면 한 호출에 병합하지 않고 pair마다 한 번씩 호출하도록
+    system prompt와 array argument description을 보강했다. BFCL `parallel_9`는
+    row/retrieved qwen3.6-27B smoke 모두 exact `1.00`으로 회복됐고, 대표 복구
+    3-case smoke `/tmp/gtc-bfcl-paired-array-recovered3-qwen.json`도 exact `1.00`이다.
+    다음 병목은 `multiple_7`처럼 Row-source에서도 발생하는 extra related tool call이다.
     이 영역은 retrieval layer 손실과 분리해서 모델 상한 및 tool schema
     표현 문제로 본다.
 

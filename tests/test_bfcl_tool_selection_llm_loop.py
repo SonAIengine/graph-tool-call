@@ -340,6 +340,11 @@ def test_normalized_parameters_add_argument_value_preservation_hints():
                     "items": {"type": "float"},
                     "description": "Array of the predictor variable.",
                 },
+                "movie": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Preferred movie to watch.",
+                },
                 "return_residuals": {
                     "type": "boolean",
                     "description": "Return residuals.",
@@ -364,6 +369,7 @@ def test_normalized_parameters_add_argument_value_preservation_hints():
     assert "items" not in properties["x"]
     assert "data['sales']" in properties["x"]["description"]
     assert "pass exactly the string" in properties["x"]["description"]
+    assert "one pairing in this array" in properties["movie"]["description"]
     assert "pass false" in properties["return_residuals"]["description"]
     assert schema["required"] == ["formatted", "interest_rate", "gradeDict"]
 
@@ -377,6 +383,7 @@ def test_messages_can_include_candidate_selection_guidance():
     assert "do not flatten them into top-level arguments" in plain[0]["content"]
     assert "Preserve symbolic data references" in plain[0]["content"]
     assert "one tool call per distinct set" in plain[0]["content"]
+    assert "item A at time A and item B at time B" in plain[0]["content"]
     assert "Candidate selection guidance" not in plain[0]["content"]
     assert "Candidate selection guidance" in guided[0]["content"]
     assert "same namespace or API family" in guided[0]["content"]
