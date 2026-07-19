@@ -56,7 +56,7 @@ from graph_tool_call.graphify import build_tool_equivalence_groups
 
 DEFAULT_OFFICIAL_MODEL_NAME = "qwen3-32b-FC"
 BFCL_RESULT_ARGUMENT_FORMATS = ("json-string", "decoded")
-MODEL_CASE_CACHE_VERSION = 9
+MODEL_CASE_CACHE_VERSION = 13
 
 
 @dataclass(frozen=True)
@@ -535,6 +535,7 @@ def evaluate_model_case(
     )
     model_tools, safe_name_map = _prepare_tools_for_model(
         raw_tools,
+        query=query,
         rank_hints=retrieval_rank_hints and tool_source == "retrieved",
         rank_by_name={name: index + 1 for index, name in enumerate(retrieved)},
     )
@@ -637,7 +638,11 @@ def _messages_for_case(
         "Use exact argument values from the user request. Omit optional "
         "arguments unless the request explicitly sets them. Use only argument "
         "keys declared in the selected tool's JSON schema; never invent extra "
-        "argument names, even when the user mentions units or formatting."
+        "argument names, even when the user mentions units or formatting. For "
+        "object or dict arguments, keep nested fields inside that argument value; "
+        "do not flatten them into top-level arguments. Preserve symbolic data "
+        "references such as data['sales'] exactly as strings; do not replace "
+        "them with made-up arrays or sample values."
     )
     if candidate_selection_guidance:
         system += (
@@ -837,6 +842,7 @@ def _chat_ollama(
 def _prepare_tools_for_model(
     raw_tools: list[dict[str, Any]],
     *,
+    query: str = "",
     rank_hints: bool = False,
     rank_by_name: dict[str, int] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, str]]:
@@ -859,7 +865,10 @@ def _prepare_tools_for_model(
                         rank_hints=rank_hints,
                         rank=rank_by_name.get(original_name) if rank_by_name else None,
                     ),
-                    "parameters": _normalize_parameters(raw_tool.get("parameters") or {}),
+                    "parameters": _normalize_parameters(
+                        raw_tool.get("parameters") or {},
+                        query=query,
+                    ),
                 },
             }
         )
@@ -915,7 +924,7 @@ def _hash(value: str) -> str:
     return hashlib.sha1(value.encode()).hexdigest()[:8]  # noqa: S324
 
 
-def _normalize_parameters(schema: dict[str, Any]) -> dict[str, Any]:
+def _normalize_parameters(schema: dict[str, Any], *, query: str = "") -> dict[str, Any]:
     normalized = _normalize_schema(schema)
     normalized["type"] = "object"
     normalized.setdefault("properties", {})
@@ -923,6 +932,7 @@ def _normalize_parameters(schema: dict[str, Any]) -> dict[str, Any]:
         name for name in normalized.get("required", []) if name in normalized["properties"]
     ]
     normalized.setdefault("additionalProperties", False)
+    _add_argument_value_hints(normalized, query=query)
     return normalized
 
 
@@ -978,6 +988,102 @@ def _json_schema_type(value: Any) -> Any:
         "any": "string",
     }
     return mapping.get(str(value), "string")
+
+
+def _add_argument_value_hints(schema: dict[str, Any], *, query: str = "") -> None:
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        for name, child in properties.items():
+            if not isinstance(child, dict):
+                continue
+            _add_property_value_hint(str(name), child, query=query)
+            _add_argument_value_hints(child, query=query)
+
+    items = schema.get("items")
+    if isinstance(items, dict):
+        _add_argument_value_hints(items, query=query)
+
+
+def _add_property_value_hint(name: str, schema: dict[str, Any], *, query: str) -> None:
+    hints: list[str] = []
+    boolean_default = _boolean_default(schema)
+    if boolean_default is not None:
+        literal = "true" if boolean_default else "false"
+        opposite = "false" if boolean_default else "true"
+        hints.append(f"If the user does not explicitly request {opposite}, pass {literal}.")
+    if _json_schema_type(schema.get("type")) == "object":
+        schema.setdefault("additionalProperties", True)
+        hints.append(
+            "Pass a JSON object as this argument's value; keep nested fields inside "
+            "this argument, not as top-level arguments."
+        )
+    symbolic_reference = _symbolic_argument_reference(name, query)
+    if symbolic_reference:
+        _prefer_symbolic_reference_value(schema)
+        hints.append(
+            f"The current user request sets this argument to {symbolic_reference}; "
+            f"pass exactly the string {json.dumps(symbolic_reference)} for this argument."
+        )
+    if _looks_like_decimal_rate_field(name, schema):
+        hints.append(
+            "If the user writes a percentage such as 4%, pass the decimal fraction "
+            "0.04 unless this schema explicitly says to pass percent points."
+        )
+    if hints:
+        _append_description(schema, " ".join(hints))
+
+
+def _symbolic_argument_reference(name: str, query: str) -> str:
+    if not name or not query:
+        return ""
+    pattern = rf"(?<![A-Za-z0-9_]){re.escape(name)}\s*=\s*(data\s*\[[^\]]+\])"
+    match = re.search(pattern, query)
+    if not match:
+        return ""
+    return re.sub(r"\s+", "", match.group(1))
+
+
+def _prefer_symbolic_reference_value(schema: dict[str, Any]) -> None:
+    if _json_schema_type(schema.get("type")) in {"array", "object", "number", "integer"}:
+        schema["type"] = "string"
+        schema.pop("items", None)
+        schema.pop("properties", None)
+        schema.pop("additionalProperties", None)
+
+
+def _append_description(schema: dict[str, Any], hint: str) -> None:
+    description = str(schema.get("description") or "").strip()
+    if hint in description:
+        return
+    schema["description"] = f"{description} {hint}".strip()
+
+
+def _boolean_default(schema: dict[str, Any]) -> bool | None:
+    if _json_schema_type(schema.get("type")) != "boolean":
+        return None
+    default = schema.get("default")
+    if isinstance(default, bool):
+        return default
+    if isinstance(default, str) and default.lower() in {"true", "false"}:
+        return default.lower() == "true"
+    description = str(schema.get("description") or "")
+    match = re.search(r"\bdefault\s+(?:is|=|:)?\s*(true|false)\b", description, re.IGNORECASE)
+    if match:
+        return match.group(1).lower() == "true"
+    return None
+
+
+def _looks_like_decimal_rate_field(name: str, schema: dict[str, Any]) -> bool:
+    field_type = _json_schema_type(schema.get("type"))
+    if field_type not in {"number", "integer"}:
+        return False
+    tokens = {token for token in re.split(r"[^a-z0-9]+", name.lower()) if token}
+    if "rate" not in tokens:
+        return False
+    description = str(schema.get("description") or "").lower()
+    if any(marker in description for marker in ("percent point", "percentage point")):
+        return False
+    return True
 
 
 def _extract_predicted_calls(
