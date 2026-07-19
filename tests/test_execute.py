@@ -1828,6 +1828,73 @@ class TestBuildRequest:
         assert diagnostics["used_arguments"]["header"] == []
         assert diagnostics["missing_security"][0]["schemes"][0]["credential_name"] == "X-Api-Key"
 
+    def test_implicit_authorization_header_default_is_not_applied(self):
+        tool = _make_tool(
+            name="listOrders",
+            method="GET",
+            path="/orders",
+            params=[ToolParam(name="Authorization", type="string", required=False)],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {
+                    "name": "Authorization",
+                    "in": "header",
+                    "field_type": "string",
+                    "default": "Bearer demo-token",
+                }
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {})
+        req = executor.build_request(tool, {})
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["applied_defaults"] == []
+        assert diagnostics["used_arguments"]["header"] == []
+        assert all(name.lower() != "authorization" for name in req.headers)
+
+    def test_implicit_access_token_query_default_is_not_applied(self):
+        tool = _make_tool(
+            name="listOrders",
+            method="GET",
+            path="/orders",
+            params=[
+                ToolParam(name="page", type="integer", required=True),
+                ToolParam(name="accessToken", type="string", required=False),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {
+                    "name": "page",
+                    "in": "query",
+                    "field_type": "integer",
+                    "required": True,
+                    "default": 1,
+                },
+                {
+                    "name": "accessToken",
+                    "in": "query",
+                    "field_type": "string",
+                    "default": "demo-token",
+                },
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {})
+        req = executor.build_request(tool, {})
+
+        assert diagnostics["valid"] is True
+        assert [
+            (row["location"], row["name"], row["value_source"], row["value"])
+            for row in diagnostics["applied_defaults"]
+        ] == [("query", "page", "default", 1)]
+        assert diagnostics["used_arguments"]["query"] == ["page"]
+        assert req.full_url == "https://api.example.com/orders?page=1"
+
     def test_security_requirement_accepts_one_declared_alternative(self):
         tool = _make_tool(name="listOrders", method="GET", path="/orders", params=[])
         tool.metadata["openapi"] = {

@@ -26,6 +26,45 @@ from graph_tool_call.core.tool import ToolSchema
 _RESERVED_QUERY_CHARS = ":/?#[]@!$&'()*+,;="
 _HTTP_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 _NO_DEFAULT = object()
+_SENSITIVE_DEFAULT_PARAMETER_NAMES = {
+    "access_token",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "authorization",
+    "bearer",
+    "bearer_token",
+    "client_secret",
+    "cookie",
+    "credential",
+    "credentials",
+    "id_token",
+    "jwt",
+    "jwt_token",
+    "password",
+    "passwd",
+    "proxy_authorization",
+    "refresh_token",
+    "secret",
+    "session",
+    "session_id",
+    "session_key",
+    "sessionid",
+    "set_cookie",
+    "sid",
+    "token",
+    "x_api_key",
+    "xapikey",
+}
+_SENSITIVE_DEFAULT_PARAMETER_SUFFIXES = (
+    "_api_key",
+    "_apikey",
+    "_credential",
+    "_credentials",
+    "_password",
+    "_secret",
+    "_token",
+)
 
 
 class OpenAPIRequestValidationError(ValueError):
@@ -442,6 +481,8 @@ def _arguments_with_openapi_defaults(
             return
         if security_api_key_locations.get(name) == location:
             return
+        if _is_sensitive_default_parameter(name):
+            return
         value_source, value = _openapi_static_default(row)
         if value is _NO_DEFAULT:
             return
@@ -502,6 +543,17 @@ def _openapi_static_default(row: dict[str, Any]) -> tuple[str, Any]:
     if "default" in row and row.get("default") is not None:
         return "default", row["default"]
     return "", _NO_DEFAULT
+
+
+def _is_sensitive_default_parameter(name: str) -> bool:
+    snake_name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(name).strip())
+    normalized = re.sub(r"[^a-z0-9]+", "_", snake_name.lower()).strip("_")
+    compact = normalized.replace("_", "")
+    return (
+        normalized in _SENSITIVE_DEFAULT_PARAMETER_NAMES
+        or compact in _SENSITIVE_DEFAULT_PARAMETER_NAMES
+        or normalized.endswith(_SENSITIVE_DEFAULT_PARAMETER_SUFFIXES)
+    )
 
 
 def _iter_known_argument_names(
