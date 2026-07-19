@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from benchmarks.metrics import mrr, recall_at_k
+from benchmarks.xgen_api_scale.gate import evaluate_gate
 from graph_tool_call import ToolGraph, __version__
 from graph_tool_call.core.contract_matching import description_alias_key
 from graph_tool_call.graphify import (
@@ -174,7 +175,7 @@ def run_benchmark(
     if cases and search_summary.get("status") != "pass":
         status = "fail"
 
-    return {
+    report = {
         "benchmark": cases_doc.get("name") or "XGEN API Scale Acceptance",
         "description": cases_doc.get("description") or "",
         "methodology": "xgen_large_openapi_acceptance",
@@ -191,6 +192,8 @@ def run_benchmark(
         "specs": [asdict(profile) for profile in prepared.profiles],
         "cases": [asdict(case) for case in cases],
     }
+    report["gate"] = evaluate_gate(report)
+    return report
 
 
 def run_top_k_sweep(
@@ -278,7 +281,7 @@ def run_top_k_sweep(
     if cases_doc.get("cases") and acceptance_search_status != "pass":
         status = "fail"
 
-    return {
+    report = {
         "benchmark": cases_doc.get("name") or "XGEN API Scale Acceptance",
         "description": cases_doc.get("description") or "",
         "methodology": "xgen_large_openapi_top_k_sweep",
@@ -295,6 +298,8 @@ def run_top_k_sweep(
         "sweep": sweep,
         "specs": [asdict(profile) for profile in prepared.profiles],
     }
+    report["gate"] = evaluate_gate(report)
+    return report
 
 
 def run_contract_signal_ablation(

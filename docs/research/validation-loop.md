@@ -39,10 +39,12 @@ make xgen-scale-gate-check \
   REPORT=/tmp/gtc-xgen-scale-sweep.json
 ```
 
-이 checker는 live URL을 다시 호출하지 않고 artifact의 `scale.status`와 acceptance
-top-K의 `search.status`를 다시 읽는다. 따라서 검색 로직을 바꾸지 않은 문서, gate,
-분석 코드 수정은 수 초 안에 XGEN scale 기준이 깨졌는지 확인할 수 있다. 검색/ingest
-품질 자체를 바꾼 경우에만 `make xgen-scale-sweep`으로 새 artifact를 만든다.
+`make xgen-scale-sweep`과 `make xgen-scale-acceptance`가 만드는 artifact에는
+`gate`가 함께 저장된다. 이 checker는 live URL을 다시 호출하지 않고 artifact의
+`scale.status`와 acceptance top-K의 `search.status`를 다시 읽어 같은 gate를
+재판정한다. 따라서 검색 로직을 바꾸지 않은 문서, gate, 분석 코드 수정은 수 초
+안에 XGEN scale 기준이 깨졌는지 확인할 수 있다. 검색/ingest 품질 자체를 바꾼
+경우에만 `make xgen-scale-sweep`으로 새 artifact를 만든다.
 
 BFCL model sweep artifact에는 `summary.milestone_gate`가 포함된다. 기본
 profile은 `xgen-0.27`이며, retrieved `k=5` exact, retrieval recall, row-source

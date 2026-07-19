@@ -127,6 +127,10 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     )
 
     assert report["status"] == "pass"
+    assert report["gate"]["status"] == "pass"
+    assert report["gate"]["methodology"] == "xgen_large_openapi_acceptance"
+    assert report["gate"]["metrics"]["unique_tool_count"] == 3
+    assert report["gate"]["metrics"]["case_hit_at_k"] == 1.0
     assert report["scale"]["spec_count"] == 2
     assert report["scale"]["operation_count"] == 4
     assert report["scale"]["unique_tool_count"] == 3
@@ -812,6 +816,8 @@ def test_xgen_api_scale_can_profile_without_cases():
     )
 
     assert report["status"] == "pass"
+    assert report["gate"]["status"] == "pass"
+    assert report["gate"]["search_status"] == "skipped"
     assert report["search"]["status"] == "skipped"
     assert report["scale"]["request_body_count"] == 0
     assert report["scale"]["response_schema_count"] == 2
@@ -859,6 +865,9 @@ def test_xgen_api_scale_top_k_sweep_uses_one_acceptance_k(tmp_path):
     )
 
     assert report["status"] == "pass"
+    assert report["gate"]["status"] == "pass"
+    assert report["gate"]["acceptance_top_k"] == 3
+    assert report["gate"]["metrics"]["case_hit_at_k"] == 1.0
     assert report["methodology"] == "xgen_large_openapi_top_k_sweep"
     assert report["top_ks"] == [1, 3]
     assert report["acceptance_top_k"] == 3

@@ -566,7 +566,9 @@ Full model benchmark is allowed only when:
 XGEN scale live sweep is also gated. Reuse saved artifacts with
 `make xgen-scale-gate-check` for routine validation, and rerun
 `make xgen-scale-sweep` only when OpenAPI ingest, graph construction, retrieval, or
-candidate planning behavior changes.
+candidate planning behavior changes. New acceptance/sweep artifacts include a
+normalized `gate` block so PRs and research notes can cite the pass/fail state
+without rebuilding the live Swagger graph.
 
 ## Non-Goals
 
