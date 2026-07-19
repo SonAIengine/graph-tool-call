@@ -226,6 +226,20 @@ target selector exact `1.00`, plan/binding/evidence coverage `1.00`,
 개선 근거이며, qwen3.6-27B full repeat model benchmark 결과는 별도로 재실행해야
 한다.
 
+`2026-07-20` dominant-keyword preservation pass에서는 raw BM25가 매우 강하게
+고른 후보가 wRRF, clause injection, graph/semantic 보정 이후 top-5 경계 바로
+아래로 밀리는 현상을 보정했다. 보정은 keyword leader와 가까운 top lexical
+candidate에만 적용되며 약한 keyword tail은 올리지 않는다. 15개 simple-python
+domain hardcase subset에서는 `lawsuit_info`, `sports_stats.get_performance`,
+`get_team_rank`, `gamespot.getAverageUserScore`, `restaurant_search` 5건이
+top-5로 회복됐다. 같은 T1 deterministic artifact 기준 BFCL `recall@5`는
+`0.956917 -> 0.964583`, `all_tools_found@5`는 `0.933 -> 0.938`,
+`argument_schema_coverage`는 `0.929256 -> 0.937089`로 올랐고, XGEN
+deterministic gate는 status `pass`, target selector exact `1.00`,
+plan/binding/evidence coverage `1.00`을 유지했다. 이 역시 deterministic
+retrieval gate 개선 근거이며, model-loop exact 개선 여부는 qwen3.6-27B subset
+smoke와 full repeat gate에서 별도로 검증해야 한다.
+
 ## Product Maturity Levels
 
 | Level | Meaning | Expected Use |

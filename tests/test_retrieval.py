@@ -231,6 +231,49 @@ def test_retrieve_fastest_route_uses_route_planner_despite_event_context():
     assert names[0] == "route_planner.calculate_route"
 
 
+def test_dominant_keyword_candidate_preserved_near_top_k_boundary():
+    final_scores = {
+        "auxiliary_a": 0.030,
+        "auxiliary_b": 0.026,
+        "auxiliary_c": 0.023,
+        "auxiliary_d": 0.021,
+        "auxiliary_e": 0.020,
+        "exact_keyword_target": 0.018,
+    }
+    keyword_scores = {
+        "auxiliary_a": 60.0,
+        "exact_keyword_target": 56.0,
+        "auxiliary_b": 20.0,
+        "auxiliary_c": 18.0,
+    }
+
+    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, top_k=5)
+
+    ranked = sorted(final_scores, key=final_scores.get, reverse=True)
+    assert "exact_keyword_target" in ranked[:5]
+
+
+def test_dominant_keyword_candidate_guard_ignores_weak_tail_matches():
+    final_scores = {
+        "strong_a": 0.030,
+        "strong_b": 0.026,
+        "strong_c": 0.023,
+        "strong_d": 0.021,
+        "strong_e": 0.020,
+        "weak_keyword_tail": 0.018,
+    }
+    keyword_scores = {
+        "strong_a": 60.0,
+        "strong_b": 55.0,
+        "weak_keyword_tail": 12.0,
+    }
+
+    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, top_k=5)
+
+    ranked = sorted(final_scores, key=final_scores.get, reverse=True)
+    assert "weak_keyword_tail" not in ranked[:5]
+
+
 def test_retrieve_boosts_explicit_dotted_tool_name_inside_long_query():
     tg = ToolGraph()
     tg.add_tools(

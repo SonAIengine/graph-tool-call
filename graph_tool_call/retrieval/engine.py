@@ -385,6 +385,7 @@ class RetrievalEngine:
         self._inject_clause_candidates(final_scores, clause_scores, top_k, query=query)
         self._boost_method_intent(query_intent, final_scores)
         self._boost_embedding_rerank(query, final_scores)
+        self._preserve_dominant_keyword_candidates(keyword_scores, final_scores, top_k)
         if history:
             for tool_name in history:
                 if tool_name in final_scores:
@@ -934,6 +935,59 @@ class RetrievalEngine:
                     scores[name] *= 1.0 + 0.2 * max(sim, 0.0)
         except (ValueError, ImportError):
             pass
+
+    @staticmethod
+    def _preserve_dominant_keyword_candidates(
+        keyword_scores: dict[str, float],
+        final_scores: dict[str, float],
+        top_k: int,
+    ) -> None:
+        """Keep strong lexical winners visible after auxiliary reranking.
+
+        wRRF, clause injection, and semantic boosts are rank-based by design,
+        which keeps unrelated raw score scales from dominating the whole
+        pipeline. The tradeoff is that a very strong BM25 winner can sometimes
+        slide just below ``top_k`` when multiple auxiliary hints agree on
+        siblings. This conservative guard only lifts top lexical candidates
+        whose raw BM25 score is both strong in absolute terms and close to the
+        keyword leader, preserving exact operationId/schema evidence without
+        making weak keyword tails noisy.
+        """
+        if top_k <= 0 or not keyword_scores or not final_scores:
+            return
+
+        ranked_keyword = [
+            (name, score)
+            for name, score in sorted(
+                keyword_scores.items(), key=lambda item: item[1], reverse=True
+            )
+            if name in final_scores and score > 0
+        ]
+        if not ranked_keyword:
+            return
+
+        top_keyword_score = ranked_keyword[0][1]
+        if top_keyword_score < 6.0:
+            return
+
+        ranked_final = sorted(final_scores.items(), key=lambda item: item[1], reverse=True)
+        if len(ranked_final) <= top_k:
+            return
+
+        top_names = {name for name, _score in ranked_final[:top_k]}
+        boundary_score = ranked_final[top_k - 1][1]
+        if boundary_score <= 0:
+            return
+
+        for keyword_rank, (name, score) in enumerate(ranked_keyword[:5], start=1):
+            if name in top_names:
+                continue
+            ratio = score / max(top_keyword_score, 1e-9)
+            required_ratio = 0.75 if keyword_rank <= 3 else 0.9
+            if ratio < required_ratio:
+                continue
+            lift = 1.08 + max(0, 4 - keyword_rank) * 0.02
+            final_scores[name] = max(final_scores[name], boundary_score * lift)
 
     def _build_candidates(
         self,
