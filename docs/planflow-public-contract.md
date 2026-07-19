@@ -49,6 +49,9 @@ The graphify package owns product-neutral collection graph logic.
 - OpenAPI success-response headers can appear as producer rows with
   `location=response_header` and `json_path=$.headers.<Name>`. Header-based
   OpenAPI links therefore bind as `${sN.headers.<Name>}`.
+- Producer rows with OpenAPI response envelope hints can bind through
+  `HttpExecutor`'s schema-guided `body_view`, for example
+  `${sN.body_view.value[0].goodsNo}` for `$.data.items[*].goodsNo`.
 - `PlanSynthesisError.to_dict()` exposes `stage`, `reason`, `message`, and structured details so adapters do not need to parse exception text.
 - `Plan.metadata.synthesis` records `target`, selected producers, candidate signals, and user-input fallbacks.
 

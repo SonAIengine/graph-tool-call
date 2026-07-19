@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from graph_tool_call.plan import PlanRunner
 from graph_tool_call.plan.synthesizer import (
     PathSynthesizer,
     PlanSynthesisError,
@@ -112,6 +113,71 @@ def test_synthesize_chains_producer_when_entity_missing():
     assert binding.startswith("${"), "binding placeholder 형식이어야"
     assert "s1" in binding, f"첫 step (s1) 출력 binding 이어야, got {binding}"
     assert "goodsNo" in binding, "produces 필드 경로 포함"
+
+
+def test_synthesize_prefers_body_view_binding_for_response_envelope_producer():
+    graph = {
+        "tools": {
+            "searchProducts": {
+                "metadata": {
+                    "consumes": [{"field_name": "keyword", "kind": "data", "required": True}],
+                    "produces": [
+                        {
+                            "field_name": "goodsNo",
+                            "json_path": "$.data.items[*].goodsNo",
+                            "semantic_tag": "goods.id",
+                            "response_envelope_path": "$.data",
+                            "response_collection_path": "$.data.items[*]",
+                            "response_item_path": "$.data.items[*]",
+                        }
+                    ],
+                    "ai_metadata": {"canonical_action": "search"},
+                },
+            },
+            "getProductDetail": {
+                "metadata": {
+                    "consumes": [
+                        {
+                            "field_name": "goodsNo",
+                            "semantic_tag": "goods.id",
+                            "kind": "data",
+                            "required": True,
+                        }
+                    ],
+                    "produces": [{"field_name": "goodsNm", "json_path": "$.body.goodsNm"}],
+                    "ai_metadata": {"canonical_action": "read"},
+                },
+            },
+        }
+    }
+    plan = PathSynthesizer(graph).synthesize(
+        target="getProductDetail",
+        entities={"keyword": "셔츠"},
+    )
+
+    assert [step.tool for step in plan.steps] == ["searchProducts", "getProductDetail"]
+    assert plan.steps[1].args["goodsNo"] == "${s1.body_view.value[0].goodsNo}"
+
+    def call_tool(name, args):
+        if name == "searchProducts":
+            return {
+                "body": {
+                    "code": "OK",
+                    "data": {"items": [{"goodsNo": "G-1", "goodsNm": "Shirt"}]},
+                },
+                "body_view": {
+                    "mode": "collection",
+                    "source_path": "$.data.items[*]",
+                    "value": [{"goodsNo": "G-1", "goodsNm": "Shirt"}],
+                },
+            }
+        return {"args": args}
+
+    trace = PlanRunner(call_tool).run(plan)
+
+    assert trace.success is True
+    assert trace.steps[1].args_resolved == {"goodsNo": "G-1"}
+    assert trace.output == {"args": {"goodsNo": "G-1"}}
 
 
 def test_synthesize_falls_back_to_user_input_placeholder():
