@@ -1100,6 +1100,64 @@ def test_build_candidate_set_can_diversify_limited_multi_intent_target_groups():
     }
 
 
+def test_build_candidate_set_can_rerank_targets_by_action_priority_with_signals():
+    tools = {
+        "listProducts": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "product", "canonical_action": "search"},
+            }
+        },
+        "getProductDetail": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "product", "canonical_action": "read"},
+            }
+        },
+        "createProductReview": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "review", "canonical_action": "create"},
+            }
+        },
+        "deleteProductReview": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "review", "canonical_action": "delete"},
+            }
+        },
+    }
+
+    result = build_candidate_set(
+        ["listProducts", "getProductDetail", "createProductReview", "deleteProductReview"],
+        tools,
+        target_action_priority={"create": 5, "delete": 4, "read": 2, "search": 1},
+        max_target_candidates=3,
+        max_hops=0,
+    )
+
+    assert result["raw_target_candidates"] == [
+        "listProducts",
+        "getProductDetail",
+        "createProductReview",
+        "deleteProductReview",
+    ]
+    assert result["ranked_target_candidates"] == [
+        "createProductReview",
+        "deleteProductReview",
+        "getProductDetail",
+        "listProducts",
+    ]
+    assert result["target_candidates"] == [
+        "createProductReview",
+        "deleteProductReview",
+        "getProductDetail",
+    ]
+    assert result["suppressed_target_candidates"] == ["listProducts"]
+    assert result["target_rerank_applied"] is True
+    signals = {row["name"]: row for row in result["target_rank_signals"]}
+    assert signals["createProductReview"]["original_rank"] == 3
+    assert signals["createProductReview"]["reranked_rank"] == 1
+    assert signals["createProductReview"]["action_priority"] == 5
+    assert signals["listProducts"]["suppressed"] is True
+
+
 def test_edge_normalize_merge_and_trace_derivation_contract():
     structural = normalize_graph_edge(
         {
