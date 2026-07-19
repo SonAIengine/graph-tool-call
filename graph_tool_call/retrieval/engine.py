@@ -382,11 +382,14 @@ class RetrievalEngine:
 
         bm25 = self._get_bm25()
         merged: dict[str, float] = {}
+        clause_candidate_depth = 5 if len(clauses) >= 3 else 3
         for clause in clauses[:8]:
             scores = bm25.score(clause)
             if not scores:
                 scores = self._keyword_match(clause)
-            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]
+            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[
+                :clause_candidate_depth
+            ]
             if not ranked:
                 continue
             top_clause_score = ranked[0][1]
@@ -753,7 +756,7 @@ class RetrievalEngine:
         max_inject = max(3, min(top_k, len(ranked_clause)))
         floor = boundary_score * 1.05
         for name, score in ranked_clause[:max_inject]:
-            if name not in self._tools or score < top_clause_score * 0.25:
+            if name not in self._tools or score < top_clause_score * 0.18:
                 continue
             norm_score = score / top_clause_score
             candidate_score = floor * max(norm_score, 0.6)

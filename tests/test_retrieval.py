@@ -107,6 +107,37 @@ def test_retrieve_math_synonym_hypotenuse_matches_hypot_operation():
     assert "math.hypot" in names
 
 
+def test_retrieve_geographic_distance_prefers_geo_distance_operation():
+    tg = ToolGraph()
+    tg.add_tools(
+        [
+            {
+                "name": "geo_distance.calculate",
+                "description": "Calculate the geographic distance between two locations.",
+            },
+            {
+                "name": "get_shortest_driving_distance",
+                "description": "Calculate the shortest driving distance between two locations.",
+            },
+            {
+                "name": "distance_calculator.calculate",
+                "description": "Calculate the distance between two locations considering terrain.",
+            },
+        ],
+        detect_dependencies=False,
+    )
+
+    names = [
+        tool.name
+        for tool in tg.retrieve(
+            "Calculate the geographic distance from Los Angeles to New York.",
+            top_k=2,
+        )
+    ]
+
+    assert names[0] == "geo_distance.calculate"
+
+
 def test_retrieve_boosts_explicit_dotted_tool_name_inside_long_query():
     tg = ToolGraph()
     tg.add_tools(

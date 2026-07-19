@@ -236,6 +236,32 @@ make research-check-deterministic
 - 더 공격적인 clause top-5 확장은 개선 5건/악화 2건으로, 다음 단계에서는
   clause-level diversity 또는 sibling suppression과 함께 재실험한다.
 
+후속 실험에서는 clause가 3개 이상인 명시적 복합 요청에만 clause 후보 depth를
+5로 넓히고, `geographic distance`처럼 자연어와 operationId가 어긋나는
+BFCL 수학/지리 표현을 keyword scorer에 보강했다. 비교 기준은
+`origin/codex/bfcl-clause-expansion`이며, artifact는
+`/tmp/gtc-clause-expansion-base/bfcl-deterministic.json`,
+`/tmp/gtc-research-check/bfcl-deterministic.json`,
+`/tmp/gtc-x2bee-sweep-clause-diversity.json`이다.
+
+- 전체 BFCL deterministic 기준 `recall@5`는 `0.9295 -> 0.9325`,
+  `all_tools_found@5`는 `0.904 -> 0.908`, `ndcg@5`는
+  `0.8316 -> 0.832768`로 올랐다.
+- `parallel_multiple recall@5`는 `0.8875 -> 0.8925`,
+  `parallel all_tools_found@5`는 `0.95 -> 0.96`,
+  `parallel_multiple all_tools_found@5`는 `0.76 -> 0.77`로 개선했다.
+- 케이스 단위 recall 개선은 4건
+  (`parallel_69`, `parallel_135`, `parallel_multiple_62`,
+  `parallel_multiple_112`)이고, recall 악화 케이스는 0건이다.
+- `mrr`은 `0.814133 -> 0.813833`으로 미세하게 낮아졌다. 이 변경은
+  top-1 정밀도 개선이 아니라 복합 요청에서 expected tool을 top-5 안에 더
+  안정적으로 넣는 recall/diversity 개선으로 본다.
+- X2BEE BO Swagger scale sweep은 1084개 unique tool 기준 `hit@3=1.00`,
+  `expected recall@3=1.00`, `top3=1.00`, `mrr=0.83`으로 회귀 없이 통과했다.
+- 전역 sibling suppression은 `parallel_multiple_195` 일부를 개선했지만
+  악화 케이스가 크게 늘어 폐기했다. sibling/alias 보정은 앞으로도 broad rule이
+  아니라 query/operation evidence가 강한 좁은 규칙으로만 승격한다.
+
 ## 승격 기준
 
 연구 변경은 아래 순서로 승격한다.
