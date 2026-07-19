@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-07-20
+
+### Added
+- **OpenAPI collection readiness report** — `graph_tool_call.analyze.analyze_openapi_collection(...)` and `ToolGraph.analyze_openapi()` produce deterministic API Collection readiness summaries, issue codes, coverage metrics, graph-readiness metrics, and recommendations for XGEN-style registration flows.
+- **OpenAPI inspect CLI** — `graph-tool-call inspect-openapi SOURCE [--json]` exposes the readiness report from the command line while preserving the existing private/internal URL safety policy.
+- **OpenAPI execution contracts** — ingest now preserves richer request/response contracts including server variables, security contracts, parameter content, map/nullable/combinator/discriminator hints, response headers/links/envelope aliases, body media types, parameter serialization, root JSON bodies, nested array bodies, and raw request bodies.
+- **OpenAPI execution diagnostics** — request preflight, argument validation, response diagnostics, response body views, raw array/body validation, discriminator validation, executable defaults, and body-view producer binding make plan readiness and execution failure causes more visible.
+- **XGEN research validation loop** — fast development checks, XGEN API-scale acceptance/sweep benchmarks, contract signal ablations, and BFCL failure inspection artifacts document reproducible product-readiness gates.
+
+### Changed
+- **Field alias retrieval** — XGEN-style OpenAPI field aliases and execution contract signals are indexed for retrieval so opaque operation and field names remain searchable.
+- **OpenAPI operation IDs** — duplicate operation IDs are deterministically deduplicated during ingest.
+
+### Fixed
+- **OpenAPI credential defaults** — implicit API key/credential fields no longer get unsafe default bindings.
+- **Discriminator safety** — mismatched discriminator branch fields are rejected instead of being silently bound.
+
 ## [0.25.0] - 2026-07-18
 
 ### Added
