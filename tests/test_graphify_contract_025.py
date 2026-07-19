@@ -1167,6 +1167,9 @@ def test_target_action_priority_for_query_maps_generic_korean_and_english_intent
     update = target_action_priority_for_query("권한 수정")
     delete = target_action_priority_for_query("세션 revoke")
     action = target_action_priority_for_query("send notification")
+    detail_after_search = target_action_priority_for_query("상품명으로 검색해서 상품 상세를 보여줘")
+    audit_read = target_action_priority_for_query("사용자 계정 변경 감사 로그 조회")
+    notification = target_action_priority_for_query("워크플로우 담당자에게 알림 보내줘")
 
     assert search["search"] > search["read"]
     assert read["read"] > read["search"]
@@ -1174,6 +1177,10 @@ def test_target_action_priority_for_query_maps_generic_korean_and_english_intent
     assert update["update"] > update["read"]
     assert delete["delete"] > delete["read"]
     assert action["action"] > action["read"]
+    assert detail_after_search["read"] > detail_after_search["search"]
+    assert audit_read["read"] > audit_read.get("update", 0)
+    assert notification["create"] > notification["update"]
+    assert notification["action"] > notification["update"]
     assert target_action_priority_for_query("nonsense") == {}
 
 

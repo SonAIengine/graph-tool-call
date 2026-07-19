@@ -46,11 +46,11 @@ live acceptance run을 별도로 둔다.
 현재 상태는 "감이 아니라 수치로 검증 가능한 XGEN 적용 기준선"이다. 다만
 row-source upper bound 대비 아직 10pt 이상 손실이 있고, 복합 tool set 선택에서
 retrieval miss와 candidate ambiguity가 크다. XGEN deterministic fixture에서는
-target recall@5가 `1.00`이지만 query-action target selector exact@5는 `0.80`
-이다. 즉 top-5 안에 정답을 넣는 단계와 그중 실제 target을 고르는 단계가
-분리된 병목으로 보인다. X2BEE-scale에서는 target이 top-10 후보 안에 들어오는
-baseline은 확인됐지만, top-5 압축, producer chain, XGEN target selector까지
-이어지는 검증은 계속 연구 대상이다.
+target recall@5와 query-action target selector exact@5가 모두 `1.00`까지
+올라왔다. 즉 built-in fixture에서는 top-5 안에 정답을 넣는 단계와 그중 실제
+target을 고르는 단계가 모두 통과한다. X2BEE-scale에서는 target이 top-10 후보
+안에 들어오는 baseline과 top-3 압축 hard-case 개선은 확인됐지만, producer
+chain과 target selector까지 live scale로 이어지는 검증은 계속 연구 대상이다.
 
 `2026-07-19` rank-compression branch에서는 X2BEE live sweep에서 기존 hard
 case인 `order_query_ko`, `page_role_buttons_ko`, `settlement_compare_ko`,
@@ -258,10 +258,11 @@ Goal: recall을 유지하면서 candidate ambiguity를 줄인다.
   - `2026-07-19`: XGEN deterministic benchmark에
     `selected_target`, `target_selector_rank`, `target_selector_exact`,
     `target_action_priority`, `target_rank_signals`를 기록한다. 현재
-    `--suite all` 기준 target recall@5는 `1.00`이지만 selector exact@5는
-    `0.80`이라, 다음 개선은 `product_detail_ko`, `audit_logs_ko`,
-    `notify_assignee_ko` 같은 action/resource disambiguation miss를 줄이는
-    쪽으로 잡는다.
+    `--suite all` 기준 target recall@5와 selector exact@5가 모두 `1.00`이다.
+  - `2026-07-19`: `product_detail_ko`, `audit_logs_ko`, `notify_assignee_ko`
+    miss를 줄이기 위해 query-action priority에 detail-after-search,
+    audit-log-read, notification-send disambiguation을 추가했다. XGEN
+    deterministic selector exact@5는 `0.80`에서 `1.00`으로 올랐다.
 - 2차: optional embedding rerank
 - 3차: optional small model rerank
 - 성공 기준은 top-k=5 exact 상승과 ambiguity 비증가다.
