@@ -231,9 +231,14 @@ format은 OpenAPI top-level part 구조를 유지한다.
 JSON wrapper를 만들지 않고 synthetic root `body` slot 또는 단일 body argument를
 raw bytes로 전송한다. 문자열은 UTF-8 bytes로, bytes/file-like 값은 원문 bytes로
 보존한다.
+OpenAPI parameter/body의 `default`와 JSON Schema `const`는 caller가 해당
+non-path input을 생략했을 때 executable default로 적용한다. 명시적으로 들어온
+argument는 덮어쓰지 않고, `example`은 실행값으로 사용하지 않는다. 적용된 값은
+`applied_defaults` diagnostic에 location/source/value와 함께 남긴다.
 `validate_request(tool, params)`는 네트워크 호출 없이 `valid`,
 `missing_required`, `missing_security`, `invalid_arguments`,
-`unused_arguments`, `used_arguments`, `selected_content_type`을 반환한다.
+`unused_arguments`, `used_arguments`, `selected_content_type`,
+`applied_defaults`를 반환한다.
 기본적으로 required input이나 선언된 security credential이 빠져 있거나,
 제공된 argument가 enum/type/범위/길이/pattern/array/object constraint를
 위반하면 `build_request()`/`execute()`가 `OpenAPIRequestValidationError`를

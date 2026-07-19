@@ -12,6 +12,7 @@ Usage::
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 import urllib.error
@@ -24,6 +25,7 @@ from graph_tool_call.core.tool import ToolSchema
 
 _RESERVED_QUERY_CHARS = ":/?#[]@!$&'()*+,;="
 _HTTP_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+_NO_DEFAULT = object()
 
 
 class OpenAPIRequestValidationError(ValueError):
@@ -76,6 +78,7 @@ class HttpExecutor:
         timeout: int = 30,
         validate_required: bool = True,
         validate_values: bool = True,
+        apply_defaults: bool = True,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._headers = dict(headers) if headers else {}
@@ -84,6 +87,7 @@ class HttpExecutor:
         self._timeout = timeout
         self._validate_required = validate_required
         self._validate_values = validate_values
+        self._apply_defaults = apply_defaults
 
     def build_request(
         self,
@@ -100,17 +104,29 @@ class HttpExecutor:
         if not metadata or metadata.get("source") != "openapi":
             raise ValueError(f"Tool '{tool.name}' is not an OpenAPI tool")
 
+        method = metadata["method"].upper()
+        path_template: str = metadata["path"]
+        api_metadata = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
+        original_arguments = arguments
+        effective_arguments, _applied_defaults = _arguments_with_openapi_defaults(
+            tool,
+            arguments,
+            api_metadata,
+            metadata,
+            method=method,
+            path_template=path_template,
+            enabled=self._apply_defaults,
+        )
+
         if self._validate_required:
-            diagnostics = self.validate_request(tool, arguments)
+            diagnostics = self.validate_request(tool, original_arguments)
             if _preflight_blocks_request(
                 diagnostics,
                 validate_values=self._validate_values,
             ):
                 raise OpenAPIRequestValidationError(tool.name, diagnostics)
+        arguments = effective_arguments
 
-        method = metadata["method"].upper()
-        path_template: str = metadata["path"]
-        api_metadata = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
         location_by_param = _location_by_param(api_metadata)
         parameter_metadata = _parameter_metadata_by_name(api_metadata)
 
@@ -241,6 +257,15 @@ class HttpExecutor:
         method = str(metadata["method"]).upper()
         path_template = str(metadata["path"])
         api_metadata = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
+        arguments, applied_defaults = _arguments_with_openapi_defaults(
+            tool,
+            arguments,
+            api_metadata,
+            metadata,
+            method=method,
+            path_template=path_template,
+            enabled=self._apply_defaults,
+        )
         location_by_param = _location_by_param(api_metadata)
         known_names = _iter_known_argument_names(tool, api_metadata, path_template=path_template)
         known_name_set = set(known_names)
@@ -295,6 +320,7 @@ class HttpExecutor:
             "unused_arguments": unused_arguments,
             "used_arguments": used_by_location,
             "selected_content_type": selected_content_type,
+            "applied_defaults": applied_defaults,
         }
 
     def execute(
@@ -385,6 +411,94 @@ class HttpExecutor:
                 except json.JSONDecodeError:
                     result["body"] = req.data.decode("utf-8", errors="replace")
         return result
+
+
+def _arguments_with_openapi_defaults(
+    tool: ToolSchema,
+    arguments: dict[str, Any],
+    api_metadata: dict[str, Any],
+    metadata: dict[str, Any],
+    *,
+    method: str,
+    path_template: str,
+    enabled: bool,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if not enabled:
+        return arguments, []
+
+    effective = dict(arguments)
+    applied: list[dict[str, Any]] = []
+
+    def apply_default(
+        name: str,
+        location: str,
+        row: dict[str, Any],
+        *,
+        source: str,
+        content_type: str = "",
+    ) -> None:
+        if not name or location == "path" or name in effective:
+            return
+        value_source, value = _openapi_static_default(row)
+        if value is _NO_DEFAULT:
+            return
+        effective[name] = copy.deepcopy(value)
+        item: dict[str, Any] = {
+            "name": name,
+            "location": location,
+            "source": source,
+            "value_source": value_source,
+            "value": copy.deepcopy(value),
+        }
+        if content_type:
+            item["content_type"] = content_type
+        _copy_validation_hint(row, item)
+        applied.append(item)
+
+    for row in api_metadata.get("parameters") or []:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "")
+        location = str(row.get("in") or "")
+        if location in {"query", "header", "cookie"}:
+            apply_default(name, location, row, source="openapi_parameter")
+
+    location_by_param = _location_by_param(api_metadata)
+    body_params = {
+        name: effective[name]
+        for name in _iter_known_argument_names(tool, api_metadata, path_template=path_template)
+        if name in effective and location_by_param.get(name) == "body"
+    }
+    selected_content_type = (
+        _request_content_type(api_metadata, metadata, body_params)
+        if method in ("POST", "PUT", "PATCH")
+        else ""
+    )
+    for row in _body_rows(
+        api_metadata,
+        content_type=selected_content_type,
+        include_content_type_rows=False,
+    ):
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("field_name") or "")
+        apply_default(
+            name,
+            "body",
+            row,
+            source="request_body",
+            content_type=selected_content_type,
+        )
+
+    return effective, applied
+
+
+def _openapi_static_default(row: dict[str, Any]) -> tuple[str, Any]:
+    if "const" in row and row.get("const") is not None:
+        return "const", row["const"]
+    if "default" in row and row.get("default") is not None:
+        return "default", row["default"]
+    return "", _NO_DEFAULT
 
 
 def _iter_known_argument_names(

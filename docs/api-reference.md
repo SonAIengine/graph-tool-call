@@ -153,6 +153,10 @@ OpenAPI field direction is enforced before graph/search promotion:
   arguments. For example `$.items[*].goodsNo` plus `$.items[*].quantity` is
   rendered as `{"items": [{"goodsNo": "...", "quantity": 1}]}`, and required
   container fields are not reported missing when their leaf fields are present.
+- OpenAPI parameter/body `default` values and JSON Schema `const` values are
+  applied as executable defaults when the caller omits a non-path input. User
+  supplied values are never overwritten, and `example` values are not used as
+  live request data.
 - Declared success-response headers are exposed as `api_contract.produces` rows
   with `location=response_header` and `json_path=$.headers.<Name>`, so cursor,
   `Location`, `ETag`, and token-like handoff headers can participate in
@@ -223,6 +227,10 @@ nested leaf arguments can be grouped back into the encoded top-level part, e.g.
 Other declared request-body media types such as `text/plain` and
 `application/octet-stream` are sent as raw body bytes rather than JSON-wrapped
 payloads; the synthetic root `body` slot is used when present.
+By default, `HttpExecutor` applies OpenAPI `default` and JSON Schema `const`
+values for omitted non-path parameters and request-body fields before validation
+and request rendering. Pass `apply_defaults=False` to keep strict caller-only
+execution. Applied values are reported in `validate_request()` diagnostics.
 
 `HttpExecutor.validate_request(tool, params)` returns structured preflight
 diagnostics for XGEN popup/resume flows:
@@ -246,6 +254,8 @@ diagnostics for XGEN popup/resume flows:
 - `unused_arguments`: provided arguments that are not part of the tool contract
 - `used_arguments`: classified path/query/header/cookie/body argument names
 - `selected_content_type`: request body media type selected from OpenAPI metadata
+- `applied_defaults`: OpenAPI `default` / JSON Schema `const` values applied
+  before validation and rendering, with location, source, and value metadata
 
 By default, `build_request()` and `execute()` raise
 `OpenAPIRequestValidationError` before network I/O when required inputs,

@@ -693,6 +693,171 @@ class TestBuildRequest:
             "filter[sort][0][direction]=desc"
         )
 
+    def test_openapi_parameter_defaults_are_applied_to_request_and_diagnostics(self):
+        tool = _make_tool(
+            name="searchItems",
+            method="GET",
+            path="/items",
+            params=[
+                ToolParam(name="page", type="integer", required=True),
+                ToolParam(name="X-Site-No", type="string", required=True),
+                ToolParam(name="locale", type="string", required=True),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {
+                    "name": "page",
+                    "in": "query",
+                    "required": True,
+                    "field_type": "integer",
+                    "default": 1,
+                },
+                {
+                    "name": "X-Site-No",
+                    "in": "header",
+                    "required": True,
+                    "field_type": "string",
+                    "default": "10",
+                },
+                {
+                    "name": "locale",
+                    "in": "cookie",
+                    "required": True,
+                    "field_type": "string",
+                    "default": "ko",
+                },
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {})
+        req = executor.build_request(tool, {})
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_required"] == []
+        assert diagnostics["used_arguments"] == {
+            "path": [],
+            "query": ["page"],
+            "header": ["X-Site-No"],
+            "cookie": ["locale"],
+            "body": [],
+        }
+        assert [
+            (row["location"], row["name"], row["value_source"], row["value"])
+            for row in diagnostics["applied_defaults"]
+        ] == [
+            ("query", "page", "default", 1),
+            ("header", "X-Site-No", "default", "10"),
+            ("cookie", "locale", "default", "ko"),
+        ]
+        assert req.full_url == "https://api.example.com/items?page=1"
+        assert req.headers["X-site-no"] == "10"
+        assert req.headers["Cookie"] == "locale=ko"
+
+    def test_openapi_body_defaults_and_consts_are_applied(self):
+        tool = _make_tool(
+            name="createOrder",
+            method="POST",
+            path="/orders",
+            params=[
+                ToolParam(name="status", type="string", required=True),
+                ToolParam(name="channel", type="string", required=True),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "request_body": {
+                "required": True,
+                "content_type": "application/json",
+                "fields": [
+                    {
+                        "field_name": "status",
+                        "json_path": "$.status",
+                        "field_type": "string",
+                        "required": True,
+                        "default": "READY",
+                    },
+                    {
+                        "field_name": "channel",
+                        "json_path": "$.channel",
+                        "field_type": "string",
+                        "required": True,
+                        "const": "BO",
+                    },
+                ],
+            }
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {})
+        req = executor.build_request(tool, {})
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["missing_required"] == []
+        assert [
+            (row["location"], row["name"], row["value_source"], row["value"])
+            for row in diagnostics["applied_defaults"]
+        ] == [
+            ("body", "status", "default", "READY"),
+            ("body", "channel", "const", "BO"),
+        ]
+        assert json.loads(req.data.decode("utf-8")) == {
+            "status": "READY",
+            "channel": "BO",
+        }
+
+    def test_openapi_examples_do_not_satisfy_missing_required_inputs(self):
+        tool = _make_tool(
+            name="searchItems",
+            method="GET",
+            path="/items",
+            params=[ToolParam(name="q", type="string", required=True)],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {
+                    "name": "q",
+                    "in": "query",
+                    "required": True,
+                    "field_type": "string",
+                    "example": "shoes",
+                }
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tool, {})
+
+        assert diagnostics["valid"] is False
+        assert diagnostics["applied_defaults"] == []
+        assert diagnostics["missing_required"][0]["name"] == "q"
+
+    def test_openapi_default_application_can_be_disabled(self):
+        tool = _make_tool(
+            name="searchItems",
+            method="GET",
+            path="/items",
+            params=[ToolParam(name="page", type="integer", required=True)],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {
+                    "name": "page",
+                    "in": "query",
+                    "required": True,
+                    "field_type": "integer",
+                    "default": 1,
+                }
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com", apply_defaults=False)
+
+        diagnostics = executor.validate_request(tool, {})
+
+        assert diagnostics["valid"] is False
+        assert diagnostics["applied_defaults"] == []
+        assert diagnostics["missing_required"][0]["name"] == "page"
+
     def test_openapi_path_header_and_cookie_serialization_styles(self):
         tool = _make_tool(
             name="scopedItems",
