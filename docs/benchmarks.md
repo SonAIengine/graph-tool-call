@@ -449,6 +449,24 @@ poetry run python -m benchmarks.bfcl_tool_selection.sweep \
   --output /tmp/gtc-bfcl-xgen-027-rank-hints.json
 ```
 
+For call-count mismatches and generic-helper over-selection, run
+`--candidate-selection-guidance`. This leaves the candidate set unchanged and
+only strengthens the model's selection policy: prefer exact/specific tools,
+cohesive API families for related multi-call requests, and avoid decomposing one
+operation when a single provided tool already satisfies it.
+
+```bash
+poetry run python -m benchmarks.bfcl_tool_selection.sweep \
+  --categories simple_python,multiple,parallel,parallel_multiple \
+  --tool-sources row,retrieved \
+  --top-ks 5 \
+  --model qwen3.6-27b \
+  --llm-url http://127.0.0.1:8000/v1 \
+  --disable-thinking \
+  --candidate-selection-guidance \
+  --output /tmp/gtc-bfcl-xgen-027-selection-guidance.json
+```
+
 Recommended smoke with a native function-calling endpoint:
 
 ```bash

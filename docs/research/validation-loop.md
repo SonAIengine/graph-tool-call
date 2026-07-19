@@ -42,15 +42,25 @@ Gate failure가 `retrieval_miss`가 아니라 `candidate_ambiguity` 중심이면
 description에 graph rank hint만 붙이므로 검색 알고리즘 개선과 LLM-facing 후보
 표현 개선을 분리해서 볼 수 있다.
 
+`call_count_mismatch`나 generic helper over-selection이 보이면
+`--candidate-selection-guidance` ablation을 별도로 돌린다. 이 옵션은 후보 set을
+바꾸지 않고 system prompt의 선택 정책만 강화한다.
+
 `2026-07-19` qwen3.6-27B small smoke artifact:
 
 - baseline: `/tmp/gtc-bfcl-qwen027-smoke-live.json`
 - rank-hint ablation: `/tmp/gtc-bfcl-qwen027-rankhint-smoke.json`
+- selection-guidance smoke: `/tmp/gtc-bfcl-qwen027-guidance-smoke.json`
 - hard cases: `/tmp/gtc-bfcl-qwen027-smoke-hardcases`
+- selection-guidance hard cases: `/tmp/gtc-bfcl-qwen027-guidance-hardcases`
 
 두 smoke 모두 retrieved `k=5` exact `0.85`, retrieval recall `1.00`,
 `parallel_multiple` exact `0.60`이다. 즉 다음 작은 subset은 retrieval miss가
 아니라 candidate ambiguity와 call-count mismatch를 우선 본다.
+Selection guidance를 full 20-case smoke에 적용하면 retrieved exact는
+`0.85 -> 0.90`으로 오르고 `parallel_3` call-count mismatch는 pass로 바뀐다.
+남은 실패는 `parallel_multiple_2`, `parallel_multiple_4`의 sibling ambiguity 2건이다.
+따라서 다음 깊은 개선은 prompt만이 아니라 candidate equivalence/grouping 쪽이다.
 
 ## 실행 타깃
 

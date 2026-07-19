@@ -262,6 +262,14 @@ Required work:
   - 같은 조건에서 `--retrieval-rank-hints` ablation은 retrieved exact `0.85`,
     `parallel_multiple` `0.60`으로 aggregate를 올리지 못했다. 따라서 단순 rank
     문구보다 후보 동등성/그룹화/복합 call set 구성 개선을 우선한다.
+  - `--candidate-selection-guidance` 20-case smoke는 retrieved exact를
+    `0.85 -> 0.90`으로 올렸고 `parallel_3`의 call-count mismatch를 pass로
+    바꿨다. 다만 `parallel_multiple` exact는 `0.60`으로 남아
+    `parallel_multiple_2`의
+    `circle_properties.get` sibling 선택과 `parallel_multiple_4`의
+    `calculate_area_under_curve` sibling 선택은 해결하지 못했다. 이 결과는
+    LLM-facing prompt 정책과 candidate equivalence/grouping을 별도 workstream으로
+    나눠야 함을 보여준다.
 
 ## Paper-Ready Target
 

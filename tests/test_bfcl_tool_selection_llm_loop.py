@@ -13,6 +13,7 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     _classify_failure,
     _evaluate_official_predictions,
     _evaluate_predictions,
+    _messages_for_case,
     _prepare_tools_for_model,
     run_model_benchmark,
     write_bfcl_result_files,
@@ -63,6 +64,15 @@ def test_prepare_tools_can_prefix_retrieval_rank_hints():
     assert description.startswith("Graph retrieval rank #4")
     assert "Prefer lower rank numbers" in description
     assert description.endswith("Calculate area of a circle.")
+
+
+def test_messages_can_include_candidate_selection_guidance():
+    plain = _messages_for_case("calculate area")
+    guided = _messages_for_case("calculate area", candidate_selection_guidance=True)
+
+    assert "Candidate selection guidance" not in plain[0]["content"]
+    assert "Candidate selection guidance" in guided[0]["content"]
+    assert "same namespace or API family" in guided[0]["content"]
 
 
 def test_prediction_matcher_allows_optional_missing_and_parallel_order():
