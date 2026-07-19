@@ -586,6 +586,8 @@ Latest local deterministic suite result on 2026-07-19:
 | Tools | `22` |
 | Graph edges | `35` |
 | Target recall@5 | `1.00` |
+| Target selector exact@5 | `0.80` |
+| Target selector misses | `3` |
 | Producer recall | `1.00` |
 | Candidate plan coverage | `1.00` |
 | Producer-needed cases | `12` |
@@ -607,9 +609,12 @@ Latest local deterministic suite result on 2026-07-19:
 Each case includes `synthesis_diagnostics` in the JSON artifact. The diagnostic
 block records the synthesis `stage`, `target`, `plan_id`, selected producers,
 candidate signals, user-input or missing fields, failure details when present,
-and retrieval evidence such as target rank and token budget used. This is the
-XGEN-facing trace shape for explaining why a plan was synthesized, why a field
-requires a popup/resume input, or where target selection failed.
+retrieval evidence such as target rank and token budget used, and the
+deterministic target selector evidence. The selector evidence records
+`selected_target`, `target_selector_rank`, `target_selector_exact`,
+`target_action_priority`, and per-candidate rank signals. This is the XGEN-facing
+trace shape for explaining why a plan was synthesized, why a field requires a
+popup/resume input, or where target selection failed.
 
 The JSON artifact also includes `producer_expansion_lift`, which compares the
 `target_only` baseline with `graph_with_producers`. This makes producer
@@ -618,6 +623,15 @@ detail: in the current suite it raises producer recall by `+0.80`, candidate
 plan coverage by `+0.50`, and binding support by `+0.80` overall. The lift is
 concentrated in the `12` producer-needed cases; the `3` direct search/list cases
 keep their target-only candidate set, so `unneeded_expansion_cases=0`.
+
+The target selector metric is intentionally separate from target recall. The
+current deterministic suite has `target_recall_at_k=1.00`, so the expected tool
+is always present in the retrieved top-5, but the query-action selector picks
+the exact target in only `12/15` cases (`0.80`). The current misses are
+`product_detail_ko`, `audit_logs_ko`, and `notify_assignee_ko`; these are the
+next reranking/disambiguation research targets. Producer expansion and plan
+synthesis still use the expected target as the controlled seed in this benchmark
+so selector regressions do not hide producer-chain regressions.
 
 ### XGEN Scale Acceptance
 

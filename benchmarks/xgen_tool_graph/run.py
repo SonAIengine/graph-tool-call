@@ -28,6 +28,7 @@ from graph_tool_call.graphify import (
     build_io_contract,
     ingest_openapi_graphify,
     retrieve_graphify,
+    target_action_priority_for_query,
 )
 from graph_tool_call.ingest.openapi import ingest_openapi
 from graph_tool_call.plan import PathSynthesizer, Plan, PlanSynthesisError
@@ -54,6 +55,12 @@ class QueryEvaluation:
     query: str
     expected_target: str
     retrieved: list[str]
+    selected_target: str
+    target_selector_candidates: list[str]
+    target_selector_rank: int | None
+    target_selector_exact: float
+    target_selector_strategy: str
+    target_action_priority: dict[str, int]
     candidates: list[str]
     expansion_seed: list[str]
     candidate_count: int
@@ -255,6 +262,7 @@ def run_all_benchmarks(
     )
     aggregate_metrics = [
         "target_recall_at_k",
+        "target_selector_exact",
         "mean_target_mrr",
         "producer_recall",
         "candidate_plan_coverage",
@@ -279,6 +287,9 @@ def run_all_benchmarks(
         "edge_count": sum(int(report["edge_count"]) for report in suite_reports),
         "synthesis_failure_count": sum(
             int(row.get("synthesis_failure_count") or 0) for row in graph_summaries
+        ),
+        "target_selector_miss_count": sum(
+            int(row.get("target_selector_miss_count") or 0) for row in graph_summaries
         ),
         "user_input_slot_case_count": sum(
             int(row.get("user_input_slot_case_count") or 0) for row in graph_summaries
@@ -365,6 +376,25 @@ def evaluate_case(
     )
     latency_ms = (time.perf_counter() - start) * 1000
     retrieved = [str(row["name"]) for row in retrieval.get("results") or []]
+    target_action_priority = target_action_priority_for_query(query)
+    selector_set = build_candidate_set(
+        retrieved,
+        graph_payload["tools"],
+        target_action_priority=target_action_priority,
+        max_hops=0,
+    )
+    selector_candidates = [str(name) for name in selector_set.get("target_candidates") or []]
+    selected_target = selector_candidates[0] if selector_candidates else ""
+    target_selector_rank = _rank_of(selector_candidates, expected_target)
+    target_selector_exact = 1.0 if selected_target == expected_target else 0.0
+    target_selector = _target_selector_evidence(
+        expected_target=expected_target,
+        selected_target=selected_target,
+        selector_candidates=selector_candidates,
+        target_selector_rank=target_selector_rank,
+        target_selector_exact=target_selector_exact,
+        selector_set=selector_set,
+    )
     # The baseline isolates what happens after a target selector has picked the
     # expected target but before producer expansion adds prerequisite tools.
     expansion_seed = [expected_target] if expected_target in retrieved else retrieved[:1]
@@ -412,6 +442,7 @@ def evaluate_case(
         stage="target_selection",
         retrieval=retrieval,
         target_rank=target_rank,
+        target_selector=target_selector,
     )
     if expected_target in candidates:
         try:
@@ -432,6 +463,7 @@ def evaluate_case(
                 plan,
                 retrieval=retrieval,
                 target_rank=target_rank,
+                target_selector=target_selector,
             )
         except PlanSynthesisError as exc:
             failure = exc.to_dict()
@@ -440,6 +472,7 @@ def evaluate_case(
                 target=expected_target,
                 retrieval=retrieval,
                 target_rank=target_rank,
+                target_selector=target_selector,
                 failure=failure,
             )
         except Exception as exc:  # pragma: no cover - defensive benchmark diagnostics
@@ -448,6 +481,7 @@ def evaluate_case(
                 target=expected_target,
                 retrieval=retrieval,
                 target_rank=target_rank,
+                target_selector=target_selector,
                 failure={
                     "stage": "synthesize",
                     "reason": type(exc).__name__,
@@ -467,6 +501,12 @@ def evaluate_case(
         query=query,
         expected_target=expected_target,
         retrieved=retrieved,
+        selected_target=selected_target,
+        target_selector_candidates=selector_candidates,
+        target_selector_rank=target_selector_rank,
+        target_selector_exact=target_selector_exact,
+        target_selector_strategy="query_action_priority",
+        target_action_priority=target_action_priority,
         candidates=candidates,
         expansion_seed=expansion_seed,
         candidate_count=len(candidates),
@@ -499,6 +539,7 @@ def _base_synthesis_diagnostics(
     stage: str,
     retrieval: dict[str, Any],
     target_rank: int | None,
+    target_selector: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "stage": stage,
@@ -510,6 +551,7 @@ def _base_synthesis_diagnostics(
         "missing_fields": [],
         "failure": {},
         "retrieval_evidence": _retrieval_evidence(retrieval, target_rank),
+        "target_selector": target_selector,
     }
 
 
@@ -518,6 +560,7 @@ def _plan_synthesis_diagnostics(
     *,
     retrieval: dict[str, Any],
     target_rank: int | None,
+    target_selector: dict[str, Any],
 ) -> dict[str, Any]:
     metadata = plan.metadata or {}
     synthesis = metadata.get("synthesis") or {}
@@ -538,6 +581,7 @@ def _plan_synthesis_diagnostics(
         "missing_fields": _missing_fields_from_slots(user_input_slots, fallbacks),
         "failure": {},
         "retrieval_evidence": _retrieval_evidence(retrieval, target_rank),
+        "target_selector": target_selector,
     }
 
 
@@ -546,6 +590,7 @@ def _failure_synthesis_diagnostics(
     target: str,
     retrieval: dict[str, Any],
     target_rank: int | None,
+    target_selector: dict[str, Any],
     failure: dict[str, Any],
 ) -> dict[str, Any]:
     return {
@@ -558,6 +603,7 @@ def _failure_synthesis_diagnostics(
         "missing_fields": _missing_fields_from_failure(failure),
         "failure": dict(failure),
         "retrieval_evidence": _retrieval_evidence(retrieval, target_rank),
+        "target_selector": target_selector,
     }
 
 
@@ -569,6 +615,31 @@ def _retrieval_evidence(retrieval: dict[str, Any], target_rank: int | None) -> d
         "token_budget_used": int(stats.get("token_budget_used") or 0),
         "seed_count": len(stats.get("seeds") or []),
         "expanded_from_count": len(stats.get("expanded_from") or []),
+    }
+
+
+def _target_selector_evidence(
+    *,
+    expected_target: str,
+    selected_target: str,
+    selector_candidates: list[str],
+    target_selector_rank: int | None,
+    target_selector_exact: float,
+    selector_set: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "strategy": "query_action_priority",
+        "expected_target": expected_target,
+        "selected_target": selected_target,
+        "target_selector_rank": target_selector_rank,
+        "target_selector_exact": target_selector_exact,
+        "target_candidates": selector_candidates,
+        "target_action_priority": dict(selector_set.get("target_action_priority") or {}),
+        "target_rank_signals": [
+            dict(row)
+            for row in selector_set.get("target_rank_signals") or []
+            if isinstance(row, dict)
+        ],
     }
 
 
@@ -660,6 +731,7 @@ def _summarize(
         "pipeline": name,
         "cases": len(rows),
         "target_recall_at_k": _mean(r.target_recall_at_k for r in rows),
+        "target_selector_exact": _mean(r.target_selector_exact for r in rows),
         "mean_target_mrr": _mean(r.target_mrr for r in rows),
         "producer_recall": _mean(r.producer_recall for r in rows),
         "candidate_plan_coverage": _mean(r.candidate_plan_coverage for r in rows),
@@ -679,6 +751,7 @@ def _summarize(
             _diagnostics_coverage(r.synthesis_diagnostics) for r in rows
         ),
         "synthesis_failure_count": sum(1 for r in rows if r.failure_reason),
+        "target_selector_miss_count": sum(1 for r in rows if r.target_selector_exact < 1.0),
         "user_input_slot_case_count": sum(
             1 for r in rows if (r.synthesis_diagnostics or {}).get("user_input_slots")
         ),
@@ -992,11 +1065,13 @@ def _print_report(report: dict[str, Any]) -> None:
         )
         print(f"status={summary['status']} families={','.join(summary['fixture_families'])}")
         print(
-            "  target@K={target:.2f} mrr={mrr_:.2f} producers={prod:.2f} "
+            "  target@K={target:.2f} selector={selector:.2f} mrr={mrr_:.2f} "
+            "producers={prod:.2f} "
             "candidate_plan={cand_plan:.2f} plan_exact={plan:.2f} "
             "bindings={bind:.2f} diagnostics={diag:.2f} candidates={cand:.2f} "
             "latency={latency:.2f}ms".format(
                 target=summary["target_recall_at_k"],
+                selector=summary["target_selector_exact"],
                 mrr_=summary["mean_target_mrr"],
                 prod=summary["producer_recall"],
                 cand_plan=summary["candidate_plan_coverage"],
@@ -1036,11 +1111,13 @@ def _print_report(report: dict[str, Any]) -> None:
             row = graph["summary"]
             print(
                 "  [{suite}] status={status} cases={cases} target@K={target:.2f} "
-                "plan_exact={plan:.2f} unneeded_expansion={unneeded}".format(
+                "selector={selector:.2f} plan_exact={plan:.2f} "
+                "unneeded_expansion={unneeded}".format(
                     suite=suite_report["suite"],
                     status=row.get("status", "n/a"),
                     cases=row["cases"],
                     target=row["target_recall_at_k"],
+                    selector=row["target_selector_exact"],
                     plan=row["plan_exact_match"],
                     unneeded=row["unneeded_expansion_case_count"],
                 )
@@ -1057,11 +1134,13 @@ def _print_report(report: dict[str, Any]) -> None:
         summary = pipeline["summary"]
         print(f"[{pipeline['name']}] status={summary.get('status', 'n/a')}")
         print(
-            "  target@K={target:.2f} mrr={mrr_:.2f} producers={prod:.2f} "
+            "  target@K={target:.2f} selector={selector:.2f} mrr={mrr_:.2f} "
+            "producers={prod:.2f} "
             "candidate_plan={cand_plan:.2f} plan_exact={plan:.2f} "
             "bindings={bind:.2f} diagnostics={diag:.2f} candidates={cand:.2f} "
             "latency={latency:.2f}ms".format(
                 target=summary["target_recall_at_k"],
+                selector=summary["target_selector_exact"],
                 mrr_=summary["mean_target_mrr"],
                 prod=summary["producer_recall"],
                 cand_plan=summary["candidate_plan_coverage"],
