@@ -18,6 +18,8 @@ EVIDENCE_PROVEN = "proven"
 EVIDENCE_RUN = "run"
 EVIDENCE_LLM_CURATED = "llm_curated"
 EVIDENCE_MANUAL = "manual"
+EVIDENCE_API_CONTRACT = "api_contract"
+EVIDENCE_OPENAPI_LINK = "openapi_link"
 
 _DATA_FLOW_RELATIONS = frozenset({"requires", "precedes", "produces_for"})
 _BINDING_RE = re.compile(r"^\$\{(\w+)\.(.+)\}$")
@@ -85,10 +87,11 @@ def merge_graph_edges(existing: dict[str, Any], incoming: dict[str, Any]) -> dic
     merged = dict(left)
     merged.update(
         {
+            "confidence": _stronger_confidence(left.get("confidence"), right.get("confidence")),
             "conf_score": conf_score,
             "evidence_sources": sources,
             "evidence": " | ".join(evidence_notes),
-            "data_flow": right.get("data_flow") or left.get("data_flow"),
+            "data_flow": _merge_data_flow(left.get("data_flow"), right.get("data_flow")),
         }
     )
     if left.get("kind") == "data" or right.get("kind") == "data":
@@ -99,6 +102,43 @@ def merge_graph_edges(existing: dict[str, Any], incoming: dict[str, Any]) -> dic
         merged["is_manual"] = True
     if left.get("deleted_by_user") or right.get("deleted_by_user"):
         merged["deleted_by_user"] = True
+    return merged
+
+
+def _stronger_confidence(left: Any, right: Any) -> str:
+    left_value = _confidence_value(left or "EXTRACTED")
+    right_value = _confidence_value(right or "EXTRACTED")
+    rank = {"AMBIGUOUS": 1, "INFERRED": 2, "EXTRACTED": 3}
+    if rank.get(right_value, 0) > rank.get(left_value, 0):
+        return right_value
+    return left_value
+
+
+def _merge_data_flow(left: Any, right: Any) -> Any:
+    if not isinstance(left, dict):
+        return right if right not in (None, {}, []) else left
+    if not isinstance(right, dict):
+        return left
+    merged = dict(left)
+    keep_explicit_link_source = bool(merged.get("link_name")) and not right.get("link_name")
+    for key, value in right.items():
+        if value in (None, "", [], {}):
+            continue
+        if key == "parameters" and isinstance(merged.get(key), list) and isinstance(value, list):
+            seen = {repr(item) for item in merged[key]}
+            for item in value:
+                marker = repr(item)
+                if marker not in seen:
+                    merged[key].append(item)
+                    seen.add(marker)
+            continue
+        if (
+            keep_explicit_link_source
+            and key in {"from_path", "from_field"}
+            and merged.get(key) not in (None, "", [], {})
+        ):
+            continue
+        merged[key] = value
     return merged
 
 
@@ -211,9 +251,11 @@ def _infer_kind(relation: Any) -> str:
 
 
 __all__ = [
+    "EVIDENCE_API_CONTRACT",
     "EVIDENCE_LLM_CURATED",
     "EVIDENCE_MANUAL",
     "EVIDENCE_NAME_BASED",
+    "EVIDENCE_OPENAPI_LINK",
     "EVIDENCE_PROVEN",
     "EVIDENCE_RUN",
     "EVIDENCE_STRUCTURAL",

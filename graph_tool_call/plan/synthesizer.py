@@ -1098,6 +1098,10 @@ class PathSynthesizer:
         if match is None:
             return f"body.{field_name}" if field_name else "body"
 
+        body_view_path = _body_view_binding_path(match)
+        if body_view_path:
+            return body_view_path
+
         raw = match.get("json_path") or ""
         return _normalize_jsonpath_for_binding(raw)
 
@@ -1190,6 +1194,62 @@ def _normalize_jsonpath_for_binding(raw: str) -> str:
     if path.startswith("."):
         path = path[1:]
     return path.replace("[*]", "[0]")
+
+
+def _body_view_binding_path(produce: dict[str, Any]) -> str:
+    """Return a PlanRunner binding path for HttpExecutor ``body_view`` output.
+
+    OpenAPI response envelopes can expose the useful payload as
+    ``result["body_view"]["value"]`` while keeping the raw HTTP response under
+    ``result["body"]``. When a produce row carries envelope/collection hints,
+    prefer that stable runtime view for inter-step bindings. Rows without those
+    hints keep the historical canonical response-root path.
+    """
+
+    raw = str(produce.get("json_path") or "")
+    if not raw:
+        return ""
+
+    collection_path = str(produce.get("response_collection_path") or "")
+    if collection_path and _jsonpath_startswith(raw, collection_path):
+        relative = _strip_jsonpath_prefix(raw, collection_path)
+        if relative == "$":
+            return "body_view.value[0]"
+        if relative.startswith("$."):
+            return "body_view.value[0]." + _normalize_jsonpath_for_binding(relative)
+        if relative.startswith("$["):
+            return "body_view.value[0]" + _normalize_jsonpath_for_binding(relative)
+
+    envelope_path = str(produce.get("response_envelope_path") or "")
+    if envelope_path and _jsonpath_startswith(raw, envelope_path):
+        relative = _strip_jsonpath_prefix(raw, envelope_path)
+        if relative == "$":
+            return "body_view.value"
+        if relative.startswith("$."):
+            return "body_view.value." + _normalize_jsonpath_for_binding(relative)
+        if relative.startswith("$["):
+            return "body_view.value" + _normalize_jsonpath_for_binding(relative)
+
+    return ""
+
+
+def _strip_jsonpath_prefix(path: str, prefix: str) -> str:
+    if not path or not prefix or not _jsonpath_startswith(path, prefix):
+        return ""
+    if path == prefix:
+        return "$"
+    tail = path[len(prefix) :]
+    if tail.startswith((".", "[")):
+        return "$" + tail
+    return ""
+
+
+def _jsonpath_startswith(path: str, prefix: str) -> bool:
+    if not path or not prefix:
+        return False
+    if prefix == "$":
+        return path == "$" or path.startswith("$.") or path.startswith("$[")
+    return path == prefix or path.startswith(f"{prefix}.") or path.startswith(f"{prefix}[")
 
 
 __all__ = [

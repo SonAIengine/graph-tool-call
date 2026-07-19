@@ -43,6 +43,62 @@ def test_extract_leaves_array_of_objects():
     assert any("[*]" in p for p in paths), "array → [*] wildcard 경로"
 
 
+def test_extract_leaves_additional_properties_object_values():
+    schema = {
+        "type": "object",
+        "properties": {
+            "data": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "object",
+                    "required": ["goodsNo"],
+                    "properties": {
+                        "goodsNo": {"type": "string", "description": "상품 번호"},
+                        "goodsNm": {"type": "string"},
+                    },
+                },
+            }
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert by_name["goodsNo"].json_path == "$.data.*.goodsNo"
+    assert by_name["goodsNo"].description == "상품 번호"
+    assert by_name["goodsNo"].required is False
+    assert by_name["goodsNo"].additional_properties is True
+    assert by_name["goodsNo"].map_value is True
+    assert by_name["goodsNo"].map_key_placeholder == "*"
+    assert by_name["goodsNm"].json_path == "$.data.*.goodsNm"
+
+
+def test_extract_leaves_additional_properties_primitive_map_keeps_parent_field():
+    schema = {
+        "type": "object",
+        "properties": {
+            "labels": {
+                "type": "object",
+                "additionalProperties": {"type": "string", "description": "label value"},
+            }
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+
+    assert len(leaves) == 1
+    assert leaves[0].field_name == "labels"
+    assert leaves[0].json_path == "$.labels.*"
+    assert leaves[0].field_type == "string"
+    assert leaves[0].additional_properties is True
+
+
+def test_extract_leaves_root_primitive_map_without_field_name_is_empty():
+    schema = {"type": "object", "additionalProperties": {"type": "string"}}
+
+    assert extract_leaves(schema, base_path="$") == []
+
+
 def test_extract_leaves_captures_enum():
     schema = {
         "type": "object",
@@ -53,6 +109,303 @@ def test_extract_leaves_captures_enum():
     leaves = extract_leaves(schema, base_path="$")
     status = next(leaf for leaf in leaves if leaf.field_name == "status")
     assert status.enum == ["pending", "shipped"]
+
+
+def test_extract_leaves_preserves_schema_hints():
+    schema = {
+        "type": "object",
+        "properties": {
+            "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "default": "2026-01-01T00:00:00Z",
+                "example": "2026-07-19T12:00:00Z",
+                "nullable": True,
+                "pattern": "^\\d{4}-",
+                "minLength": 10,
+                "maxLength": 30,
+            },
+            "quantity": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 99,
+            },
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert by_name["createdAt"].format == "date-time"
+    assert by_name["createdAt"].default == "2026-01-01T00:00:00Z"
+    assert by_name["createdAt"].example == "2026-07-19T12:00:00Z"
+    assert by_name["createdAt"].nullable is True
+    assert by_name["createdAt"].pattern == "^\\d{4}-"
+    assert by_name["createdAt"].min_length == 10
+    assert by_name["createdAt"].max_length == 30
+    assert by_name["quantity"].minimum == 1
+    assert by_name["quantity"].maximum == 99
+
+
+def test_extract_leaves_normalizes_nullable_dialect_variants():
+    schema = {
+        "type": "object",
+        "required": ["memo", "legacyCount", "status"],
+        "properties": {
+            "memo": {"type": ["string", "null"]},
+            "legacyCount": {"type": "integer", "x-nullable": True},
+            "status": {
+                "anyOf": [
+                    {"type": "string", "enum": ["READY"]},
+                    {"type": "null"},
+                ]
+            },
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert by_name["memo"].field_type == "string"
+    assert by_name["memo"].nullable is True
+    assert by_name["memo"].required is True
+    assert by_name["legacyCount"].field_type == "integer"
+    assert by_name["legacyCount"].nullable is True
+    assert by_name["status"].field_type == "string"
+    assert by_name["status"].enum == ["READY"]
+    assert by_name["status"].nullable is True
+    assert by_name["status"].required is True
+
+
+def test_extract_leaves_treats_const_as_single_value_enum():
+    schema = {
+        "type": "object",
+        "required": ["paymentType"],
+        "properties": {
+            "paymentType": {"type": "string", "const": "card"},
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    payment_type = next(leaf for leaf in leaves if leaf.field_name == "paymentType")
+
+    assert payment_type.const == "card"
+    assert payment_type.enum == ["card"]
+    assert payment_type.required is True
+
+
+def test_extract_leaves_preserves_read_write_direction_hints():
+    schema = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "readOnly": True},
+            "password": {"type": "string", "writeOnly": True},
+            "profile": {
+                "type": "object",
+                "readOnly": True,
+                "properties": {"displayName": {"type": "string"}},
+            },
+            "auditEvents": {
+                "type": "array",
+                "writeOnly": True,
+                "items": {
+                    "type": "object",
+                    "properties": {"reason": {"type": "string"}},
+                },
+            },
+            "oldField": {"type": "string", "deprecated": True},
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert by_name["id"].read_only is True
+    assert by_name["password"].write_only is True
+    assert by_name["displayName"].read_only is True
+    assert by_name["reason"].write_only is True
+    assert by_name["oldField"].deprecated is True
+
+
+def test_extract_leaves_unions_oneof_branches_without_global_required():
+    schema = {
+        "oneOf": [
+            {
+                "type": "object",
+                "required": ["paymentType", "cardNumber"],
+                "properties": {
+                    "paymentType": {"type": "string", "enum": ["card"]},
+                    "cardNumber": {"type": "string"},
+                },
+            },
+            {
+                "type": "object",
+                "required": ["paymentType", "bankCode"],
+                "properties": {
+                    "paymentType": {"type": "string", "enum": ["bank"]},
+                    "bankCode": {"type": "string"},
+                },
+            },
+        ]
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert set(by_name) == {"paymentType", "cardNumber", "bankCode"}
+    assert by_name["paymentType"].enum == ["card", "bank"]
+    assert by_name["paymentType"].required is False
+    assert by_name["paymentType"].required_in_branch is True
+    assert by_name["paymentType"].schema_combinator == "oneOf"
+    assert by_name["paymentType"].schema_branch is None
+    assert by_name["paymentType"].schema_branch_count == 2
+    assert by_name["paymentType"].schema_branches == [0, 1]
+    assert by_name["cardNumber"].required is False
+    assert by_name["cardNumber"].required_in_branch is True
+    assert by_name["cardNumber"].schema_branch == 0
+    assert by_name["bankCode"].schema_branch == 1
+
+
+def test_extract_leaves_preserves_discriminator_branch_hints():
+    schema = {
+        "oneOf": [
+            {
+                "type": "object",
+                "x-graph-tool-call-ref": "#/components/schemas/CardPayment",
+                "required": ["cardNumber"],
+                "properties": {"cardNumber": {"type": "string"}},
+            },
+            {
+                "type": "object",
+                "x-graph-tool-call-ref": "#/components/schemas/BankPayment",
+                "required": ["bankCode"],
+                "properties": {"bankCode": {"type": "string"}},
+            },
+        ],
+        "discriminator": {
+            "propertyName": "paymentType",
+            "mapping": {
+                "card": "#/components/schemas/CardPayment",
+                "bank": "#/components/schemas/BankPayment",
+            },
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert set(by_name) == {"paymentType", "cardNumber", "bankCode"}
+    assert by_name["paymentType"].enum == ["card", "bank"]
+    assert by_name["paymentType"].discriminator_property == "paymentType"
+    assert by_name["paymentType"].discriminator_values == ["card", "bank"]
+    assert by_name["cardNumber"].schema_ref == "#/components/schemas/CardPayment"
+    assert by_name["cardNumber"].discriminator_value == "card"
+    assert by_name["cardNumber"].required_in_branch is True
+    assert by_name["bankCode"].schema_ref == "#/components/schemas/BankPayment"
+
+
+def test_extract_leaves_unions_anyof_array_item_branches():
+    schema = {
+        "type": "array",
+        "items": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {"productNo": {"type": "string"}},
+                },
+                {
+                    "type": "object",
+                    "properties": {"couponNo": {"type": "string"}},
+                },
+            ]
+        },
+    }
+
+    leaves = extract_leaves(schema, base_path="$.items")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert set(by_name) == {"productNo", "couponNo"}
+    assert by_name["productNo"].json_path == "$.items[*].productNo"
+    assert by_name["productNo"].schema_combinator == "anyOf"
+    assert by_name["couponNo"].schema_branch == 1
+
+
+def test_extract_leaves_preserves_oneof_nested_under_allof():
+    schema = {
+        "allOf": [
+            {
+                "type": "object",
+                "required": ["orderNo"],
+                "properties": {"orderNo": {"type": "string"}},
+            },
+            {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "required": ["cancelReason"],
+                        "properties": {"cancelReason": {"type": "string"}},
+                    },
+                    {
+                        "type": "object",
+                        "required": ["returnReason"],
+                        "properties": {"returnReason": {"type": "string"}},
+                    },
+                ]
+            },
+        ]
+    }
+
+    leaves = extract_leaves(schema, base_path="$")
+    by_name = {leaf.field_name: leaf for leaf in leaves}
+
+    assert set(by_name) == {"orderNo", "cancelReason", "returnReason"}
+    assert by_name["orderNo"].required is True
+    assert by_name["cancelReason"].required is False
+    assert by_name["cancelReason"].required_in_branch is True
+    assert by_name["returnReason"].schema_branch == 1
+
+
+def test_operation_extractors_filter_inverse_direction_fields():
+    operation = {
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["id", "password"],
+                        "properties": {
+                            "id": {"type": "string", "readOnly": True},
+                            "password": {"type": "string", "writeOnly": True},
+                        },
+                    }
+                }
+            }
+        },
+        "responses": {
+            "200": {
+                "description": "OK",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "readOnly": True},
+                                "password": {"type": "string", "writeOnly": True},
+                            },
+                        }
+                    }
+                },
+            }
+        },
+    }
+
+    consumes = {leaf.field_name: leaf for leaf in extract_consumes_for_operation(operation)}
+    produces = {leaf.field_name: leaf for leaf in extract_produces_for_operation(operation)}
+
+    assert "id" not in consumes
+    assert consumes["password"].write_only is True
+    assert produces["id"].read_only is True
+    assert "password" not in produces
 
 
 # ─── consumes — enum 추출 회귀 (리뷰 🟢 항목) ──
@@ -155,6 +508,25 @@ def test_extract_produces_walks_response_body():
     leaves = extract_produces_for_operation(operation)
     paths = {leaf.json_path for leaf in leaves}
     assert "$.data.id" in paths
+
+
+def test_extract_produces_uses_wildcard_content_type():
+    operation = {
+        "responses": {
+            "200": {
+                "content": {
+                    "*/*": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {"orderId": {"type": "string"}},
+                        }
+                    }
+                }
+            }
+        }
+    }
+    leaves = extract_produces_for_operation(operation)
+    assert [leaf.field_name for leaf in leaves] == ["orderId"]
 
 
 def test_consumes_skips_optional_when_required_only():

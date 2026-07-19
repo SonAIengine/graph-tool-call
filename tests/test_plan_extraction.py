@@ -82,6 +82,41 @@ def test_extract_produced_entities_by_json_path():
     assert ents["goodsNo"] == "G1"
 
 
+def test_extract_produced_entities_by_map_wildcard_path():
+    tool_meta = {
+        "produces": [
+            {
+                "field_name": "goodsNo",
+                "json_path": "$.data.*.goodsNo",
+                "semantic_tag": "goods.id",
+                "additional_properties": True,
+                "map_value": True,
+                "map_key_placeholder": "*",
+            },
+        ]
+    }
+    output = {"data": {"G2": {"goodsNo": "P2"}, "G1": {"goodsNo": "P1"}}}
+
+    ents = extract_produced_entities(tool_meta, output)
+
+    assert ents["goods.id"] == "P1"
+    assert ents["goodsNo"] == "P1"
+
+
+def test_extract_produced_entities_map_wildcard_empty_map_returns_empty():
+    tool_meta = {
+        "produces": [
+            {
+                "field_name": "goodsNo",
+                "json_path": "$.data.*.goodsNo",
+                "semantic_tag": "goods.id",
+            },
+        ]
+    }
+
+    assert extract_produced_entities(tool_meta, {"data": {}}) == {}
+
+
 def test_extract_produced_entities_bfs_fallback_when_shape_differs():
     """envelope 가 벗겨져 json_path 가 안 맞아도 field-name BFS 로 회수."""
     tool_meta = {
@@ -94,6 +129,61 @@ def test_extract_produced_entities_bfs_fallback_when_shape_differs():
     ents = extract_produced_entities(tool_meta, output)
     assert ents["a.id"] == "X1"
     assert ents["aId"] == "X1"
+
+
+def test_extract_produced_entities_tries_value_path_aliases_before_bfs():
+    tool_meta = {
+        "produces": [
+            {
+                "field_name": "goodsNo",
+                "json_path": "$.data.items[*].goodsNo",
+                "semantic_tag": "goods.id",
+                "value_path_aliases": [
+                    "$.body.data.items[*].goodsNo",
+                    "$.items[*].goodsNo",
+                ],
+            },
+        ]
+    }
+    output = {
+        "goodsNo": "WRONG",
+        "body": {"data": {"items": [{"goodsNo": "G1"}]}},
+    }
+
+    ents = extract_produced_entities(tool_meta, output)
+
+    assert ents["goods.id"] == "G1"
+    assert ents["goodsNo"] == "G1"
+
+
+def test_extract_produced_entities_reads_executor_body_view_collection():
+    tool_meta = {
+        "produces": [
+            {
+                "field_name": "goodsNo",
+                "json_path": "$.data.items[*].goodsNo",
+                "semantic_tag": "goods.id",
+                "response_envelope_path": "$.data",
+                "response_collection_path": "$.data.items[*]",
+                "response_item_path": "$.data.items[*]",
+            },
+        ]
+    }
+    output = {
+        "body_view": {
+            "mode": "collection",
+            "source_path": "$.data.items[*]",
+            "value": [
+                {"goodsNo": "G1"},
+                {"goodsNo": "G2"},
+            ],
+        }
+    }
+
+    ents = extract_produced_entities(tool_meta, output)
+
+    assert ents["goods.id"] == "G1"
+    assert ents["goodsNo"] == "G1"
 
 
 def test_extract_produced_entities_skips_unlocatable():

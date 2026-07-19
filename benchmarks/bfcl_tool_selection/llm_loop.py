@@ -37,9 +37,11 @@ from benchmarks.bfcl_tool_selection.run import (
     BFCL_REF,
     DEFAULT_CATEGORIES,
     _build_category_graph,
+    _filter_case_rows,
     _load_jsonl,
     _parse_categories,
     _question_text,
+    load_case_ids,
 )
 from benchmarks.metrics import recall_at_k
 from benchmarks.xgen_tool_graph.llm_loop import (
@@ -115,6 +117,7 @@ def run_model_benchmark(
     ref: str = BFCL_REF,
     top_k: int = 5,
     limit: int | None = None,
+    case_ids: set[str] | None = None,
     tool_source: str = "retrieved",
     tool_choice: str = "required",
     evaluator: str = "local",
@@ -143,6 +146,7 @@ def run_model_benchmark(
             ref=ref,
             top_k=top_k,
             limit=limit,
+            case_ids=case_ids,
             tool_source=tool_source,
             tool_choice=tool_choice,
             evaluator=evaluator,
@@ -175,6 +179,7 @@ def run_model_benchmark(
         "graph_tool_call_version": __version__,
         "top_k": top_k,
         "limit": limit,
+        "case_filter_count": len(case_ids) if case_ids is not None else 0,
         "cache_dir": str(cache_dir) if cache_dir else "",
         "cache_namespace": cache_namespace,
         "concurrency": max(1, concurrency),
@@ -193,6 +198,7 @@ def evaluate_category_model(
     ref: str,
     top_k: int,
     limit: int | None,
+    case_ids: set[str] | None,
     tool_source: str,
     tool_choice: str,
     evaluator: str,
@@ -210,7 +216,9 @@ def evaluate_category_model(
     question_rows = _load_jsonl(category, kind="question", data_root=data_root, ref=ref)
     answer_rows = _load_jsonl(category, kind="answer", data_root=data_root, ref=ref)
     answers_by_id = {str(row.get("id")): row for row in answer_rows}
-    case_rows = question_rows[: max(0, limit)] if limit is not None else question_rows
+    case_rows = _filter_case_rows(question_rows, case_ids)
+    if limit is not None:
+        case_rows = case_rows[: max(0, limit)]
 
     tg = _build_category_graph(category, question_rows)
     tools_by_name = _tools_by_name(question_rows)
@@ -1454,6 +1462,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ref", default=BFCL_REF)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--case-ids-file",
+        type=Path,
+        default=None,
+        help="Optional JSON/JSONL/text file containing BFCL case IDs to evaluate.",
+    )
     parser.add_argument("--tool-source", choices=["retrieved", "row"], default="retrieved")
     parser.add_argument("--tool-choice", choices=["required", "auto"], default="required")
     parser.add_argument(
@@ -1538,6 +1552,7 @@ def main(argv: list[str] | None = None) -> int:
             ref=args.ref,
             top_k=args.top_k,
             limit=args.limit,
+            case_ids=load_case_ids(args.case_ids_file),
             tool_source=args.tool_source,
             tool_choice=args.tool_choice,
             evaluator=args.evaluator,

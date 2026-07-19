@@ -22,7 +22,12 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     run_model_benchmark,
     write_bfcl_result_files,
 )
-from benchmarks.bfcl_tool_selection.run import BFCL_REF, DEFAULT_CATEGORIES, _parse_categories
+from benchmarks.bfcl_tool_selection.run import (
+    BFCL_REF,
+    DEFAULT_CATEGORIES,
+    _parse_categories,
+    load_case_ids,
+)
 from benchmarks.xgen_tool_graph.llm_loop import DEFAULT_OLLAMA_URL
 
 
@@ -35,6 +40,7 @@ def run_sweep(
     ref: str = BFCL_REF,
     top_ks: list[int] | None = None,
     limit: int | None = None,
+    case_ids: set[str] | None = None,
     tool_sources: list[str] | None = None,
     evaluator: str = "local",
     official_model_name: str = DEFAULT_OFFICIAL_MODEL_NAME,
@@ -64,6 +70,7 @@ def run_sweep(
                     ref=ref,
                     top_k=top_k,
                     limit=limit,
+                    case_ids=case_ids,
                     tool_source=tool_source,
                     evaluator=evaluator,
                     official_model_name=official_model_name,
@@ -94,6 +101,7 @@ def run_sweep(
         "tool_sources": selected_tool_sources,
         "top_ks": selected_top_ks,
         "limit": limit,
+        "case_filter_count": len(case_ids) if case_ids is not None else 0,
         "repeats": max(1, repeats),
         "concurrency": max(1, concurrency),
         "progress": progress,
@@ -296,6 +304,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ref", default=BFCL_REF)
     parser.add_argument("--top-ks", default="3,5,10")
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--case-ids-file",
+        type=Path,
+        default=None,
+        help="Optional JSON/JSONL/text file containing BFCL case IDs to evaluate.",
+    )
     parser.add_argument("--tool-sources", default="row,retrieved")
     parser.add_argument("--evaluator", choices=["local", "official"], default="local")
     parser.add_argument("--official-model-name", default=DEFAULT_OFFICIAL_MODEL_NAME)
@@ -346,6 +360,7 @@ def main(argv: list[str] | None = None) -> int:
             ref=args.ref,
             top_ks=_parse_ints(args.top_ks),
             limit=args.limit,
+            case_ids=load_case_ids(args.case_ids_file),
             tool_sources=_parse_strings(args.tool_sources),
             evaluator=args.evaluator,
             official_model_name=args.official_model_name,

@@ -6,6 +6,7 @@ from pathlib import Path
 from benchmarks.bfcl_tool_selection.run import (
     _expected_argument_names,
     _expected_tool_names,
+    load_case_ids,
     run_benchmark,
 )
 
@@ -151,6 +152,27 @@ def test_bfcl_tool_selection_runs_against_local_jsonl_fixture(tmp_path: Path):
 
     assert limited["categories"][0]["case_count"] == 1
     assert limited["categories"][0]["corpus_tool_count"] == 4
+
+    case_ids_path = tmp_path / "case_ids.json"
+    case_ids_path.write_text(json.dumps(["simple_python_1"]), encoding="utf-8")
+    filtered = run_benchmark(
+        categories=["simple_python"],
+        data_root=data_root,
+        top_k=2,
+        case_ids=load_case_ids(case_ids_path),
+    )
+
+    assert filtered["case_filter_count"] == 1
+    assert filtered["categories"][0]["case_count"] == 1
+    assert filtered["categories"][0]["cases"][0]["case_id"] == "simple_python_1"
+    assert filtered["categories"][0]["corpus_tool_count"] == 4
+
+    jsonl_ids_path = tmp_path / "case_ids.jsonl"
+    jsonl_ids_path.write_text(
+        '{"case_id":"simple_python_0"}\n# comment\nsimple_python_1\n',
+        encoding="utf-8",
+    )
+    assert load_case_ids(jsonl_ids_path) == {"simple_python_0", "simple_python_1"}
 
 
 def _write_jsonl(path: Path, rows: list[dict]):

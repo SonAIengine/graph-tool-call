@@ -91,7 +91,7 @@ def _normalize_swagger20(spec: dict[str, Any]) -> NormalizedSpec:
             servers.append({"url": f"{scheme}://{host}{base_path}"})
 
     # Convert definitions -> schemas
-    schemas = spec.get("definitions", {})
+    schemas = _normalize_nullable_markers(copy.deepcopy(spec.get("definitions", {})))
 
     # Build info with consumes/produces metadata
     info = dict(spec.get("info", {}))
@@ -101,6 +101,7 @@ def _normalize_swagger20(spec: dict[str, Any]) -> NormalizedSpec:
         info["produces"] = spec["produces"]
 
     paths = copy.deepcopy(spec.get("paths", {}))
+    paths = _normalize_nullable_markers(paths)
     paths = _ensure_operation_ids(paths)
 
     return NormalizedSpec(
@@ -113,33 +114,69 @@ def _normalize_swagger20(spec: dict[str, Any]) -> NormalizedSpec:
     )
 
 
-def _convert_nullable_anyof(schema: Any) -> Any:
-    """Recursively convert OpenAPI 3.1 anyOf-with-null to 3.0 nullable pattern."""
+def _is_null_schema(schema: Any) -> bool:
+    return isinstance(schema, dict) and schema.get("type") == "null"
+
+
+def _normalize_nullable_markers(schema: Any) -> Any:
+    """Recursively convert nullable dialect variants to ``nullable: true``.
+
+    Real-world Swagger/OpenAPI specs mix OpenAPI 3.0 ``nullable``,
+    Swagger vendor ``x-nullable``, and JSON Schema null unions. Downstream
+    graph/Planflow code should see one stable hint instead of dialect noise.
+    """
     if not isinstance(schema, dict):
         return schema
 
     result = {}
     for key, value in schema.items():
-        if key == "anyOf" and isinstance(value, list):
-            non_null = [s for s in value if not (isinstance(s, dict) and s.get("type") == "null")]
+        if key in {"anyOf", "oneOf"} and isinstance(value, list):
+            non_null = [s for s in value if not _is_null_schema(s)]
             has_null = len(non_null) < len(value)
             if has_null and len(non_null) == 1:
                 # Flatten: merge the non-null schema and add nullable
-                merged = _convert_nullable_anyof(non_null[0])
+                merged = _normalize_nullable_markers(non_null[0])
                 if isinstance(merged, dict):
                     result.update(merged)
                 result["nullable"] = True
                 continue
-            # Keep anyOf but recurse into each element
-            result[key] = [_convert_nullable_anyof(s) for s in value]
+            # Keep true alternatives, but remove the null pseudo-branch and
+            # preserve the nullable hint so field extraction does not treat
+            # ``null`` as a separate schema branch.
+            result[key] = [_normalize_nullable_markers(s) for s in non_null]
+            if has_null:
+                result["nullable"] = True
+        elif key == "type" and isinstance(value, list):
+            non_null_types = [item for item in value if item != "null"]
+            if len(non_null_types) < len(value):
+                result["nullable"] = True
+                if len(non_null_types) == 1:
+                    result[key] = non_null_types[0]
+                elif non_null_types:
+                    result[key] = non_null_types
+                else:
+                    result[key] = "string"
+            else:
+                result[key] = list(value)
+        elif key == "x-nullable":
+            if value:
+                result["nullable"] = True
+        elif key == "nullable":
+            if value or result.get("nullable"):
+                result["nullable"] = True
         elif isinstance(value, dict):
-            result[key] = _convert_nullable_anyof(value)
+            result[key] = _normalize_nullable_markers(value)
         elif isinstance(value, list):
-            result[key] = [_convert_nullable_anyof(item) for item in value]
+            result[key] = [_normalize_nullable_markers(item) for item in value]
         else:
             result[key] = value
 
     return result
+
+
+def _convert_nullable_anyof(schema: Any) -> Any:
+    """Backward-compatible alias for the broader nullable normalizer."""
+    return _normalize_nullable_markers(schema)
 
 
 def _normalize_openapi31(spec: dict[str, Any]) -> NormalizedSpec:
@@ -147,10 +184,10 @@ def _normalize_openapi31(spec: dict[str, Any]) -> NormalizedSpec:
     raw = copy.deepcopy(spec)
 
     schemas = copy.deepcopy(spec.get("components", {}).get("schemas", {}))
-    schemas = {k: _convert_nullable_anyof(v) for k, v in schemas.items()}
+    schemas = {k: _normalize_nullable_markers(v) for k, v in schemas.items()}
 
     paths = copy.deepcopy(spec.get("paths", {}))
-    paths = _convert_nullable_anyof(paths)
+    paths = _normalize_nullable_markers(paths)
     paths = _ensure_operation_ids(paths)
 
     return NormalizedSpec(
@@ -168,6 +205,7 @@ def _normalize_openapi30(spec: dict[str, Any]) -> NormalizedSpec:
     raw = copy.deepcopy(spec)
 
     paths = copy.deepcopy(spec.get("paths", {}))
+    paths = _normalize_nullable_markers(paths)
     paths = _ensure_operation_ids(paths)
 
     return NormalizedSpec(
@@ -175,7 +213,9 @@ def _normalize_openapi30(spec: dict[str, Any]) -> NormalizedSpec:
         info=dict(spec.get("info", {})),
         servers=list(spec.get("servers", [])),
         paths=paths,
-        schemas=copy.deepcopy(spec.get("components", {}).get("schemas", {})),
+        schemas=_normalize_nullable_markers(
+            copy.deepcopy(spec.get("components", {}).get("schemas", {}))
+        ),
         raw=raw,
     )
 

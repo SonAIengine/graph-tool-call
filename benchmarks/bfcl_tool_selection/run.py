@@ -66,6 +66,7 @@ def run_benchmark(
     ref: str = BFCL_REF,
     top_k: int = 5,
     limit: int | None = None,
+    case_ids: set[str] | None = None,
     min_recall_at_5: float = 0.0,
 ) -> dict[str, Any]:
     """Run the BFCL-derived deterministic tool-selection benchmark."""
@@ -77,6 +78,7 @@ def run_benchmark(
             ref=ref,
             top_k=top_k,
             limit=limit,
+            case_ids=case_ids,
             min_recall_at_5=min_recall_at_5,
         )
         for category in selected
@@ -91,6 +93,7 @@ def run_benchmark(
         "graph_tool_call_version": __version__,
         "top_k": top_k,
         "limit": limit,
+        "case_filter_count": len(case_ids) if case_ids is not None else 0,
         "categories": [asdict(category) for category in evaluated],
         "summary": _summarize(overall_rows, min_recall_at_5=min_recall_at_5),
     }
@@ -103,12 +106,13 @@ def evaluate_category(
     ref: str,
     top_k: int,
     limit: int | None,
+    case_ids: set[str] | None,
     min_recall_at_5: float,
 ) -> BFCLCategoryEvaluation:
     question_rows = _load_jsonl(category, kind="question", data_root=data_root, ref=ref)
     answer_rows = _load_jsonl(category, kind="answer", data_root=data_root, ref=ref)
     answers_by_id = {str(row.get("id")): row for row in answer_rows}
-    case_rows = question_rows
+    case_rows = _filter_case_rows(question_rows, case_ids)
     if limit is not None:
         case_rows = case_rows[: max(0, limit)]
 
@@ -206,6 +210,67 @@ def _load_jsonl(
         with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310
             text = response.read().decode()
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def load_case_ids(path: Path | None) -> set[str] | None:
+    """Load a reusable BFCL case-id filter from JSON, JSONL, or plain text."""
+    if path is None:
+        return None
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return set()
+
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        ids: set[str] = set()
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith("{"):
+                try:
+                    ids.update(_case_ids_from_items([json.loads(stripped)]))
+                    continue
+                except json.JSONDecodeError:
+                    pass
+            ids.add(stripped)
+        return ids
+
+    ids: set[str] = set()
+    if isinstance(payload, list):
+        ids.update(_case_ids_from_items(payload))
+    elif isinstance(payload, dict):
+        if "case_ids" in payload:
+            ids.update(_case_ids_from_items(payload.get("case_ids") or []))
+        elif "cases" in payload:
+            ids.update(_case_ids_from_items(payload.get("cases") or []))
+        else:
+            ids.update(_case_ids_from_items([payload]))
+    return ids
+
+
+def _case_ids_from_items(items: Any) -> set[str]:
+    ids: set[str] = set()
+    if not isinstance(items, list):
+        items = [items]
+    for item in items:
+        if isinstance(item, str) and item.strip():
+            ids.add(item.strip())
+        elif isinstance(item, dict):
+            case_id = item.get("case_id") or item.get("id")
+            if case_id:
+                ids.add(str(case_id))
+    return ids
+
+
+def _filter_case_rows(
+    question_rows: list[dict[str, Any]],
+    case_ids: set[str] | None,
+) -> list[dict[str, Any]]:
+    if case_ids is None:
+        return question_rows
+    return [row for row in question_rows if str(row.get("id")) in case_ids]
 
 
 def _question_text(row: dict[str, Any]) -> str:
@@ -339,6 +404,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ref", default=BFCL_REF)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--case-ids-file",
+        type=Path,
+        default=None,
+        help="Optional JSON/JSONL/text file containing BFCL case IDs to evaluate.",
+    )
     parser.add_argument("--min-recall-at-5", type=float, default=0.0)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -349,6 +420,7 @@ def main(argv: list[str] | None = None) -> int:
         ref=args.ref,
         top_k=args.top_k,
         limit=args.limit,
+        case_ids=load_case_ids(args.case_ids_file),
         min_recall_at_5=args.min_recall_at_5,
     )
     if args.json:

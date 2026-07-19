@@ -189,6 +189,34 @@ result = tg.execute(
 )
 ```
 
+OpenAPI ingest keeps execution metadata such as parameter locations, content
+types, candidate request-body fields, examples, security schemes, response
+catalogs, and error responses under `tool.metadata["openapi"]`. The HTTP
+executor uses those facts for parameter serialization and JSON/form/multipart
+request bodies, and returns matched response metadata for success/error
+diagnostics. `HttpExecutor.validate_request()` provides missing-required,
+missing-security, invalid-argument, and unused-argument preflight diagnostics
+without network I/O; see [docs/api-reference.md](docs/api-reference.md#execution).
+Request contracts exclude OpenAPI `readOnly` fields and response contracts
+exclude `writeOnly` fields, keeping generated tool inputs and graph edges aligned
+with the direction in which each field can actually travel.
+OpenAPI `oneOf` / `anyOf` request and response schemas are read as a union of
+branch fields with branch evidence preserved, so graph construction and request
+validation do not silently drop every branch after the first one.
+Discriminator mappings and JSON Schema `const` values are preserved as branch
+selection evidence; if a request chooses a discriminator value, preflight
+diagnostics can report the missing fields for that selected branch only.
+When a Swagger/OpenAPI document declares only a weak `object` schema but
+provides concrete request or response examples, ingest derives additive
+`schema_inferred_from="example"` contract rows from those examples.
+Common response envelopes such as `code/message/data` also record wrapper,
+collection, and value-path aliases, so XGEN-style adapters can recover produced
+values from either raw OpenAPI bodies or normalized `body` wrappers.
+Retrieval indexes tool descriptions, tags, parameter names/descriptions, AI
+metadata, and curated/indexable IO fields. Promoted raw OpenAPI contract rows
+remain planning-first by default, so large Swagger specs do not flood BM25 with
+common identifier fields unless the caller explicitly opts in.
+
 ### Workflow planning
 
 `plan_workflow()` returns ordered execution chains with prerequisites — reducing agent round-trips from 3-4 to 1.
@@ -331,16 +359,23 @@ Detailed methodology, commands, limitations, and current numbers live in
 
 ### XGEN-style quality checks
 
-For API Collection / Planflow work, there are two focused checks: a deterministic
-engine benchmark and a BFCL-style model-in-the-loop benchmark.
+For API Collection / Planflow work, there are three focused checks: a deterministic
+engine benchmark, a live large-OpenAPI scale acceptance check, and a BFCL-style
+model-in-the-loop benchmark.
 
 | Benchmark | Model used | What it evaluates |
 |---|---|---|
 | `make xgen-benchmark` | none | graph-tool-call engine search, producer expansion, plan synthesis |
+| `make xgen-scale-acceptance` | none | X2BEE-scale Swagger UI discovery, dedupe, ingest, graph build, Korean search smoke |
+| `make xgen-scale-sweep` | none | one X2BEE-scale graph build, then top-K compression diagnostics for `k=3,5,10` |
+| `make xgen-scale-contract-ablation` | none | one X2BEE-scale spec load, then baseline vs promoted OpenAPI contract signal comparison |
 | `make xgen-llm-benchmark` | CLI `--model` value | whether that model actually calls `search_tools` and selects the right plan |
 
 ```bash
 make xgen-benchmark
+make xgen-scale-acceptance
+make xgen-scale-sweep
+make xgen-scale-contract-ablation
 make xgen-llm-benchmark
 poetry run python -m benchmarks.xgen_tool_graph.llm_loop \
   --model qwen3.6-27b \
@@ -350,6 +385,11 @@ poetry run python -m benchmarks.xgen_tool_graph.llm_loop \
 
 Current scores, caveats, and model-specific notes are documented in
 [docs/benchmarks.md](docs/benchmarks.md#xgen-style-tool-graph-search).
+For the XGEN tool graph research direction, use
+[docs/research/xgen-tool-graph-goals.md](docs/research/xgen-tool-graph-goals.md)
+as the roadmap and [docs/research/validation-loop.md](docs/research/validation-loop.md)
+as the day-to-day validation loop instead of running full model benchmarks after
+every change.
 
 ---
 

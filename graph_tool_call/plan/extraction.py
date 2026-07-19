@@ -13,9 +13,10 @@ Two jobs, one shared BFS core:
     synthesis as entities.
 
 Both are deterministic and stdlib-only. Matching prefers the declared
-``json_path`` (precise), then falls back to a breadth-first search keyed on
-``field_name`` — exact key first, then the loose separator/case-folded form
-shared with the synthesizer (:func:`_normalize_field_name`).
+``json_path`` (precise), then response shape aliases derived during ingest,
+then falls back to a breadth-first search keyed on ``field_name`` — exact key
+first, then the loose separator/case-folded form shared with the synthesizer
+(:func:`_normalize_field_name`).
 """
 
 from __future__ import annotations
@@ -146,11 +147,11 @@ def extract_produced_entities(tool_meta: dict[str, Any], output: Any) -> dict[st
     """Pull ``{semantic_tag: value, field_name: value}`` from *output*.
 
     Iterates the tool's ``produces`` schema. For each entry it first tries the
-    declared ``json_path`` (precise), then falls back to a field-name BFS.
-    Every located value is registered under **both** its ``semantic_tag`` and
-    ``field_name`` so the repairer's re-synthesis — which matches entities by
-    semantic first, field second — resolves either way. First value wins per
-    key (no clobber).
+    declared ``json_path`` (precise), then any additive ``value_path_aliases``,
+    then falls back to a field-name BFS. Every located value is registered
+    under **both** its ``semantic_tag`` and ``field_name`` so the repairer's
+    re-synthesis — which matches entities by semantic first, field second —
+    resolves either way. First value wins per key (no clobber).
     """
     produces = (tool_meta or {}).get("produces") or []
     entities: dict[str, Any] = {}
@@ -159,9 +160,12 @@ def extract_produced_entities(tool_meta: dict[str, Any], output: Any) -> dict[st
             continue
         field_name = p.get("field_name") or ""
         semantic = p.get("semantic_tag") or ""
-        json_path = p.get("json_path") or ""
 
-        value = _resolve_json_path(output, json_path)
+        value = None
+        for json_path in _candidate_json_paths(p):
+            value = _resolve_json_path(output, json_path)
+            if value is not None:
+                break
         if value is None and field_name:
             cands = find_value_paths(
                 output,
@@ -186,6 +190,70 @@ def extract_produced_entities(tool_meta: dict[str, Any], output: Any) -> dict[st
 # ---------------------------------------------------------------------------
 
 
+def _candidate_json_paths(produce: dict[str, Any]) -> list[str]:
+    paths: list[str] = []
+
+    def add(raw: Any) -> None:
+        path = str(raw or "")
+        if path and path not in paths:
+            paths.append(path)
+
+    add(produce.get("json_path"))
+    aliases = produce.get("value_path_aliases") or []
+    if isinstance(aliases, list):
+        for alias in aliases:
+            add(alias)
+    for path in _body_view_json_paths(produce):
+        add(path)
+    return paths
+
+
+def _body_view_json_paths(produce: dict[str, Any]) -> list[str]:
+    path = str(produce.get("json_path") or "")
+    if not path:
+        return []
+
+    paths: list[str] = []
+    collection_path = str(produce.get("response_collection_path") or "")
+    if collection_path and _json_path_startswith(path, collection_path):
+        relative = _strip_json_path_prefix(path, collection_path)
+        if relative == "$":
+            paths.append("$.body_view.value")
+        elif relative.startswith("$."):
+            paths.append("$.body_view.value[*]" + relative[1:])
+        elif relative.startswith("$["):
+            paths.append("$.body_view.value[*]" + relative[1:])
+
+    envelope_path = str(produce.get("response_envelope_path") or "")
+    if envelope_path and _json_path_startswith(path, envelope_path):
+        relative = _strip_json_path_prefix(path, envelope_path)
+        if relative == "$":
+            paths.append("$.body_view.value")
+        elif relative.startswith("$.") or relative.startswith("$["):
+            paths.append("$.body_view.value" + relative[1:])
+
+    return paths
+
+
+def _strip_json_path_prefix(path: str, prefix: str) -> str:
+    if not path or not prefix or not _json_path_startswith(path, prefix):
+        return ""
+    if path == prefix:
+        return "$"
+    tail = path[len(prefix) :]
+    if tail.startswith((".", "[")):
+        return "$" + tail
+    return ""
+
+
+def _json_path_startswith(path: str, prefix: str) -> bool:
+    if not path or not prefix:
+        return False
+    if prefix == "$":
+        return path == "$" or path.startswith("$.") or path.startswith("$[")
+    return path == prefix or path.startswith(f"{prefix}.") or path.startswith(f"{prefix}[")
+
+
 def _resolve_json_path(output: Any, raw: str) -> Any:
     """Tolerant walk of a ``$.a.b[*].c`` json_path against *output*.
 
@@ -206,7 +274,11 @@ def _resolve_json_path(output: Any, raw: str) -> Any:
 
     node = output
     for tok in _tokenize(path):
-        if tok.startswith("[") and tok.endswith("]"):
+        if tok == "*":
+            node = _first_value(node)
+            if node is None:
+                return None
+        elif tok.startswith("[") and tok.endswith("]"):
             try:
                 idx = int(tok[1:-1])
             except ValueError:
@@ -222,3 +294,16 @@ def _resolve_json_path(output: Any, raw: str) -> Any:
                 return None
             node = node[tok]
     return node
+
+
+def _first_value(node: Any) -> Any:
+    if isinstance(node, dict):
+        if not node:
+            return None
+        key = sorted(node, key=lambda item: str(item))[0]
+        return node[key]
+    if isinstance(node, (list, tuple)):
+        if not node:
+            return None
+        return node[0]
+    return None

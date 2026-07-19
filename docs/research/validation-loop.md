@@ -1,0 +1,238 @@
+# Research Validation Loop
+
+graph-tool-call search 연구는 full model benchmark를 매번 돌리면 속도가
+무너진다. 이 문서는 XGEN tool graph search 고도화 작업에서 사용할 검증
+계층, 실행 명령, artifact 규칙, 승격 기준을 고정한다.
+
+목표와 milestone 기준은 [`xgen-tool-graph-goals.md`](xgen-tool-graph-goals.md)를
+따른다. 이 문서는 그 목표를 빠르게 검증하기 위한 실행 루프다.
+
+## 목표
+
+- 일반 검색 로직 수정은 10분 안에 방향성을 판단한다.
+- LLM 호출은 마지막 증거로만 사용하고, 대부분의 ranking 실험은 deterministic
+  metric으로 거른다.
+- full BFCL model run은 release candidate 또는 README 수치 갱신 때만 실행한다.
+- 모든 benchmark 주장은 실행 artifact와 재현 명령으로 역추적 가능해야 한다.
+
+## 검증 계층
+
+| Tier | 목적 | 예상 시간 | LLM | 기본 명령 | 사용 시점 |
+|---|---|---:|:---:|---|---|
+| T0 unit | public contract와 빠른 회귀 | < 1분 | no | `make research-check-unit` | 거의 모든 수정 |
+| T1 deterministic | retrieval/graph/plan 품질 확인 | 1-3분 | no | `make research-check` | 검색/graph/fixture 수정 |
+| T2 failure subset | 이전 실패 케이스 재검증 | 5-15분 | optional | `CASE_IDS_FILE=/tmp/ids.txt make research-check-smoke` | ranking/rerank 실험 |
+| T2.5 XGEN scale | 실제 대형 OpenAPI acceptance/sweep | < 1분 | no | `make xgen-scale-sweep` | XGEN 적용성 판단 |
+| T3 model smoke | 소량 실제 tool-call 확인 | 5-15분 | yes | `make research-check-smoke` | 후보 구성이 바뀐 경우 |
+| T4 release | publish 후보 검증 | 1-5시간 | yes/manual | `make release-check` + full BFCL commands | README/MR/release |
+
+T0-T1은 매일 자주 돌린다. T2-T3는 실험 branch에서만 선택적으로 돌린다.
+T4는 milestone 또는 publish candidate에서만 허용한다.
+
+## 실행 타깃
+
+```bash
+make research-check-unit
+make research-check-deterministic
+make research-check
+
+ARTIFACT_DIR=/tmp/gtc-exp-001 make research-check
+
+MODEL=qwen3.6-27b \
+LLM_URL=http://127.0.0.1:8000/v1 \
+DISABLE_THINKING=1 \
+SMOKE_LIMIT=20 \
+ARTIFACT_DIR=/tmp/gtc-exp-001-smoke \
+make research-check-smoke
+```
+
+`make research-check`는 T1 deterministic tier의 별칭이다. 기본 artifact는
+`/tmp/gtc-research-check`에 남는다.
+
+## XGEN Scale Acceptance
+
+XGEN 적용성은 BFCL만으로 판단하지 않는다. XGEN이 실제로 붙을 API Collection은
+X2BEE BO처럼 Swagger UI 하나가 여러 OpenAPI group으로 나뉘고, 중복 operation을
+포함하며, 한국어 summary와 축약 operationId가 섞인 1천 tool급 문서다.
+
+```bash
+make xgen-scale-acceptance \
+  OUT=/tmp/gtc-x2bee-scale-acceptance.json
+
+make xgen-scale-sweep \
+  TOP_KS=3,5,10 \
+  OUT=/tmp/gtc-x2bee-scale-sweep.json
+
+make xgen-scale-contract-ablation \
+  CONTEXT_FIELDS=siteNo,langCd,sysGbCd \
+  OUT=/tmp/gtc-x2bee-scale-contract-ablation.json
+```
+
+`xgen-scale-contract-ablation`은 같은 live spec 로드 결과에서 baseline과
+contract-promoted graph를 비교한다. 기본 promoted row는 `search_signal=False`
+라서 target search ranking을 오염시키지 않고, producer expansion / plan
+synthesis 쪽에서만 쓰인다. raw field를 BM25에도 넣어보는 실험은
+`--index-promoted-contract-fields`를 직접 켜서 별도 artifact로 남긴다.
+
+기본 URL은 X2BEE BO Swagger UI다.
+
+```text
+https://api-bo.x2bee.com/api/bo/swagger-ui/index.html
+```
+
+이 runner는 live spec 본문을 commit하지 않고 실행 시점에 가져온다. report에는
+아래를 남긴다.
+
+- discovered spec 수, raw operation 수, unique tool 수, duplicate tool 수
+- requestBody/response schema coverage
+- graph edge count와 build time
+- 한국어 smoke query의 expected tool rank, hit@K, MRR, retrieval latency
+- sweep 실행 시 top-K별 hit/recall/top-1/top-3/rank bucket과 missing expected tool
+
+현재 live acceptance 기준선은 `2026-07-19` 실행 기준 다음과 같다.
+
+| Metric | Value |
+|---|---:|
+| spec groups | `15` |
+| raw operations | `2,173` |
+| ingested tools | `2,161` |
+| unique tools | `1,084` |
+| duplicate tools skipped | `1,077` |
+| graph edges | `8,599` |
+| contract request tools | `2,069` |
+| contract response tools | `1,615` |
+| contract consumes fields | `23,719` |
+| contract produces fields | `38,873` |
+| build time | `4.61s` |
+| Korean smoke cases | `8/8 hit@10` |
+| expected tool recall@10 | `1.00` |
+| top-1 hit@10 | `0.75` |
+| top-3 hit@10 | `0.875` |
+| mean MRR | `0.823` |
+| average retrieval latency | `40.04ms` |
+
+top-K sweep 기준선은 다음과 같다.
+
+| Top-K | hit@K | expected recall@K | top-1 hit | top-3 hit | 주요 gap |
+|---:|---:|---:|---:|---:|---|
+| `3` | `0.75` | `0.8125` | `0.75` | `0.875` | `order_query`, page-role secondary |
+| `5` | `1.00` | `1.00` | `0.75` | `0.875` | rank-4/5 압축 |
+| `10` | `1.00` | `1.00` | `0.75` | `0.875` | acceptance 기준 |
+
+raw OpenAPI contract는 `metadata.api_contract`와 `metadata.openapi`에 보존한다.
+단, plain ingest에서는 top-level `metadata.produces` / `metadata.consumes`로
+자동 승격하지 않는다. 대형 Swagger에서 모든 raw field를 검색 인덱스에 직접
+넣으면 `status`, `data`, `list` 같은 공통 field가 노이즈가 되기 때문이다.
+
+이 수치는 live API가 바뀌면 달라질 수 있으므로 public claim으로 쓰기 전에는
+artifact 경로와 실행 날짜를 함께 남긴다.
+
+## Failure Subset 루프
+
+full model benchmark 결과에서 실패 케이스를 뽑아 작은 고정 subset으로 만든다.
+
+```bash
+poetry run python -m benchmarks.bfcl_tool_selection.failures \
+  --report /tmp/gtc-bfcl-full-retrieved-k5-repeats2-current-v7.json \
+  --failure-categories retrieval_miss,candidate_ambiguity \
+  --tool-sources retrieved \
+  --top-ks 5 \
+  --output /tmp/gtc-bfcl-k5-hard-cases.txt
+```
+
+그 다음 같은 report를 inspector로 읽어서 정답 tool의 현재 rank와 distractor를
+확인한다. 이 단계는 LLM을 호출하지 않으며, 알고리즘 수정 전에 실패 원인을
+개발 단위로 쪼개기 위한 것이다.
+
+```bash
+make bfcl-inspect-failures \
+  REPORT=/tmp/gtc-bfcl-full-retrieved-k5-repeats2-current-v7.json \
+  OUT=/tmp/gtc-bfcl-k5-hard-cases-inspect.json
+```
+
+생성되는 JSON은 케이스별로 아래 정보를 남긴다.
+
+- `expected[].rank`: 정답 tool이 deeper retrieval에서 발견된 순위
+- `missing_at_k`, `missing_at_depth`: top-K 또는 inspect depth에서도 빠진 정답
+- `distractors`: top-K에서 정답을 밀어낸 후보와 score breakdown
+- `issues`: `expected_present_below_top_k`, `weak_or_missing_keyword_signal`,
+  `partial_multi_tool_at_k` 같은 개선 대상 분류
+
+그 subset만 deterministic으로 먼저 본다.
+
+```bash
+CASE_IDS_FILE=/tmp/gtc-bfcl-k5-hard-cases.txt \
+BFCL_MIN_RECALL_AT_5=0 \
+ARTIFACT_DIR=/tmp/gtc-hardcase-det \
+make research-check-deterministic
+```
+
+후보 품질이 좋아졌을 때만 실제 model smoke를 돌린다.
+
+```bash
+CASE_IDS_FILE=/tmp/gtc-bfcl-k5-hard-cases.txt \
+MODEL=qwen3.6-27b \
+LLM_URL=http://127.0.0.1:8000/v1 \
+DISABLE_THINKING=1 \
+SMOKE_LIMIT=100 \
+ARTIFACT_DIR=/tmp/gtc-hardcase-smoke \
+make research-check-smoke
+```
+
+이 흐름의 목적은 full 1000-case run을 반복하지 않고, 이전 병목에 직접 닿는
+100-200개 케이스로 변화량을 먼저 확인하는 것이다.
+
+## 승격 기준
+
+연구 변경은 아래 순서로 승격한다.
+
+1. T0 통과: 코드 계약, public import, benchmark runner가 깨지지 않아야 한다.
+2. T1 통과: deterministic BFCL recall@5가 기본 threshold 아래로 떨어지면 중단한다.
+3. T2 통과: targeted failure subset에서 개선이 보이거나, 악화 이유가 설명 가능해야 한다.
+4. T3 통과: 실제 model smoke에서 candidate ambiguity가 과도하게 늘지 않아야 한다.
+5. T4 통과: release candidate에서 full run, repeat, official re-score, CI green을 확인한다.
+
+기본 threshold:
+
+- BFCL deterministic recall@5: `>= 0.90`
+- XGEN deterministic `graph_with_producers` status: `pass`
+- quick contract tests: all pass
+- release candidate: `make release-check` + GitHub CI matrix green
+
+## 의사결정 규칙
+
+- 단일 query 개선 때문에 full aggregate가 떨어지면 merge하지 않는다.
+- top-K를 올려 recall만 높이고 latency/candidate ambiguity를 크게 늘리는 변경은
+  기본값으로 승격하지 않는다.
+- LLM smoke 결과가 나빠졌지만 deterministic metric이 좋아진 경우, model prompt
+  또는 candidate formatting 문제로 분리해서 기록한다.
+- README에 숫자를 갱신할 때는 full run, repeat, BFCL-compatible JSONL export,
+  official `bfcl_eval evaluate --partial-eval` 재채점을 같이 남긴다.
+
+## Artifact 규칙
+
+권장 경로:
+
+```text
+/tmp/gtc-exp-<short-name>/
+  xgen-deterministic.json
+  bfcl-deterministic.json
+  xgen-llm-smoke.json
+  bfcl-llm-smoke.json
+  bfcl-cache/
+```
+
+commit에는 대형 benchmark artifact를 넣지 않는다. README/docs에는 재현 명령과
+요약 수치만 남긴다.
+
+## Full Benchmark 사용 조건
+
+full BFCL model benchmark는 아래 중 하나일 때만 실행한다.
+
+- README/docs의 공개 수치를 갱신한다.
+- release candidate를 publish 전에 검증한다.
+- deterministic/failure subset에서 큰 개선이 확인되어 전체 분포 영향이 필요하다.
+- XGEN 적용 전, 실제 운영 경로의 regression risk를 마지막으로 확인한다.
+
+평상시 검색 로직 실험에서는 full `k=3/5/10`, repeat, official re-score를 돌리지
+않는다. 먼저 failure subset과 smoke로 후보를 좁힌다.

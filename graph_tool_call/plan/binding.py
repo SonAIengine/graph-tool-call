@@ -9,6 +9,7 @@ v1 path syntax (kept deliberately small):
 
   - dotted keys          : ``s1.body.goods`` → ``ctx["s1"]["body"]["goods"]``
   - array index          : ``s1.body.goods[0].goodsNo``
+  - map value wildcard   : ``s1.body.goodsMap.*.goodsNo`` → first value by sorted key
   - whole-source         : ``s1`` → entire result dict of step s1
   - input alias          : ``input.keyword`` — caller injects a special
                            ``"input"`` entry at runtime for user-provided
@@ -17,6 +18,7 @@ v1 path syntax (kept deliberately small):
 Explicitly NOT supported in v1:
 
   - wildcard ``[*]`` (fan-out) — see §11.1 of the design doc
+    (map ``*`` is first-value selection, not fan-out)
   - filter expressions (JSONPath ``[?(...)]``)
   - functions / casts (``int(...)``, ``default(...)``)
 
@@ -97,7 +99,9 @@ def _lookup(expr: str, context: dict[str, Any]) -> Any:
     node: Any = context[head]
 
     for tok in tokens[1:]:
-        if tok.startswith("[") and tok.endswith("]"):
+        if tok == "*":
+            node = _lookup_first_value(node, expr)
+        elif tok.startswith("[") and tok.endswith("]"):
             # array index — allow negative too
             try:
                 idx = int(tok[1:-1])
@@ -125,6 +129,19 @@ def _lookup(expr: str, context: dict[str, Any]) -> Any:
             node = node[tok]
 
     return node
+
+
+def _lookup_first_value(node: Any, expr: str) -> Any:
+    if isinstance(node, dict):
+        if not node:
+            raise BindingError(f"wildcard on empty dict in binding {expr!r}")
+        key = sorted(node, key=lambda item: str(item))[0]
+        return node[key]
+    if isinstance(node, (list, tuple)):
+        if not node:
+            raise BindingError(f"wildcard on empty list in binding {expr!r}")
+        return node[0]
+    raise BindingError(f"wildcard on non-container type {type(node).__name__} (expr={expr!r})")
 
 
 def _tokenize(expr: str) -> list[str]:

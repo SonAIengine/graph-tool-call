@@ -1,6 +1,11 @@
 # Benchmark Results
 
 Detailed benchmark data for graph-tool-call. The README contains a 3-row summary; this document contains the full pipeline, retrieval-only, competitive, large-scale, and LangChain agent results.
+For XGEN tool graph search goals, see
+[`docs/research/xgen-tool-graph-goals.md`](research/xgen-tool-graph-goals.md).
+For day-to-day research iteration, follow the tiered loop in
+[`docs/research/validation-loop.md`](research/validation-loop.md) before running
+expensive full model benchmarks.
 
 - **Model used (LLM benchmarks)**: `qwen3:4b` (4-bit, Ollama), unless noted
 - **No-model benchmarks**: retrieval-only, BFCL tool-selection, and XGEN
@@ -237,6 +242,11 @@ OPENAI_API_KEY=dummy QWEN_API_KEY=dummy /tmp/gtc-bfcl-eval/bin/python \
 # XGEN-style tool graph quality (deterministic, no LLM)
 make xgen-benchmark
 poetry run python -m benchmarks.xgen_tool_graph.run --json
+
+# XGEN large OpenAPI acceptance (live X2BEE-scale Swagger UI, no LLM)
+make xgen-scale-acceptance
+poetry run python -m benchmarks.xgen_api_scale.run \
+  --output /tmp/gtc-x2bee-scale-acceptance.json
 
 # BFCL-style model-in-the-loop tool search
 make xgen-llm-benchmark
@@ -552,6 +562,109 @@ quality improved or regressed with deterministic numbers. The default runner
 compares `target_only` with `graph_with_producers` and fails when the graph
 pipeline misses quality thresholds or exceeds latency/token budgets recorded in
 `cases.json`.
+
+### XGEN Scale Acceptance
+
+[`benchmarks/xgen_api_scale/`](../benchmarks/xgen_api_scale/) is the opt-in
+large-OpenAPI acceptance check for XGEN. It is separate from the deterministic
+fixture above because it hits a live Swagger UI and profiles a real API
+collection at X2BEE BO scale.
+
+Default target:
+
+```text
+https://api-bo.x2bee.com/api/bo/swagger-ui/index.html
+```
+
+Run:
+
+```bash
+make xgen-scale-acceptance \
+  OUT=/tmp/gtc-x2bee-scale-acceptance.json
+```
+
+For development, use the top-K sweep first. It builds the large graph once and
+then replays the same Korean cases at multiple K values, so ranking experiments
+can be judged without a long model run:
+
+```bash
+make xgen-scale-sweep \
+  TOP_KS=3,5,10 \
+  OUT=/tmp/gtc-x2bee-scale-sweep.json
+```
+
+When changing OpenAPI contract extraction or field-ranking policy, run the
+contract-signal ablation before any model loop. It loads the live Swagger specs
+once, builds two graphs from the same input, and reports promoted-minus-baseline
+search deltas:
+
+```bash
+make xgen-scale-contract-ablation \
+  CONTEXT_FIELDS=siteNo,langCd,sysGbCd \
+  OUT=/tmp/gtc-x2bee-scale-contract-ablation.json
+```
+
+The promoted variant uses `metadata.api_contract` selectively: wrapper fields
+such as `status`, `data`, and `list` stay out of the promoted contract, while
+identifier-like response fields, required inputs, enums, context/auth fields,
+and search filters can enter `metadata.produces` / `metadata.consumes`.
+Promoted raw contract rows are planning/producer signals by default
+(`search_signal=False`) so target-tool BM25 ranking is not flooded by common
+identifier fields. Use `--index-promoted-contract-fields` only as a diagnostic
+or after a collection-specific curation pass.
+
+Latest local contract-signal ablation on 2026-07-19:
+
+| Variant | Hit@10 | Recall@10 | Top-1 | Top-3 | MRR | Avg latency |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | `31.77ms` |
+| promoted contract, no BM25 field indexing | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | `28.07ms` |
+
+The same diagnostic previously showed that indexing all promoted raw contract
+fields degraded target ranking on X2BEE, which is why the default keeps
+contract fields available for planning without adding them directly to BM25.
+
+Verified local result on 2026-07-19:
+
+| Metric | Value |
+|---|---:|
+| Swagger spec groups | `15` |
+| Raw operations | `2,173` |
+| Ingested tools | `2,161` |
+| Unique tools after operationId dedupe | `1,084` |
+| Duplicate tools skipped | `1,077` |
+| Graph edges | `8,599` |
+| Contract request tools | `2,069` |
+| Contract response tools | `1,615` |
+| Contract consumes fields | `23,719` |
+| Contract produces fields | `38,873` |
+| Build time | `4.61s` |
+| Korean smoke hit@10 | `8/8` |
+| Expected tool recall@10 | `1.00` |
+| Top-1 hit@10 | `0.75` |
+| Top-3 hit@10 | `0.875` |
+| Mean MRR | `0.823` |
+| Average retrieval latency | `40.04ms` |
+
+Top-K sweep from the same live target on 2026-07-19:
+
+| Top-K | Hit@K | Expected recall@K | Top-1 hit | Top-3 hit | Mean MRR | Main gap |
+|---:|---:|---:|---:|---:|---:|---|
+| `3` | `0.75` | `0.8125` | `0.75` | `0.875` | `0.792` | `order_query`, secondary page-role button |
+| `5` | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | rank-4/5 compression |
+| `10` | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | acceptance baseline |
+
+OpenAPI request/response contract is preserved under `metadata.api_contract`
+and `metadata.openapi`. It is intentionally not promoted into top-level
+`metadata.produces` / `metadata.consumes` during plain OpenAPI ingest; raw
+schema leaves are useful for execution and graph construction, but indexing all
+of them directly can add noisy common fields to large Swagger search.
+
+This is not a model score. It verifies that graph-tool-call can discover the
+Swagger groups, dedupe umbrella/group duplicates, ingest the resulting 1k-tool
+collection, build the graph, and retrieve expected tools for Korean BO queries.
+Use it before XGEN integration changes and before claiming product-level
+readiness.
 
 ### BFCL-style LLM Loop
 

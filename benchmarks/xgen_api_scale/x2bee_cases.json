@@ -1,0 +1,52 @@
+{
+  "name": "X2BEE BO API Scale Acceptance",
+  "description": "Opt-in acceptance cases for the X2BEE back-office Swagger UI exposed to XGEN.",
+  "top_k": 10,
+  "thresholds": {
+    "case_hit_at_k": 1.0,
+    "expected_tool_recall_at_k": 0.85,
+    "max_avg_latency_ms": 50.0
+  },
+  "cases": [
+    {
+      "id": "product_qa_ko",
+      "query": "상품 문의 조회",
+      "expected_tools": ["getProductQa"]
+    },
+    {
+      "id": "brand_search_ko",
+      "query": "브랜드 검색",
+      "expected_tools": ["getBrandListSearch"]
+    },
+    {
+      "id": "order_query_ko",
+      "query": "주문 목록 조회",
+      "expected_tools": ["getOrderQueryList"]
+    },
+    {
+      "id": "page_role_buttons_ko",
+      "query": "회원 권한 버튼 조회",
+      "expected_tools": ["getButtonByPageRoleList", "getEnabledButtonByPageRoleList"]
+    },
+    {
+      "id": "settlement_compare_ko",
+      "query": "정산 비교 조회",
+      "expected_tools": ["getPgAdjustCompareList", "getPgAdjustCompareSummary"]
+    },
+    {
+      "id": "faq_modify_ko",
+      "query": "FAQ 수정",
+      "expected_any": ["saveFaqList", "modifyFaqInfo", "saveFaqInfoMl"]
+    },
+    {
+      "id": "delivery_region_ko",
+      "query": "배송지역그룹 목록 조회",
+      "expected_tools": ["getDeliveryRegionGroupQueryList"]
+    },
+    {
+      "id": "return_withdrawal_ko",
+      "query": "반품철회",
+      "expected_tools": ["withdrawalReturn"]
+    }
+  ]
+}

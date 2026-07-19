@@ -14,9 +14,11 @@ Public API:
 
 from graph_tool_call.graphify.catalog import expand_candidates_with_producers
 from graph_tool_call.graphify.edges import (
+    EVIDENCE_API_CONTRACT,
     EVIDENCE_LLM_CURATED,
     EVIDENCE_MANUAL,
     EVIDENCE_NAME_BASED,
+    EVIDENCE_OPENAPI_LINK,
     EVIDENCE_PROVEN,
     EVIDENCE_RUN,
     EVIDENCE_STRUCTURAL,
@@ -33,7 +35,7 @@ from graph_tool_call.graphify.ingest import (
     ingest_openapi_graphify,
     preserve_refs_for_detection,
 )
-from graph_tool_call.graphify.io_contract import build_io_contract
+from graph_tool_call.graphify.io_contract import build_io_contract, promote_api_contract_signals
 from graph_tool_call.graphify.metadata import (
     COLLECTION_GRAPH_VERSION,
     annotate_graphify_metadata,
@@ -49,9 +51,11 @@ __all__ = [
     "DEFAULT_CONF_AMBIGUOUS",
     "DEFAULT_CONF_EXTRACTED",
     "DEFAULT_CONF_INFERRED",
+    "EVIDENCE_API_CONTRACT",
     "EVIDENCE_LLM_CURATED",
     "EVIDENCE_MANUAL",
     "EVIDENCE_NAME_BASED",
+    "EVIDENCE_OPENAPI_LINK",
     "EVIDENCE_PROVEN",
     "EVIDENCE_RUN",
     "EVIDENCE_STRUCTURAL",
@@ -66,6 +70,7 @@ __all__ = [
     "merge_graph_edges",
     "normalize_graph_edge",
     "preserve_refs_for_detection",
+    "promote_api_contract_signals",
     "render_subgraph_text",
     "retrieve_graphify",
 ]
