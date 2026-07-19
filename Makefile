@@ -25,7 +25,7 @@ research-check-smoke:
 	scripts/research-check.sh smoke
 
 xgen-benchmark:
-	poetry run python -m benchmarks.xgen_tool_graph.run
+	poetry run python -m benchmarks.xgen_tool_graph.run --suite all
 
 xgen-llm-benchmark:
 	poetry run python -m benchmarks.xgen_tool_graph.llm_loop --model qwen3:4b

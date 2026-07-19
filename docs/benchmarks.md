@@ -558,10 +558,39 @@ Model used: **none**. This runner is deterministic and reports
 `methodology=deterministic_engine_contract`.
 
 It intentionally avoids live HTTP and LLM calls so a PR can prove whether search
-quality improved or regressed with deterministic numbers. The default runner
-compares `target_only` with `graph_with_producers` and fails when the graph
-pipeline misses quality thresholds or exceeds latency/token budgets recorded in
-`cases.json`.
+quality improved or regressed with deterministic numbers. The default built-in
+suite compares `target_only` with `graph_with_producers` and fails when the
+graph pipeline misses quality thresholds or exceeds latency/token budgets
+recorded in the suite's cases file.
+
+Run the full product-readiness fixture set:
+
+```bash
+poetry run python -m benchmarks.xgen_tool_graph.run --suite all
+```
+
+Current built-in fixture families:
+
+| Suite | API pattern | Cases |
+|---|---|---:|
+| `commerce` | search/detail/order/shipping/refund | `6` |
+| `admin` | user, role, session, audit | `3` |
+| `workflow` | search/current-task/approve/notify/escalate | `3` |
+
+Latest local deterministic suite result on 2026-07-19:
+
+| Metric | Value |
+|---|---:|
+| Fixture families | `3` |
+| Cases | `12` |
+| Tools | `22` |
+| Graph edges | `35` |
+| Target recall@5 | `1.00` |
+| Producer recall | `1.00` |
+| Candidate plan coverage | `1.00` |
+| Plan exact match | `1.00` |
+| Binding accuracy | `1.00` |
+| Average retrieval latency | `0.22ms` |
 
 ### XGEN Scale Acceptance
 

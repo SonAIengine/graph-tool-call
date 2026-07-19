@@ -46,6 +46,7 @@ run_deterministic() {
   run_unit
   run_json "$artifact_dir/xgen-deterministic.json" \
     poetry run python -m benchmarks.xgen_tool_graph.run \
+    --suite all \
     --json
   run_json "$artifact_dir/bfcl-deterministic.json" \
     poetry run python -m benchmarks.bfcl_tool_selection.run \
