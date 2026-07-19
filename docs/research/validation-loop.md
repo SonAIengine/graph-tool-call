@@ -142,6 +142,17 @@ high-confidence equivalent surface이고 argument value가 맞을 때만 별도 
 `/tmp/gtc-bfcl-neardup-adjusted-metric.json` 기준 strict/evaluator exact는
 `0.00`, equivalence-adjusted exact는 `1.00`이다.
 
+`2026-07-19` nested argument matcher hardening에서는 BFCL possible-answer가
+`{"budget": [{"min": [300000], "max": [400000]}]}`처럼 nested dict 안에
+possible-value list를 갖는 경우를 재귀적으로 해석한다. 같은 cached 100-case
+artifact를 새 matcher로 재스코어링하면 false negative 3건이 correction된다:
+`multiple_8` row/retrieved, `multiple_9` retrieved. 별도 6-case argument
+subset smoke `/tmp/gtc-bfcl-argument-matcher-subset.json`에서는
+`multiple_8`이 pass로 바뀌며, fresh qwen3.6-27B 출력 기준 exact는
+`0.166667`이다. 남은 argument subset 실패는 실제 값/형식 문제로 유지한다:
+optional argument hallucination, boolean default inversion, percentage scale mismatch,
+data-reference vs synthetic array mismatch.
+
 ## 실행 타깃
 
 ```bash
