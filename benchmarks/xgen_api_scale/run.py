@@ -708,6 +708,7 @@ def summarize_search(
         "avg_latency_ms": round(_mean(case.latency_ms for case in cases), 3),
         "p50_latency_ms": _percentile([case.latency_ms for case in cases], 0.5),
         "max_latency_ms": max(case.latency_ms for case in cases),
+        "case_rank_buckets": _case_rank_buckets(cases),
         "rank_buckets": _rank_buckets(cases),
         "missing_expected_tools": _missing_expected_tools(cases),
         "issues": dict(Counter(issue for case in cases for issue in case.issues).most_common()),
@@ -869,6 +870,23 @@ def _rank_buckets(cases: list[SearchEvaluation]) -> dict[str, int]:
                 buckets["top_10"] += 1
             else:
                 buckets["missing"] += 1
+    return buckets
+
+
+def _case_rank_buckets(cases: list[SearchEvaluation]) -> dict[str, int]:
+    buckets = {"top_1": 0, "top_3": 0, "top_5": 0, "top_10": 0, "missing": 0}
+    for case in cases:
+        rank = case.best_expected_rank
+        if rank == 1:
+            buckets["top_1"] += 1
+        elif rank is not None and rank <= 3:
+            buckets["top_3"] += 1
+        elif rank is not None and rank <= 5:
+            buckets["top_5"] += 1
+        elif rank is not None and rank <= 10:
+            buckets["top_10"] += 1
+        else:
+            buckets["missing"] += 1
     return buckets
 
 
