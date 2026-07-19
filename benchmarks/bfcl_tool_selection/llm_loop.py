@@ -57,7 +57,7 @@ from graph_tool_call.retrieval.keyword import BM25Scorer
 
 DEFAULT_OFFICIAL_MODEL_NAME = "qwen3-32b-FC"
 BFCL_RESULT_ARGUMENT_FORMATS = ("json-string", "decoded")
-MODEL_CASE_CACHE_VERSION = 17
+MODEL_CASE_CACHE_VERSION = 18
 
 
 @dataclass(frozen=True)
@@ -546,6 +546,12 @@ def evaluate_model_case(
         question_row=question_row,
         tools_by_name=tools_by_name,
     )
+    presented_tools = _suppress_contextual_extra_tools(
+        presented_tools,
+        query=query,
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
     presented_tools = _prioritize_candidate_names(presented_tools, preferred_equivalent_names)
     raw_tools = _presented_raw_tools(
         presented_tools,
@@ -667,7 +673,10 @@ def _messages_for_case(
         "one tool call per distinct set; do not merge them into array arguments "
         "just because the schema uses array fields. When the request gives paired "
         "values such as item A at time A and item B at time B, emit one tool call "
-        "per pair and put only that pair's values in each call."
+        "per pair and put only that pair's values in each call. Use the minimum "
+        "number of tool calls that satisfies the request. Do not add a second "
+        "tool call merely because another tool is related to a context word, "
+        "background phrase, or possible downstream analysis."
     )
     if candidate_selection_guidance:
         system += (
@@ -727,7 +736,9 @@ def _looks_multi_intent(query: str) -> bool:
         return True
     return bool(
         re.search(
-            r"\band\s+(also\s+)?(find|calculate|compute|get|retrieve|determine|check|show)\b",
+            r"\band\s+(also\s+)?"
+            r"(analyze|assess|calculate|check|compute|determine|estimate|find|forecast|get|"
+            r"predict|retrieve|search|show)\b",
             text,
         )
     )
@@ -1108,6 +1119,112 @@ def _subsumption_terms(text: str) -> set[str]:
         for token in BM25Scorer._tokenize(str(text or ""))  # noqa: SLF001
         if token and (len(token) > 1 or token.isdigit()) and token not in _SUBSUMPTION_STOPWORDS
     }
+
+
+_PRIMARY_ACTION_ALIASES: dict[str, frozenset[str]] = {
+    "analyze": frozenset({"analyse", "analyze", "analysis"}),
+    "assess": frozenset({"assess", "assesses", "assessment", "evaluate", "evaluates"}),
+    "calculate": frozenset({"calculate", "calculates", "computation", "compute", "computed"}),
+    "estimate": frozenset({"estimate", "estimates", "estimation"}),
+    "find": frozenset({"find", "finder", "locate", "lookup"}),
+    "forecast": frozenset({"forecast", "forecasts", "predict", "prediction"}),
+    "get": frozenset({"fetch", "get", "retrieve", "retrieves", "retrive"}),
+    "search": frozenset({"search", "searches"}),
+}
+_ACTION_ALIAS_LOOKUP = {
+    alias: action for action, aliases in _PRIMARY_ACTION_ALIASES.items() for alias in aliases
+}
+
+
+def _suppress_contextual_extra_tools(
+    names: list[str],
+    *,
+    query: str,
+    question_row: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Hide related background/action tools for single-action contextual queries."""
+    if len(names) < 2 or _looks_multi_intent(query):
+        return list(names)
+    if not _has_contextual_trailing_noun_phrase(query):
+        return list(names)
+
+    primary_action = _primary_query_action(query)
+    if not primary_action:
+        return list(names)
+
+    combined_tools = dict(tools_by_name)
+    combined_tools.update(_tools_by_name([question_row]))
+    tool_terms = {
+        name: _tool_subsumption_terms(name, combined_tools.get(name) or {}) for name in names
+    }
+    primary_candidates = [
+        name
+        for name in names
+        if _tool_supports_primary_action(tool_terms.get(name, set()), primary_action)
+    ]
+    if len(primary_candidates) != 1:
+        return list(names)
+
+    keeper = primary_candidates[0]
+    suppressed = {
+        name
+        for name in names
+        if name != keeper
+        and _looks_like_contextual_extra_tool(
+            tool_terms.get(name, set()),
+            query_terms=_subsumption_terms(query),
+            primary_action=primary_action,
+        )
+    }
+    if not suppressed:
+        return list(names)
+    return [name for name in names if name not in suppressed]
+
+
+def _primary_query_action(query: str) -> str:
+    text = str(query or "").strip().lower()
+    text = re.sub(r"^\s*(how\s+(?:do|can|to|would|should)\s+|please\s+|can\s+you\s+)", "", text)
+    tokens = [token for token in re.split(r"[^a-z0-9]+", text) if token]
+    for token in tokens[:8]:
+        action = _ACTION_ALIAS_LOOKUP.get(token)
+        if action:
+            return action
+    return ""
+
+
+def _has_contextual_trailing_noun_phrase(query: str) -> bool:
+    text = f" {str(query or '').lower()} "
+    return bool(
+        re.search(
+            r"\band\s+(?:their|its|his|her|the|possible|potential)\s+"
+            r"(impact|effect|effects|influence|risk|risks|outcome|outcomes)\b",
+            text,
+        )
+    )
+
+
+def _tool_supports_primary_action(terms: set[str], primary_action: str) -> bool:
+    aliases = _PRIMARY_ACTION_ALIASES.get(primary_action, frozenset())
+    return bool(terms & aliases)
+
+
+def _looks_like_contextual_extra_tool(
+    terms: set[str],
+    *,
+    query_terms: set[str],
+    primary_action: str,
+) -> bool:
+    if not terms:
+        return False
+    if _tool_supports_primary_action(terms, primary_action):
+        return False
+    if not ((terms & query_terms) - _SUBSUMPTION_STOPWORDS):
+        return False
+    tool_actions = {
+        action for term in terms if (action := _ACTION_ALIAS_LOOKUP.get(term)) is not None
+    }
+    return not tool_actions or bool(tool_actions - {primary_action})
 
 
 def _model_tool_description(
