@@ -440,13 +440,21 @@ Paper-ready metric targets:
 
 | Metric | Target |
 |---|---:|
-| BFCL-compatible top-k=5 exact | `0.87 - 0.90` |
-| deterministic BFCL retrieval@5 | `>= 0.96` |
-| parallel_multiple exact | `0.78 - 0.82` |
+| BFCL-compatible top-k=5 exact | `>= 0.87` |
+| BFCL retrieval@5 | `>= 0.96` |
+| row-source upper-bound preservation | `>= 0.96` |
+| parallel_multiple exact | `>= 0.78` |
 | XGEN multi-step plan exact | `>= 0.90` |
 | token reduction vs full tool list | `70 - 90%` |
 | retrieval latency | p50 ms 단위 |
 | repeats | `>= 3`, confidence interval 포함 |
+| BFCL cases per repeat | `>= 1000` |
+
+`xgen-0.28` milestone profile encodes the BFCL-side paper-ready gate:
+`retrieved_exact@5 >= 0.87`, `retrieval@5 >= 0.96`, row-source preservation
+`>= 0.96`, `parallel_multiple@5 >= 0.78`, repeat count `>= 3`, and retrieved
+cases per repeat `>= 1000`. Run it with `make bfcl-028-gate` and re-check saved
+artifacts with `make bfcl-028-gate-check REPORT=/tmp/gtc-bfcl-028-gate.json`.
 
 Paper-ready evidence:
 

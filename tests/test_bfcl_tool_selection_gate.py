@@ -69,14 +69,51 @@ def test_gate_recomputes_when_saved_gate_is_missing(tmp_path: Path):
     assert loaded["metrics"]["row_source_upper_bound_preservation"] == 1.0
 
 
+def test_gate_recomputes_xgen_028_scope_profile(tmp_path: Path):
+    rows = []
+    category_rows = []
+    for repeat in range(1, 4):
+        rows.extend(
+            [
+                _summary_row("row", repeat=repeat, cases=1000, exact=0.9),
+                _summary_row("retrieved", repeat=repeat, cases=1000, exact=0.88),
+            ]
+        )
+        category_rows.append(
+            _summary_row(
+                "retrieved",
+                repeat=repeat,
+                cases=250,
+                exact=0.8,
+                category="parallel_multiple",
+            )
+        )
+    report_path = tmp_path / "xgen-028.json"
+    report_path.write_text(
+        json.dumps({"summary": {"rows": rows, "category_rows": category_rows}}),
+        encoding="utf-8",
+    )
+
+    loaded = gate.load_gate(report_path, profile="xgen-0.28")
+
+    assert loaded["status"] == "pass"
+    assert loaded["metrics"]["retrieved_repeat_count"] == 3.0
+    assert loaded["metrics"]["retrieved_cases_per_repeat"] == 1000.0
+
+
 def _summary_row(
-    tool_source: str, *, exact: float, category: str | None = None
+    tool_source: str,
+    *,
+    exact: float,
+    category: str | None = None,
+    repeat: int = 1,
+    cases: int = 1,
 ) -> dict[str, object]:
     row: dict[str, object] = {
-        "repeat": 1,
+        "repeat": repeat,
         "tool_source": tool_source,
         "top_k": 5,
-        "cases": 1,
+        "cases": cases,
         "retrieval_recall_at_k": 1.0,
         "model_tool_call_rate": 1.0,
         "strict_exact_match": exact,

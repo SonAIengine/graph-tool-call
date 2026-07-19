@@ -369,6 +369,7 @@ model-in-the-loop benchmark.
 | `make xgen-scale-acceptance` | none | X2BEE-scale Swagger UI discovery, dedupe, ingest, graph build, Korean product-case search |
 | `make xgen-scale-sweep` | none | one X2BEE-scale graph build, then top-K compression diagnostics for `k=3,5,10` |
 | `make xgen-scale-contract-ablation` | none | one X2BEE-scale spec load, then baseline vs promoted OpenAPI contract signal comparison |
+| `make bfcl-028-gate-check REPORT=...` | none | saved BFCL sweep artifact check for the stricter paper-ready `xgen-0.28` profile |
 | `make xgen-llm-benchmark` | CLI `--model` value | whether that model actually calls `search_tools` and selects the right plan |
 
 ```bash

@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-snapshot-check xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-snapshot-check xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-028-gate bfcl-028-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -150,6 +150,34 @@ bfcl-027-gate:
 bfcl-027-gate-check:
 	@test -n "$(REPORT)" || (echo "Usage: make bfcl-027-gate-check REPORT=/tmp/gtc-bfcl-027-gate.json [PROFILE=xgen-0.27]" && exit 2)
 	poetry run python -m benchmarks.bfcl_tool_selection.gate "$(REPORT)" --profile "$${PROFILE:-xgen-0.27}"
+
+bfcl-028-gate:
+	@fail_args=""; \
+	if [ "$${FAIL_ON_GATE:-1}" != "0" ]; then fail_args="--fail-on-milestone-gate"; fi; \
+	limit_args=""; \
+	if [ -n "$${LIMIT:-}" ]; then limit_args="--limit $${LIMIT}"; fi; \
+	poetry run python -m benchmarks.bfcl_tool_selection.sweep \
+		--categories "$${CATEGORIES:-simple_python,multiple,parallel,parallel_multiple}" \
+		$$limit_args \
+		--top-ks "$${TOP_KS:-5}" \
+		--tool-sources "$${TOOL_SOURCES:-row,retrieved}" \
+		--repeats "$${REPEATS:-3}" \
+		--model "$${MODEL:-qwen3.6-27b}" \
+		--llm-url "$${LLM_URL:-http://127.0.0.1:18000/v1}" \
+		--disable-thinking \
+		--candidate-selection-guidance \
+		--cohesive-namespace-candidates \
+		--cache-dir "$${CACHE_DIR:-/tmp/gtc-bfcl-028-gate-cache}" \
+		--concurrency "$${CONCURRENCY:-6}" \
+		--progress \
+		--progress-every "$${PROGRESS_EVERY:-10}" \
+		--milestone-profile xgen-0.28 \
+		--output "$${OUT:-/tmp/gtc-bfcl-028-gate.json}" \
+		$$fail_args
+
+bfcl-028-gate-check:
+	@test -n "$(REPORT)" || (echo "Usage: make bfcl-028-gate-check REPORT=/tmp/gtc-bfcl-028-gate.json" && exit 2)
+	poetry run python -m benchmarks.bfcl_tool_selection.gate "$(REPORT)" --profile xgen-0.28
 
 bfcl-failure-subset:
 	@test -n "$(REPORT)" || (echo "Usage: make bfcl-failure-subset REPORT=/tmp/report.json [OUT=/tmp/case_ids.txt]" && exit 2)

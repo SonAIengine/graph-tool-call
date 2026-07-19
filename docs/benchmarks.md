@@ -415,6 +415,11 @@ fastest way to decide whether a full expensive run produced evidence strong
 enough for the next XGEN milestone, or whether work should return to a smaller
 failure subset first.
 
+For paper-ready rerun candidates, use the stricter `xgen-0.28` profile. It
+keeps the same core quality metrics but also requires at least `3` repeats and
+`1000` retrieved-source cases per repeat, so a 100-case smoke cannot be mistaken
+for broad-distribution evidence.
+
 ```bash
 poetry run python -m benchmarks.bfcl_tool_selection.sweep \
   --categories simple_python,multiple,parallel,parallel_multiple \
@@ -425,6 +430,11 @@ poetry run python -m benchmarks.bfcl_tool_selection.sweep \
   --disable-thinking \
   --milestone-profile xgen-0.27 \
   --output /tmp/gtc-bfcl-xgen-027-sweep.json
+```
+
+```bash
+make bfcl-028-gate
+make bfcl-028-gate-check REPORT=/tmp/gtc-bfcl-028-gate.json
 ```
 
 For diagnostic sweeps that do not include the row-source baseline or

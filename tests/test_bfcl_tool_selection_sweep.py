@@ -127,6 +127,44 @@ def test_sweep_milestone_gate_reports_xgen_027_bottlenecks():
     assert summary["category_repeat_groups"][0]["category"] == "parallel_multiple"
 
 
+def test_sweep_milestone_gate_reports_xgen_028_scope_requirements():
+    runs = []
+    for repeat in range(1, 4):
+        runs.extend(
+            [
+                _sweep_run(
+                    repeat=repeat,
+                    tool_source="row",
+                    top_k=5,
+                    cases=100,
+                    exact=1.0,
+                    retrieval=1.0,
+                    parallel_multiple_exact=1.0,
+                ),
+                _sweep_run(
+                    repeat=repeat,
+                    tool_source="retrieved",
+                    top_k=5,
+                    cases=100,
+                    exact=1.0,
+                    retrieval=1.0,
+                    parallel_multiple_exact=1.0,
+                ),
+            ]
+        )
+
+    summary = sweep._summarize_sweep(runs, milestone_profile="xgen-0.28")
+    gate = summary["milestone_gate"]
+
+    assert gate["profile"] == "xgen-0.28"
+    assert gate["status"] == "fail"
+    assert gate["metrics"]["retrieved_repeat_count"] == 3.0
+    assert gate["metrics"]["retrieved_cases_per_repeat"] == 100.0
+    assert gate["thresholds"]["retrieved_repeat_count"] == 3
+    assert gate["thresholds"]["retrieved_cases_per_repeat"] == 1000
+    assert {row["metric"] for row in gate["failed_gates"]} == {"retrieved_cases_per_repeat"}
+
+
 def test_sweep_summary_pairs_row_and_retrieved_failures():
     summary = sweep._summarize_sweep(
         [
@@ -320,39 +358,43 @@ def _adjusted_exact(cases: list[tuple]) -> float:
 
 def _sweep_run(
     *,
+    repeat: int = 1,
     tool_source: str,
     top_k: int,
+    cases: int = 10,
     exact: float,
     retrieval: float,
     parallel_multiple_exact: float,
 ):
     return {
-        "repeat": 1,
+        "repeat": repeat,
         "tool_source": tool_source,
         "top_k": top_k,
         "report": {
             "summary": {
-                "cases": 10,
+                "cases": cases,
                 "retrieval_recall_at_k": retrieval,
                 "model_tool_call_rate": 1.0,
                 "strict_exact_match": exact,
                 "evaluator_exact_match": exact,
                 "equivalence_adjusted_exact_match": exact,
                 "avg_latency_ms": 100.0,
-                "failure_breakdown": {"pass": int(exact * 10)},
+                "failure_breakdown": {"pass": int(exact * cases)},
             },
             "categories": [
                 {
                     "category": "parallel_multiple",
                     "summary": {
-                        "cases": 5,
+                        "cases": max(1, cases // 4),
                         "retrieval_recall_at_k": retrieval,
                         "model_tool_call_rate": 1.0,
                         "strict_exact_match": parallel_multiple_exact,
                         "evaluator_exact_match": parallel_multiple_exact,
                         "equivalence_adjusted_exact_match": parallel_multiple_exact,
                         "avg_latency_ms": 100.0,
-                        "failure_breakdown": {"pass": int(parallel_multiple_exact * 5)},
+                        "failure_breakdown": {
+                            "pass": int(parallel_multiple_exact * max(1, cases // 4))
+                        },
                     },
                 }
             ],
