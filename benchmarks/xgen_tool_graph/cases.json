@@ -20,9 +20,21 @@
     "evidence_coverage": 1.0,
     "synthesis_diagnostics_coverage": 1.0,
     "max_avg_latency_ms": 50.0,
-    "max_avg_token_budget_used": 900
+    "max_avg_token_budget_used": 900,
+    "max_unneeded_expansion_case_count": 0
   },
   "cases": [
+    {
+      "id": "product_search_direct_ko",
+      "query": "상품 검색",
+      "entities": {
+        "q": "셔츠"
+      },
+      "expected_target": "searchProducts",
+      "expected_producers": [],
+      "expected_plan": ["searchProducts"],
+      "expected_bindings": {}
+    },
     {
       "id": "product_detail_ko",
       "query": "상품명으로 검색해서 상품 상세를 보여줘",

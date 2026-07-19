@@ -573,31 +573,36 @@ Current built-in fixture families:
 
 | Suite | API pattern | Cases |
 |---|---|---:|
-| `commerce` | search/detail/order/shipping/refund | `6` |
-| `admin` | user, role, session, audit | `3` |
-| `workflow` | search/current-task/approve/notify/escalate | `3` |
+| `commerce` | search/detail/order/shipping/refund | `7` |
+| `admin` | user, role, session, audit | `4` |
+| `workflow` | search/current-task/approve/notify/escalate | `4` |
 
 Latest local deterministic suite result on 2026-07-19:
 
 | Metric | Value |
 |---|---:|
 | Fixture families | `3` |
-| Cases | `12` |
+| Cases | `15` |
 | Tools | `22` |
 | Graph edges | `35` |
 | Target recall@5 | `1.00` |
 | Producer recall | `1.00` |
 | Candidate plan coverage | `1.00` |
+| Producer-needed cases | `12` |
+| Adaptive expansion cases | `12` |
+| Unneeded expansion cases | `0` |
+| Average candidate count | `2.60` |
+| Max candidate count | `4` |
 | Plan exact match | `1.00` |
 | Binding accuracy | `1.00` |
 | Synthesis diagnostics coverage | `1.00` |
 | User-input slot cases | `1` |
 | Missing fields surfaced | `2` |
-| Producer recall lift vs target-only | `+1.00` |
-| Candidate plan coverage lift vs target-only | `+0.625` |
-| Binding support lift vs target-only | `+1.00` |
-| Producer expansion lifted cases | `12/12` |
-| Average retrieval latency | `0.22ms` |
+| Producer recall lift vs target-only | `+0.80` |
+| Candidate plan coverage lift vs target-only | `+0.50` |
+| Binding support lift vs target-only | `+0.80` |
+| Producer expansion lifted cases | `12/15` |
+| Average retrieval latency | `0.21ms` |
 
 Each case includes `synthesis_diagnostics` in the JSON artifact. The diagnostic
 block records the synthesis `stage`, `target`, `plan_id`, selected producers,
@@ -609,9 +614,10 @@ requires a popup/resume input, or where target selection failed.
 The JSON artifact also includes `producer_expansion_lift`, which compares the
 `target_only` baseline with `graph_with_producers`. This makes producer
 expansion measurable as plan-readiness lift instead of a hidden implementation
-detail: in the current suite it raises producer recall by `+1.00`, candidate
-plan coverage by `+0.625`, and binding support by `+1.00` across all `12`
-cases.
+detail: in the current suite it raises producer recall by `+0.80`, candidate
+plan coverage by `+0.50`, and binding support by `+0.80` overall. The lift is
+concentrated in the `12` producer-needed cases; the `3` direct search/list cases
+keep their target-only candidate set, so `unneeded_expansion_cases=0`.
 
 ### XGEN Scale Acceptance
 

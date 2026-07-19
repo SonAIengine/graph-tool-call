@@ -19,9 +19,19 @@
     "evidence_coverage": 1.0,
     "synthesis_diagnostics_coverage": 1.0,
     "max_avg_latency_ms": 50.0,
-    "max_avg_token_budget_used": 900
+    "max_avg_token_budget_used": 900,
+    "max_unneeded_expansion_case_count": 0
   },
   "cases": [
+    {
+      "id": "role_list_direct_ko",
+      "query": "역할 목록 조회",
+      "entities": {},
+      "expected_target": "listRoles",
+      "expected_producers": [],
+      "expected_plan": ["listRoles"],
+      "expected_bindings": {}
+    },
     {
       "id": "assign_role_ko",
       "query": "이메일로 사용자 찾아서 관리자 역할 권한 부여해줘",

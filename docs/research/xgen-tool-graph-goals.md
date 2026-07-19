@@ -129,10 +129,15 @@ Required work:
     `make research-check`의 XGEN deterministic gate는 `--suite all`을 실행한다.
 - producer expansion이 plan synthesis까지 실제 이득을 내는지 측정한다.
   - `2026-07-19`: XGEN deterministic benchmark artifact에
-    `producer_expansion_lift`를 추가했다. `target_only` 대비
-    `graph_with_producers`는 전체 12건에서 producer recall `+1.00`,
+    `producer_expansion_lift`를 추가했다. 초기 producer-chain 12건 기준
+    `target_only` 대비 `graph_with_producers`는 producer recall `+1.00`,
     candidate plan coverage `+0.625`, binding support `+1.00` lift를 만든다.
 - top-k=5를 기본 경로로 유지하되, 복합 query에서만 adaptive expansion을 쓴다.
+  - `2026-07-19`: 각 fixture family에 direct search/list case를 추가해
+    전체 suite를 15건으로 늘렸다. `graph_with_producers`는 producer-needed
+    12건에서만 adaptive expansion을 적용하고 direct 3건은 확장하지 않는다
+    (`adaptive_expansion_case_count=12`, `unneeded_expansion_case_count=0`,
+    `avg_candidate_count=2.60`, `max_candidate_count=4`).
 - 실패 event에 stage, target, selected producers, missing fields, evidence를 남긴다.
   - `2026-07-19`: XGEN deterministic benchmark artifact의 각 case에
     `synthesis_diagnostics`를 추가했다. 성공 plan, user-input fallback,

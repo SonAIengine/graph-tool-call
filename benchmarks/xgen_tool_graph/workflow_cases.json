@@ -19,9 +19,19 @@
     "evidence_coverage": 1.0,
     "synthesis_diagnostics_coverage": 1.0,
     "max_avg_latency_ms": 50.0,
-    "max_avg_token_budget_used": 900
+    "max_avg_token_budget_used": 900,
+    "max_unneeded_expansion_case_count": 0
   },
   "cases": [
+    {
+      "id": "workflow_search_direct_ko",
+      "query": "워크플로우 검색",
+      "entities": {},
+      "expected_target": "searchWorkflowInstances",
+      "expected_producers": [],
+      "expected_plan": ["searchWorkflowInstances"],
+      "expected_bindings": {}
+    },
     {
       "id": "approve_task_ko",
       "query": "주문 승인 요청 찾아서 워크플로우 승인 처리해줘",

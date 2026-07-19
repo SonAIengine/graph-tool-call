@@ -53,7 +53,8 @@ def test_xgen_tool_graph_benchmark_graph_pipeline_passes_thresholds():
         lift["candidate_binding_support"]["delta"]
         == report["improvements"]["candidate_binding_support_delta"]
     )
-    assert lift["lifted_cases"]["any"] == lift["cases"]
+    assert lift["producer_needed_cases"] == lift["lifted_cases"]["any"]
+    assert lift["unneeded_expansion_cases"] == 0
 
 
 def test_xgen_tool_graph_all_fixture_suites_pass_thresholds():
@@ -63,7 +64,7 @@ def test_xgen_tool_graph_all_fixture_suites_pass_thresholds():
     assert summary["status"] == "pass"
     assert summary["fixture_families"] == list(SUITE_CONFIGS)
     assert summary["suite_count"] == 3
-    assert summary["cases"] == 12
+    assert summary["cases"] == 15
     assert summary["target_recall_at_k"] == 1.0
     assert summary["producer_recall"] == 1.0
     assert summary["candidate_plan_coverage"] == 1.0
@@ -71,11 +72,17 @@ def test_xgen_tool_graph_all_fixture_suites_pass_thresholds():
     assert summary["synthesis_diagnostics_coverage"] == 1.0
     assert summary["user_input_slot_case_count"] == 1
     assert summary["missing_field_count"] == 2
-    assert summary["producer_expansion_producer_recall_delta"] == 1.0
-    assert summary["producer_expansion_candidate_plan_coverage_delta"] == 0.625
-    assert summary["producer_expansion_binding_support_delta"] == 1.0
+    assert summary["producer_needed_case_count"] == 12
+    assert summary["adaptive_expansion_case_count"] == 12
+    assert summary["unneeded_expansion_case_count"] == 0
+    assert summary["producer_expansion_producer_recall_delta"] == 0.8
+    assert summary["producer_expansion_candidate_plan_coverage_delta"] == 0.5
+    assert summary["producer_expansion_binding_support_delta"] == 0.8
     assert summary["producer_expansion_lifted_cases"] == 12
-    assert report["producer_expansion_lift"]["cases"] == 12
+    assert report["producer_expansion_lift"]["cases"] == 15
+    assert report["producer_expansion_lift"]["producer_needed_cases"] == 12
+    assert report["producer_expansion_lift"]["adaptive_expansion_cases"] == 12
+    assert report["producer_expansion_lift"]["unneeded_expansion_cases"] == 0
     assert report["producer_expansion_lift"]["lifted_cases"]["any"] == 12
 
     for suite_report in report["suites"]:
@@ -83,6 +90,23 @@ def test_xgen_tool_graph_all_fixture_suites_pass_thresholds():
             row for row in suite_report["pipelines"] if row["name"] == "graph_with_producers"
         )
         assert graph["summary"]["status"] == "pass"
+
+
+def test_xgen_tool_graph_direct_queries_do_not_expand_producers():
+    report = run_benchmark_suite(suite="all")
+
+    for suite_report in report["suites"]:
+        graph_pipeline = next(
+            row for row in suite_report["pipelines"] if row["name"] == "graph_with_producers"
+        )
+        direct_cases = [row for row in graph_pipeline["cases"] if not row["producer_needed"]]
+        assert len(direct_cases) == 1
+        for case in direct_cases:
+            assert case["expansion_seed"] == [case["expected_target"]]
+            assert case["candidates"] == [case["expected_target"]]
+            assert case["producer_added_count"] == 0
+            assert case["adaptive_expansion_applied"] is False
+            assert case["unneeded_expansion_applied"] is False
 
 
 def test_xgen_tool_graph_benchmark_checks_korean_query_chain():

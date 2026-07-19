@@ -864,6 +864,45 @@ def test_expand_candidates_with_producers_uses_required_data_only_and_action_pri
     assert expanded == ["getProductDetail", "searchProduct", "readProduct"]
 
 
+def test_expand_candidates_with_producers_can_follow_target_specific_chain():
+    tools = {
+        "getInventory": {
+            "metadata": {
+                "consumes": [
+                    {"field_name": "skuId", "semantic_tag": "sku_id", "required": True},
+                ]
+            }
+        },
+        "getProductDetail": {
+            "metadata": {
+                "consumes": [
+                    {"field_name": "productId", "semantic_tag": "product_id", "required": True},
+                ],
+                "produces": [{"field_name": "skuId", "semantic_tag": "sku_id"}],
+                "ai_metadata": {"canonical_action": "read"},
+            }
+        },
+        "searchProducts": {
+            "metadata": {
+                "produces": [{"field_name": "productId", "semantic_tag": "product_id"}],
+                "ai_metadata": {"canonical_action": "search"},
+            }
+        },
+        "listProducts": {
+            "metadata": {
+                "produces": [{"field_name": "productId", "semantic_tag": "product_id"}],
+                "ai_metadata": {"canonical_action": "read"},
+            }
+        },
+    }
+
+    one_hop = expand_candidates_with_producers(["getInventory"], tools, max_hops=1)
+    two_hops = expand_candidates_with_producers(["getInventory"], tools, max_hops=2)
+
+    assert one_hop == ["getInventory", "getProductDetail"]
+    assert two_hops == ["getInventory", "getProductDetail", "searchProducts", "listProducts"]
+
+
 def test_edge_normalize_merge_and_trace_derivation_contract():
     structural = normalize_graph_edge(
         {
