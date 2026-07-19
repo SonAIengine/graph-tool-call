@@ -23,7 +23,8 @@ graph-tool-call search 연구는 full model benchmark를 매번 돌리면 속도
 | T1 deterministic | retrieval/graph/plan 품질 확인 | 1-3분 | no | `make research-check` | 검색/graph/fixture 수정 |
 | T2 failure subset | 이전 실패 케이스 재검증 | 5-15분 | optional | `CASE_IDS_FILE=/tmp/ids.txt make research-check-smoke` | ranking/rerank 실험 |
 | T2.5 XGEN scale artifact | 저장된 대형 OpenAPI artifact gate 재판정 | < 10초 | no | `make xgen-scale-gate-check REPORT=/tmp/gtc-xgen-scale-sweep.json` | 일반 코드 수정 후 XGEN gate 상태 확인 |
-| T2.6 XGEN scale live | 실제 대형 OpenAPI acceptance/sweep | 환경 의존 | no | `make xgen-scale-sweep` | OpenAPI ingest/search 계약 변경, XGEN 적용 후보 |
+| T2.6 XGEN scale snapshot gate | snapshot provenance가 있는 XGEN scale artifact 재판정 | < 10초 | no | `make xgen-scale-028-gate-check REPORT=/tmp/gtc-xgen-scale-snapshot-sweep.json` | 공개 수치, 논문 후보, release claim |
+| T2.7 XGEN scale live | 실제 대형 OpenAPI acceptance/sweep | 환경 의존 | no | `make xgen-scale-sweep` | OpenAPI ingest/search 계약 변경, XGEN 적용 후보 |
 | T3 model smoke | 소량 실제 tool-call 확인 | 5-15분 | yes | `make research-check-smoke` | 후보 구성이 바뀐 경우 |
 | T4 release | publish 후보 검증 | 1-5시간 | yes/manual | `make release-check` + full BFCL commands | README/MR/release |
 
@@ -52,6 +53,22 @@ tool schema 문자량 기준의 context reduction도 함께 기록한다.
 provider에 의존하지 않는 deterministic proxy다. 이 값으로 "LLM에 전체 API schema를
 던지는 방식" 대비 graph-tool-call 후보 구성이 실제 prompt context를 얼마나 줄였는지
 빠르게 확인한다.
+
+`xgen-scale-0.28` profile은 같은 점수라도 snapshot manifest provenance가 없는 live
+artifact를 통과시키지 않는다. 공개 수치나 논문 후보 evidence는 먼저 snapshot을
+만든 뒤 그 manifest로 sweep을 실행하고, 저장된 report를 0.28 gate로 재판정한다.
+
+```bash
+make xgen-scale-snapshot \
+  OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot
+
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
+OUT=/tmp/gtc-x2bee-scale-snapshot-sweep.json \
+make xgen-scale-sweep
+
+make xgen-scale-028-gate-check \
+  REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep.json
+```
 
 BFCL model sweep artifact에는 `summary.milestone_gate`가 포함된다. 기본
 profile은 `xgen-0.27`이며, retrieved `k=5` exact, retrieval recall, row-source

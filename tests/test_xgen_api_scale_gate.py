@@ -56,6 +56,54 @@ def test_xgen_scale_gate_fails_when_sweep_acceptance_run_is_missing(tmp_path: Pa
     assert "acceptance_run_missing" in loaded["issues"]
 
 
+def test_xgen_scale_028_requires_snapshot_provenance(tmp_path: Path):
+    report_path = tmp_path / "live-sweep.json"
+    report_path.write_text(json.dumps(_sweep_report()), encoding="utf-8")
+
+    loaded = gate.load_gate(report_path, profile="xgen-scale-0.28")
+
+    assert loaded["status"] == "fail"
+    assert loaded["checks"]["snapshot_provenance_required"] is True
+    assert loaded["checks"]["snapshot_provenance_complete"] is False
+    assert "snapshot_manifest_required" in loaded["issues"]
+    assert loaded["metrics"]["spec_count"] == 1
+    assert loaded["metrics"]["snapshot_spec_count"] == 0
+
+
+def test_xgen_scale_028_passes_with_snapshot_provenance(tmp_path: Path, capsys):
+    report = _sweep_report()
+    report["snapshot_manifests"] = [_snapshot_manifest()]
+    report_path = tmp_path / "snapshot-sweep.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    assert gate.main([str(report_path), "--profile", "xgen-scale-0.28"]) == 0
+    output = capsys.readouterr().out
+    loaded = gate.load_gate(report_path, profile="xgen-scale-0.28")
+
+    assert "snapshot_manifests=1" in output
+    assert "snapshot_specs=1" in output
+    assert loaded["status"] == "pass"
+    assert loaded["checks"]["snapshot_provenance_complete"] is True
+    assert loaded["metrics"]["snapshot_manifest_count"] == 1
+    assert loaded["metrics"]["snapshot_spec_count"] == 1
+    assert loaded["metrics"]["snapshot_sha256_count"] == 1
+    assert loaded["metrics"]["snapshot_operation_count"] == 1200
+
+
+def test_xgen_scale_028_fails_when_snapshot_sha256_is_missing(tmp_path: Path):
+    report = _sweep_report()
+    snapshot_manifest = _snapshot_manifest()
+    snapshot_manifest["specs"] = [{"path": "01_admin.json", "operation_count": 1200}]
+    report["snapshot_manifests"] = [snapshot_manifest]
+    report_path = tmp_path / "missing-sha.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    loaded = gate.load_gate(report_path, profile="xgen-scale-0.28")
+
+    assert loaded["status"] == "fail"
+    assert "snapshot_manifest_sha256_missing" in loaded["issues"]
+
+
 def _acceptance_report(*, status: str) -> dict[str, object]:
     return {
         "benchmark": "X2BEE BO API Scale Acceptance",
@@ -82,6 +130,28 @@ def _sweep_report() -> dict[str, object]:
         "sweep": [
             {"top_k": 3, "search": _search(status="diagnostic", thresholds_applied=False)},
             {"top_k": 10, "search": _search(status="pass", thresholds_applied=True)},
+        ],
+    }
+
+
+def _snapshot_manifest() -> dict[str, object]:
+    return {
+        "snapshot": "xgen_api_scale_openapi_snapshot",
+        "manifest_path": "/tmp/gtc-x2bee-openapi-snapshot/manifest.json",
+        "created_at": "2026-07-19T00:00:00+09:00",
+        "graph_tool_call_version": "0.27.0",
+        "source_url": "https://api-bo.x2bee.com/api/bo/swagger-ui/index.html",
+        "spec_count": 1,
+        "operation_count": 1200,
+        "path_count": 700,
+        "specs_csv": "01_admin.json",
+        "specs": [
+            {
+                "source": "https://api-bo.x2bee.com/v3/api-docs/admin",
+                "path": "01_admin.json",
+                "sha256": "abc123",
+                "operation_count": 1200,
+            }
         ],
     }
 

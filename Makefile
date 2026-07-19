@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-snapshot-check xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-028-gate bfcl-028-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-snapshot-check xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-028-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-028-gate bfcl-028-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -94,6 +94,10 @@ xgen-scale-sweep:
 xgen-scale-gate-check:
 	@test -n "$(REPORT)" || (echo "Usage: make xgen-scale-gate-check REPORT=/tmp/gtc-xgen-scale-sweep.json [PROFILE=xgen-scale-0.27]" && exit 2)
 	poetry run python -m benchmarks.xgen_api_scale.gate "$(REPORT)" --profile "$${PROFILE:-xgen-scale-0.27}"
+
+xgen-scale-028-gate-check:
+	@test -n "$(REPORT)" || (echo "Usage: make xgen-scale-028-gate-check REPORT=/tmp/gtc-xgen-scale-snapshot-sweep.json" && exit 2)
+	poetry run python -m benchmarks.xgen_api_scale.gate "$(REPORT)" --profile xgen-scale-0.28
 
 xgen-scale-contract-ablation:
 	@source_args="--swagger-url $${SWAGGER_URL:-https://api-bo.x2bee.com/api/bo/swagger-ui/index.html}"; \

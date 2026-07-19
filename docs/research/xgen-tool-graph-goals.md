@@ -607,6 +607,23 @@ make xgen-scale-gate-check \
   REPORT=/tmp/gtc-xgen-scale-sweep.json
 ```
 
+For paper-ready XGEN-scale claims, the stricter `xgen-scale-0.28` gate requires
+snapshot provenance in addition to the score thresholds. Capture the live
+Swagger/OpenAPI state first, run the sweep from that manifest, then check the
+saved report:
+
+```bash
+make xgen-scale-snapshot \
+  OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot
+
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
+OUT=/tmp/gtc-x2bee-scale-snapshot-sweep.json \
+make xgen-scale-sweep
+
+make xgen-scale-028-gate-check \
+  REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep.json
+```
+
 Full model benchmark is allowed only when:
 
 - README/docs public numbers will be updated.

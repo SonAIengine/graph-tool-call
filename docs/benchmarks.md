@@ -895,6 +895,26 @@ The X2BEE acceptance thresholds now require
 `min_schema_context_reduction >= 0.98`, so broadening the LLM-facing candidate
 schema surface becomes a gate failure instead of an after-the-fact observation.
 
+For paper-ready or externally cited XGEN-scale claims, use the stricter
+`xgen-scale-0.28` profile. It requires the report to be generated from a saved
+OpenAPI snapshot manifest and checks that every referenced spec has sha256
+provenance:
+
+```bash
+make xgen-scale-snapshot \
+  OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot
+
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
+OUT=/tmp/gtc-x2bee-scale-snapshot-sweep.json \
+make xgen-scale-sweep
+
+make xgen-scale-028-gate-check \
+  REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep.json
+```
+
+The routine `xgen-scale-0.27` profile remains useful for fast replay of saved
+live artifacts; `xgen-scale-0.28` is the provenance gate for public numbers.
+
 The same sweep now exposes the next bottleneck after target selection. Across
 the 19 product-level cases, average plan candidate count is `2.16`, max
 candidate count is `7`, average producer candidates added is `1.16`, and

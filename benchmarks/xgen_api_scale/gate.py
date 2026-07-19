@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_GATE_PROFILE = "xgen-scale-0.27"
+SNAPSHOT_PROVENANCE_REQUIRED_PROFILES = {"xgen-scale-0.28"}
 SUPPORTED_METHODOLOGIES = {
     "xgen_large_openapi_acceptance",
     "xgen_large_openapi_top_k_sweep",
@@ -33,7 +34,15 @@ def evaluate_gate(
     methodology = str(report.get("methodology") or "unknown")
     scale = report.get("scale") if isinstance(report.get("scale"), dict) else {}
     search = _acceptance_search(report)
-    issues = _gate_issues(report, methodology=methodology, scale=scale, search=search)
+    snapshot_provenance = _snapshot_provenance(report)
+    issues = _gate_issues(
+        report,
+        profile=profile,
+        methodology=methodology,
+        scale=scale,
+        search=search,
+        snapshot_provenance=snapshot_provenance,
+    )
     status = "pass" if not issues else "fail"
 
     return {
@@ -52,8 +61,10 @@ def evaluate_gate(
             "artifact_status_consistent": report.get("status") == status,
             "scale": dict(scale.get("checks") or {}),
             "search": dict(search.get("checks") or {}),
+            "snapshot_provenance_required": _snapshot_provenance_required(profile),
+            "snapshot_provenance_complete": snapshot_provenance["snapshot_provenance_complete"],
         },
-        "metrics": _gate_metrics(scale, search),
+        "metrics": _gate_metrics(scale, search, snapshot_provenance=snapshot_provenance),
         "issues": issues,
     }
 
@@ -87,9 +98,11 @@ def _acceptance_top_k(report: dict[str, Any]) -> int | None:
 def _gate_issues(
     report: dict[str, Any],
     *,
+    profile: str,
     methodology: str,
     scale: dict[str, Any],
     search: dict[str, Any],
+    snapshot_provenance: dict[str, Any],
 ) -> list[str]:
     issues: list[str] = []
     if methodology not in SUPPORTED_METHODOLOGIES:
@@ -103,10 +116,25 @@ def _gate_issues(
         issues.append("search_gate_failed")
     if report.get("status") not in {None, "pass"}:
         issues.append("artifact_status_failed")
+    if _snapshot_provenance_required(profile):
+        if not snapshot_provenance["snapshot_manifest_count"]:
+            issues.append("snapshot_manifest_required")
+        elif not snapshot_provenance["snapshot_spec_count"]:
+            issues.append("snapshot_manifest_specs_missing")
+        elif (
+            snapshot_provenance["snapshot_sha256_count"]
+            < snapshot_provenance["snapshot_spec_count"]
+        ):
+            issues.append("snapshot_manifest_sha256_missing")
     return issues
 
 
-def _gate_metrics(scale: dict[str, Any], search: dict[str, Any]) -> dict[str, Any]:
+def _gate_metrics(
+    scale: dict[str, Any],
+    search: dict[str, Any],
+    *,
+    snapshot_provenance: dict[str, Any],
+) -> dict[str, Any]:
     metric_names = [
         "case_hit_at_k",
         "expected_tool_recall_at_k",
@@ -141,6 +169,7 @@ def _gate_metrics(scale: dict[str, Any], search: dict[str, Any]) -> dict[str, An
         "cases": search.get("cases"),
     }
     metrics.update({name: search.get(name) for name in metric_names if name in search})
+    metrics.update(snapshot_provenance)
     return metrics
 
 
@@ -156,14 +185,70 @@ def _sweep_acceptance_run_missing(report: dict[str, Any]) -> bool:
     )
 
 
+def _snapshot_provenance_required(profile: str) -> bool:
+    return profile in SNAPSHOT_PROVENANCE_REQUIRED_PROFILES
+
+
+def _snapshot_provenance(report: dict[str, Any]) -> dict[str, Any]:
+    manifests = report.get("snapshot_manifests")
+    if not isinstance(manifests, list):
+        manifests = []
+
+    manifest_count = 0
+    spec_count = 0
+    sha256_count = 0
+    operation_count = 0
+    for manifest in manifests:
+        if not isinstance(manifest, dict):
+            continue
+        manifest_count += 1
+        operation_count += _int_or_zero(manifest.get("operation_count"))
+        specs = manifest.get("specs")
+        if not isinstance(specs, list):
+            continue
+        for spec in specs:
+            if not isinstance(spec, dict):
+                continue
+            spec_count += 1
+            if spec.get("sha256"):
+                sha256_count += 1
+
+    return {
+        "snapshot_manifest_count": manifest_count,
+        "snapshot_spec_count": spec_count,
+        "snapshot_sha256_count": sha256_count,
+        "snapshot_operation_count": operation_count,
+        "snapshot_provenance_complete": (
+            manifest_count > 0 and spec_count > 0 and sha256_count == spec_count
+        ),
+    }
+
+
+def _int_or_zero(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def format_gate(gate: dict[str, Any]) -> str:
     """Format a compact human-readable gate summary."""
     metrics = gate.get("metrics") or {}
+    snapshot_suffix = ""
+    if gate.get("checks", {}).get("snapshot_provenance_required"):
+        snapshot_suffix = (
+            " snapshot_manifests={manifest_count} snapshot_specs={spec_count} "
+            "snapshot_sha256={sha256_count}"
+        ).format(
+            manifest_count=metrics.get("snapshot_manifest_count"),
+            spec_count=metrics.get("snapshot_spec_count"),
+            sha256_count=metrics.get("snapshot_sha256_count"),
+        )
     return (
         "xgen-scale gate profile={profile} status={status} methodology={methodology} "
         "acceptance_top_k={top_k} unique_tools={tools} cases={cases} "
         "recall@K={recall} selector={selector} candidates={candidates} "
-        "schema_reduction={schema_reduction} issues={issues}"
+        "schema_reduction={schema_reduction}{snapshot_suffix} issues={issues}"
     ).format(
         profile=gate.get("profile"),
         status=gate.get("status"),
@@ -175,6 +260,7 @@ def format_gate(gate: dict[str, Any]) -> str:
         selector=metrics.get("target_selector_exact_at_k"),
         candidates=metrics.get("avg_candidate_count"),
         schema_reduction=metrics.get("avg_schema_context_reduction"),
+        snapshot_suffix=snapshot_suffix,
         issues=gate.get("issues") or ["pass"],
     )
 
