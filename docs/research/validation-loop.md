@@ -216,6 +216,16 @@ qwen3.6-27B single-case smoke
 `/tmp/gtc-bfcl-route-hardening-multiple24-qwen.json`도 retrieved exact `1.00`으로
 pass했다.
 
+`2026-07-19` tool subsumption pruning pass는 retrieved evidence는 유지하되
+model-facing 후보에서 richer case-local tool이 query facets를 모두 커버하는 경우
+lower-level partial helper를 숨긴다. BFCL `parallel_3`에서
+`protein_info.get_sequence_and_3D`가 sequence와 3D model을 모두 커버하므로
+`get_protein_sequence`를 `tools_presented`에서 제외했다. Fresh qwen3.6-27B
+single-case smoke는 `/tmp/gtc-bfcl-subsumption-before-parallel3-qwen.json`
+`call_count_mismatch`에서 `/tmp/gtc-bfcl-subsumption-after-parallel3-qwen.json`
+retrieved exact `1.00` pass로 회복됐다. Route + subsumption two-case smoke
+`/tmp/gtc-bfcl-subsumption-route-parallel-qwen.json`도 exact `1.00`으로 pass했다.
+
 ## 실행 타깃
 
 ```bash

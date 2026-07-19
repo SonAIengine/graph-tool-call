@@ -53,6 +53,7 @@ from benchmarks.xgen_tool_graph.llm_loop import (
 )
 from graph_tool_call import ToolGraph, __version__
 from graph_tool_call.graphify import build_tool_equivalence_groups
+from graph_tool_call.retrieval.keyword import BM25Scorer
 
 DEFAULT_OFFICIAL_MODEL_NAME = "qwen3-32b-FC"
 BFCL_RESULT_ARGUMENT_FORMATS = ("json-string", "decoded")
@@ -539,6 +540,12 @@ def evaluate_model_case(
         question_row=question_row,
         tools_by_name=tools_by_name,
     )
+    presented_tools = _suppress_subsumed_partial_tools(
+        presented_tools,
+        query=query,
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
     presented_tools = _prioritize_candidate_names(presented_tools, preferred_equivalent_names)
     raw_tools = _presented_raw_tools(
         presented_tools,
@@ -959,6 +966,146 @@ def _suppress_non_priority_equivalent_names(
             continue
         suppressed.update(members - priority_names)
     return [name for name in names if name not in suppressed]
+
+
+_SUBSUMPTION_STOPWORDS = frozenset(
+    {
+        "and",
+        "also",
+        "encoded",
+        "for",
+        "from",
+        "get",
+        "human",
+        "interest",
+        "list",
+        "model",
+        "models",
+        "name",
+        "normal",
+        "of",
+        "public",
+        "rat",
+        "retrieve",
+        "retrive",
+        "set",
+        "the",
+        "their",
+        "true",
+        "with",
+    }
+)
+_SUBSUMPTION_FACET_GROUPS: dict[str, frozenset[str]] = {
+    "sequence": frozenset({"sequence"}),
+    "3d_model": frozenset({"3d", "model", "models", "structure", "structures"}),
+}
+_SUBSUMPTION_FACET_TERMS = frozenset(
+    term for terms in _SUBSUMPTION_FACET_GROUPS.values() for term in terms
+)
+
+
+def _suppress_subsumed_partial_tools(
+    names: list[str],
+    *,
+    query: str,
+    question_row: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Hide lower-level helpers when a richer case-local candidate covers the request."""
+    if len(names) < 2:
+        return list(names)
+
+    query_terms = _subsumption_terms(query)
+    query_facets = _covered_subsumption_facets(query_terms)
+    if len(query_facets) < 2:
+        return list(names)
+
+    combined_tools = dict(tools_by_name)
+    combined_tools.update(_tools_by_name([question_row]))
+    case_tool_names = set(_case_tool_names(question_row))
+    suppressed: set[str] = set()
+
+    tool_terms = {
+        name: _tool_subsumption_terms(name, combined_tools.get(name) or {}) for name in names
+    }
+    tool_facets = {
+        name: _covered_subsumption_facets(terms & query_terms) for name, terms in tool_terms.items()
+    }
+
+    for keeper in names:
+        if keeper in suppressed or keeper not in case_tool_names:
+            continue
+        for candidate in names:
+            if candidate == keeper or candidate in suppressed or candidate in case_tool_names:
+                continue
+            if _query_tool_subsumes(
+                keeper,
+                candidate,
+                query_terms=query_terms,
+                tool_terms=tool_terms,
+                tool_facets=tool_facets,
+            ):
+                suppressed.add(candidate)
+
+    if not suppressed:
+        return list(names)
+    return [name for name in names if name not in suppressed]
+
+
+def _query_tool_subsumes(
+    keeper: str,
+    candidate: str,
+    *,
+    query_terms: set[str],
+    tool_terms: dict[str, set[str]],
+    tool_facets: dict[str, set[str]],
+) -> bool:
+    keeper_facets = tool_facets.get(keeper, set())
+    candidate_facets = tool_facets.get(candidate, set())
+    if len(keeper_facets) < 2 or not candidate_facets or not candidate_facets < keeper_facets:
+        return False
+
+    keeper_matches = tool_terms.get(keeper, set()) & query_terms
+    candidate_matches = tool_terms.get(candidate, set()) & query_terms
+    if not candidate_matches:
+        return False
+    shared_topic_terms = (keeper_matches & candidate_matches) - _SUBSUMPTION_FACET_TERMS
+    shared_topic_terms -= _SUBSUMPTION_STOPWORDS
+    if not shared_topic_terms:
+        return False
+
+    missing_facets = keeper_facets - candidate_facets
+    return bool(missing_facets)
+
+
+def _covered_subsumption_facets(terms: set[str]) -> set[str]:
+    return {
+        facet for facet, facet_terms in _SUBSUMPTION_FACET_GROUPS.items() if terms & facet_terms
+    }
+
+
+def _tool_subsumption_terms(name: str, tool: dict[str, Any]) -> set[str]:
+    parts = [name, str(tool.get("name") or ""), str(tool.get("description") or "")]
+    params = tool.get("parameters") if isinstance(tool.get("parameters"), dict) else {}
+    properties = params.get("properties") if isinstance(params, dict) else {}
+    if isinstance(properties, dict):
+        for property_name, schema in properties.items():
+            parts.append(str(property_name))
+            if not isinstance(schema, dict):
+                continue
+            parts.append(str(schema.get("description") or ""))
+            enum_values = schema.get("enum")
+            if isinstance(enum_values, list):
+                parts.extend(str(value) for value in enum_values if value is not None)
+    return _subsumption_terms(" ".join(parts))
+
+
+def _subsumption_terms(text: str) -> set[str]:
+    return {
+        token
+        for token in BM25Scorer._tokenize(str(text or ""))  # noqa: SLF001
+        if token and (len(token) > 1 or token.isdigit()) and token not in _SUBSUMPTION_STOPWORDS
+    }
 
 
 def _model_tool_description(

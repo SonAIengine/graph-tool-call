@@ -336,9 +336,15 @@ Required work:
     모두 `1.00`으로 통과했다. Fresh qwen3.6-27B single-case smoke
     `/tmp/gtc-bfcl-route-hardening-multiple24-qwen.json`도 retrieved exact `1.00`으로
     pass했다.
-    다음 병목은 `parallel_3`처럼 lower-level sequence-only tool을 sequence+3D tool과
-    함께 호출하는 over-decomposition이다. Row-source에서도 실패한 repeated-call /
-    argument mismatch는 retrieval layer 손실과 분리해서 모델 상한 및 tool schema
+    tool subsumption pruning pass에서는 retrieved evidence는 유지하되 model-facing
+    후보에서 richer case-local tool이 query facets를 모두 커버하는 경우 lower-level
+    partial helper를 숨긴다. BFCL `parallel_3`은 `get_protein_sequence`를
+    `tools_presented`에서 제외하면서 qwen3.6-27B single-case smoke가
+    `call_count_mismatch`에서 retrieved exact `1.00` pass로 회복됐다. Route +
+    subsumption two-case smoke `/tmp/gtc-bfcl-subsumption-route-parallel-qwen.json`도
+    exact `1.00`으로 pass했다.
+    다음 병목은 Row-source에서도 실패한 repeated-call / argument mismatch다.
+    이 영역은 retrieval layer 손실과 분리해서 모델 상한 및 tool schema
     표현 문제로 본다.
 
 ## Paper-Ready Target
