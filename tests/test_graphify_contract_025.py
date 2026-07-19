@@ -1022,6 +1022,84 @@ def test_build_candidate_set_can_cap_sibling_target_groups_without_touching_prod
     assert page_role_group["suppressed_count"] == 1
 
 
+def test_build_candidate_set_can_diversify_limited_multi_intent_target_groups():
+    tools = {
+        "getOrderDetail": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "order", "canonical_action": "read"},
+            }
+        },
+        "getOrderPayments": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "order", "canonical_action": "read"},
+            }
+        },
+        "getOrderMemos": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "order", "canonical_action": "read"},
+            }
+        },
+        "validateCoupon": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "coupon", "canonical_action": "read"},
+            }
+        },
+        "getShipmentTracking": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "shipment", "canonical_action": "read"},
+            }
+        },
+    }
+
+    plain = build_candidate_set(
+        [
+            "getOrderDetail",
+            "getOrderPayments",
+            "getOrderMemos",
+            "validateCoupon",
+            "getShipmentTracking",
+        ],
+        tools,
+        max_target_candidates=4,
+        max_hops=0,
+    )
+    diverse = build_candidate_set(
+        [
+            "getOrderDetail",
+            "getOrderPayments",
+            "getOrderMemos",
+            "validateCoupon",
+            "getShipmentTracking",
+        ],
+        tools,
+        max_target_candidates=4,
+        diversify_target_groups=True,
+        max_hops=0,
+    )
+
+    assert plain["target_candidates"] == [
+        "getOrderDetail",
+        "getOrderPayments",
+        "getOrderMemos",
+        "validateCoupon",
+    ]
+    assert plain["suppressed_target_candidates"] == ["getShipmentTracking"]
+    assert diverse["target_candidates"] == [
+        "getOrderDetail",
+        "validateCoupon",
+        "getShipmentTracking",
+        "getOrderPayments",
+    ]
+    assert diverse["suppressed_target_candidates"] == ["getOrderMemos"]
+    assert diverse["target_diversity_applied"] is True
+    assert diverse["max_target_candidates"] == 4
+    assert {row["key"] for row in diverse["target_candidate_groups"]} == {
+        "resource_action:order:read",
+        "resource_action:coupon:read",
+        "resource_action:shipment:read",
+    }
+
+
 def test_edge_normalize_merge_and_trace_derivation_contract():
     structural = normalize_graph_edge(
         {

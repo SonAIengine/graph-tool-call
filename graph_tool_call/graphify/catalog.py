@@ -12,7 +12,9 @@ def build_candidate_set(
     tools_by_name: dict[str, dict[str, Any]],
     *,
     expansion_seed: list[str] | None = None,
+    max_target_candidates: int | None = None,
     max_targets_per_group: int | None = None,
+    diversify_target_groups: bool = False,
     max_producers_per_field: int = 3,
     max_hops: int = 1,
     action_priority: dict[str, int] | None = None,
@@ -25,16 +27,21 @@ def build_candidate_set(
     target. If no seed is provided, the function preserves the legacy behavior
     and expands from every target candidate. ``max_targets_per_group`` is an
     opt-in sibling cap for adapters that want to avoid near-duplicate targets
-    crowding a small LLM-visible set.
+    crowding a small LLM-visible set. ``max_target_candidates`` and
+    ``diversify_target_groups`` are opt-in controls for multi-intent target
+    surfaces.
     """
 
     raw_targets = _dedupe_names(target_candidates)
     seed = _dedupe_names(target_candidates if expansion_seed is None else expansion_seed)
+    explicit_seed = _dedupe_names(expansion_seed or [])
     targets, suppressed_targets, target_groups = _target_candidates_with_group_cap(
         raw_targets,
         tools_by_name=tools_by_name,
+        max_target_candidates=max_target_candidates,
         max_targets_per_group=max_targets_per_group,
-        always_keep=set(seed),
+        diversify_target_groups=diversify_target_groups,
+        always_keep=set(explicit_seed),
     )
     candidates = expand_candidates_with_producers(
         seed,
@@ -60,7 +67,10 @@ def build_candidate_set(
         "suppressed_target_count": len(suppressed_targets),
         "sibling_control_applied": bool(suppressed_targets),
         "target_candidate_groups": target_groups,
+        "max_target_candidates": max_target_candidates,
         "max_targets_per_group": max_targets_per_group,
+        "diversify_target_groups": diversify_target_groups,
+        "target_diversity_applied": bool(diversify_target_groups and max_target_candidates),
         "max_hops": max(0, max_hops),
         "max_producers_per_field": max(0, max_producers_per_field),
     }
@@ -155,27 +165,37 @@ def _target_candidates_with_group_cap(
     names: list[str],
     *,
     tools_by_name: dict[str, dict[str, Any]],
+    max_target_candidates: int | None,
     max_targets_per_group: int | None,
+    diversify_target_groups: bool,
     always_keep: set[str],
 ) -> tuple[list[str], list[str], list[dict[str, Any]]]:
     groups = _target_candidate_groups(names, tools_by_name=tools_by_name)
-    if max_targets_per_group is None:
-        return names, [], groups
 
-    cap = max(1, int(max_targets_per_group))
-    selected: list[str] = []
-    suppressed: list[str] = []
-    group_counts: dict[str, int] = {}
-    for name in names:
-        key = _target_group_key(name, tools_by_name.get(name) or {})
-        count = group_counts.get(key, 0)
-        if count < cap or name in always_keep:
-            selected.append(name)
-            group_counts[key] = count + 1
+    candidates = list(names)
+    if max_targets_per_group is not None:
+        cap = max(1, int(max_targets_per_group))
+        candidates = _cap_targets_per_group(
+            candidates,
+            tools_by_name=tools_by_name,
+            cap=cap,
+            always_keep=always_keep,
+        )
+
+    if max_target_candidates is not None:
+        limit = max(1, int(max_target_candidates))
+        if diversify_target_groups:
+            candidates = _diverse_target_candidates(
+                candidates,
+                tools_by_name=tools_by_name,
+                limit=limit,
+                always_keep=always_keep,
+            )
         else:
-            suppressed.append(name)
+            candidates = _limit_targets(candidates, limit=limit, always_keep=always_keep)
 
-    selected_set = set(selected)
+    selected_set = set(candidates)
+    suppressed = [name for name in names if name not in selected_set]
     enriched_groups: list[dict[str, Any]] = []
     for group in groups:
         members = list(group["members"])
@@ -188,7 +208,87 @@ def _target_candidates_with_group_cap(
                 "suppressed_count": len(suppressed_members),
             }
         )
-    return selected, suppressed, enriched_groups
+    return candidates, suppressed, enriched_groups
+
+
+def _cap_targets_per_group(
+    names: list[str],
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+    cap: int,
+    always_keep: set[str],
+) -> list[str]:
+    selected: list[str] = []
+    group_counts: dict[str, int] = {}
+    for name in names:
+        key = _target_group_key(name, tools_by_name.get(name) or {})
+        count = group_counts.get(key, 0)
+        if count < cap or name in always_keep:
+            selected.append(name)
+            group_counts[key] = count + 1
+    return selected
+
+
+def _limit_targets(names: list[str], *, limit: int, always_keep: set[str]) -> list[str]:
+    selected = list(names[:limit])
+    return _ensure_always_keep(selected, names=names, limit=limit, always_keep=always_keep)
+
+
+def _diverse_target_candidates(
+    names: list[str],
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+    limit: int,
+    always_keep: set[str],
+) -> list[str]:
+    grouped: dict[str, list[str]] = {}
+    for name in names:
+        key = _target_group_key(name, tools_by_name.get(name) or {})
+        grouped.setdefault(key, []).append(name)
+
+    selected: list[str] = []
+    offsets = {key: 0 for key in grouped}
+    while len(selected) < limit:
+        added = False
+        for key, members in grouped.items():
+            offset = offsets[key]
+            if offset >= len(members):
+                continue
+            selected.append(members[offset])
+            offsets[key] = offset + 1
+            added = True
+            if len(selected) >= limit:
+                break
+        if not added:
+            break
+    return _ensure_always_keep(selected, names=names, limit=limit, always_keep=always_keep)
+
+
+def _ensure_always_keep(
+    selected: list[str],
+    *,
+    names: list[str],
+    limit: int,
+    always_keep: set[str],
+) -> list[str]:
+    out = list(selected)
+    selected_set = set(out)
+    for keep in [name for name in names if name in always_keep and name not in selected_set]:
+        if len(out) < limit:
+            out.append(keep)
+            selected_set.add(keep)
+            continue
+        replace_idx = next(
+            (idx for idx in range(len(out) - 1, -1, -1) if out[idx] not in always_keep),
+            None,
+        )
+        if replace_idx is None:
+            out.append(keep)
+        else:
+            selected_set.discard(out[replace_idx])
+            out[replace_idx] = keep
+        selected_set.add(keep)
+    return out
 
 
 def _target_candidate_groups(

@@ -228,6 +228,11 @@ Goal: top-K를 단순히 키우지 않고 후보 구성을 좋아지게 한다.
     `target_candidate_groups`가 남아 XGEN target selector가 어떤 후보를 줄였는지
     설명할 수 있다.
 - multi-intent query에서는 category diversity를 보장한다.
+  - `2026-07-19`: `build_candidate_set(...)`에 opt-in
+    `max_target_candidates` + `diversify_target_groups`를 추가했다. XGEN
+    adapter가 larger target surface를 작은 LLM-visible budget으로 줄일 때,
+    첫 group sibling만 채우지 않고 target group round-robin으로 복합 intent의
+    resource/action 다양성을 보존할 수 있다.
 - 복합 query에서만 adaptive expansion을 적용한다.
 - X2BEE 현재 gap은 `order_query`의 target rank 4와 page-role secondary target
   rank 5다. top-K를 늘리지 않고 이 두 유형을 top-3으로 올리는 개선을 우선한다.

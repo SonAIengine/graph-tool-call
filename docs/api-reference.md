@@ -427,6 +427,20 @@ suppressed = candidate_set["suppressed_target_candidates"]
 groups = candidate_set["target_candidate_groups"]
 ```
 
+For multi-intent queries where the adapter is trimming a larger target surface
+down to a smaller LLM-visible budget, add `diversify_target_groups=True`.
+Selection then round-robins across target groups before taking a second sibling
+from the same group:
+
+```python
+candidate_set = build_candidate_set(
+    target_candidates,
+    graph_payload["tools"],
+    max_target_candidates=5,
+    diversify_target_groups=True,
+)
+```
+
 ---
 
 ## Top-level helpers
