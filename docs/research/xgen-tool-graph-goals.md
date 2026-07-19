@@ -314,11 +314,18 @@ Required work:
     scale, open dict nesting, query-local symbolic reference를 model-facing schema에
     보강해 `/tmp/gtc-bfcl-argument-value-hints-v4-subset.json` 기준 같은 6-case
     argument subset exact를 `1.00`까지 올렸다.
-    다음 병목은 `solve_quadratic` vs `solve_quadratic_equation`,
-    `geometry.circumference` vs `calculate_circumference`, `math.gcd` vs
-    `number_theory.gcd` 같은 near-duplicate disambiguation과 argument-value
-    preservation이다. Row-source에서도 실패한 repeated-call / argument mismatch는
-    retrieval layer 손실과 분리해서 모델 상한 및 tool schema 표현 문제로 본다.
+    near-duplicate disambiguation pass에서는 equivalent sibling과 case-local
+    surface가 함께 retrieval top-K에 있을 때 model-facing candidate order에서
+    case-local surface를 앞쪽으로 올려
+    `/tmp/gtc-bfcl-neardup-case-local-order.json` 기준 4-case near-duplicate subset
+    exact를 `1.00`으로 만들었다. 이 pass는 retrieved list 자체를 바꾸지 않고
+    presentation order만 기록하므로 search evidence와 model-facing selection을
+    따로 비교할 수 있다.
+    다음 병목은 이 두 pass를 100-case/full sweep으로 넓혔을 때 남는
+    `parallel_multiple` candidate ambiguity, repeated-call grouping, row-source에서도
+    실패하는 모델 상한 케이스다. Row-source에서도 실패한 repeated-call /
+    argument mismatch는 retrieval layer 손실과 분리해서 모델 상한 및 tool schema
+    표현 문제로 본다.
 
 ## Paper-Ready Target
 

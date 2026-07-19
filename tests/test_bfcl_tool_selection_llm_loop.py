@@ -10,6 +10,7 @@ from benchmarks.bfcl_tool_selection import llm_loop
 from benchmarks.bfcl_tool_selection.llm_loop import (
     ExpectedToolCall,
     PredictedToolCall,
+    _case_local_equivalence_priority_names,
     _classify_failure,
     _cohesive_namespace_candidates,
     _equivalence_adjusted_exact_match,
@@ -20,6 +21,7 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     _normalize_parameters,
     _prepare_tools_for_model,
     _presented_raw_tools,
+    _prioritize_candidate_names,
     run_model_benchmark,
     write_bfcl_result_files,
 )
@@ -72,6 +74,25 @@ def test_prepare_tools_can_prefix_retrieval_rank_hints():
     assert description.endswith("Calculate area of a circle.")
 
 
+def test_prepare_tools_can_prefix_case_local_equivalent_surface_hint():
+    tools, _name_map = _prepare_tools_for_model(
+        [
+            {
+                "name": "solve_quadratic",
+                "description": "Find roots of a quadratic equation.",
+                "parameters": {"type": "dict", "properties": {}, "required": []},
+            }
+        ],
+        preferred_equivalent_names={"solve_quadratic"},
+    )
+
+    description = tools[0]["function"]["description"]
+
+    assert description.startswith("Case-local tool surface")
+    assert "prefer this exact function name" in description
+    assert description.endswith("Find roots of a quadratic equation.")
+
+
 def test_presented_tools_prefer_case_local_schema_for_duplicate_names():
     first_row = {
         "id": "simple_python_0",
@@ -112,6 +133,63 @@ def test_presented_tools_prefer_case_local_schema_for_duplicate_names():
     properties = raw_tools[0]["parameters"]["properties"]
     assert raw_tools[0]["description"] == "Calculate with base and height only."
     assert set(properties) == {"base", "height"}
+
+
+def test_case_local_equivalence_priority_names_select_equivalent_case_surface_only():
+    question_row = {
+        "id": "simple_python_6",
+        "function": [
+            {
+                "name": "solve_quadratic",
+                "description": "Find the roots of a quadratic equation.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {"a": {}, "b": {}, "c": {}},
+                    "required": ["a", "b", "c"],
+                },
+            }
+        ],
+    }
+    global_tools = {
+        "solve_quadratic_equation": {
+            "name": "solve_quadratic_equation",
+            "description": "Function solves the quadratic equation and returns its roots.",
+            "parameters": {
+                "type": "dict",
+                "properties": {"a": {}, "b": {}, "c": {}},
+                "required": ["a", "b", "c"],
+            },
+        },
+        "solve_quadratic": {
+            "name": "solve_quadratic",
+            "description": "Solve a quadratic equation given coefficients.",
+            "parameters": {
+                "type": "dict",
+                "properties": {"a": {}, "b": {}, "c": {}, "root_type": {}},
+                "required": ["a", "b", "c"],
+            },
+        },
+        "restaurant_finder": {
+            "name": "restaurant_finder",
+            "description": "Find restaurants nearby.",
+            "parameters": {"type": "dict", "properties": {}, "required": []},
+        },
+    }
+
+    priority_names = _case_local_equivalence_priority_names(
+        ["solve_quadratic_equation", "solve_quadratic", "restaurant_finder"],
+        question_row=question_row,
+        tools_by_name=global_tools,
+    )
+
+    assert priority_names == {"solve_quadratic"}
+
+
+def test_prioritize_candidate_names_moves_priority_surfaces_to_front():
+    assert _prioritize_candidate_names(
+        ["solve_quadratic_equation", "algebra.quadratic_roots", "solve_quadratic"],
+        {"solve_quadratic"},
+    ) == ["solve_quadratic", "solve_quadratic_equation", "algebra.quadratic_roots"]
 
 
 def test_normalized_parameters_add_argument_value_preservation_hints():
