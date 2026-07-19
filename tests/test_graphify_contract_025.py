@@ -952,6 +952,76 @@ def test_build_candidate_set_separates_target_candidates_from_producers():
     assert result["adaptive_expansion_applied"] is True
 
 
+def test_build_candidate_set_can_cap_sibling_target_groups_without_touching_producers():
+    tools = {
+        "getButtonByPageRoleList": {
+            "metadata": {
+                "consumes": [
+                    {"field_name": "pageRoleId", "semantic_tag": "page_role_id", "required": True}
+                ],
+                "ai_metadata": {"primary_resource": "page_role_button", "canonical_action": "read"},
+            }
+        },
+        "getEnabledButtonByPageRoleList": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "page_role_button", "canonical_action": "read"},
+            }
+        },
+        "getUserButtonByPageRoleList": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "page_role_button", "canonical_action": "read"},
+            }
+        },
+        "getUserDetail": {
+            "metadata": {
+                "ai_metadata": {"primary_resource": "user", "canonical_action": "read"},
+            }
+        },
+        "searchPageRoles": {
+            "metadata": {
+                "produces": [{"field_name": "pageRoleId", "semantic_tag": "page_role_id"}],
+                "ai_metadata": {"primary_resource": "page_role", "canonical_action": "search"},
+            }
+        },
+    }
+
+    result = build_candidate_set(
+        [
+            "getButtonByPageRoleList",
+            "getEnabledButtonByPageRoleList",
+            "getUserButtonByPageRoleList",
+            "getUserDetail",
+        ],
+        tools,
+        expansion_seed=["getButtonByPageRoleList"],
+        max_targets_per_group=2,
+        max_hops=1,
+    )
+
+    assert result["raw_target_candidates"] == [
+        "getButtonByPageRoleList",
+        "getEnabledButtonByPageRoleList",
+        "getUserButtonByPageRoleList",
+        "getUserDetail",
+    ]
+    assert result["target_candidates"] == [
+        "getButtonByPageRoleList",
+        "getEnabledButtonByPageRoleList",
+        "getUserDetail",
+    ]
+    assert result["suppressed_target_candidates"] == ["getUserButtonByPageRoleList"]
+    assert result["sibling_control_applied"] is True
+    assert result["producer_candidates"] == ["searchPageRoles"]
+    assert result["candidates"] == ["getButtonByPageRoleList", "searchPageRoles"]
+    page_role_group = next(
+        row
+        for row in result["target_candidate_groups"]
+        if row["key"] == "resource_action:page_role_button:read"
+    )
+    assert page_role_group["member_count"] == 3
+    assert page_role_group["suppressed_count"] == 1
+
+
 def test_edge_normalize_merge_and_trace_derivation_contract():
     structural = normalize_graph_edge(
         {

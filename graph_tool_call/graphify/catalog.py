@@ -12,6 +12,7 @@ def build_candidate_set(
     tools_by_name: dict[str, dict[str, Any]],
     *,
     expansion_seed: list[str] | None = None,
+    max_targets_per_group: int | None = None,
     max_producers_per_field: int = 3,
     max_hops: int = 1,
     action_priority: dict[str, int] | None = None,
@@ -22,11 +23,19 @@ def build_candidate_set(
     are expanded only from ``expansion_seed`` so XGEN-style adapters can keep
     top-K target search separate from the plan candidate set for the selected
     target. If no seed is provided, the function preserves the legacy behavior
-    and expands from every target candidate.
+    and expands from every target candidate. ``max_targets_per_group`` is an
+    opt-in sibling cap for adapters that want to avoid near-duplicate targets
+    crowding a small LLM-visible set.
     """
 
-    targets = _dedupe_names(target_candidates)
+    raw_targets = _dedupe_names(target_candidates)
     seed = _dedupe_names(target_candidates if expansion_seed is None else expansion_seed)
+    targets, suppressed_targets, target_groups = _target_candidates_with_group_cap(
+        raw_targets,
+        tools_by_name=tools_by_name,
+        max_targets_per_group=max_targets_per_group,
+        always_keep=set(seed),
+    )
     candidates = expand_candidates_with_producers(
         seed,
         tools_by_name,
@@ -37,14 +46,21 @@ def build_candidate_set(
     seed_set = set(seed)
     producers = [name for name in candidates if name not in seed_set]
     return {
+        "raw_target_candidates": raw_targets,
         "target_candidates": targets,
         "expansion_seed": seed,
         "producer_candidates": producers,
         "candidates": candidates,
         "target_candidate_count": len(targets),
+        "raw_target_candidate_count": len(raw_targets),
         "candidate_count": len(candidates),
         "producer_added_count": len(producers),
         "adaptive_expansion_applied": bool(producers),
+        "suppressed_target_candidates": suppressed_targets,
+        "suppressed_target_count": len(suppressed_targets),
+        "sibling_control_applied": bool(suppressed_targets),
+        "target_candidate_groups": target_groups,
+        "max_targets_per_group": max_targets_per_group,
         "max_hops": max(0, max_hops),
         "max_producers_per_field": max(0, max_producers_per_field),
     }
@@ -133,6 +149,82 @@ def _producers_for_required_inputs(
 
 def _dedupe_names(names: list[str]) -> list[str]:
     return list(dict.fromkeys(str(name) for name in names if str(name)))
+
+
+def _target_candidates_with_group_cap(
+    names: list[str],
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+    max_targets_per_group: int | None,
+    always_keep: set[str],
+) -> tuple[list[str], list[str], list[dict[str, Any]]]:
+    groups = _target_candidate_groups(names, tools_by_name=tools_by_name)
+    if max_targets_per_group is None:
+        return names, [], groups
+
+    cap = max(1, int(max_targets_per_group))
+    selected: list[str] = []
+    suppressed: list[str] = []
+    group_counts: dict[str, int] = {}
+    for name in names:
+        key = _target_group_key(name, tools_by_name.get(name) or {})
+        count = group_counts.get(key, 0)
+        if count < cap or name in always_keep:
+            selected.append(name)
+            group_counts[key] = count + 1
+        else:
+            suppressed.append(name)
+
+    selected_set = set(selected)
+    enriched_groups: list[dict[str, Any]] = []
+    for group in groups:
+        members = list(group["members"])
+        suppressed_members = [name for name in members if name not in selected_set]
+        enriched_groups.append(
+            {
+                **group,
+                "selected": [name for name in members if name in selected_set],
+                "suppressed": suppressed_members,
+                "suppressed_count": len(suppressed_members),
+            }
+        )
+    return selected, suppressed, enriched_groups
+
+
+def _target_candidate_groups(
+    names: list[str],
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[str]] = {}
+    for name in names:
+        key = _target_group_key(name, tools_by_name.get(name) or {})
+        grouped.setdefault(key, []).append(name)
+    return [
+        {
+            "key": key,
+            "members": members,
+            "member_count": len(members),
+        }
+        for key, members in grouped.items()
+    ]
+
+
+def _target_group_key(name: str, tool: dict[str, Any]) -> str:
+    metadata = tool.get("metadata") or {}
+    ai = metadata.get("ai_metadata") or {}
+    resource = str(ai.get("primary_resource") or "").strip().lower()
+    action = str(ai.get("canonical_action") or "").strip().lower()
+    if resource and action:
+        return f"resource_action:{resource}:{action}"
+    if resource:
+        return f"resource:{resource}"
+    tags = [str(tag).strip().lower() for tag in tool.get("tags") or [] if str(tag).strip()]
+    if tags and action:
+        return f"tag_action:{tags[0]}:{action}"
+    if tags:
+        return f"tag:{tags[0]}"
+    return f"name:{name}"
 
 
 def _build_producer_index(

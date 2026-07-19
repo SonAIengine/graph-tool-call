@@ -410,6 +410,23 @@ assert candidate_set["target_candidates"] == target_candidates
 assert selected_target in candidate_set["expansion_seed"]
 ```
 
+When near-duplicate target tools crowd the target surface, pass
+`max_targets_per_group` to cap siblings by `primary_resource` +
+`canonical_action`. This is opt-in; the returned report keeps the raw target
+list and the suppressed sibling evidence:
+
+```python
+candidate_set = build_candidate_set(
+    target_candidates,
+    graph_payload["tools"],
+    expansion_seed=[selected_target],
+    max_targets_per_group=2,
+)
+
+suppressed = candidate_set["suppressed_target_candidates"]
+groups = candidate_set["target_candidate_groups"]
+```
+
 ---
 
 ## Top-level helpers
