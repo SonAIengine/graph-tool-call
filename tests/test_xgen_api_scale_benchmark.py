@@ -317,6 +317,94 @@ def test_xgen_api_scale_reports_contract_plan_readiness(tmp_path):
     assert case["input_support"][0]["producer_candidates"] == ["searchProducts"]
 
 
+def test_xgen_api_scale_classifies_required_input_readiness_issues(tmp_path):
+    cases_path = tmp_path / "cases.json"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "name": "Tiny Readiness Issue Classes",
+                "top_k": 1,
+                "thresholds": {
+                    "case_hit_at_k": 1.0,
+                    "target_selector_exact_at_k": 1.0,
+                },
+                "cases": [
+                    {
+                        "id": "required_inputs",
+                        "query": "missing readiness target",
+                        "expected_tools": ["getMissingReadiness"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    spec = _spec(
+        "Readiness Issue Classes",
+        {
+            "/missing-readiness": _contract_operation(
+                "getMissingReadiness",
+                "Missing readiness target",
+                parameters=[
+                    {
+                        "name": "memberSearchRequest",
+                        "in": "query",
+                        "required": True,
+                        "description": "Member list Request",
+                        "schema": {"type": "string"},
+                    },
+                    {
+                        "name": "systemType",
+                        "in": "query",
+                        "required": True,
+                        "description": "System type",
+                        "schema": {"type": "string"},
+                    },
+                    {
+                        "name": "searchDateType",
+                        "in": "query",
+                        "required": True,
+                        "description": "검색기간 유형 코드",
+                        "schema": {"type": "string"},
+                    },
+                    {
+                        "name": "marketingDisplayNo",
+                        "in": "query",
+                        "required": True,
+                        "description": "Marketing display number",
+                        "schema": {"type": "string"},
+                    },
+                ],
+            )
+        },
+    )
+
+    report = run_benchmark(
+        spec_sources=[spec],
+        cases_path=cases_path,
+        top_k=1,
+        min_unique_tools=1,
+        max_build_seconds=10,
+    )
+    case = report["cases"][0]
+    issues = {row["field_name"]: row["issue_code"] for row in case["input_support"]}
+
+    assert report["status"] == "pass"
+    assert report["search"]["readiness_issue_counts"] == {
+        "required_request_wrapper": 1,
+        "required_context_input": 1,
+        "required_filter_input": 1,
+        "required_producer_missing": 1,
+    }
+    assert "required_input_not_producible" in case["issues"]
+    assert issues == {
+        "memberSearchRequest": "required_request_wrapper",
+        "systemType": "required_context_input",
+        "searchDateType": "required_filter_input",
+        "marketingDisplayNo": "required_producer_missing",
+    }
+
+
 def test_xgen_api_scale_contract_signal_ablation_reports_deltas(tmp_path):
     cases_path = tmp_path / "cases.json"
     cases_path.write_text(
