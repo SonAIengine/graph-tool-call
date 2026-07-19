@@ -41,7 +41,7 @@ live acceptance run을 별도로 둔다.
 | X2BEE Korean product cases | `19` |
 | X2BEE Korean product hit@3 | `1.00` |
 | X2BEE expected tool recall@10 | `1.00` |
-| X2BEE mean MRR | `0.930` |
+| X2BEE mean MRR | `1.00` |
 
 현재 상태는 "감이 아니라 수치로 검증 가능한 XGEN 적용 기준선"이다. 다만
 row-source upper bound 대비 아직 10pt 이상 손실이 있고, 복합 tool set 선택에서
@@ -137,9 +137,9 @@ Required work:
     `failure`, `retrieval_evidence`를 남기는 형태다.
 - X2BEE BO acceptance case를 smoke 수준에서 product-level case set으로 확장한다.
   - `2026-07-19`: X2BEE BO live acceptance cases를 8건에서 19건으로 확장했다.
-    Artifact는 `/tmp/gtc-x2bee-sweep-product-cases-final.json`이고,
+    Artifact는 `/tmp/gtc-x2bee-sweep-top1-ambiguity.json`이고,
     `TOP_KS=3,5,10` 기준 `hit@3=1.00`, `expected recall@3=1.00`,
-    `top-1 hit=0.895`, `top-3 hit=1.00`, `mean MRR=0.930`이다.
+    `top-1 hit=1.00`, `top-3 hit=1.00`, `mean MRR=1.00`이다.
 
 ## Paper-Ready Target
 

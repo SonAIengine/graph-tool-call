@@ -701,13 +701,13 @@ over all expected tool names and `case_rank_buckets` over each case's best
 acceptable expected tool, so `expected_any` alternatives do not make passing
 cases look missing.
 
-Latest product-level sweep on 2026-07-19:
+Latest product-level sweep on 2026-07-19 after Korean top-1 ambiguity fixes:
 
 | Top-K | Cases | Hit@K | Expected recall@K | Top-1 hit | Top-3 hit | Mean MRR | Case rank buckets |
 |---:|---:|---:|---:|---:|---:|---:|---|
-| `3` | `19` | `1.00` | `1.00` | `0.895` | `1.00` | `0.930` | `top_1=17, top_3=2` |
-| `5` | `19` | `1.00` | `1.00` | `0.895` | `1.00` | `0.930` | `top_1=17, top_3=2` |
-| `10` | `19` | `1.00` | `1.00` | `0.895` | `1.00` | `0.930` | `top_1=17, top_3=2` |
+| `3` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` |
+| `5` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` |
+| `10` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` |
 
 OpenAPI request/response contract is preserved under `metadata.api_contract`
 and `metadata.openapi`. It is intentionally not promoted into top-level
