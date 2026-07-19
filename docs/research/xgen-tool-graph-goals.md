@@ -301,6 +301,11 @@ Required work:
     `/tmp/gtc-bfcl-argument-matcher-subset.json` 기준 fresh qwen3.6-27B exact는
     `0.166667`이며, 남은 실패는 optional argument hallucination, boolean default
     inversion, percentage scale mismatch, data-reference vs synthetic array mismatch다.
+    이후 argument failure tag pass에서는
+    `unexpected_argument`, `optional_value_mismatch`, `structured_value_missing`,
+    `percentage_scale_mismatch`, `data_reference_substitution`를 안정 tag로 추가했다.
+    `/tmp/gtc-bfcl-qwen027-argument-tags-hardcases/`는 이 tag별 case-id subset을
+    바로 생성하므로 다음 개선은 각 원인별 1-case smoke에서 시작한다.
     다음 병목은 `solve_quadratic` vs `solve_quadratic_equation`,
     `geometry.circumference` vs `calculate_circumference`, `math.gcd` vs
     `number_theory.gcd` 같은 near-duplicate disambiguation과 argument-value
