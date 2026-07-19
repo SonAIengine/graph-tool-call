@@ -2,9 +2,100 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
+from graph_tool_call.retrieval.intent import classify_intent
+
 _DEFAULT_ACTION_PRIORITY = {"search": 3, "read": 2, "action": 1}
+_ACTION_PRIORITY_SEARCH = {"search": 6, "read": 4, "action": 2}
+_ACTION_PRIORITY_READ = {"read": 6, "search": 4, "action": 2}
+_ACTION_PRIORITY_CREATE = {"create": 6, "action": 5, "update": 3, "read": 2, "search": 1}
+_ACTION_PRIORITY_UPDATE = {"update": 6, "action": 5, "create": 3, "read": 2, "search": 1}
+_ACTION_PRIORITY_ACTION = {"action": 6, "update": 4, "create": 3, "read": 2, "search": 1}
+_ACTION_PRIORITY_DELETE = {"delete": 6, "action": 5, "update": 3, "read": 1, "search": 1}
+
+_SEARCH_TERMS = frozenset(
+    {"search", "find", "query", "lookup", "list", "browse", "검색", "찾", "목록", "리스트"}
+)
+_READ_TERMS = frozenset(
+    {"get", "read", "detail", "view", "show", "check", "retrieve", "조회", "상세", "보기", "확인"}
+)
+_CREATE_TERMS = frozenset(
+    {"create", "add", "register", "insert", "submit", "write", "생성", "추가", "등록", "작성"}
+)
+_UPDATE_TERMS = frozenset(
+    {"update", "modify", "edit", "change", "set", "patch", "put", "수정", "변경", "편집", "설정"}
+)
+_ACTION_TERMS = frozenset(
+    {
+        "send",
+        "approve",
+        "process",
+        "execute",
+        "run",
+        "apply",
+        "assign",
+        "checkout",
+        "validate",
+        "전송",
+        "승인",
+        "처리",
+        "실행",
+        "적용",
+        "부여",
+        "결제",
+        "검증",
+    }
+)
+_DELETE_TERMS = frozenset(
+    {
+        "delete",
+        "remove",
+        "cancel",
+        "revoke",
+        "disable",
+        "drop",
+        "삭제",
+        "제거",
+        "취소",
+        "철회",
+        "해제",
+    }
+)
+
+
+def target_action_priority_for_query(query: str) -> dict[str, int]:
+    """Derive deterministic canonical-action priority from a user query.
+
+    The result is intentionally generic: adapters can pass it directly to
+    ``build_candidate_set(..., target_action_priority=...)`` to rerank target
+    candidates by ``ai_metadata.canonical_action`` without an LLM. Empty or
+    ambiguous queries return an empty dict, preserving retrieval order.
+    """
+
+    terms = _query_terms(query)
+    if _has_action_term(terms, _DELETE_TERMS):
+        return dict(_ACTION_PRIORITY_DELETE)
+    if _has_action_term(terms, _ACTION_TERMS):
+        return dict(_ACTION_PRIORITY_ACTION)
+    if _has_action_term(terms, _UPDATE_TERMS):
+        return dict(_ACTION_PRIORITY_UPDATE)
+    if _has_action_term(terms, _CREATE_TERMS):
+        return dict(_ACTION_PRIORITY_CREATE)
+    if _has_action_term(terms, _SEARCH_TERMS):
+        return dict(_ACTION_PRIORITY_SEARCH)
+    if _has_action_term(terms, _READ_TERMS):
+        return dict(_ACTION_PRIORITY_READ)
+
+    intent = classify_intent(query)
+    if intent.is_neutral:
+        return {}
+    if intent.delete_intent >= max(intent.read_intent, intent.write_intent):
+        return dict(_ACTION_PRIORITY_DELETE)
+    if intent.write_intent >= max(intent.read_intent, intent.delete_intent):
+        return dict(_ACTION_PRIORITY_ACTION)
+    return dict(_ACTION_PRIORITY_READ)
 
 
 def build_candidate_set(
@@ -177,6 +268,23 @@ def _producers_for_required_inputs(
 
 def _dedupe_names(names: list[str]) -> list[str]:
     return list(dict.fromkeys(str(name) for name in names if str(name)))
+
+
+def _query_terms(query: str) -> set[str]:
+    text = str(query or "").strip().lower()
+    if not text:
+        return set()
+    terms = {text}
+    terms.update(t for t in re.split(r"[\s_\-/.,;:!?()]+", text) if t)
+    return terms
+
+
+def _has_action_term(query_terms: set[str], action_terms: frozenset[str]) -> bool:
+    for term in query_terms:
+        for action in action_terms:
+            if action and action in term:
+                return True
+    return False
 
 
 def _rank_target_candidates(
@@ -452,4 +560,8 @@ def _producer_score(tool: dict[str, Any], priority: dict[str, int]) -> int:
     return priority.get(action, 0)
 
 
-__all__ = ["build_candidate_set", "expand_candidates_with_producers"]
+__all__ = [
+    "build_candidate_set",
+    "expand_candidates_with_producers",
+    "target_action_priority_for_query",
+]
