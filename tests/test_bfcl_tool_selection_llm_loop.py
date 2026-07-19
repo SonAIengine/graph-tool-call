@@ -23,6 +23,7 @@ from benchmarks.bfcl_tool_selection.llm_loop import (
     _presented_raw_tools,
     _prioritize_candidate_names,
     _suppress_non_priority_equivalent_names,
+    _suppress_subsumed_partial_tools,
     run_model_benchmark,
     write_bfcl_result_files,
 )
@@ -243,6 +244,74 @@ def test_suppress_non_priority_equivalent_names_keeps_case_surface_only():
     )
 
     assert names == ["math.gcd", "calculate_average"]
+
+
+def test_suppress_subsumed_partial_tools_hides_sequence_only_helper():
+    question_row = {
+        "id": "parallel_3",
+        "function": [
+            {
+                "name": "protein_info.get_sequence_and_3D",
+                "description": "Retrive the sequence and 3D models of proteins.",
+                "parameters": {
+                    "type": "dict",
+                    "properties": {
+                        "protein_name": {
+                            "type": "string",
+                            "description": "The name of the protein.",
+                        },
+                        "model_3d": {
+                            "type": "boolean",
+                            "description": "Set true to get 3D model of the protein.",
+                        },
+                    },
+                    "required": ["protein_name"],
+                },
+            }
+        ],
+    }
+    tools_by_name = {
+        "protein_info.get_sequence_and_3D": question_row["function"][0],
+        "get_protein_sequence": {
+            "name": "get_protein_sequence",
+            "description": "Retrieve the protein sequence encoded by a human gene.",
+            "parameters": {
+                "type": "dict",
+                "properties": {
+                    "gene": {
+                        "type": "string",
+                        "description": "The human gene of interest.",
+                    },
+                    "species": {
+                        "type": "string",
+                        "description": "The species for which the gene is to be analyzed.",
+                    },
+                },
+                "required": ["gene"],
+            },
+        },
+        "fetch_DNA_sequence": {
+            "name": "fetch_DNA_sequence",
+            "description": "Retrieve the sequence of a DNA molecule from a public database.",
+            "parameters": {"type": "dict", "properties": {}, "required": []},
+        },
+    }
+
+    names = _suppress_subsumed_partial_tools(
+        [
+            "protein_info.get_sequence_and_3D",
+            "get_protein_sequence",
+            "fetch_DNA_sequence",
+        ],
+        query=(
+            "Get the protein sequence of human HbA1c, normal hemoglobin, and rat hemoglobin "
+            "and their 3D models"
+        ),
+        question_row=question_row,
+        tools_by_name=tools_by_name,
+    )
+
+    assert names == ["protein_info.get_sequence_and_3D", "fetch_DNA_sequence"]
 
 
 def test_normalized_parameters_add_argument_value_preservation_hints():
