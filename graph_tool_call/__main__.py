@@ -56,6 +56,42 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_analyze.add_argument("--json", action="store_true", dest="as_json", help="JSON output")
 
+    # --- inspect-openapi ---
+    p_inspect = sub.add_parser(
+        "inspect-openapi",
+        help="Inspect OpenAPI collection readiness for graph search and Planflow",
+    )
+    p_inspect.add_argument("source", help="OpenAPI spec URL, Swagger UI URL, or file path")
+    p_inspect.add_argument("--json", action="store_true", dest="as_json", help="JSON output")
+    p_inspect.add_argument(
+        "--allow-private-hosts",
+        action="store_true",
+        help="Allow localhost/private IP URLs for remote spec loading",
+    )
+    p_inspect.add_argument(
+        "--context-field",
+        action="append",
+        dest="context_fields",
+        default=[],
+        help="Field name to classify as context (repeatable or comma-separated)",
+    )
+    p_inspect.add_argument(
+        "--paging-field",
+        action="append",
+        dest="paging_fields",
+        default=[],
+        help="Field name to classify as context paging (repeatable or comma-separated)",
+    )
+    p_inspect.add_argument(
+        "--search-filter-field",
+        action="append",
+        dest="search_filter_fields",
+        default=[],
+        help=(
+            "Field name to classify as optional search/filter data (repeatable or comma-separated)"
+        ),
+    )
+
     # --- search (one-liner: ingest + retrieve) ---
     p_search = sub.add_parser("search", help="Search tools from source (no pre-build needed)")
     p_search.add_argument("query", help="Search query")
@@ -365,6 +401,68 @@ def cmd_analyze(args: argparse.Namespace) -> None:
             print(f"  {category.name}{domain}: {category.tool_count} tools")
 
 
+def _split_option_values(values: list[str] | None) -> list[str]:
+    result: list[str] = []
+    for value in values or []:
+        for item in str(value).split(","):
+            item = item.strip()
+            if item:
+                result.append(item)
+    return result
+
+
+def cmd_inspect_openapi(args: argparse.Namespace) -> None:
+    from graph_tool_call.analyze import analyze_openapi_collection
+
+    report = analyze_openapi_collection(
+        args.source,
+        allow_private_hosts=args.allow_private_hosts,
+        context_field_names=_split_option_values(args.context_fields),
+        paging_field_names=_split_option_values(args.paging_fields),
+        search_filter_field_names=_split_option_values(args.search_filter_fields),
+    )
+
+    if args.as_json:
+        print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+        return
+
+    summary = report.summary
+    coverage = report.coverage
+    graph = report.graph_readiness
+    print(f"OpenAPI readiness: {summary['status']} ({summary['readiness_score']}/100)")
+    print("\nSummary:")
+    print(f"  tools: {summary['tool_count']}")
+    print(f"  operations: {summary['operation_count']}")
+    print(f"  unique tools: {summary['unique_tool_count']}")
+    print(f"  deprecated tools: {summary['deprecated_tool_count']}")
+    print("\nCoverage:")
+    print(f"  request body tools: {coverage['request_body_tool_count']}")
+    print(f"  request schema tools: {coverage['request_schema_tool_count']}")
+    print(f"  response schema tools: {coverage['response_schema_tool_count']}")
+    print(f"  consumes fields: {coverage['consumes_field_count']}")
+    print(f"  produces fields: {coverage['produces_field_count']}")
+    print(f"  auth fields: {coverage['auth_field_count']}")
+    print(f"  context fields: {coverage['context_field_count']}")
+    print(f"  response envelopes: {coverage['response_envelope_tool_count']}")
+    print("\nGraph readiness:")
+    print(f"  edges: {graph['edge_count']}")
+    print(f"  producer edges: {graph['producer_edge_count']}")
+    print(f"  producer/consumer candidates: {graph['producer_consumer_candidate_count']}")
+    print(f"  orphan tools: {graph['orphan_tool_count']}")
+
+    if report.issues:
+        print("\nTop issues:")
+        for issue in report.issues[:10]:
+            target = f" {issue.tool}" if issue.tool else ""
+            print(f"  [{issue.severity}] {issue.code}{target}: {issue.message}")
+    else:
+        print("\nNo readiness issues found.")
+
+    print("\nRecommendations:")
+    for recommendation in report.recommendations:
+        print(f"  - {recommendation}")
+
+
 def _load_source(
     source: str,
     *,
@@ -643,6 +741,7 @@ def main() -> None:
     handlers = {
         "ingest": cmd_ingest,
         "analyze": cmd_analyze,
+        "inspect-openapi": cmd_inspect_openapi,
         "search": cmd_search,
         "retrieve": cmd_retrieve,
         "visualize": cmd_visualize,
