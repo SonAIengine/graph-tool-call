@@ -566,7 +566,10 @@ The row-source baseline passes the official per-case BFCL tool list to the
 model. The retrieved-source runs pass only graph-tool-call top-K candidates.
 The retrieved-source full result export was also re-scored with
 `bfcl_eval evaluate --partial-eval`; per-category score JSON files matched the
-runner summary for `k=3`, `k=5`, and `k=10`.
+runner summary for `k=3`, `k=5`, and `k=10`. These 1000-case numbers are the
+last broad-distribution baseline before the later 0.27 hardening passes; they
+remain useful as the paper-ready rerun target, but the current product-candidate
+gate is tracked separately below.
 
 ```text
 row       k=5  cases=1000 retrieval@K=0.91 exact=0.90 strict=0.89
@@ -624,6 +627,26 @@ evidence, and repeated full runs the next quality targets before a
 publish-candidate run. BFCL-compatible result export now exists for local
 official-checker reruns; it should be used to keep future numbers tied to
 auditable model outputs.
+
+Latest 0.27 candidate gate evidence on 2026-07-19:
+
+```bash
+make bfcl-027-gate-check \
+  REPORT=/tmp/gtc-bfcl-date-guidance-limit25-repeat3-row-retrieved-qwen.json
+```
+
+```text
+milestone xgen-0.27 status=pass
+retrieved_exact@5=1.000 retrieval@5=1.000
+row_preservation=1.000 parallel_multiple=1.000
+```
+
+This artifact uses qwen3.6-27B, `simple_python,multiple,parallel,parallel_multiple`,
+`limit=25` per category, row/retrieved tool sources, top-k=5, and repeat 3.
+Across all three repeats, both row-source and retrieved-source exact mean/std
+are `1.00 / 0.000`, `parallel_multiple` exact is `1.00`, and
+`row_pass_retrieved_fail=0`. This is the XGEN 0.27 product-candidate gate, not a
+replacement for a fresh full 1000-case paper-ready run.
 
 No-LLM deterministic retrieval experiments use the validation loop in
 [`docs/research/validation-loop.md`](research/validation-loop.md). The current
