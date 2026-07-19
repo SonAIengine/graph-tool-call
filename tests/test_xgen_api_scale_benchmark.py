@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 
 from benchmarks.xgen_api_scale.run import (
+    DEFAULT_X2BEE_CASES_PATH,
+    load_cases,
     run_benchmark,
     run_contract_signal_ablation,
     run_top_k_sweep,
@@ -137,10 +139,34 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     assert report["search"]["case_hit_at_k"] == 1.0
     assert report["search"]["top_1_hit_at_k"] == 1.0
     assert report["search"]["top_3_hit_at_k"] == 1.0
+    assert report["search"]["case_rank_buckets"]["top_1"] == 1
     assert report["search"]["rank_buckets"]["top_1"] == 1
     assert report["cases"][0]["expected_ranks"]["searchBrands"] == 1
     assert report["cases"][0]["best_expected_rank"] == 1
     assert report["cases"][0]["required_expected_found_at_k"] is True
+
+
+def test_x2bee_default_cases_cover_product_level_domains():
+    cases_doc = load_cases(DEFAULT_X2BEE_CASES_PATH)
+    cases = cases_doc["cases"]
+    case_ids = [case["id"] for case in cases]
+
+    assert len(cases) >= 18
+    assert len(case_ids) == len(set(case_ids))
+    for required_id in {
+        "member_list_ko",
+        "member_mileage_history_ko",
+        "event_list_ko",
+        "goods_list_ko",
+        "coupon_list_ko",
+        "faq_list_ko",
+        "notice_list_ko",
+        "restock_notice_list_ko",
+        "delivery_policy_list_ko",
+        "promotion_list_ko",
+        "market_display_list_ko",
+    }:
+        assert required_id in case_ids
 
 
 def test_xgen_api_scale_can_promote_contract_signals(tmp_path):
@@ -335,7 +361,9 @@ def test_xgen_api_scale_top_k_sweep_uses_one_acceptance_k(tmp_path):
     assert k1["top_k"] == 1
     assert k1["search"]["status"] == "diagnostic"
     assert k1["search"]["case_hit_at_k"] == 0.0
+    assert k1["search"]["case_rank_buckets"]["top_1"] == 1
     assert k1["search"]["thresholds_applied"] is False
     assert k3["top_k"] == 3
     assert k3["search"]["case_hit_at_k"] == 1.0
+    assert k3["search"]["case_rank_buckets"]["top_1"] == 1
     assert k3["search"]["thresholds_applied"] is True

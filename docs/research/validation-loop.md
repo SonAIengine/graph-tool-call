@@ -94,7 +94,7 @@ https://api-bo.x2bee.com/api/bo/swagger-ui/index.html
 - 한국어 smoke query의 expected tool rank, hit@K, MRR, retrieval latency
 - sweep 실행 시 top-K별 hit/recall/top-1/top-3/rank bucket과 missing expected tool
 
-현재 live acceptance 기준선은 `2026-07-19` 실행 기준 다음과 같다.
+초기 live smoke acceptance 기준선은 `2026-07-19` 실행 기준 다음과 같다.
 
 | Metric | Value |
 |---|---:|
@@ -149,6 +149,22 @@ hard case rank 변화는 다음과 같다.
 | `page_role_buttons_ko` | secondary page-role target drifted behind user/individual button siblings | `getButtonByPageRoleList`: rank `1`, `getEnabledButtonByPageRoleList`: rank `2` |
 | `settlement_compare_ko` | summary target missing at K=5 | list rank `1`, summary rank `2` |
 | `return_withdrawal_ko` | `withdrawalReturn`: rank `2` | rank `1` |
+
+이후 X2BEE BO acceptance case set은 smoke 8건에서 product-level 19건으로
+확장했다. 추가 도메인은 회원, 마일리지, 이벤트, 상품, 쿠폰, FAQ, 공지,
+재입고 알림, 배송비 정책, 프로모션, 기획전이다.
+
+```bash
+make xgen-scale-sweep \
+  OUT=/tmp/gtc-x2bee-sweep-product-cases-final.json \
+  TOP_KS=3,5,10
+```
+
+19건 product-level sweep 결과는 `hit@3=1.00`, `expected recall@3=1.00`,
+`top-1 hit=0.895`, `top-3 hit=1.00`, `mean MRR=0.930`이다. 케이스 기준
+rank bucket은 `top_1=17`, `top_3=2`, `missing=0`이다. Tool-name 기준
+`rank_buckets`는 `expected_any` 대체 정답까지 모두 세므로 product-level
+gate 해석에는 `case_rank_buckets`를 우선한다.
 
 raw OpenAPI contract는 `metadata.api_contract`와 `metadata.openapi`에 보존한다.
 단, plain ingest에서는 top-level `metadata.produces` / `metadata.consumes`로

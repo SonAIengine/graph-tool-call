@@ -663,7 +663,7 @@ The same diagnostic previously showed that indexing all promoted raw contract
 fields degraded target ranking on X2BEE, which is why the default keeps
 contract fields available for planning without adding them directly to BM25.
 
-Verified local result on 2026-07-19:
+Initial smoke-scale local result on 2026-07-19:
 
 | Metric | Value |
 |---|---:|
@@ -692,6 +692,22 @@ Top-K sweep from the same live target on 2026-07-19:
 | `3` | `0.75` | `0.8125` | `0.75` | `0.875` | `0.792` | `order_query`, secondary page-role button |
 | `5` | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | rank-4/5 compression |
 | `10` | `1.00` | `1.00` | `0.75` | `0.875` | `0.823` | acceptance baseline |
+
+The product-level X2BEE case set now covers 19 Korean BO queries across product
+QA, brand, order, page-role buttons, settlement, FAQ, delivery region, returns,
+member, mileage, event, goods, coupon, notice, restock, delivery policy,
+promotion, and market display flows. The runner reports both `rank_buckets`
+over all expected tool names and `case_rank_buckets` over each case's best
+acceptable expected tool, so `expected_any` alternatives do not make passing
+cases look missing.
+
+Latest product-level sweep on 2026-07-19:
+
+| Top-K | Cases | Hit@K | Expected recall@K | Top-1 hit | Top-3 hit | Mean MRR | Case rank buckets |
+|---:|---:|---:|---:|---:|---:|---:|---|
+| `3` | `19` | `1.00` | `1.00` | `0.895` | `1.00` | `0.930` | `top_1=17, top_3=2` |
+| `5` | `19` | `1.00` | `1.00` | `0.895` | `1.00` | `0.930` | `top_1=17, top_3=2` |
+| `10` | `19` | `1.00` | `1.00` | `0.895` | `1.00` | `0.930` | `top_1=17, top_3=2` |
 
 OpenAPI request/response contract is preserved under `metadata.api_contract`
 and `metadata.openapi`. It is intentionally not promoted into top-level
