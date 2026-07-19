@@ -14,12 +14,17 @@ _ACTION_PRIORITY_CREATE = {"create": 6, "action": 5, "update": 3, "read": 2, "se
 _ACTION_PRIORITY_UPDATE = {"update": 6, "action": 5, "create": 3, "read": 2, "search": 1}
 _ACTION_PRIORITY_ACTION = {"action": 6, "update": 4, "create": 3, "read": 2, "search": 1}
 _ACTION_PRIORITY_DELETE = {"delete": 6, "action": 5, "update": 3, "read": 1, "search": 1}
+_ACTION_PRIORITY_NOTIFICATION = {"create": 7, "action": 6, "update": 3, "read": 2, "search": 1}
 
 _SEARCH_TERMS = frozenset(
     {"search", "find", "query", "lookup", "list", "browse", "검색", "찾", "목록", "리스트"}
 )
 _READ_TERMS = frozenset(
     {"get", "read", "detail", "view", "show", "check", "retrieve", "조회", "상세", "보기", "확인"}
+)
+_DETAIL_READ_TERMS = frozenset({"detail", "details", "view", "show", "상세", "보기", "보여"})
+_AUDIT_READ_TERMS = frozenset(
+    {"audit", "log", "logs", "history", "event", "events", "감사", "로그", "이력", "기록"}
 )
 _CREATE_TERMS = frozenset(
     {"create", "add", "register", "insert", "submit", "write", "생성", "추가", "등록", "작성"}
@@ -48,6 +53,8 @@ _ACTION_TERMS = frozenset(
         "검증",
     }
 )
+_NOTIFICATION_TERMS = frozenset({"notification", "notify", "alert", "message", "알림", "메시지"})
+_NOTIFICATION_SEND_TERMS = frozenset({"send", "notify", "전송", "보내", "발송"})
 _DELETE_TERMS = frozenset(
     {
         "delete",
@@ -75,17 +82,33 @@ def target_action_priority_for_query(query: str) -> dict[str, int]:
     """
 
     terms = _query_terms(query)
-    if _has_action_term(terms, _DELETE_TERMS):
+    has_delete = _has_action_term(terms, _DELETE_TERMS)
+    has_action = _has_action_term(terms, _ACTION_TERMS)
+    has_update = _has_action_term(terms, _UPDATE_TERMS)
+    has_create = _has_action_term(terms, _CREATE_TERMS)
+    has_search = _has_action_term(terms, _SEARCH_TERMS)
+    has_read = _has_action_term(terms, _READ_TERMS)
+
+    if has_read and _has_action_term(terms, _AUDIT_READ_TERMS):
+        return dict(_ACTION_PRIORITY_READ)
+    if _has_action_term(terms, _NOTIFICATION_TERMS) and _has_action_term(
+        terms,
+        _NOTIFICATION_SEND_TERMS,
+    ):
+        return dict(_ACTION_PRIORITY_NOTIFICATION)
+    if has_read and _has_action_term(terms, _DETAIL_READ_TERMS):
+        return dict(_ACTION_PRIORITY_READ)
+    if has_delete:
         return dict(_ACTION_PRIORITY_DELETE)
-    if _has_action_term(terms, _ACTION_TERMS):
+    if has_action:
         return dict(_ACTION_PRIORITY_ACTION)
-    if _has_action_term(terms, _UPDATE_TERMS):
+    if has_update:
         return dict(_ACTION_PRIORITY_UPDATE)
-    if _has_action_term(terms, _CREATE_TERMS):
+    if has_create:
         return dict(_ACTION_PRIORITY_CREATE)
-    if _has_action_term(terms, _SEARCH_TERMS):
+    if has_search:
         return dict(_ACTION_PRIORITY_SEARCH)
-    if _has_action_term(terms, _READ_TERMS):
+    if has_read:
         return dict(_ACTION_PRIORITY_READ)
 
     intent = classify_intent(query)

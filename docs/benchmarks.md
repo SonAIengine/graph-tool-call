@@ -586,8 +586,8 @@ Latest local deterministic suite result on 2026-07-19:
 | Tools | `22` |
 | Graph edges | `35` |
 | Target recall@5 | `1.00` |
-| Target selector exact@5 | `0.80` |
-| Target selector misses | `3` |
+| Target selector exact@5 | `1.00` |
+| Target selector misses | `0` |
 | Producer recall | `1.00` |
 | Candidate plan coverage | `1.00` |
 | Producer-needed cases | `12` |
@@ -626,12 +626,13 @@ keep their target-only candidate set, so `unneeded_expansion_cases=0`.
 
 The target selector metric is intentionally separate from target recall. The
 current deterministic suite has `target_recall_at_k=1.00`, so the expected tool
-is always present in the retrieved top-5, but the query-action selector picks
-the exact target in only `12/15` cases (`0.80`). The current misses are
-`product_detail_ko`, `audit_logs_ko`, and `notify_assignee_ko`; these are the
-next reranking/disambiguation research targets. Producer expansion and plan
-synthesis still use the expected target as the controlled seed in this benchmark
-so selector regressions do not hide producer-chain regressions.
+is always present in the retrieved top-5, and the query-action selector now
+picks the exact target in `15/15` fixture cases (`1.00`). This improved from the
+previous `12/15` baseline after adding deterministic disambiguation for
+detail-after-search, audit-log-read, and notification-send queries. Producer
+expansion and plan synthesis still use the expected target as the controlled
+seed in this benchmark so future selector regressions do not hide
+producer-chain regressions.
 
 ### XGEN Scale Acceptance
 
