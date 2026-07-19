@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-acceptance xgen-scale-sweep xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke xgen-benchmark xgen-llm-benchmark xgen-scale-acceptance xgen-scale-sweep xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -78,6 +78,10 @@ bfcl-027-gate:
 		--progress-every "$${PROGRESS_EVERY:-10}" \
 		--output "$${OUT:-/tmp/gtc-bfcl-027-gate.json}" \
 		$$fail_args
+
+bfcl-027-gate-check:
+	@test -n "$(REPORT)" || (echo "Usage: make bfcl-027-gate-check REPORT=/tmp/gtc-bfcl-027-gate.json [PROFILE=xgen-0.27]" && exit 2)
+	poetry run python -m benchmarks.bfcl_tool_selection.gate "$(REPORT)" --profile "$${PROFILE:-xgen-0.27}"
 
 bfcl-failure-subset:
 	@test -n "$(REPORT)" || (echo "Usage: make bfcl-failure-subset REPORT=/tmp/report.json [OUT=/tmp/case_ids.txt]" && exit 2)

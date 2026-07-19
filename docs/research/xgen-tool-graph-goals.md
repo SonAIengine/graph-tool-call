@@ -549,6 +549,9 @@ MODEL=qwen3.6-27b \
 LLM_URL=http://127.0.0.1:18000/v1 \
 OUT=/tmp/gtc-bfcl-027-gate.json \
 make bfcl-027-gate
+
+make bfcl-027-gate-check \
+  REPORT=/tmp/gtc-bfcl-027-gate.json
 ```
 
 Full model benchmark is allowed only when:

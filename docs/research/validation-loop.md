@@ -305,6 +305,9 @@ LLM_URL=http://127.0.0.1:18000/v1 \
 OUT=/tmp/gtc-bfcl-027-gate.json \
 make bfcl-027-gate
 
+make bfcl-027-gate-check \
+  REPORT=/tmp/gtc-bfcl-027-gate.json
+
 MODEL=qwen3.6-27b \
 LLM_URL=http://127.0.0.1:8000/v1 \
 DISABLE_THINKING=1 \
@@ -330,6 +333,11 @@ LLM endpoint는 `MODEL`과 `LLM_URL`, 비용/범위는 `LIMIT`, `REPEATS`,
 `--fail-on-milestone-gate`를 켜서 gate가 `pass`가 아니면 non-zero로 종료한다.
 retrieved-only smoke처럼 일부 metric이 의도적으로 빠지는 실행은 `FAIL_ON_GATE=0`을
 같이 넘긴다.
+
+`make bfcl-027-gate-check REPORT=/tmp/report.json`은 저장된 sweep artifact의
+milestone gate를 다시 판정한다. 모델을 다시 호출하지 않고 artifact의 pass/fail을
+CI나 MR review에서 재확인할 때 사용한다. Artifact에 `milestone_gate`가 없으면
+`summary.rows`와 `summary.category_rows`에서 gate를 재계산한다.
 
 ## XGEN Scale Acceptance
 
