@@ -81,9 +81,11 @@ JSON tool schema 문자량 기준의 `avg_schema_context_reduction`,
 `min_schema_context_reduction`도 기록한다. 이 값은 실제 tokenizer token count를
 대체하지 않지만, 전체 OpenAPI-derived tool schema를 LLM에 모두 넘기는 방식 대비
 candidate schema context가 얼마나 줄었는지 재현 가능하게 비교하는 proxy다.
-`/tmp/gtc-x2bee-schema-context-sweep.json` 기준 전체 compact schema는
+`/tmp/gtc-x2bee-schema-context-threshold-sweep.json` 기준 전체 compact schema는
 `56,756,400` chars, 평균 후보 schema는 `157,320` chars이며 평균 `99.72%`,
-worst-case `98.47%` context reduction을 만든다.
+worst-case `98.47%` context reduction을 만든다. X2BEE acceptance gate는 이제
+`avg_schema_context_reduction >= 0.99`와
+`min_schema_context_reduction >= 0.98`을 함께 확인한다.
 
 `2026-07-19` rank-compression branch에서는 X2BEE live sweep에서 기존 hard
 case인 `order_query_ko`, `page_role_buttons_ko`, `settlement_compare_ko`,

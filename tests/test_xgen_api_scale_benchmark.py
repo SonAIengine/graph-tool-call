@@ -204,6 +204,8 @@ def test_x2bee_default_cases_cover_product_level_domains():
     assert cases_doc["thresholds"]["max_unresolved_required_input_count"] == 0
     assert cases_doc["thresholds"]["max_avg_candidate_count"] <= 3.0
     assert cases_doc["thresholds"]["max_candidate_count"] <= 8.0
+    assert cases_doc["thresholds"]["avg_schema_context_reduction"] >= 0.99
+    assert cases_doc["thresholds"]["min_schema_context_reduction"] >= 0.98
     assert len(case_ids) == len(set(case_ids))
     for required_id in {
         "member_list_ko",

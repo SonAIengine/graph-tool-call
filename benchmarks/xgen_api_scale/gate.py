@@ -163,7 +163,7 @@ def format_gate(gate: dict[str, Any]) -> str:
         "xgen-scale gate profile={profile} status={status} methodology={methodology} "
         "acceptance_top_k={top_k} unique_tools={tools} cases={cases} "
         "recall@K={recall} selector={selector} candidates={candidates} "
-        "issues={issues}"
+        "schema_reduction={schema_reduction} issues={issues}"
     ).format(
         profile=gate.get("profile"),
         status=gate.get("status"),
@@ -174,6 +174,7 @@ def format_gate(gate: dict[str, Any]) -> str:
         recall=metrics.get("expected_tool_recall_at_k"),
         selector=metrics.get("target_selector_exact_at_k"),
         candidates=metrics.get("avg_candidate_count"),
+        schema_reduction=metrics.get("avg_schema_context_reduction"),
         issues=gate.get("issues") or ["pass"],
     )
 

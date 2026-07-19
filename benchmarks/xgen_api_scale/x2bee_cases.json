@@ -11,6 +11,8 @@
     "max_unresolved_required_input_count": 0,
     "max_avg_candidate_count": 3.0,
     "max_candidate_count": 8.0,
+    "avg_schema_context_reduction": 0.99,
+    "min_schema_context_reduction": 0.98,
     "max_avg_latency_ms": 50.0
   },
   "cases": [

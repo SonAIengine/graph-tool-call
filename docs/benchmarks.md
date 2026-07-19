@@ -840,8 +840,8 @@ selector instrumentation fixes:
 Latest schema-context sweep on 2026-07-19:
 
 ```bash
-OUT=/tmp/gtc-x2bee-schema-context-sweep.json TOP_KS=3,5,10 make xgen-scale-sweep
-make xgen-scale-gate-check REPORT=/tmp/gtc-x2bee-schema-context-sweep.json
+OUT=/tmp/gtc-x2bee-schema-context-threshold-sweep.json TOP_KS=3,5,10 make xgen-scale-sweep
+make xgen-scale-gate-check REPORT=/tmp/gtc-x2bee-schema-context-threshold-sweep.json
 ```
 
 | Metric | Value |
@@ -857,6 +857,10 @@ This is a deterministic compact-JSON character-count proxy, not a tokenizer
 claim. It measures how much model-facing tool schema payload remains after
 graph-tool-call selects the target plus required producers, compared with
 passing all 1,084 tool schemas to the model.
+The X2BEE acceptance thresholds now require
+`avg_schema_context_reduction >= 0.99` and
+`min_schema_context_reduction >= 0.98`, so broadening the LLM-facing candidate
+schema surface becomes a gate failure instead of an after-the-fact observation.
 
 The same sweep now exposes the next bottleneck after target selection. Across
 the 19 product-level cases, average plan candidate count is `2.16`, max

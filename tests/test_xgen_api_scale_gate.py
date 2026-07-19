@@ -14,6 +14,7 @@ def test_xgen_scale_gate_cli_passes_saved_acceptance_artifact(tmp_path: Path, ca
     output = capsys.readouterr().out
     assert "status=pass" in output
     assert "unique_tools=1084" in output
+    assert "schema_reduction=0.997228" in output
 
 
 def test_xgen_scale_gate_cli_fails_saved_search_gate(tmp_path: Path, capsys):
@@ -116,6 +117,8 @@ def _search(*, status: str, thresholds_applied: bool = True) -> dict[str, object
             "max_unresolved_required_input_count": True,
             "max_avg_candidate_count": True,
             "max_candidate_count": True,
+            "avg_schema_context_reduction": True,
+            "min_schema_context_reduction": True,
             "max_avg_latency_ms": True,
         },
         "case_hit_at_k": 1.0,
@@ -123,6 +126,12 @@ def _search(*, status: str, thresholds_applied: bool = True) -> dict[str, object
         "target_selector_exact_at_k": 1.0,
         "avg_candidate_count": 2.16,
         "max_candidate_count": 7,
+        "full_tool_schema_chars": 56756400,
+        "avg_candidate_schema_chars": 157320.210526,
+        "max_candidate_schema_chars": 865608,
+        "avg_candidate_schema_char_fraction": 0.002772,
+        "avg_schema_context_reduction": 0.997228,
+        "min_schema_context_reduction": 0.984749,
         "avg_required_input_coverage": 1.0,
         "avg_required_input_resolution_coverage": 1.0,
         "unresolved_required_input_count": 0,

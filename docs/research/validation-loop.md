@@ -758,17 +758,19 @@ operation summary 문제와 같은 형태로 본다. 비교 artifact는
   `max_candidate_count=7`, `avg_latency=39.50ms`로 통과했다.
 
 Schema context metric pass는 같은 X2BEE live sweep을 compact JSON schema chars
-기준으로 다시 측정했다. Artifact는
-`/tmp/gtc-x2bee-schema-context-sweep.json`이고, gate check는 pass다.
+기준으로 다시 측정하고 acceptance threshold에 올렸다. Artifact는
+`/tmp/gtc-x2bee-schema-context-threshold-sweep.json`이고, gate check는 pass다.
 
 ```bash
-OUT=/tmp/gtc-x2bee-schema-context-sweep.json TOP_KS=3,5,10 make xgen-scale-sweep
-make xgen-scale-gate-check REPORT=/tmp/gtc-x2bee-schema-context-sweep.json
+OUT=/tmp/gtc-x2bee-schema-context-threshold-sweep.json TOP_KS=3,5,10 make xgen-scale-sweep
+make xgen-scale-gate-check REPORT=/tmp/gtc-x2bee-schema-context-threshold-sweep.json
 ```
 
 - 전체 compact tool schema chars는 `56,756,400`이다.
 - 평균 candidate schema chars는 `157,320`, max는 `865,608`이다.
 - 평균 schema context reduction은 `99.72%`, worst-case는 `98.47%`다.
+- X2BEE acceptance threshold는 `avg_schema_context_reduction >= 0.99`,
+  `min_schema_context_reduction >= 0.98`을 포함한다.
 - top-K `3,5,10` 모두 `hit@K=1.00`, `target selector exact@K=1.00`,
   `avg_candidate_count=2.16`, `max_candidate_count=7`을 유지했다.
 
