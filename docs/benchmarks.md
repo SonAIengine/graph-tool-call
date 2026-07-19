@@ -751,13 +751,18 @@ selector instrumentation fixes:
 | `10` | `19` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `1.00` | `top_1=19` | `top_1=19` |
 
 The same sweep now exposes the next bottleneck after target selection. Across
-the 19 product-level cases, average plan candidate count is `17.84`, max
-candidate count is `46`, average producer candidates added is `16.84`, and
+the 19 product-level cases, average plan candidate count is `3.53`, max
+candidate count is `14`, average producer candidates added is `2.53`, and
 average required input coverage is `0.872`. That coverage is deliberately
 producer-only: it asks whether a required target input can be filled from a
 previous response field. The execution-oriented resolution metric is now
 complete, with average required input resolution coverage at `1.00` and
 unresolved required input count at `0`.
+
+Plan candidates include only producers that fill required target inputs.
+Optional input producers remain visible in `input_support` evidence, but they
+are not added to the executable candidate set. This keeps the LLM-facing plan
+surface compact without hiding optional field support diagnostics.
 
 Fifteen cases have all required data inputs matched to at least one
 response-field producer; four rows are classified with stable readiness issue

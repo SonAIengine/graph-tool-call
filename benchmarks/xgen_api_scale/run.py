@@ -1006,7 +1006,7 @@ def _plan_readiness(
             supported += 1
             if required:
                 required_supported += 1
-        producer_candidates.extend(producers)
+                producer_candidates.extend(producers)
         issue_code = _readiness_issue_code(consume, supported=bool(producers))
         resolution = _input_resolution(issue_code, supported=bool(producers))
         if required and resolution != "unresolved":
@@ -1321,7 +1321,8 @@ def _missing_expected_tools(cases: list[SearchEvaluation]) -> dict[str, int]:
 
 def _threshold_passed(summary: dict[str, Any], metric: str, threshold: float) -> bool:
     if metric.startswith("max_"):
-        value = float(summary.get(metric.removeprefix("max_"), 0.0))
+        source_metric = metric if metric in summary else metric.removeprefix("max_")
+        value = float(summary.get(source_metric, 0.0))
         return value <= threshold
     return float(summary.get(metric, 0.0)) >= threshold
 
