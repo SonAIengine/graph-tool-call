@@ -36,27 +36,37 @@ snapshot provenance.
 
 ## Build-Time Pipeline
 
-When XGEN builds an API Collection, the builder should call graph-tool-call in
-this order:
+When XGEN builds an API Collection, the preferred library path is one call that
+returns a storage-ready `ToolGraph` JSON shape plus readiness/provenance
+extensions:
 
 ```python
-from graph_tool_call.analyze import analyze_openapi_collection
-from graph_tool_call.graphify import ingest_openapi_graphify
+from graph_tool_call.graphify import build_openapi_collection_artifact
 
-report = analyze_openapi_collection(
+artifact = build_openapi_collection_artifact(
     source,
     allow_private_hosts=True,
     context_field_names=xgen_context_field_names,
     paging_field_names=xgen_paging_field_names,
     search_filter_field_names=xgen_search_filter_field_names,
-)
-
-graph, edge_stats = ingest_openapi_graphify(
-    tool_schemas,
-    raw_spec=raw_spec,
     promote_contract_signals=True,
 )
 ```
+
+The CLI exposes the same build path for job/sidecar integrations:
+
+```bash
+graph-tool-call build-openapi-collection "$SOURCE" \
+  -o collection.json \
+  --allow-private-hosts \
+  --context-field siteNo,tenantId \
+  --paging-field pageNo,pageSize \
+  --search-filter-field keyword,searchWord
+```
+
+`artifact` is loadable by `ToolGraph.load()` because it keeps the normal
+`graph`/`tools`/`metadata` shape. The additional top-level fields are for XGEN's
+collection build table/detail UI:
 
 The persisted collection artifact should include:
 
@@ -174,4 +184,3 @@ The XGEN integration is ready when:
 - failed planning returns structured reason codes, not exception text parsing
 - runtime logs/SSE contain plan/search evidence without leaking credentials
 - old collection JSON can still load through the fallback path
-

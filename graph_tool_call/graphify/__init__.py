@@ -18,6 +18,7 @@ from graph_tool_call.graphify.catalog import (
     expand_candidates_with_producers,
     target_action_priority_for_query,
 )
+from graph_tool_call.graphify.collection_artifact import build_openapi_collection_artifact
 from graph_tool_call.graphify.edges import (
     EVIDENCE_API_CONTRACT,
     EVIDENCE_LLM_CURATED,
@@ -68,6 +69,7 @@ __all__ = [
     "annotate_graphify_metadata",
     "bucket_confidence",
     "build_candidate_set",
+    "build_openapi_collection_artifact",
     "build_io_contract",
     "build_tool_equivalence_groups",
     "derive_plan_trace_edges",
