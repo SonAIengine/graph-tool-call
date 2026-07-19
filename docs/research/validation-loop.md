@@ -416,6 +416,24 @@ retrieved without an embedding index, so the next 0.28 research loop should
 test optional embedding/rerank as a gated ablation instead of relying only on
 BM25+graph for dense sibling-heavy tool sets.
 
+For quick selector/rerank research, run the deterministic BFCL tool-selection
+runner at a deeper requested K before any model call:
+
+```bash
+poetry run python -m benchmarks.bfcl_tool_selection.run \
+  --categories simple_python,multiple,parallel,parallel_multiple \
+  --top-k 30 \
+  --case-ids-file /tmp/gtc-bfcl-028-failure-case-ids.txt \
+  --json > /tmp/gtc-bfcl-028-failure-deterministic-top30.json
+```
+
+The report now includes both fixed `recall_at_5` / `all_tools_found_at_5` and
+requested-depth `recall_at_k` / `all_tools_found_at_k`. On the 0.28 failure
+subset, top-5 all-tools-found is `0.274725`, while top-30 all-tools-found is
+`0.901099` and recall@30 is `0.937729`. This is the fast upper bound for a
+top-5 selector: if a strategy cannot recover tools already present by depth 30,
+do not spend a full qwen model run on it.
+
 `make bfcl-027-gate-check REPORT=/tmp/report.json`은 저장된 sweep artifact의
 milestone gate를 다시 판정한다. 모델을 다시 호출하지 않고 artifact의 pass/fail을
 CI나 MR review에서 재확인할 때 사용한다. Artifact에 `milestone_gate`가 없으면

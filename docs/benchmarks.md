@@ -680,6 +680,13 @@ expected tools are present within depth 30 but not top 5, and that
 the next research target for rank compression, multi-tool candidate-set
 preservation, and optional embedding/rerank ablation.
 
+The deterministic BFCL tool-selection runner now reports requested-depth
+`recall_at_k`, `all_tools_found_at_k`, and `argument_schema_coverage_at_k`
+alongside the fixed top-5 metrics. On the same 91-case 0.28 failure subset,
+`top_k=30` gives `all_tools_found_at_5=0.274725` but
+`all_tools_found_at_k=0.901099` and `recall_at_k=0.937729`. This makes the
+selector upper bound visible in seconds, before another expensive model run.
+
 No-LLM deterministic retrieval experiments use the validation loop in
 [`docs/research/validation-loop.md`](research/validation-loop.md). The current
 hard-case bundle sequence improved deterministic `recall@5` from `0.9325` to
