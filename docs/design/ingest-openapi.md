@@ -261,9 +261,14 @@ resume target에 그대로 사용할 수 있다.
 서버 coercion에 맡겨야 하는 기존 통합은 `validate_values=False`로 value
 blocking만 끄고, `validate_request()` diagnostics는 계속 확인할 수 있다.
 `execute()` 결과에는 기존 `status`/`headers`/`body`에 더해 `ok`,
-`content_type`, `response_metadata`, 실패 시 `error_response`가 붙는다.
+`content_type`, `response_metadata`, schema-guided `body_view`, 실패 시
+`error_response`가 붙는다.
 `response_metadata`는 exact status, `2XX` range, `default` 순서로
-`metadata.openapi.responses`에서 매칭된다.
+`metadata.openapi.responses`에서 매칭된다. `body_view`는 raw `body`를
+변경하지 않고, `metadata.openapi.response.envelope`의 `wrapper_path`나
+`collection_path`가 실제 응답에 존재할 때 `body_view.value`에 payload 또는
+collection item list를 담는다. Plan repair/entity extraction은
+`body_view.value`도 produced value 후보로 사용한다.
 
 `metadata["api_contract"]`는 graph/search/plan용 raw produces/consumes leaf를 보존한다.
 plain ingest 단계에서는 이 raw field들을 top-level `metadata.produces` /

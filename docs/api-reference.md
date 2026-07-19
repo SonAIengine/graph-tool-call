@@ -288,6 +288,10 @@ response diagnostics:
 - `content_type`: response media type without parameters
 - `response_metadata`: the matched OpenAPI response catalog row, using exact
   status, `2XX`-style range, then `default`
+- `body_view`: optional schema-guided view for OpenAPI response envelopes.
+  When ingest detects wrappers such as `code/message/data` or collection paths
+  such as `$.data.items[*]`, `body_view.value` contains the payload or item
+  list while preserving the raw response under `body`.
 - `error_response`: the matched non-success response row for HTTP errors
 
 For graph/search use, keep raw contract and promoted signal separate. Large

@@ -392,7 +392,7 @@ class HttpExecutor:
                     status=resp.status,
                     content_type=content_type,
                 )
-                return {
+                result = {
                     "status": resp.status,
                     "ok": 200 <= resp.status < 300,
                     "headers": dict(resp.headers),
@@ -400,6 +400,10 @@ class HttpExecutor:
                     "body": body,
                     "response_metadata": response_metadata,
                 }
+                body_view = _response_body_view(body, api_metadata, response_metadata)
+                if body_view:
+                    result["body_view"] = body_view
+                return result
         except urllib.error.HTTPError as e:
             raw_body = e.read().decode("utf-8", errors="replace")
             headers = dict(e.headers or {})
@@ -413,7 +417,7 @@ class HttpExecutor:
                 status=e.code,
                 content_type=content_type,
             )
-            return {
+            result = {
                 "status": e.code,
                 "ok": False,
                 "headers": headers,
@@ -423,6 +427,10 @@ class HttpExecutor:
                 "response_metadata": response_metadata,
                 "error_response": response_metadata if not response_metadata.get("success") else {},
             }
+            body_view = _response_body_view(err_body, api_metadata, response_metadata)
+            if body_view:
+                result["body_view"] = body_view
+            return result
 
     def dry_run(
         self,
@@ -1992,6 +2000,118 @@ def _response_metadata_with_content(row: dict[str, Any], content_type: str) -> d
             metadata["content_metadata"] = dict(candidate)
             break
     return metadata
+
+
+def _response_body_view(
+    body: Any,
+    api_metadata: dict[str, Any],
+    response_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(body, (dict, list)):
+        return {}
+    if response_metadata and response_metadata.get("success") is False:
+        return {}
+
+    response = api_metadata.get("response")
+    if not isinstance(response, dict):
+        return {}
+    envelope = response.get("envelope")
+    if not isinstance(envelope, dict) or not envelope:
+        return {}
+
+    metadata = _response_body_view_metadata(body, envelope)
+    for mode, path in (
+        ("collection", str(envelope.get("collection_path") or "")),
+        ("envelope", str(envelope.get("wrapper_path") or "")),
+    ):
+        if not path:
+            continue
+        present, value = _response_body_view_value(body, path)
+        if not present:
+            continue
+        view = {
+            "mode": mode,
+            "source": "openapi_response_envelope",
+            "source_path": path,
+            "value": value,
+        }
+        if metadata:
+            view["metadata"] = metadata
+        if envelope.get("wrapper_path"):
+            view["wrapper_path"] = envelope["wrapper_path"]
+        if envelope.get("collection_path"):
+            view["collection_path"] = envelope["collection_path"]
+        if envelope.get("item_path"):
+            view["item_path"] = envelope["item_path"]
+        return view
+
+    if metadata:
+        return {
+            "mode": "body",
+            "source": "openapi_response_envelope",
+            "source_path": "$",
+            "value": body,
+            "metadata": metadata,
+        }
+    return {}
+
+
+def _response_body_view_value(body: Any, json_path: str) -> tuple[bool, Any]:
+    values = _json_path_values(body, json_path)
+    if values:
+        return True, values if _json_path_selects_many(json_path) else values[0]
+    if _json_path_selects_many(json_path) and _json_path_exists(body, json_path):
+        return True, []
+    return False, None
+
+
+def _response_body_view_metadata(body: Any, envelope: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(body, dict):
+        return {}
+    metadata: dict[str, Any] = {}
+    for field in envelope.get("metadata_fields") or []:
+        name = str(field)
+        if name and name in body:
+            metadata[name] = body[name]
+    return metadata
+
+
+def _json_path_selects_many(json_path: str) -> bool:
+    return "[*]" in json_path or ".*" in json_path
+
+
+def _json_path_exists(value: Any, json_path: str) -> bool:
+    tokens = _json_path_tokens(json_path)
+    if tokens is None:
+        return False
+    return _json_path_tokens_exist(value, tokens)
+
+
+def _json_path_tokens_exist(value: Any, tokens: list[str]) -> bool:
+    if not tokens:
+        return True
+
+    token = tokens[0]
+    remaining = tokens[1:]
+    if token == "[*]":
+        return isinstance(value, list) and all(
+            _json_path_tokens_exist(item, remaining) for item in value
+        )
+    if token == "*":
+        return isinstance(value, dict) and all(
+            _json_path_tokens_exist(item, remaining) for item in value.values()
+        )
+
+    is_array_token = token.endswith("[*]")
+    key = token.removesuffix("[*]") if is_array_token else token
+    if not key or not isinstance(value, dict) or key not in value:
+        return False
+    child = value[key]
+    if is_array_token:
+        return isinstance(child, list) and all(
+            _json_path_tokens_exist(item, remaining) for item in child
+        )
+    return _json_path_tokens_exist(child, remaining)
 
 
 def _status_range_matches(declared_status: str, status: int) -> bool:

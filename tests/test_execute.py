@@ -2561,6 +2561,26 @@ class _MockHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"code": "NOT_FOUND", "message": "Missing"}).encode())
             return
+        if self.path.startswith("/goods/search"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(
+                json.dumps(
+                    {
+                        "code": "OK",
+                        "message": "Success",
+                        "data": {
+                            "items": [
+                                {"goodsNo": "G-1", "goodsNm": "Shirt"},
+                                {"goodsNo": "G-2", "goodsNm": "Shoes"},
+                            ],
+                            "totalCount": 2,
+                        },
+                    }
+                ).encode()
+            )
+            return
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -2633,6 +2653,70 @@ class TestExecuteReal:
         assert result["response_metadata"]["description"] == "User details"
         assert result["response_metadata"]["matched_content_type"] == "application/json"
         assert result["response_metadata"]["content_metadata"]["is_json"] is True
+
+    def test_success_response_body_view_uses_openapi_envelope_metadata(self, mock_server):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Commerce API", "version": "1.0.0"},
+            "paths": {
+                "/goods/search": {
+                    "get": {
+                        "operationId": "searchGoods",
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "code": {"type": "string"},
+                                                "message": {"type": "string"},
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "items": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "goodsNo": {"type": "string"},
+                                                                    "goodsNm": {"type": "string"},
+                                                                },
+                                                            },
+                                                        },
+                                                        "totalCount": {"type": "integer"},
+                                                    },
+                                                },
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor(mock_server)
+
+        result = executor.execute(tools[0], {})
+
+        assert result["body"]["data"]["totalCount"] == 2
+        assert result["body_view"] == {
+            "mode": "collection",
+            "source": "openapi_response_envelope",
+            "source_path": "$.data.items[*]",
+            "value": [
+                {"goodsNo": "G-1", "goodsNm": "Shirt"},
+                {"goodsNo": "G-2", "goodsNm": "Shoes"},
+            ],
+            "metadata": {"code": "OK", "message": "Success"},
+            "wrapper_path": "$.data",
+            "collection_path": "$.data.items[*]",
+            "item_path": "$.data.items[*]",
+        }
 
     def test_post_success(self, mock_server):
         tool = _make_tool(

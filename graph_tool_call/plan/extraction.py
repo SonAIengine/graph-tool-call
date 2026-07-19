@@ -203,7 +203,55 @@ def _candidate_json_paths(produce: dict[str, Any]) -> list[str]:
     if isinstance(aliases, list):
         for alias in aliases:
             add(alias)
+    for path in _body_view_json_paths(produce):
+        add(path)
     return paths
+
+
+def _body_view_json_paths(produce: dict[str, Any]) -> list[str]:
+    path = str(produce.get("json_path") or "")
+    if not path:
+        return []
+
+    paths: list[str] = []
+    collection_path = str(produce.get("response_collection_path") or "")
+    if collection_path and _json_path_startswith(path, collection_path):
+        relative = _strip_json_path_prefix(path, collection_path)
+        if relative == "$":
+            paths.append("$.body_view.value")
+        elif relative.startswith("$."):
+            paths.append("$.body_view.value[*]" + relative[1:])
+        elif relative.startswith("$["):
+            paths.append("$.body_view.value[*]" + relative[1:])
+
+    envelope_path = str(produce.get("response_envelope_path") or "")
+    if envelope_path and _json_path_startswith(path, envelope_path):
+        relative = _strip_json_path_prefix(path, envelope_path)
+        if relative == "$":
+            paths.append("$.body_view.value")
+        elif relative.startswith("$.") or relative.startswith("$["):
+            paths.append("$.body_view.value" + relative[1:])
+
+    return paths
+
+
+def _strip_json_path_prefix(path: str, prefix: str) -> str:
+    if not path or not prefix or not _json_path_startswith(path, prefix):
+        return ""
+    if path == prefix:
+        return "$"
+    tail = path[len(prefix) :]
+    if tail.startswith((".", "[")):
+        return "$" + tail
+    return ""
+
+
+def _json_path_startswith(path: str, prefix: str) -> bool:
+    if not path or not prefix:
+        return False
+    if prefix == "$":
+        return path == "$" or path.startswith("$.") or path.startswith("$[")
+    return path == prefix or path.startswith(f"{prefix}.") or path.startswith(f"{prefix}[")
 
 
 def _resolve_json_path(output: Any, raw: str) -> Any:
