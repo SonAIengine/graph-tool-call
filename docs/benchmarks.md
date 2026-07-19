@@ -407,6 +407,30 @@ greater than one, the JSON `summary.repeat_groups` and text output include
 mean/std/min/max for exact match, strict exact match, retrieval recall, and
 latency by `(tool_source, top_k)`.
 
+The sweep artifact also includes `summary.milestone_gate`. By default it uses
+the `xgen-0.27` profile and checks the next product-readiness target directly:
+retrieved-source exact match at `k=5`, retrieval recall at `k=5`, row-source
+upper-bound preservation, and `parallel_multiple` exact match. This is the
+fastest way to decide whether a full expensive run produced evidence strong
+enough for the next XGEN milestone, or whether work should return to a smaller
+failure subset first.
+
+```bash
+poetry run python -m benchmarks.bfcl_tool_selection.sweep \
+  --categories simple_python,multiple,parallel,parallel_multiple \
+  --tool-sources row,retrieved \
+  --top-ks 5 \
+  --model qwen3.6-27b \
+  --llm-url http://127.0.0.1:8000/v1 \
+  --disable-thinking \
+  --milestone-profile xgen-0.27 \
+  --output /tmp/gtc-bfcl-xgen-027-sweep.json
+```
+
+For diagnostic sweeps that do not include the row-source baseline or
+`parallel_multiple`, pass `--milestone-profile none` or treat the gate status
+`incomplete` as expected.
+
 Recommended smoke with a native function-calling endpoint:
 
 ```bash

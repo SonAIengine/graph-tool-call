@@ -69,6 +69,45 @@ def test_sweep_runs_top_k_and_source_matrix(monkeypatch):
         "min": 0.5,
         "max": 0.5,
     }
+    assert report["summary"]["milestone_gate"]["status"] == "incomplete"
+    assert "parallel_multiple_exact_at_5" in report["summary"]["milestone_gate"]["missing_metrics"]
+
+
+def test_sweep_milestone_gate_reports_xgen_027_bottlenecks():
+    summary = sweep._summarize_sweep(
+        [
+            _sweep_run(
+                tool_source="row",
+                top_k=5,
+                exact=0.90,
+                retrieval=0.91,
+                parallel_multiple_exact=0.80,
+            ),
+            _sweep_run(
+                tool_source="retrieved",
+                top_k=5,
+                exact=0.84,
+                retrieval=0.96,
+                parallel_multiple_exact=0.74,
+            ),
+        ]
+    )
+
+    gate = summary["milestone_gate"]
+
+    assert gate["profile"] == "xgen-0.27"
+    assert gate["status"] == "fail"
+    assert gate["metrics"]["retrieved_exact_at_5"] == 0.84
+    assert gate["metrics"]["retrieval_recall_at_5"] == 0.96
+    assert gate["metrics"]["row_source_exact_at_5"] == 0.9
+    assert gate["metrics"]["row_source_upper_bound_preservation"] == 0.933333
+    assert gate["metrics"]["parallel_multiple_exact_at_5"] == 0.74
+    assert {row["metric"] for row in gate["failed_gates"]} == {
+        "retrieved_exact_at_5",
+        "row_source_upper_bound_preservation",
+        "parallel_multiple_exact_at_5",
+    }
+    assert summary["category_repeat_groups"][0]["category"] == "parallel_multiple"
 
 
 def test_write_sweep_bfcl_result_files_separates_runs(tmp_path):
@@ -120,4 +159,44 @@ def _single_case_report(tool_source: str):
                 ],
             }
         ],
+    }
+
+
+def _sweep_run(
+    *,
+    tool_source: str,
+    top_k: int,
+    exact: float,
+    retrieval: float,
+    parallel_multiple_exact: float,
+):
+    return {
+        "repeat": 1,
+        "tool_source": tool_source,
+        "top_k": top_k,
+        "report": {
+            "summary": {
+                "cases": 10,
+                "retrieval_recall_at_k": retrieval,
+                "model_tool_call_rate": 1.0,
+                "strict_exact_match": exact,
+                "evaluator_exact_match": exact,
+                "avg_latency_ms": 100.0,
+                "failure_breakdown": {"pass": int(exact * 10)},
+            },
+            "categories": [
+                {
+                    "category": "parallel_multiple",
+                    "summary": {
+                        "cases": 5,
+                        "retrieval_recall_at_k": retrieval,
+                        "model_tool_call_rate": 1.0,
+                        "strict_exact_match": parallel_multiple_exact,
+                        "evaluator_exact_match": parallel_multiple_exact,
+                        "avg_latency_ms": 100.0,
+                        "failure_breakdown": {"pass": int(parallel_multiple_exact * 5)},
+                    },
+                }
+            ],
+        },
     }

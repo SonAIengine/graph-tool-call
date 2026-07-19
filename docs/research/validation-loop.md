@@ -29,6 +29,14 @@ graph-tool-call search 연구는 full model benchmark를 매번 돌리면 속도
 T0-T1은 매일 자주 돌린다. T2-T3는 실험 branch에서만 선택적으로 돌린다.
 T4는 milestone 또는 publish candidate에서만 허용한다.
 
+BFCL model sweep artifact에는 `summary.milestone_gate`가 포함된다. 기본
+profile은 `xgen-0.27`이며, retrieved `k=5` exact, retrieval recall, row-source
+upper-bound preservation, `parallel_multiple` exact를 한 번에 판정한다. 이 gate가
+`fail`이면 full run 숫자를 더 오래 읽지 말고 `failure_breakdown`,
+`category_rows`, hard-case bundle로 돌아가 작은 subset을 먼저 고친다. row-source
+baseline이나 `parallel_multiple`를 일부러 제외한 smoke에서는 `incomplete`가 정상일
+수 있다.
+
 ## 실행 타깃
 
 ```bash
