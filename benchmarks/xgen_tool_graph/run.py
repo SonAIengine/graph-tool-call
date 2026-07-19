@@ -191,6 +191,7 @@ def run_benchmark(
         "thresholds": cases_doc.get("thresholds") or {},
         "pipelines": [asdict(p) for p in evaluated],
         "improvements": _compare(evaluated),
+        "producer_expansion_lift": _producer_expansion_lift(evaluated),
     }
 
 
@@ -240,6 +241,8 @@ def run_all_benchmarks(
         next(p for p in report["pipelines"] if p["name"] == "graph_with_producers")["summary"]
         for report in suite_reports
     ]
+    producer_lifts = [report["producer_expansion_lift"] for report in suite_reports]
+    aggregate_lift = _aggregate_producer_expansion_lift(producer_lifts)
     total_cases = sum(int(summary.get("cases") or 0) for summary in graph_summaries)
     status = (
         "pass" if all(summary.get("status") == "pass" for summary in graph_summaries) else "fail"
@@ -284,6 +287,18 @@ def run_all_benchmarks(
             )
             for row in graph_summaries
         )
+    summary.update(
+        {
+            "producer_expansion_producer_recall_delta": aggregate_lift["producer_recall"]["delta"],
+            "producer_expansion_candidate_plan_coverage_delta": aggregate_lift[
+                "candidate_plan_coverage"
+            ]["delta"],
+            "producer_expansion_binding_support_delta": aggregate_lift["candidate_binding_support"][
+                "delta"
+            ],
+            "producer_expansion_lifted_cases": aggregate_lift["lifted_cases"]["any"],
+        }
+    )
 
     return {
         "benchmark": "XGEN Tool Graph Benchmark Suites",
@@ -295,6 +310,7 @@ def run_all_benchmarks(
         "top_k": effective_top_k,
         "token_budget": effective_budget,
         "summary": summary,
+        "producer_expansion_lift": aggregate_lift,
         "suites": suite_reports,
     }
 
@@ -656,6 +672,117 @@ def _compare(pipelines: list[PipelineEvaluation]) -> dict[str, float]:
     }
 
 
+def _producer_expansion_lift(pipelines: list[PipelineEvaluation]) -> dict[str, Any]:
+    by_name = {p.name: p for p in pipelines}
+    base = by_name.get("target_only")
+    graph = by_name.get("graph_with_producers")
+    if base is None or graph is None:
+        return {}
+
+    metrics = [
+        "producer_recall",
+        "candidate_plan_coverage",
+        "candidate_binding_support",
+        "plan_exact_match",
+        "plan_step_recall",
+    ]
+    lift: dict[str, Any] = {
+        "baseline_pipeline": base.name,
+        "expanded_pipeline": graph.name,
+        "cases": min(len(base.cases), len(graph.cases)),
+        "lifted_cases": _lifted_case_counts(base.cases, graph.cases),
+    }
+    for metric in metrics:
+        before = float(base.summary.get(metric, 0.0))
+        after = float(graph.summary.get(metric, 0.0))
+        lift[metric] = {
+            "before": round(before, 6),
+            "after": round(after, 6),
+            "delta": round(after - before, 6),
+        }
+    return lift
+
+
+def _lifted_case_counts(
+    baseline_cases: list[QueryEvaluation],
+    expanded_cases: list[QueryEvaluation],
+) -> dict[str, int]:
+    base_by_id = {row.case_id: row for row in baseline_cases}
+    lifted = {
+        "producer_recall": 0,
+        "candidate_plan_coverage": 0,
+        "candidate_binding_support": 0,
+        "any": 0,
+    }
+    for expanded in expanded_cases:
+        base = base_by_id.get(expanded.case_id)
+        if base is None:
+            continue
+        producer = expanded.producer_recall > base.producer_recall
+        plan = expanded.candidate_plan_coverage > base.candidate_plan_coverage
+        binding = expanded.candidate_binding_support > base.candidate_binding_support
+        if producer:
+            lifted["producer_recall"] += 1
+        if plan:
+            lifted["candidate_plan_coverage"] += 1
+        if binding:
+            lifted["candidate_binding_support"] += 1
+        if producer or plan or binding:
+            lifted["any"] += 1
+    return lifted
+
+
+def _aggregate_producer_expansion_lift(lifts: list[dict[str, Any]]) -> dict[str, Any]:
+    active = [lift for lift in lifts if lift]
+    total_cases = sum(int(lift.get("cases") or 0) for lift in active)
+    out: dict[str, Any] = {
+        "baseline_pipeline": "target_only",
+        "expanded_pipeline": "graph_with_producers",
+        "cases": total_cases,
+        "lifted_cases": {
+            "producer_recall": sum(
+                int((lift.get("lifted_cases") or {}).get("producer_recall") or 0) for lift in active
+            ),
+            "candidate_plan_coverage": sum(
+                int((lift.get("lifted_cases") or {}).get("candidate_plan_coverage") or 0)
+                for lift in active
+            ),
+            "candidate_binding_support": sum(
+                int((lift.get("lifted_cases") or {}).get("candidate_binding_support") or 0)
+                for lift in active
+            ),
+            "any": sum(int((lift.get("lifted_cases") or {}).get("any") or 0) for lift in active),
+        },
+    }
+    for metric in (
+        "producer_recall",
+        "candidate_plan_coverage",
+        "candidate_binding_support",
+        "plan_exact_match",
+        "plan_step_recall",
+    ):
+        before = _weighted_mean(
+            (
+                float((lift.get(metric) or {}).get("before") or 0.0),
+                int(lift.get("cases") or 0),
+            )
+            for lift in active
+        )
+        after = _weighted_mean(
+            (
+                float((lift.get(metric) or {}).get("after") or 0.0),
+                int(lift.get("cases") or 0),
+            )
+            for lift in active
+        )
+        out[metric] = {
+            "before": before,
+            "after": after,
+            "delta": round(after - before, 6),
+        }
+    return out
+
+
 def _operation_index(spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for path_item in (spec.get("paths") or {}).values():
@@ -819,6 +946,18 @@ def _print_report(report: dict[str, Any]) -> None:
                 latency=summary["avg_latency_ms"],
             )
         )
+        lift = report.get("producer_expansion_lift") or {}
+        if lift:
+            print(
+                "  producer expansion lift: producer_recall={prod:+.2f} "
+                "candidate_plan={plan:+.2f} binding_support={bind:+.2f} "
+                "lifted_cases={cases}".format(
+                    prod=lift["producer_recall"]["delta"],
+                    plan=lift["candidate_plan_coverage"]["delta"],
+                    bind=lift["candidate_binding_support"]["delta"],
+                    cases=lift["lifted_cases"]["any"],
+                )
+            )
         print()
         for suite_report in report["suites"]:
             graph = next(
@@ -864,6 +1003,18 @@ def _print_report(report: dict[str, Any]) -> None:
     print("Improvement over target_only:")
     for key, value in report["improvements"].items():
         print(f"  {key}: {value:+.2f}")
+    lift = report.get("producer_expansion_lift") or {}
+    if lift:
+        print(
+            "Producer expansion lift cases: "
+            "producer_recall={producer} candidate_plan={plan} "
+            "binding_support={binding} any={any_}".format(
+                producer=lift["lifted_cases"]["producer_recall"],
+                plan=lift["lifted_cases"]["candidate_plan_coverage"],
+                binding=lift["lifted_cases"]["candidate_binding_support"],
+                any_=lift["lifted_cases"]["any"],
+            )
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

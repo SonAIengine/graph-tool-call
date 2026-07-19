@@ -41,6 +41,19 @@ def test_xgen_tool_graph_benchmark_graph_pipeline_passes_thresholds():
     assert report["improvements"]["producer_recall_delta"] > 0
     assert report["improvements"]["candidate_plan_coverage_delta"] > 0
     assert report["improvements"]["candidate_binding_support_delta"] > 0
+    lift = report["producer_expansion_lift"]
+    assert lift["baseline_pipeline"] == "target_only"
+    assert lift["expanded_pipeline"] == "graph_with_producers"
+    assert lift["producer_recall"]["delta"] == report["improvements"]["producer_recall_delta"]
+    assert (
+        lift["candidate_plan_coverage"]["delta"]
+        == report["improvements"]["candidate_plan_coverage_delta"]
+    )
+    assert (
+        lift["candidate_binding_support"]["delta"]
+        == report["improvements"]["candidate_binding_support_delta"]
+    )
+    assert lift["lifted_cases"]["any"] == lift["cases"]
 
 
 def test_xgen_tool_graph_all_fixture_suites_pass_thresholds():
@@ -58,6 +71,12 @@ def test_xgen_tool_graph_all_fixture_suites_pass_thresholds():
     assert summary["synthesis_diagnostics_coverage"] == 1.0
     assert summary["user_input_slot_case_count"] == 1
     assert summary["missing_field_count"] == 2
+    assert summary["producer_expansion_producer_recall_delta"] == 1.0
+    assert summary["producer_expansion_candidate_plan_coverage_delta"] == 0.625
+    assert summary["producer_expansion_binding_support_delta"] == 1.0
+    assert summary["producer_expansion_lifted_cases"] == 12
+    assert report["producer_expansion_lift"]["cases"] == 12
+    assert report["producer_expansion_lift"]["lifted_cases"]["any"] == 12
 
     for suite_report in report["suites"]:
         graph = next(
