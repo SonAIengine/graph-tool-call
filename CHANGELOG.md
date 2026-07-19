@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-07-20
+
+### Added
+- **XGEN candidate-set contract** — target candidates, producer candidates,
+  expansion seeds, equivalence groups, rank signals, and action-priority
+  helpers are exposed for API Collection adapters that need a small
+  LLM-visible candidate set with audit evidence.
+- **XGEN benchmark families** — deterministic commerce, admin, and workflow
+  fixture suites now measure target recall, selector exactness, producer
+  expansion lift, plan coverage, binding support, diagnostics coverage, and
+  candidate counts.
+- **XGEN scale gates** — live/snapshot OpenAPI scale runners now record
+  snapshot provenance, tool/schema surface reduction, target selector metrics,
+  plan-readiness metrics, and reusable gate blocks for X2BEE-scale validation.
+- **BFCL milestone tooling** — 0.27/0.28 gate checks, hard-case bundle export,
+  failure taxonomy, sweep attribution, and model-loop presentation controls
+  make product and paper-readiness claims reproducible.
+- **OpenAPI collection artifact builder** — graphify can produce a
+  storage-ready collection artifact containing graph JSON, readiness report,
+  source provenance, and build statistics for XGEN-style collection builds.
+
+### Changed
+- **Retrieval hardening** — guarded domain aliases, clause diversity, semantic
+  phrase boosts, route-intent matching, and BFCL-specific candidate
+  presentation controls improve top-5 recall without raising the default
+  retrieval K.
+- **Producer planning** — required producer selection now favors compact
+  representative producer sets and excludes optional producers from executable
+  plan candidates while preserving evidence in diagnostics.
+- **Research docs** — `docs/research/xgen-tool-graph-goals.md`,
+  `docs/research/validation-loop.md`, `docs/benchmarks.md`, and
+  `docs/integrations/xgen-api-collection.md` document the 0.27 product
+  candidate baseline and the remaining 0.28 paper-ready gap.
+
 ## [0.26.0] - 2026-07-20
 
 ### Added
