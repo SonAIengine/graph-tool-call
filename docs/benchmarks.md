@@ -905,12 +905,46 @@ make xgen-scale-snapshot \
   OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot
 
 MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
+GATE_PROFILE=xgen-scale-0.28 \
 OUT=/tmp/gtc-x2bee-scale-snapshot-sweep.json \
 make xgen-scale-sweep
 
 make xgen-scale-028-gate-check \
   REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep.json
 ```
+
+Latest snapshot-provenance sweep on 2026-07-19:
+
+```bash
+OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot-028 make xgen-scale-snapshot
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot-028/manifest.json make xgen-scale-snapshot-check
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot-028/manifest.json \
+  GATE_PROFILE=xgen-scale-0.28 \
+  OUT=/tmp/gtc-x2bee-scale-snapshot-sweep-028.json \
+  TOP_KS=3,5,10 \
+  make xgen-scale-sweep
+make xgen-scale-028-gate-check REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep-028.json
+```
+
+| Metric | Value |
+|---|---:|
+| Snapshot specs / sha256 entries | `15 / 15` |
+| Raw operations | `2,173` |
+| Unique tools after operationId dedupe | `1,084` |
+| Duplicate tools skipped | `1,077` |
+| Graph edges | `8,579` |
+| Build time | `11.62s` |
+| Acceptance Top-K | `10` |
+| Product cases | `19` |
+| Hit@10 / expected recall@10 / selector exact@10 | `1.00 / 1.00 / 1.00` |
+| Average / max candidate count | `2.00 / 6` |
+| Average schema context reduction | `99.78%` |
+| Minimum schema context reduction | `98.30%` |
+| Average retrieval latency | `31.79ms` |
+
+The saved report embeds `gate.profile=xgen-scale-0.28`,
+`snapshot_provenance_complete=true`, and passes the external
+`xgen-scale-028-gate-check`.
 
 The routine `xgen-scale-0.27` profile remains useful for fast replay of saved
 live artifacts; `xgen-scale-0.28` is the provenance gate for public numbers.

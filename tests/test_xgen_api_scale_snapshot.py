@@ -126,6 +126,45 @@ def test_xgen_api_scale_run_cli_accepts_verified_manifest(tmp_path: Path):
     assert report["snapshot_manifests"][0]["manifest_path"] == str(manifest["manifest_path"])
     assert report["snapshot_manifests"][0]["spec_count"] == 1
     assert report["snapshot_manifests"][0]["specs"][0]["sha256"] == manifest["specs"][0]["sha256"]
+    assert report["gate"]["metrics"]["snapshot_manifest_count"] == 1
+    assert report["gate"]["metrics"]["snapshot_spec_count"] == 1
+    assert report["gate"]["metrics"]["snapshot_sha256_count"] == 1
+    assert report["gate"]["metrics"]["snapshot_provenance_complete"] is True
+
+
+def test_xgen_api_scale_run_cli_embeds_028_gate_for_verified_manifest(tmp_path: Path):
+    out_dir = tmp_path / "snapshot"
+    output_path = tmp_path / "report.json"
+    manifest = snapshot.snapshot_specs(
+        out_dir=out_dir,
+        spec_sources=[
+            _spec("Snapshot Catalog", {"/brands": _operation("searchBrands", "Brand search")}),
+        ],
+    )
+
+    exit_code = main(
+        [
+            "--manifest",
+            str(manifest["manifest_path"]),
+            "--no-cases",
+            "--min-unique-tools",
+            "1",
+            "--max-build-seconds",
+            "10",
+            "--gate-profile",
+            "xgen-scale-0.28",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    report = json.loads(output_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert report["gate"]["profile"] == "xgen-scale-0.28"
+    assert report["gate"]["status"] == "pass"
+    assert report["gate"]["checks"]["snapshot_provenance_required"] is True
+    assert report["gate"]["checks"]["snapshot_provenance_complete"] is True
+    assert report["gate"]["metrics"]["snapshot_sha256_count"] == 1
 
 
 def test_xgen_api_scale_manifest_detects_snapshot_tampering(tmp_path: Path):

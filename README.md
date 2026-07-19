@@ -377,6 +377,9 @@ model-in-the-loop benchmark.
 make xgen-benchmark
 make xgen-scale-acceptance
 make xgen-scale-sweep
+MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
+  GATE_PROFILE=xgen-scale-0.28 \
+  make xgen-scale-sweep
 make xgen-scale-028-gate-check REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep.json
 make xgen-scale-contract-ablation
 make xgen-llm-benchmark

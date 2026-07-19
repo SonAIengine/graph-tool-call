@@ -19,7 +19,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from benchmarks.metrics import mrr, recall_at_k
-from benchmarks.xgen_api_scale.gate import evaluate_gate
+from benchmarks.xgen_api_scale.gate import DEFAULT_GATE_PROFILE, evaluate_gate
 from benchmarks.xgen_api_scale.manifest import load_snapshot_manifest
 from graph_tool_call import ToolGraph, __version__
 from graph_tool_call.core.contract_matching import description_alias_key
@@ -1871,6 +1871,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Index promoted raw contract fields in BM25. Diagnostic; may add target-search noise.",
     )
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument(
+        "--gate-profile",
+        default=DEFAULT_GATE_PROFILE,
+        help="Gate profile to embed in acceptance/sweep reports.",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     contract_signal_options = _contract_signal_options_from_args(args)
@@ -1926,6 +1931,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if snapshot_manifests:
         report["snapshot_manifests"] = snapshot_manifests
+    if "gate" in report:
+        report["gate"] = evaluate_gate(report, profile=args.gate_profile)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -93,6 +93,16 @@ worst-case `98.47%` context reduction을 만든다. X2BEE acceptance gate는 이
 `avg_schema_context_reduction >= 0.99`와
 `min_schema_context_reduction >= 0.98`을 함께 확인한다.
 
+`2026-07-19` snapshot-provenance artifact는
+`/tmp/gtc-x2bee-openapi-snapshot-028/manifest.json`으로 X2BEE OpenAPI spec `15`개
+sha256을 고정하고 `/tmp/gtc-x2bee-scale-snapshot-sweep-028.json`을 생성했다.
+이 report의 embedded gate는 `xgen-scale-0.28`이고
+`snapshot_provenance_complete=true`로 pass한다. Snapshot 기준 raw operation
+`2,173`, unique tool `1,084`, duplicate skipped `1,077`, graph edge `8,579`,
+build `11.62s`, product case `19`개에서 hit/recall/selector exact `1.00`,
+avg candidate count `2.00`, max candidate count `6`, avg/min schema context
+reduction `99.78% / 98.30%`, avg latency `31.79ms`다.
+
 `2026-07-19` rank-compression branch에서는 X2BEE live sweep에서 기존 hard
 case인 `order_query_ko`, `page_role_buttons_ko`, `settlement_compare_ko`,
 `return_withdrawal_ko`를 다시 검증했다. `make xgen-scale-sweep
@@ -617,6 +627,7 @@ make xgen-scale-snapshot \
   OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot
 
 MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
+GATE_PROFILE=xgen-scale-0.28 \
 OUT=/tmp/gtc-x2bee-scale-snapshot-sweep.json \
 make xgen-scale-sweep
 

@@ -67,6 +67,7 @@ xgen-scale-acceptance:
 		$$case_args \
 		--min-unique-tools "$${MIN_UNIQUE_TOOLS:-1000}" \
 		--max-build-seconds "$${MAX_BUILD_SECONDS:-30}" \
+		--gate-profile "$${GATE_PROFILE:-xgen-scale-0.27}" \
 		--output "$${OUT:-/tmp/gtc-xgen-scale-acceptance.json}"
 
 xgen-scale-sweep:
@@ -89,6 +90,7 @@ xgen-scale-sweep:
 		--acceptance-top-k "$${ACCEPTANCE_TOP_K:-10}" \
 		--min-unique-tools "$${MIN_UNIQUE_TOOLS:-1000}" \
 		--max-build-seconds "$${MAX_BUILD_SECONDS:-30}" \
+		--gate-profile "$${GATE_PROFILE:-xgen-scale-0.27}" \
 		--output "$${OUT:-/tmp/gtc-xgen-scale-sweep.json}"
 
 xgen-scale-gate-check:

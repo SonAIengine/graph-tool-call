@@ -63,6 +63,7 @@ make xgen-scale-snapshot \
   OUT_DIR=/tmp/gtc-x2bee-openapi-snapshot
 
 MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
+GATE_PROFILE=xgen-scale-0.28 \
 OUT=/tmp/gtc-x2bee-scale-snapshot-sweep.json \
 make xgen-scale-sweep
 
@@ -412,6 +413,7 @@ make xgen-scale-snapshot-check
 
 MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
 MIN_UNIQUE_TOOLS=1000 \
+GATE_PROFILE=xgen-scale-0.28 \
 make xgen-scale-sweep \
   TOP_KS=3,5,10 \
   OUT=/tmp/gtc-x2bee-scale-snapshot-sweep.json
@@ -792,6 +794,17 @@ Schema context metric pass는 같은 X2BEE live sweep을 compact JSON schema cha
 OUT=/tmp/gtc-x2bee-schema-context-threshold-sweep.json TOP_KS=3,5,10 make xgen-scale-sweep
 make xgen-scale-gate-check REPORT=/tmp/gtc-x2bee-schema-context-threshold-sweep.json
 ```
+
+`2026-07-19` snapshot-provenance run은 같은 X2BEE source를
+`/tmp/gtc-x2bee-openapi-snapshot-028/manifest.json`으로 고정한 뒤
+`GATE_PROFILE=xgen-scale-0.28`로 sweep을 다시 만들었다. Artifact는
+`/tmp/gtc-x2bee-scale-snapshot-sweep-028.json`이고,
+`make xgen-scale-028-gate-check`가 pass한다. Snapshot은 spec `15`개와 sha256
+`15`개를 포함하고, acceptance top-K `10` 기준 product case `19`개에서
+hit/recall/selector exact가 모두 `1.00`이다. 평균 candidate count는 `2.00`,
+max candidate count는 `6`, 평균 schema context reduction은 `99.78%`,
+minimum schema context reduction은 `98.30%`, 평균 retrieval latency는
+`31.79ms`다.
 
 - 전체 compact tool schema chars는 `56,756,400`이다.
 - 평균 candidate schema chars는 `157,320`, max는 `865,608`이다.
