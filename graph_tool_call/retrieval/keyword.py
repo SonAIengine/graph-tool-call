@@ -450,10 +450,18 @@ class BM25Scorer:
             "distance_traveled" in tool_name or "distance traveled" in tool_text
         ):
             boost *= 2.0
-        if re.search(r"\bgeo(?:graphic|graphical)?\s+distance\b", q) and (
-            "geo_distance" in tool_name.lower() or "geographic distance" in tool_text
-        ):
+        is_geo_distance_tool = BM25Scorer._is_geographic_distance_tool(tool_name, tool_text)
+        if re.search(r"\bgeo(?:graphic|graphical)?\s+distance\b", q) and is_geo_distance_tool:
             boost *= 2.0
+        if BM25Scorer._has_geographic_distance_intent(q) and is_geo_distance_tool:
+            boost *= 2.2
+        if BM25Scorer._has_coordinate_distance_intent(q) and (
+            tool_name.lower() == "calculate_distance"
+            or "gps coordinates" in tool_text
+            or "latitude" in tool_text
+            or "longitude" in tool_text
+        ):
+            boost *= 2.8
         if "fibonacci series" in q and ("sequence" in tool_text or "series" in tool_text):
             boost *= 1.6
         if "current cost" in q and "current cost" in tool_text:
@@ -884,6 +892,10 @@ class BM25Scorer:
             extra.extend(["distance", "travel", "traveled"])
         if re.search(r"\bgeo(?:graphic|graphical)?\s+distance\b", q):
             extra.extend(["geo", "geographic"])
+        if BM25Scorer._has_geographic_distance_intent(q):
+            extra.extend(["geo", "geographic", "location", "locations"])
+        if BM25Scorer._has_coordinate_distance_intent(q):
+            extra.extend(["gps", "coordinate", "coordinates", "latitude", "longitude"])
         if re.search(r"\bfibonacci\s+series\b", q):
             extra.extend(["fibonacci", "sequence"])
         if re.search(r"\bexchange\s+rate\b", q):
@@ -1010,6 +1022,64 @@ class BM25Scorer:
             re.search(r"\b(fastest|quickest|best|optimal|shortest)\s+route\b", query)
             or re.search(r"\broute\b.*\b(fastest|quickest|best|optimal|shortest)\b", query)
             or re.search(r"\bfrom\b.+\bto\b", query)
+        )
+
+    @staticmethod
+    def _has_geographic_distance_intent(query: str) -> bool:
+        """Detect straight-line/geographic distance, not route/traffic distance."""
+        q = query.lower()
+        if not re.search(r"\bdistance\b", q):
+            return False
+        if re.search(r"\b(driving|traffic|route|shortest|fastest|quickest|duration)\b", q):
+            return False
+        if re.search(
+            r"\b("
+            r"euclidean|point|points|2d|coordinate|coordinates|"
+            r"plate|plates|capacitance|capacitor|charged|charge|electrostatic|coulomb|"
+            r"terrain|celestial|planet|planets|mars|venus|jupiter|"
+            r"function\s+['\"]?calculate_distance"
+            r")\b",
+            q,
+        ):
+            return False
+        if re.search(r"\b[a-z]\s*\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)", q):
+            return False
+        has_locationish_signal = bool(
+            re.search(r"\b(cit(?:y|ies)|locations?|places?|addresses?)\b", q)
+            or re.search(r"\b[a-z][a-z]+,\s*(?:[a-z]{2}|[a-z]\.)\b", q)
+        )
+        has_distance_unit = bool(re.search(r"\b(kilometers?|km|miles?|mi)\b", q))
+        return bool(
+            re.search(r"\bgeo(?:graphic|graphical)?\s+distance\b", q)
+            or (
+                (re.search(r"\bapprox(?:imate|imately)?\b", q) or has_distance_unit)
+                and has_locationish_signal
+            )
+        )
+
+    @staticmethod
+    def _has_coordinate_distance_intent(query: str) -> bool:
+        """Detect distance queries with explicit latitude/longitude coordinates."""
+        if not re.search(r"\bdistance\b", query):
+            return False
+        if not re.search(r"\b(kilometers?|km|miles?)\b", query):
+            return False
+        coordinate_pair = (
+            r"\(\s*-?\d+(?:\.\d+)?\s*°?\s*[ns]?\s*,\s*-?\d+(?:\.\d+)?\s*°?\s*[ew]?\s*\)"
+        )
+        return bool(
+            re.search(coordinate_pair, query)
+            or (re.search(r"\blat(?:itude)?\b", query) and re.search(r"\blon(?:gitude)?\b", query))
+        )
+
+    @staticmethod
+    def _is_geographic_distance_tool(tool_name: str, tool_text: str) -> bool:
+        normalized_name = tool_name.lower().replace(".", "_").replace("-", "_")
+        compact_name = normalized_name.replace("_", "")
+        return bool(
+            "geo_distance" in normalized_name
+            or "geodistance" in compact_name
+            or "geographic distance" in tool_text
         )
 
     @staticmethod
