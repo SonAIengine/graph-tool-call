@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from benchmarks.xgen_tool_graph.run import build_benchmark_graph, run_benchmark
+from benchmarks.xgen_tool_graph.run import (
+    SUITE_CONFIGS,
+    build_benchmark_graph,
+    run_benchmark,
+    run_benchmark_suite,
+)
 from graph_tool_call.graphify import COLLECTION_GRAPH_VERSION
 
 
@@ -36,6 +41,26 @@ def test_xgen_tool_graph_benchmark_graph_pipeline_passes_thresholds():
     assert report["improvements"]["producer_recall_delta"] > 0
     assert report["improvements"]["candidate_plan_coverage_delta"] > 0
     assert report["improvements"]["candidate_binding_support_delta"] > 0
+
+
+def test_xgen_tool_graph_all_fixture_suites_pass_thresholds():
+    report = run_benchmark_suite(suite="all")
+    summary = report["summary"]
+
+    assert summary["status"] == "pass"
+    assert summary["fixture_families"] == list(SUITE_CONFIGS)
+    assert summary["suite_count"] == 3
+    assert summary["cases"] == 12
+    assert summary["target_recall_at_k"] == 1.0
+    assert summary["producer_recall"] == 1.0
+    assert summary["candidate_plan_coverage"] == 1.0
+    assert summary["plan_exact_match"] >= 0.9
+
+    for suite_report in report["suites"]:
+        graph = next(
+            row for row in suite_report["pipelines"] if row["name"] == "graph_with_producers"
+        )
+        assert graph["summary"]["status"] == "pass"
 
 
 def test_xgen_tool_graph_benchmark_checks_korean_query_chain():

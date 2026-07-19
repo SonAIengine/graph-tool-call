@@ -1,0 +1,71 @@
+{
+  "name": "XGEN Workflow Tool Graph Search",
+  "description": "Deterministic XGEN-style benchmark for workflow status/update/notification flows.",
+  "top_k": 5,
+  "token_budget": 2000,
+  "context_defaults": {
+    "siteNo": "10001"
+  },
+  "thresholds": {
+    "target_recall_at_k": 1.0,
+    "mean_target_mrr": 0.7,
+    "producer_recall": 0.9,
+    "candidate_plan_coverage": 0.95,
+    "candidate_binding_support": 0.9,
+    "plan_exact_match": 0.8,
+    "plan_step_recall": 0.95,
+    "binding_accuracy": 0.9,
+    "user_input_slot_recall": 1.0,
+    "evidence_coverage": 1.0,
+    "max_avg_latency_ms": 50.0,
+    "max_avg_token_budget_used": 900
+  },
+  "cases": [
+    {
+      "id": "approve_task_ko",
+      "query": "주문 승인 요청 찾아서 워크플로우 승인 처리해줘",
+      "entities": {
+        "orderNo": "ORD-100",
+        "comment": "approved"
+      },
+      "expected_target": "approveWorkflowTask",
+      "expected_producers": ["searchWorkflowInstances", "getCurrentWorkflowTask"],
+      "expected_plan": ["searchWorkflowInstances", "getCurrentWorkflowTask", "approveWorkflowTask"],
+      "expected_bindings": {
+        "getCurrentWorkflowTask.workflowId": "searchWorkflowInstances",
+        "approveWorkflowTask.taskId": "getCurrentWorkflowTask"
+      }
+    },
+    {
+      "id": "notify_assignee_ko",
+      "query": "워크플로우 담당자에게 처리 요청 알림 보내줘",
+      "entities": {
+        "businessKey": "RETURN-200",
+        "message": "확인 부탁드립니다"
+      },
+      "expected_target": "sendTaskNotification",
+      "expected_producers": ["searchWorkflowInstances", "getCurrentWorkflowTask"],
+      "expected_plan": ["searchWorkflowInstances", "getCurrentWorkflowTask", "sendTaskNotification"],
+      "expected_bindings": {
+        "getCurrentWorkflowTask.workflowId": "searchWorkflowInstances",
+        "sendTaskNotification.taskId": "getCurrentWorkflowTask",
+        "sendTaskNotification.assigneeId": "getCurrentWorkflowTask"
+      }
+    },
+    {
+      "id": "escalate_overdue_ko",
+      "query": "지연된 워크플로우 작업 찾아서 에스컬레이션 처리해줘",
+      "entities": {
+        "businessKey": "CLAIM-300",
+        "reason": "overdue"
+      },
+      "expected_target": "escalateWorkflowTask",
+      "expected_producers": ["searchWorkflowInstances", "getCurrentWorkflowTask"],
+      "expected_plan": ["searchWorkflowInstances", "getCurrentWorkflowTask", "escalateWorkflowTask"],
+      "expected_bindings": {
+        "getCurrentWorkflowTask.workflowId": "searchWorkflowInstances",
+        "escalateWorkflowTask.taskId": "getCurrentWorkflowTask"
+      }
+    }
+  ]
+}

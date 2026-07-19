@@ -123,6 +123,9 @@ Interpretation:
 Required work:
 
 - XGEN-style fixture를 commerce 1종에서 최소 3종으로 확장한다.
+  - `2026-07-19`: built-in deterministic suites가 `commerce`, `admin`,
+    `workflow` 3종으로 확장됐다. `make xgen-benchmark`와
+    `make research-check`의 XGEN deterministic gate는 `--suite all`을 실행한다.
 - producer expansion이 plan synthesis까지 실제 이득을 내는지 측정한다.
 - top-k=5를 기본 경로로 유지하되, 복합 query에서만 adaptive expansion을 쓴다.
 - 실패 event에 stage, target, selected producers, missing fields, evidence를 남긴다.

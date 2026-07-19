@@ -36,7 +36,16 @@ from graph_tool_call.tool_graph import ToolGraph
 ROOT = Path(__file__).resolve().parent
 DEFAULT_SPEC_PATH = ROOT / "commerce_openapi.json"
 DEFAULT_CASES_PATH = ROOT / "cases.json"
+DEFAULT_ADMIN_SPEC_PATH = ROOT / "admin_openapi.json"
+DEFAULT_ADMIN_CASES_PATH = ROOT / "admin_cases.json"
+DEFAULT_WORKFLOW_SPEC_PATH = ROOT / "workflow_openapi.json"
+DEFAULT_WORKFLOW_CASES_PATH = ROOT / "workflow_cases.json"
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options"}
+SUITE_CONFIGS: dict[str, tuple[Path, Path]] = {
+    "commerce": (DEFAULT_SPEC_PATH, DEFAULT_CASES_PATH),
+    "admin": (DEFAULT_ADMIN_SPEC_PATH, DEFAULT_ADMIN_CASES_PATH),
+    "workflow": (DEFAULT_WORKFLOW_SPEC_PATH, DEFAULT_WORKFLOW_CASES_PATH),
+}
 
 
 @dataclass
@@ -181,6 +190,101 @@ def run_benchmark(
         "thresholds": cases_doc.get("thresholds") or {},
         "pipelines": [asdict(p) for p in evaluated],
         "improvements": _compare(evaluated),
+    }
+
+
+def run_benchmark_suite(
+    *,
+    suite: str = "commerce",
+    top_k: int | None = None,
+    token_budget: int | None = None,
+) -> dict[str, Any]:
+    """Run one named XGEN fixture suite or all suites.
+
+    ``run_benchmark`` remains the low-level entry point for ad-hoc
+    ``--spec``/``--cases`` pairs. This helper is the stable product-readiness
+    contract: every named suite represents one real XGEN API Collection family.
+    """
+    if suite == "all":
+        return run_all_benchmarks(top_k=top_k, token_budget=token_budget)
+    if suite not in SUITE_CONFIGS:
+        msg = f"unknown XGEN benchmark suite: {suite!r}"
+        raise ValueError(msg)
+    spec_path, cases_path = SUITE_CONFIGS[suite]
+    report = run_benchmark(
+        spec_path=spec_path,
+        cases_path=cases_path,
+        top_k=top_k,
+        token_budget=token_budget,
+    )
+    report["suite"] = suite
+    return report
+
+
+def run_all_benchmarks(
+    *,
+    top_k: int | None = None,
+    token_budget: int | None = None,
+) -> dict[str, Any]:
+    """Run all deterministic XGEN fixture families and aggregate graph metrics."""
+    suite_reports = [
+        run_benchmark_suite(suite=name, top_k=top_k, token_budget=token_budget)
+        for name in SUITE_CONFIGS
+    ]
+    effective_top_k = top_k if top_k is not None else _common_value(suite_reports, "top_k")
+    effective_budget = (
+        token_budget if token_budget is not None else _common_value(suite_reports, "token_budget")
+    )
+    graph_summaries = [
+        next(p for p in report["pipelines"] if p["name"] == "graph_with_producers")["summary"]
+        for report in suite_reports
+    ]
+    total_cases = sum(int(summary.get("cases") or 0) for summary in graph_summaries)
+    status = (
+        "pass" if all(summary.get("status") == "pass" for summary in graph_summaries) else "fail"
+    )
+    aggregate_metrics = [
+        "target_recall_at_k",
+        "mean_target_mrr",
+        "producer_recall",
+        "candidate_plan_coverage",
+        "candidate_binding_support",
+        "plan_exact_match",
+        "plan_step_recall",
+        "binding_accuracy",
+        "user_input_slot_recall",
+        "evidence_coverage",
+        "avg_token_budget_used",
+        "avg_latency_ms",
+    ]
+    summary: dict[str, Any] = {
+        "status": status,
+        "suite_count": len(suite_reports),
+        "fixture_families": list(SUITE_CONFIGS),
+        "cases": total_cases,
+        "tool_count": sum(int(report["tool_count"]) for report in suite_reports),
+        "edge_count": sum(int(report["edge_count"]) for report in suite_reports),
+    }
+    for metric in aggregate_metrics:
+        summary[metric] = _weighted_mean(
+            (
+                float(row.get(metric) or 0.0),
+                int(row.get("cases") or 0),
+            )
+            for row in graph_summaries
+        )
+
+    return {
+        "benchmark": "XGEN Tool Graph Benchmark Suites",
+        "description": "Deterministic XGEN-style benchmark across API Collection fixture families.",
+        "methodology": "deterministic_engine_contract",
+        "model": "none",
+        "graph_tool_call_version": __version__,
+        "collection_graph_version": COLLECTION_GRAPH_VERSION,
+        "top_k": effective_top_k,
+        "token_budget": effective_budget,
+        "summary": summary,
+        "suites": suite_reports,
     }
 
 
@@ -448,6 +552,21 @@ def _mean(values: Any) -> float:
     return round(sum(vals) / len(vals), 6)
 
 
+def _weighted_mean(values: Any) -> float:
+    vals = [(float(value), int(weight)) for value, weight in values if int(weight) > 0]
+    if not vals:
+        return 0.0
+    weight_sum = sum(weight for _value, weight in vals)
+    return round(sum(value * weight for value, weight in vals) / weight_sum, 6)
+
+
+def _common_value(reports: list[dict[str, Any]], key: str) -> Any:
+    values = {json.dumps(report.get(key), sort_keys=True) for report in reports}
+    if len(values) != 1:
+        return None
+    return json.loads(next(iter(values)))
+
+
 def _threshold_passed(
     summary: dict[str, float | int | str],
     metric: str,
@@ -460,6 +579,49 @@ def _threshold_passed(
 
 
 def _print_report(report: dict[str, Any]) -> None:
+    if "suites" in report:
+        summary = report["summary"]
+        print(
+            f"{report['benchmark']} "
+            f"({summary['suite_count']} suites, {summary['cases']} cases, "
+            f"{summary['tool_count']} tools, {summary['edge_count']} edges)"
+        )
+        print(
+            f"model={report['model']} methodology={report['methodology']} "
+            f"graph-tool-call={report['graph_tool_call_version']}"
+        )
+        print(f"status={summary['status']} families={','.join(summary['fixture_families'])}")
+        print(
+            "  target@K={target:.2f} mrr={mrr_:.2f} producers={prod:.2f} "
+            "candidate_plan={cand_plan:.2f} plan_exact={plan:.2f} "
+            "bindings={bind:.2f} latency={latency:.2f}ms".format(
+                target=summary["target_recall_at_k"],
+                mrr_=summary["mean_target_mrr"],
+                prod=summary["producer_recall"],
+                cand_plan=summary["candidate_plan_coverage"],
+                plan=summary["plan_exact_match"],
+                bind=summary["binding_accuracy"],
+                latency=summary["avg_latency_ms"],
+            )
+        )
+        print()
+        for suite_report in report["suites"]:
+            graph = next(
+                p for p in suite_report["pipelines"] if p["name"] == "graph_with_producers"
+            )
+            row = graph["summary"]
+            print(
+                "  [{suite}] status={status} cases={cases} target@K={target:.2f} "
+                "plan_exact={plan:.2f}".format(
+                    suite=suite_report["suite"],
+                    status=row.get("status", "n/a"),
+                    cases=row["cases"],
+                    target=row["target_recall_at_k"],
+                    plan=row["plan_exact_match"],
+                )
+            )
+        return
+
     print(f"{report['benchmark']} ({report['tool_count']} tools, {report['edge_count']} edges)")
     print(
         f"model={report['model']} methodology={report['methodology']} "
@@ -490,6 +652,12 @@ def _print_report(report: dict[str, Any]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--suite",
+        choices=[*SUITE_CONFIGS.keys(), "all"],
+        default=None,
+        help="Run a named built-in XGEN fixture suite. Use 'all' for product-readiness coverage.",
+    )
     parser.add_argument("--spec", type=Path, default=DEFAULT_SPEC_PATH)
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_PATH)
     parser.add_argument("--top-k", type=int, default=None)
@@ -497,17 +665,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="Print raw JSON report")
     args = parser.parse_args(argv)
 
-    report = run_benchmark(
-        spec_path=args.spec,
-        cases_path=args.cases,
-        top_k=args.top_k,
-        token_budget=args.token_budget,
-    )
+    if args.suite:
+        report = run_benchmark_suite(
+            suite=args.suite,
+            top_k=args.top_k,
+            token_budget=args.token_budget,
+        )
+    else:
+        report = run_benchmark(
+            spec_path=args.spec,
+            cases_path=args.cases,
+            top_k=args.top_k,
+            token_budget=args.token_budget,
+        )
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         _print_report(report)
 
+    if "suites" in report:
+        return 0 if report["summary"].get("status") == "pass" else 1
     graph_pipeline = next(p for p in report["pipelines"] if p["name"] == "graph_with_producers")
     return 0 if graph_pipeline["summary"].get("status") == "pass" else 1
 

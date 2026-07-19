@@ -1,0 +1,68 @@
+{
+  "name": "XGEN Admin Tool Graph Search",
+  "description": "Deterministic XGEN-style benchmark for admin/user/auth API collection flows.",
+  "top_k": 5,
+  "token_budget": 2000,
+  "context_defaults": {
+    "tenantId": "tenant-100"
+  },
+  "thresholds": {
+    "target_recall_at_k": 1.0,
+    "mean_target_mrr": 0.7,
+    "producer_recall": 0.9,
+    "candidate_plan_coverage": 0.95,
+    "candidate_binding_support": 0.9,
+    "plan_exact_match": 0.8,
+    "plan_step_recall": 0.95,
+    "binding_accuracy": 0.9,
+    "user_input_slot_recall": 1.0,
+    "evidence_coverage": 1.0,
+    "max_avg_latency_ms": 50.0,
+    "max_avg_token_budget_used": 900
+  },
+  "cases": [
+    {
+      "id": "assign_role_ko",
+      "query": "이메일로 사용자 찾아서 관리자 역할 권한 부여해줘",
+      "entities": {
+        "email": "operator@example.com",
+        "roleName": "ADMIN",
+        "reason": "temporary access"
+      },
+      "expected_target": "assignRoleToUser",
+      "expected_producers": ["searchUsers", "listRoles"],
+      "expected_plan": ["listRoles", "searchUsers", "assignRoleToUser"],
+      "expected_bindings": {
+        "assignRoleToUser.userId": "searchUsers",
+        "assignRoleToUser.roleId": "listRoles"
+      }
+    },
+    {
+      "id": "audit_logs_ko",
+      "query": "사용자 계정 변경 감사 로그 조회해줘",
+      "entities": {
+        "email": "operator@example.com"
+      },
+      "expected_target": "getAuditLogs",
+      "expected_producers": ["searchUsers"],
+      "expected_plan": ["searchUsers", "getAuditLogs"],
+      "expected_bindings": {
+        "getAuditLogs.userId": "searchUsers"
+      }
+    },
+    {
+      "id": "revoke_session_ko",
+      "query": "사용자 세션 찾아서 강제 로그아웃 처리해줘",
+      "entities": {
+        "email": "operator@example.com"
+      },
+      "expected_target": "revokeUserSession",
+      "expected_producers": ["searchUsers", "listUserSessions"],
+      "expected_plan": ["searchUsers", "listUserSessions", "revokeUserSession"],
+      "expected_bindings": {
+        "listUserSessions.userId": "searchUsers",
+        "revokeUserSession.sessionId": "listUserSessions"
+      }
+    }
+  ]
+}
