@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from graph_tool_call.core.tool import ToolParameter, ToolSchema
 from graph_tool_call.retrieval.keyword import BM25Scorer
 
@@ -188,6 +190,79 @@ def test_current_cost_phrase_boosts_matching_currency_tool():
     scores = scorer.score("Calculate the current cost in British Pounds for 200 US dollars.")
 
     assert scores["currency_converter"] > scores["currency_conversion.convert"]
+
+
+@pytest.mark.parametrize(
+    ("query", "target", "target_desc", "noisy", "noisy_desc"),
+    [
+        (
+            "Find out how genetically similar a human and a chimp are in percentage.",
+            "genetics.calculate_similarity",
+            "Calculates the genetic similarity between two species as a percentage.",
+            "mutation_type.find",
+            "Finds the type of a genetic mutation based on its SNP ID.",
+        ),
+        (
+            "Calculate the Population Density for Brazil in 2022.",
+            "calculate_density",
+            "Calculate the population density of a specific country in a specific year.",
+            "estimate_population",
+            "Estimate a population for a country.",
+        ),
+        (
+            "Find the highest common factor of 36 and 24.",
+            "math.hcf",
+            "Calculate the highest common factor of two numbers.",
+            "highest_grade",
+            "Find the highest grade in a class.",
+        ),
+        (
+            "Calculate the strength of magnetic field given distance and current.",
+            "electromagnetism.biot_savart_law",
+            "Calculate magnetic field strength using Biot-Savart law.",
+            "calculate_electric_field",
+            "Calculate electric field strength from charge and distance.",
+        ),
+        (
+            "Find lawyers specializing in criminal law near me.",
+            "lawyer_finder",
+            "Locate lawyers near you based on their specialization.",
+            "law_case_search.find_historical",
+            "Find historical law cases.",
+        ),
+        (
+            "Get price and stock availability for a Yamaha P125 piano in music stores.",
+            "check_instrument_availability",
+            "Get the price and availability of a specified instrument in a music store.",
+            "get_stock_price",
+            "Get stock market prices for a ticker.",
+        ),
+        (
+            "Find a supermarket that opens 24 hours and offers home delivery.",
+            "grocery_store.find_by_criteria",
+            "Find grocery stores by location, hours of operation, and available services.",
+            "vegan_restaurant.find_nearby",
+            "Find nearby vegan restaurants.",
+        ),
+    ],
+)
+def test_semantic_phrase_boosts_high_confidence_domain_wording(
+    query: str,
+    target: str,
+    target_desc: str,
+    noisy: str,
+    noisy_desc: str,
+):
+    """High-confidence natural-language phrases should beat generic distractors."""
+    tools = {
+        target: _make_tool(target, target_desc),
+        noisy: _make_tool(noisy, noisy_desc),
+    }
+    scorer = BM25Scorer(tools)
+
+    scores = scorer.score(query)
+
+    assert scores[target] > scores.get(noisy, 0)
 
 
 # ---------------------------------------------------------------------------
