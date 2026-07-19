@@ -441,6 +441,22 @@ candidate_set = build_candidate_set(
 )
 ```
 
+When the adapter has deterministic intent evidence, pass
+`target_action_priority` to rerank target candidates before trimming or
+diversity selection. The returned `target_rank_signals` keeps original rank,
+reranked rank, action priority, group key, and selected/suppressed flags:
+
+```python
+candidate_set = build_candidate_set(
+    target_candidates,
+    graph_payload["tools"],
+    target_action_priority={"create": 5, "update": 4, "read": 2, "search": 1},
+    max_target_candidates=5,
+)
+
+signals = candidate_set["target_rank_signals"]
+```
+
 ---
 
 ## Top-level helpers

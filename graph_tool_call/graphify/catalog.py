@@ -12,6 +12,7 @@ def build_candidate_set(
     tools_by_name: dict[str, dict[str, Any]],
     *,
     expansion_seed: list[str] | None = None,
+    target_action_priority: dict[str, int] | None = None,
     max_target_candidates: int | None = None,
     max_targets_per_group: int | None = None,
     diversify_target_groups: bool = False,
@@ -33,10 +34,15 @@ def build_candidate_set(
     """
 
     raw_targets = _dedupe_names(target_candidates)
+    ranked_targets = _rank_target_candidates(
+        raw_targets,
+        tools_by_name=tools_by_name,
+        target_action_priority=target_action_priority,
+    )
     seed = _dedupe_names(target_candidates if expansion_seed is None else expansion_seed)
     explicit_seed = _dedupe_names(expansion_seed or [])
     targets, suppressed_targets, target_groups = _target_candidates_with_group_cap(
-        raw_targets,
+        ranked_targets,
         tools_by_name=tools_by_name,
         max_target_candidates=max_target_candidates,
         max_targets_per_group=max_targets_per_group,
@@ -52,8 +58,17 @@ def build_candidate_set(
     )
     seed_set = set(seed)
     producers = [name for name in candidates if name not in seed_set]
+    target_rank_signals = _target_rank_signals(
+        raw_targets,
+        ranked_targets=ranked_targets,
+        selected_targets=targets,
+        suppressed_targets=suppressed_targets,
+        tools_by_name=tools_by_name,
+        target_action_priority=target_action_priority,
+    )
     return {
         "raw_target_candidates": raw_targets,
+        "ranked_target_candidates": ranked_targets,
         "target_candidates": targets,
         "expansion_seed": seed,
         "producer_candidates": producers,
@@ -63,6 +78,9 @@ def build_candidate_set(
         "candidate_count": len(candidates),
         "producer_added_count": len(producers),
         "adaptive_expansion_applied": bool(producers),
+        "target_rank_signals": target_rank_signals,
+        "target_action_priority": target_action_priority or {},
+        "target_rerank_applied": bool(target_action_priority),
         "suppressed_target_candidates": suppressed_targets,
         "suppressed_target_count": len(suppressed_targets),
         "sibling_control_applied": bool(suppressed_targets),
@@ -159,6 +177,77 @@ def _producers_for_required_inputs(
 
 def _dedupe_names(names: list[str]) -> list[str]:
     return list(dict.fromkeys(str(name) for name in names if str(name)))
+
+
+def _rank_target_candidates(
+    names: list[str],
+    *,
+    tools_by_name: dict[str, dict[str, Any]],
+    target_action_priority: dict[str, int] | None,
+) -> list[str]:
+    if not target_action_priority:
+        return list(names)
+    original_rank = {name: idx for idx, name in enumerate(names)}
+    return sorted(
+        names,
+        key=lambda name: (
+            -_target_action_score(
+                tools_by_name.get(name) or {},
+                target_action_priority=target_action_priority,
+            ),
+            original_rank[name],
+        ),
+    )
+
+
+def _target_rank_signals(
+    raw_targets: list[str],
+    *,
+    ranked_targets: list[str],
+    selected_targets: list[str],
+    suppressed_targets: list[str],
+    tools_by_name: dict[str, dict[str, Any]],
+    target_action_priority: dict[str, int] | None,
+) -> list[dict[str, Any]]:
+    raw_rank = {name: idx + 1 for idx, name in enumerate(raw_targets)}
+    reranked_rank = {name: idx + 1 for idx, name in enumerate(ranked_targets)}
+    selected = set(selected_targets)
+    suppressed = set(suppressed_targets)
+    signals: list[dict[str, Any]] = []
+    for name in ranked_targets:
+        tool = tools_by_name.get(name) or {}
+        ai = (tool.get("metadata") or {}).get("ai_metadata") or {}
+        action = str(ai.get("canonical_action") or "").strip().lower()
+        resource = str(ai.get("primary_resource") or "").strip().lower()
+        signals.append(
+            {
+                "name": name,
+                "original_rank": raw_rank.get(name),
+                "reranked_rank": reranked_rank.get(name),
+                "canonical_action": action,
+                "primary_resource": resource,
+                "group_key": _target_group_key(name, tool),
+                "action_priority": _target_action_score(
+                    tool,
+                    target_action_priority=target_action_priority,
+                ),
+                "selected": name in selected,
+                "suppressed": name in suppressed,
+            }
+        )
+    return signals
+
+
+def _target_action_score(
+    tool: dict[str, Any],
+    *,
+    target_action_priority: dict[str, int] | None,
+) -> int:
+    if not target_action_priority:
+        return 0
+    ai = (tool.get("metadata") or {}).get("ai_metadata") or {}
+    action = str(ai.get("canonical_action") or "").strip().lower()
+    return int(target_action_priority.get(action, 0))
 
 
 def _target_candidates_with_group_cap(

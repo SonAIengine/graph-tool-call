@@ -242,6 +242,12 @@ Goal: top-K를 단순히 키우지 않고 후보 구성을 좋아지게 한다.
 Goal: recall을 유지하면서 candidate ambiguity를 줄인다.
 
 - 1차: deterministic heuristic reranker
+  - `2026-07-19`: `build_candidate_set(...)`에 opt-in
+    `target_action_priority`를 추가했다. XGEN adapter가 query intent를
+    `{"create": 5, "update": 4, ...}` 같은 action priority로 변환하면,
+    target 후보는 `ai_metadata.canonical_action` 기준으로 stable rerank되고
+    `target_rank_signals`에 original/reranked rank, group key, priority,
+    selected/suppressed evidence가 남는다.
 - 2차: optional embedding rerank
 - 3차: optional small model rerank
 - 성공 기준은 top-k=5 exact 상승과 ambiguity 비증가다.
