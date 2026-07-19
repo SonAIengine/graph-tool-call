@@ -244,6 +244,13 @@ Required work:
     Artifact는 `/tmp/gtc-x2bee-sweep-top1-ambiguity.json`이고,
     `TOP_KS=3,5,10` 기준 `hit@3=1.00`, `expected recall@3=1.00`,
     `top-1 hit=1.00`, `top-3 hit=1.00`, `mean MRR=1.00`이다.
+- BFCL model sweep artifact가 0.27 milestone gate를 직접 포함한다.
+  - `2026-07-19`: `benchmarks.bfcl_tool_selection.sweep`의
+    `summary.milestone_gate`에 `xgen-0.27` profile을 추가했다. Gate는
+    retrieved `k=5` exact, retrieval recall, row-source upper-bound
+    preservation, `parallel_multiple` exact를 판정한다. 이 값이 `fail`이면 full
+    run을 반복하지 않고 `category_rows`와 hard-case bundle로 돌아가 작은 subset을
+    먼저 고친다.
 
 ## Paper-Ready Target
 

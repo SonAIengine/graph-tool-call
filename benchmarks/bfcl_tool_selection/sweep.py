@@ -30,6 +30,17 @@ from benchmarks.bfcl_tool_selection.run import (
 )
 from benchmarks.xgen_tool_graph.llm_loop import DEFAULT_OLLAMA_URL
 
+DEFAULT_MILESTONE_PROFILE = "xgen-0.27"
+MILESTONE_PROFILES: dict[str, dict[str, float | int | str]] = {
+    "xgen-0.27": {
+        "target_top_k": 5,
+        "min_retrieved_exact": 0.85,
+        "min_retrieval_recall": 0.95,
+        "min_row_source_preservation": 0.94,
+        "min_parallel_multiple_exact": 0.75,
+    }
+}
+
 
 def run_sweep(
     *,
@@ -52,6 +63,7 @@ def run_sweep(
     concurrency: int = 1,
     progress: bool = False,
     progress_every: int = 25,
+    milestone_profile: str = DEFAULT_MILESTONE_PROFILE,
 ) -> dict[str, Any]:
     selected_categories = categories or list(DEFAULT_CATEGORIES)
     selected_top_ks = top_ks or [3, 5, 10]
@@ -109,13 +121,19 @@ def run_sweep(
         "official_model_name": official_model_name if evaluator == "official" else "",
         "cache_dir": str(cache_dir) if cache_dir else "",
         "bfcl_ref": ref,
+        "milestone_profile": milestone_profile,
         "runs": runs,
-        "summary": _summarize_sweep(runs),
+        "summary": _summarize_sweep(runs, milestone_profile=milestone_profile),
     }
 
 
-def _summarize_sweep(runs: list[dict[str, Any]]) -> dict[str, Any]:
+def _summarize_sweep(
+    runs: list[dict[str, Any]],
+    *,
+    milestone_profile: str = DEFAULT_MILESTONE_PROFILE,
+) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
+    category_rows: list[dict[str, Any]] = []
     failure_totals: Counter[str] = Counter()
     for run in runs:
         report = run["report"]
@@ -135,13 +153,43 @@ def _summarize_sweep(runs: list[dict[str, Any]]) -> dict[str, Any]:
                 "failure_breakdown": summary.get("failure_breakdown") or {},
             }
         )
+        category_rows.extend(_category_summary_rows(run))
     return {
         "run_count": len(runs),
         "rows": rows,
+        "category_rows": category_rows,
         "repeat_groups": _summarize_repeat_groups(rows),
+        "category_repeat_groups": _summarize_category_repeat_groups(category_rows),
         "failure_breakdown": dict(sorted(failure_totals.items())),
         "best_retrieved": _best_retrieved(rows),
+        "milestone_gate": _evaluate_milestone_gate(
+            rows,
+            category_rows,
+            profile_name=milestone_profile,
+        ),
     }
+
+
+def _category_summary_rows(run: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for category in run["report"].get("categories") or []:
+        summary = category.get("summary") or {}
+        rows.append(
+            {
+                "repeat": run["repeat"],
+                "tool_source": run["tool_source"],
+                "top_k": run["top_k"],
+                "category": category.get("category") or "",
+                "cases": summary.get("cases", category.get("case_count", 0)),
+                "retrieval_recall_at_k": summary.get("retrieval_recall_at_k", 0.0),
+                "model_tool_call_rate": summary.get("model_tool_call_rate", 0.0),
+                "strict_exact_match": summary.get("strict_exact_match", 0.0),
+                "evaluator_exact_match": summary.get("evaluator_exact_match", 0.0),
+                "avg_latency_ms": summary.get("avg_latency_ms", 0.0),
+                "failure_breakdown": summary.get("failure_breakdown") or {},
+            }
+        )
+    return rows
 
 
 def _best_retrieved(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -156,6 +204,36 @@ def _best_retrieved(rows: list[dict[str, Any]]) -> dict[str, Any]:
             -row["avg_latency_ms"],
         ),
     )
+
+
+def _summarize_category_repeat_groups(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        key = (str(row["tool_source"]), int(row["top_k"]), str(row["category"]))
+        grouped.setdefault(key, []).append(row)
+
+    summaries: list[dict[str, Any]] = []
+    for (tool_source, top_k, category), group_rows in sorted(grouped.items()):
+        summaries.append(
+            {
+                "tool_source": tool_source,
+                "top_k": top_k,
+                "category": category,
+                "repeat_count": len(group_rows),
+                "cases_per_repeat": [int(row["cases"]) for row in group_rows],
+                "retrieval_recall_at_k": _metric_stats(
+                    row["retrieval_recall_at_k"] for row in group_rows
+                ),
+                "evaluator_exact_match": _metric_stats(
+                    row["evaluator_exact_match"] for row in group_rows
+                ),
+                "strict_exact_match": _metric_stats(
+                    row["strict_exact_match"] for row in group_rows
+                ),
+                "avg_latency_ms": _metric_stats(row["avg_latency_ms"] for row in group_rows),
+            }
+        )
+    return summaries
 
 
 def _summarize_repeat_groups(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -197,6 +275,140 @@ def _metric_stats(values: Any) -> dict[str, float]:
         "min": round(min(vals), 6),
         "max": round(max(vals), 6),
     }
+
+
+def _mean(values: Any) -> float:
+    vals = [float(value) for value in values]
+    if not vals:
+        return 0.0
+    return round(statistics.mean(vals), 6)
+
+
+def _evaluate_milestone_gate(
+    rows: list[dict[str, Any]],
+    category_rows: list[dict[str, Any]],
+    *,
+    profile_name: str,
+) -> dict[str, Any]:
+    if profile_name in {"", "none"}:
+        return {}
+    profile = MILESTONE_PROFILES.get(profile_name)
+    if profile is None:
+        return {
+            "profile": profile_name,
+            "status": "unknown_profile",
+            "missing_metrics": [f"unknown milestone profile: {profile_name}"],
+            "failed_gates": [],
+        }
+
+    target_top_k = int(profile["target_top_k"])
+    retrieved = _mean_run_row(rows, tool_source="retrieved", top_k=target_top_k)
+    row_source = _mean_run_row(rows, tool_source="row", top_k=target_top_k)
+    parallel_multiple = _mean_category_row(
+        category_rows,
+        tool_source="retrieved",
+        top_k=target_top_k,
+        category="parallel_multiple",
+    )
+
+    row_exact = _value_or_none(row_source, "evaluator_exact_match")
+    retrieved_exact = _value_or_none(retrieved, "evaluator_exact_match")
+    preservation = (
+        round(retrieved_exact / row_exact, 6)
+        if retrieved_exact is not None and row_exact is not None and row_exact > 0
+        else None
+    )
+    metrics = {
+        f"retrieved_exact_at_{target_top_k}": retrieved_exact,
+        f"retrieval_recall_at_{target_top_k}": _value_or_none(retrieved, "retrieval_recall_at_k"),
+        f"row_source_exact_at_{target_top_k}": row_exact,
+        "row_source_upper_bound_preservation": preservation,
+        f"parallel_multiple_exact_at_{target_top_k}": _value_or_none(
+            parallel_multiple, "evaluator_exact_match"
+        ),
+    }
+    thresholds = {
+        f"retrieved_exact_at_{target_top_k}": profile["min_retrieved_exact"],
+        f"retrieval_recall_at_{target_top_k}": profile["min_retrieval_recall"],
+        "row_source_upper_bound_preservation": profile["min_row_source_preservation"],
+        f"parallel_multiple_exact_at_{target_top_k}": profile["min_parallel_multiple_exact"],
+    }
+    failed_gates = [
+        {
+            "metric": metric,
+            "actual": actual,
+            "threshold": threshold,
+        }
+        for metric, threshold in thresholds.items()
+        if (actual := metrics.get(metric)) is not None and float(actual) < float(threshold)
+    ]
+    missing_metrics = [
+        metric for metric, value in metrics.items() if value is None and metric in thresholds
+    ]
+    status = "pass"
+    if missing_metrics:
+        status = "incomplete"
+    elif failed_gates:
+        status = "fail"
+
+    return {
+        "profile": profile_name,
+        "status": status,
+        "target_top_k": target_top_k,
+        "metrics": metrics,
+        "thresholds": thresholds,
+        "failed_gates": failed_gates,
+        "missing_metrics": missing_metrics,
+    }
+
+
+def _mean_run_row(
+    rows: list[dict[str, Any]],
+    *,
+    tool_source: str,
+    top_k: int,
+) -> dict[str, Any]:
+    selected = [
+        row for row in rows if row["tool_source"] == tool_source and int(row["top_k"]) == top_k
+    ]
+    return _mean_selected_rows(selected)
+
+
+def _mean_category_row(
+    rows: list[dict[str, Any]],
+    *,
+    tool_source: str,
+    top_k: int,
+    category: str,
+) -> dict[str, Any]:
+    selected = [
+        row
+        for row in rows
+        if row["tool_source"] == tool_source
+        and int(row["top_k"]) == top_k
+        and row["category"] == category
+    ]
+    return _mean_selected_rows(selected)
+
+
+def _mean_selected_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not rows:
+        return {}
+    return {
+        "cases": int(round(_mean(row["cases"] for row in rows))),
+        "retrieval_recall_at_k": _mean(row["retrieval_recall_at_k"] for row in rows),
+        "model_tool_call_rate": _mean(row["model_tool_call_rate"] for row in rows),
+        "strict_exact_match": _mean(row["strict_exact_match"] for row in rows),
+        "evaluator_exact_match": _mean(row["evaluator_exact_match"] for row in rows),
+        "avg_latency_ms": _mean(row["avg_latency_ms"] for row in rows),
+    }
+
+
+def _value_or_none(row: dict[str, Any], key: str) -> float | None:
+    if not row:
+        return None
+    value = row.get(key)
+    return None if value is None else float(value)
 
 
 def write_sweep_bfcl_result_files(
@@ -279,12 +491,35 @@ def print_report(report: dict[str, Any]) -> None:
                 latency_mean=latency["mean"],
             )
         )
+    gate = report["summary"].get("milestone_gate") or {}
+    if gate:
+        print(_format_milestone_gate(gate))
 
 
 def _format_failure_breakdown(breakdown: dict[str, int]) -> str:
     if not breakdown:
         return "-"
     return ",".join(f"{name}:{count}" for name, count in sorted(breakdown.items()))
+
+
+def _format_milestone_gate(gate: dict[str, Any]) -> str:
+    metrics = gate.get("metrics") or {}
+    top_k = gate.get("target_top_k", "?")
+    retrieved_exact = _format_optional_metric(metrics.get(f"retrieved_exact_at_{top_k}"))
+    retrieval = _format_optional_metric(metrics.get(f"retrieval_recall_at_{top_k}"))
+    preservation = _format_optional_metric(metrics.get("row_source_upper_bound_preservation"))
+    parallel = _format_optional_metric(metrics.get(f"parallel_multiple_exact_at_{top_k}"))
+    return (
+        f"milestone {gate.get('profile')} status={gate.get('status')} "
+        f"retrieved_exact@{top_k}={retrieved_exact} "
+        f"retrieval@{top_k}={retrieval} "
+        f"row_preservation={preservation} "
+        f"parallel_multiple={parallel}"
+    )
+
+
+def _format_optional_metric(value: Any) -> str:
+    return "n/a" if value is None else f"{float(value):.3f}"
 
 
 def _parse_ints(value: str) -> list[int]:
@@ -318,6 +553,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--disable-thinking", action="store_true")
+    parser.add_argument(
+        "--milestone-profile",
+        choices=[*MILESTONE_PROFILES.keys(), "none"],
+        default=DEFAULT_MILESTONE_PROFILE,
+        help="Add a milestone gate summary to the sweep artifact.",
+    )
     parser.add_argument(
         "--concurrency",
         type=int,
@@ -372,6 +613,7 @@ def main(argv: list[str] | None = None) -> int:
             concurrency=args.concurrency,
             progress=args.progress,
             progress_every=args.progress_every,
+            milestone_profile=args.milestone_profile,
         )
     except ImportError as exc:
         parser.error(str(exc))
