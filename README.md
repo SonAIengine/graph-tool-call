@@ -365,7 +365,7 @@ model-in-the-loop benchmark.
 
 | Benchmark | Model used | What it evaluates |
 |---|---|---|
-| `make xgen-benchmark` | none | graph-tool-call engine search, producer expansion, plan synthesis across commerce/admin/workflow fixtures |
+| `make xgen-benchmark` | none | graph-tool-call engine search, target selector exactness, producer expansion, plan synthesis across commerce/admin/workflow fixtures |
 | `make xgen-scale-acceptance` | none | X2BEE-scale Swagger UI discovery, dedupe, ingest, graph build, Korean product-case search |
 | `make xgen-scale-sweep` | none | one X2BEE-scale graph build, then top-K compression diagnostics for `k=3,5,10` |
 | `make xgen-scale-contract-ablation` | none | one X2BEE-scale spec load, then baseline vs promoted OpenAPI contract signal comparison |

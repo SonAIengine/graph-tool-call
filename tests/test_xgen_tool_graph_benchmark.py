@@ -66,6 +66,8 @@ def test_xgen_tool_graph_all_fixture_suites_pass_thresholds():
     assert summary["suite_count"] == 3
     assert summary["cases"] == 15
     assert summary["target_recall_at_k"] == 1.0
+    assert summary["target_selector_exact"] == 0.8
+    assert summary["target_selector_miss_count"] == 3
     assert summary["producer_recall"] == 1.0
     assert summary["candidate_plan_coverage"] == 1.0
     assert summary["plan_exact_match"] >= 0.9
@@ -102,6 +104,8 @@ def test_xgen_tool_graph_direct_queries_do_not_expand_producers():
         direct_cases = [row for row in graph_pipeline["cases"] if not row["producer_needed"]]
         assert len(direct_cases) == 1
         for case in direct_cases:
+            assert case["selected_target"] == case["expected_target"]
+            assert case["target_selector_exact"] == 1.0
             assert case["expansion_seed"] == [case["expected_target"]]
             assert case["candidates"] == [case["expected_target"]]
             assert case["producer_added_count"] == 0
@@ -116,6 +120,8 @@ def test_xgen_tool_graph_benchmark_checks_korean_query_chain():
     case = cases["inventory_chain_ko"]
 
     assert case["target_rank"] is not None
+    assert case["selected_target"] == "getInventory"
+    assert case["target_selector_rank"] == 1
     assert case["plan_steps"] == ["searchProducts", "getProductDetail", "getInventory"]
     assert case["binding_accuracy"] == 1.0
     assert case["evidence_coverage"] == 1.0
@@ -133,6 +139,8 @@ def test_xgen_tool_graph_records_synthesis_diagnostics_for_user_input_slots():
     assert diagnostics["plan_id"]
     assert diagnostics["failure"] == {}
     assert diagnostics["retrieval_evidence"]["target_rank"] == case["target_rank"]
+    assert diagnostics["target_selector"]["selected_target"] == case["selected_target"]
+    assert diagnostics["target_selector"]["target_selector_exact"] == 1.0
     assert {row["producer"] for row in diagnostics["selected_producers"]} == {"searchProducts"}
     assert "createProductReview.productId" in diagnostics["candidate_signals"]
 
@@ -140,3 +148,33 @@ def test_xgen_tool_graph_records_synthesis_diagnostics_for_user_input_slots():
     assert set(missing) == {"rating", "comment"}
     assert missing["rating"]["reason"] == "user_input_fallback"
     assert missing["comment"]["stage"] == "synthesize"
+
+
+def test_xgen_tool_graph_reports_target_selector_gap_separately_from_target_recall():
+    report = run_benchmark_suite(suite="all")
+    graph_cases = []
+    for suite_report in report["suites"]:
+        graph = next(
+            row for row in suite_report["pipelines"] if row["name"] == "graph_with_producers"
+        )
+        graph_cases.extend(graph["cases"])
+
+    misses = {
+        row["case_id"]: (row["selected_target"], row["expected_target"])
+        for row in graph_cases
+        if row["target_selector_exact"] < 1.0
+    }
+
+    assert report["summary"]["target_recall_at_k"] == 1.0
+    assert report["summary"]["target_selector_exact"] == 0.8
+    assert misses == {
+        "product_detail_ko": ("searchProducts", "getProductDetail"),
+        "audit_logs_ko": ("assignRoleToUser", "getAuditLogs"),
+        "notify_assignee_ko": ("approveWorkflowTask", "sendTaskNotification"),
+    }
+    for case in graph_cases:
+        selector = case["synthesis_diagnostics"]["target_selector"]
+        assert selector["strategy"] == "query_action_priority"
+        assert selector["selected_target"] == case["selected_target"]
+        assert selector["expected_target"] == case["expected_target"]
+        assert selector["target_candidates"] == case["target_selector_candidates"]
