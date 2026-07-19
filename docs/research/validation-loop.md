@@ -357,6 +357,30 @@ BFCL 수학/지리 표현을 keyword scorer에 보강했다. 비교 기준은
   card/unit alias는 guard로 제한했다. 다음 단계에서는 synonym expansion보다
   sibling-aware target selection 또는 equivalence grouping으로 다룬다.
 
+그 다음 partial multi-tool hard case에서는 broad sibling suppression 대신
+actionable clause diversity gate를 추가했다. 배경 설명이나 같은 tool의 반복
+argument clause는 기존 보수적인 clause injection을 유지하고, traffic/distance/weather
+처럼 서로 다른 actionable sub-task signature가 3개 이상 보일 때만 clause 후보를
+top-K 경계 위로 조금 더 보존한다. 비교 artifact는
+`/tmp/gtc-bfcl-lift-current-final2/bfcl-deterministic.json`,
+`/tmp/gtc-bfcl-partial-diversity-current/bfcl-deterministic.json`,
+`/tmp/gtc-bfcl-lift-current-final2-hardcases/inspect.json`,
+`/tmp/gtc-bfcl-partial-diversity-hardcases/inspect.json`이다.
+
+- `partial_multi_tool_at_k` subset 38건 기준 `recall@5`는
+  `0.535 -> 0.575`, `all_tools_found@5`는 `0.000 -> 0.053`으로 올랐다.
+- `expected_present_below_top_k` subset 69건 기준 `recall@5`는
+  `0.268 -> 0.290`, `all_tools_found@5`는 `0.000 -> 0.029`로 올랐다.
+- 전체 BFCL deterministic 기준 `recall@5`는 `0.94025 -> 0.94200`,
+  `all_tools_found@5`는 `0.917 -> 0.920`, `mrr`은
+  `0.8212 -> 0.8217`, `ndcg@5`는 `0.8406 -> 0.8421`로 올랐다.
+- Deterministic hard-case count는 `83 -> 80`,
+  `partial_multi_tool_at_k` issue는 `38 -> 36`으로 줄었다.
+- 케이스 단위 recall 개선은 6건, recall 악화 케이스는 0건이었다.
+- X2BEE BO scale acceptance는 1084개 unique tool 기준 `hit@3=1.00`,
+  `target selector exact@3=1.00`, `avg_candidate_count=2.16`,
+  `max_candidate_count=7`로 통과했다.
+
 ## 승격 기준
 
 연구 변경은 아래 순서로 승격한다.
