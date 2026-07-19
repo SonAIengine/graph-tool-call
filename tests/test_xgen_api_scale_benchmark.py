@@ -90,6 +90,7 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
                 "thresholds": {
                     "case_hit_at_k": 1.0,
                     "expected_tool_recall_at_k": 1.0,
+                    "target_selector_exact_at_k": 1.0,
                     "max_avg_latency_ms": 50.0,
                 },
                 "cases": [
@@ -137,11 +138,17 @@ def test_xgen_api_scale_profiles_dedupes_and_searches(tmp_path):
     assert report["scale"]["contract_produces_field_count"] == 4
     assert report["scale"]["contract_input_locations"]["query"] == 4
     assert report["search"]["case_hit_at_k"] == 1.0
+    assert report["search"]["target_selector_exact_at_k"] == 1.0
+    assert report["search"]["target_selector_miss_count"] == 0
+    assert report["search"]["target_selector_rank_buckets"]["top_1"] == 1
     assert report["search"]["top_1_hit_at_k"] == 1.0
     assert report["search"]["top_3_hit_at_k"] == 1.0
     assert report["search"]["case_rank_buckets"]["top_1"] == 1
     assert report["search"]["rank_buckets"]["top_1"] == 1
     assert report["cases"][0]["expected_ranks"]["searchBrands"] == 1
+    assert report["cases"][0]["selected_target"] == "searchBrands"
+    assert report["cases"][0]["target_selector_exact"] == 1.0
+    assert report["cases"][0]["target_selector_rank"] == 1
     assert report["cases"][0]["best_expected_rank"] == 1
     assert report["cases"][0]["required_expected_found_at_k"] is True
 
@@ -152,6 +159,7 @@ def test_x2bee_default_cases_cover_product_level_domains():
     case_ids = [case["id"] for case in cases]
 
     assert len(cases) >= 18
+    assert cases_doc["thresholds"]["target_selector_exact_at_k"] >= 0.85
     assert len(case_ids) == len(set(case_ids))
     for required_id in {
         "member_list_ko",
@@ -361,9 +369,12 @@ def test_xgen_api_scale_top_k_sweep_uses_one_acceptance_k(tmp_path):
     assert k1["top_k"] == 1
     assert k1["search"]["status"] == "diagnostic"
     assert k1["search"]["case_hit_at_k"] == 0.0
+    assert k1["search"]["target_selector_exact_at_k"] == 1.0
+    assert k1["search"]["target_selector_miss_count"] == 0
     assert k1["search"]["case_rank_buckets"]["top_1"] == 1
     assert k1["search"]["thresholds_applied"] is False
     assert k3["top_k"] == 3
     assert k3["search"]["case_hit_at_k"] == 1.0
+    assert k3["search"]["target_selector_exact_at_k"] == 1.0
     assert k3["search"]["case_rank_buckets"]["top_1"] == 1
     assert k3["search"]["thresholds_applied"] is True

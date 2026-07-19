@@ -20,7 +20,11 @@ from urllib.parse import unquote
 
 from benchmarks.metrics import mrr, recall_at_k
 from graph_tool_call import ToolGraph, __version__
-from graph_tool_call.graphify import promote_api_contract_signals
+from graph_tool_call.graphify import (
+    build_candidate_set,
+    promote_api_contract_signals,
+    target_action_priority_for_query,
+)
 from graph_tool_call.ingest.openapi import _load_spec, ingest_openapi
 from graph_tool_call.tool_graph import _discover_spec_urls
 
@@ -73,6 +77,11 @@ class SearchEvaluation:
     expected_tools: list[str]
     expected_any: list[str]
     retrieved: list[str]
+    selected_target: str
+    target_selector_candidates: list[str]
+    target_selector_rank: int | None
+    target_selector_exact: float
+    target_action_priority: dict[str, int]
     expected_ranks: dict[str, int | None]
     primary_expected_rank: int | None
     best_expected_rank: int | None
@@ -118,8 +127,14 @@ def run_benchmark(
 
     cases_doc = load_cases(cases_path)
     selected_top_k = int(top_k or cases_doc.get("top_k") or 10)
+    tools_by_name = _tools_by_name(prepared.graph)
     cases = [
-        evaluate_search_case(case, tg=prepared.graph, top_k=selected_top_k)
+        evaluate_search_case(
+            case,
+            tg=prepared.graph,
+            tools_by_name=tools_by_name,
+            top_k=selected_top_k,
+        )
         for case in cases_doc.get("cases", [])
     ]
     search_summary = summarize_search(cases, thresholds=cases_doc.get("thresholds") or {})
@@ -203,11 +218,12 @@ def run_top_k_sweep(
         max_build_seconds=max_build_seconds,
     )
     thresholds = cases_doc.get("thresholds") or {}
+    tools_by_name = _tools_by_name(prepared.graph)
     sweep: list[dict[str, Any]] = []
     acceptance_search_status = "skipped"
     for top_k in selected_top_ks:
         cases = [
-            evaluate_search_case(case, tg=prepared.graph, top_k=top_k)
+            evaluate_search_case(case, tg=prepared.graph, tools_by_name=tools_by_name, top_k=top_k)
             for case in cases_doc.get("cases", [])
         ]
         search_summary = summarize_search(
@@ -308,8 +324,14 @@ def run_contract_signal_ablation(
             min_unique_tools=min_unique_tools,
             max_build_seconds=max_build_seconds,
         )
+        tools_by_name = _tools_by_name(graph)
         cases = [
-            evaluate_search_case(case, tg=graph, top_k=selected_top_k)
+            evaluate_search_case(
+                case,
+                tg=graph,
+                tools_by_name=tools_by_name,
+                top_k=selected_top_k,
+            )
             for case in cases_doc.get("cases", [])
         ]
         search_summary = summarize_search(cases, thresholds=thresholds)
@@ -569,6 +591,7 @@ def evaluate_search_case(
     case: dict[str, Any],
     *,
     tg: ToolGraph,
+    tools_by_name: dict[str, dict[str, Any]],
     top_k: int,
 ) -> SearchEvaluation:
     query = str(case["query"])
@@ -581,6 +604,15 @@ def evaluate_search_case(
     latency_ms = round((time.perf_counter() - started) * 1000, 3)
     retrieved = [result.tool.name for result in results]
     retrieved_set = set(retrieved)
+    target_action_priority = target_action_priority_for_query(query)
+    selector_set = build_candidate_set(
+        retrieved,
+        tools_by_name,
+        target_action_priority=target_action_priority,
+        max_hops=0,
+    )
+    selector_candidates = [str(name) for name in selector_set.get("target_candidates") or []]
+    selected_target = selector_candidates[0] if selector_candidates else ""
 
     required_ok = set(expected_tools).issubset(retrieved_set) if expected_tools else True
     any_ok = bool(set(expected_any) & retrieved_set) if expected_any else True
@@ -591,6 +623,8 @@ def evaluate_search_case(
         else recall_at_k(retrieved, expected_union, top_k)
     )
     expected_ranks = {name: _rank_of(retrieved, name) for name in sorted(expected_union)}
+    target_selector_rank = _best_rank(selector_candidates, expected_union)
+    target_selector_exact = 1.0 if not expected_union or selected_target in expected_union else 0.0
     primary_expected_rank = _rank_of(retrieved, expected_tools[0]) if expected_tools else None
     ranked_expected = [rank for rank in expected_ranks.values() if rank is not None]
     best_expected_rank = min(ranked_expected) if ranked_expected else None
@@ -600,6 +634,9 @@ def evaluate_search_case(
         retrieved_set=retrieved_set,
         best_expected_rank=best_expected_rank,
     )
+    if target_selector_exact < 1.0:
+        issues = [issue for issue in issues if issue != "pass"]
+        issues.append("target_selector_miss")
 
     return SearchEvaluation(
         case_id=str(case["id"]),
@@ -607,6 +644,11 @@ def evaluate_search_case(
         expected_tools=expected_tools,
         expected_any=expected_any,
         retrieved=retrieved,
+        selected_target=selected_target,
+        target_selector_candidates=selector_candidates,
+        target_selector_rank=target_selector_rank,
+        target_selector_exact=target_selector_exact,
+        target_action_priority=target_action_priority,
         expected_ranks=expected_ranks,
         primary_expected_rank=primary_expected_rank,
         best_expected_rank=best_expected_rank,
@@ -695,6 +737,8 @@ def summarize_search(
         "cases": len(cases),
         "case_hit_at_k": _mean(case.hit_at_k for case in cases),
         "expected_tool_recall_at_k": _mean(case.expected_tool_recall_at_k for case in cases),
+        "target_selector_exact_at_k": _mean(case.target_selector_exact for case in cases),
+        "target_selector_miss_count": sum(1 for case in cases if case.target_selector_exact < 1.0),
         "top_1_hit_at_k": _mean(case.top_1_hit for case in cases),
         "top_3_hit_at_k": _mean(case.top_3_hit for case in cases),
         "mean_mrr": _mean(case.mrr for case in cases),
@@ -709,6 +753,7 @@ def summarize_search(
         "p50_latency_ms": _percentile([case.latency_ms for case in cases], 0.5),
         "max_latency_ms": max(case.latency_ms for case in cases),
         "case_rank_buckets": _case_rank_buckets(cases),
+        "target_selector_rank_buckets": _selector_rank_buckets(cases),
         "rank_buckets": _rank_buckets(cases),
         "missing_expected_tools": _missing_expected_tools(cases),
         "issues": dict(Counter(issue for case in cases for issue in case.issues).most_common()),
@@ -739,6 +784,7 @@ def _compare_contract_signal_variants(variants: list[dict[str, Any]]) -> dict[st
         "mean_mrr",
         "avg_latency_ms",
         "p50_latency_ms",
+        "target_selector_exact_at_k",
     ]
     deltas = {
         f"{metric}_delta": round(
@@ -841,6 +887,16 @@ def _rank_of(names: list[str], expected: str) -> int | None:
         return None
 
 
+def _best_rank(names: list[str], expected_names: set[str]) -> int | None:
+    ranks = [_rank_of(names, name) for name in expected_names]
+    found = [rank for rank in ranks if rank is not None]
+    return min(found) if found else None
+
+
+def _tools_by_name(graph: ToolGraph) -> dict[str, dict[str, Any]]:
+    return {name: tool.to_dict() for name, tool in graph.tools.items()}
+
+
 def _mean(values: Any) -> float:
     vals = [float(v) for v in values]
     if not vals:
@@ -877,6 +933,23 @@ def _case_rank_buckets(cases: list[SearchEvaluation]) -> dict[str, int]:
     buckets = {"top_1": 0, "top_3": 0, "top_5": 0, "top_10": 0, "missing": 0}
     for case in cases:
         rank = case.best_expected_rank
+        if rank == 1:
+            buckets["top_1"] += 1
+        elif rank is not None and rank <= 3:
+            buckets["top_3"] += 1
+        elif rank is not None and rank <= 5:
+            buckets["top_5"] += 1
+        elif rank is not None and rank <= 10:
+            buckets["top_10"] += 1
+        else:
+            buckets["missing"] += 1
+    return buckets
+
+
+def _selector_rank_buckets(cases: list[SearchEvaluation]) -> dict[str, int]:
+    buckets = {"top_1": 0, "top_3": 0, "top_5": 0, "top_10": 0, "missing": 0}
+    for case in cases:
+        rank = case.target_selector_rank
         if rank == 1:
             buckets["top_1"] += 1
         elif rank is not None and rank <= 3:
@@ -945,11 +1018,13 @@ def _print_report(report: dict[str, Any]) -> None:
     if search["status"] != "skipped":
         print(
             "search: status={status} cases={cases} hit@K={hit:.2f} recall@K={recall:.2f} "
-            "top1={top1:.2f} top3={top3:.2f} mrr={mrr_:.2f} avg_latency={latency:.2f}ms".format(
+            "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
+            "mrr={mrr_:.2f} avg_latency={latency:.2f}ms".format(
                 status=search["status"],
                 cases=search["cases"],
                 hit=search["case_hit_at_k"],
                 recall=search["expected_tool_recall_at_k"],
+                selector=search["target_selector_exact_at_k"],
                 top1=search["top_1_hit_at_k"],
                 top3=search["top_3_hit_at_k"],
                 mrr_=search["mean_mrr"],
@@ -964,6 +1039,12 @@ def _print_report(report: dict[str, Any]) -> None:
                     hit=case["hit_at_k"],
                     ranks=ranks,
                     top=", ".join(case["retrieved"][:3]),
+                )
+            )
+            print(
+                "    selector={selected} selector_rank={rank}".format(
+                    selected=case["selected_target"],
+                    rank=case["target_selector_rank"],
                 )
             )
 
@@ -1002,13 +1083,14 @@ def _print_sweep_report(report: dict[str, Any]) -> None:
         suffix = " acceptance" if run["top_k"] == report["acceptance_top_k"] else ""
         print(
             "k={top_k:<2}{suffix}: status={status} hit@K={hit:.2f} recall@K={recall:.2f} "
-            "top1={top1:.2f} top3={top3:.2f} mrr={mrr_:.2f} avg_latency={latency:.2f}ms "
-            "issues={issues}".format(
+            "selector={selector:.2f} top1={top1:.2f} top3={top3:.2f} "
+            "mrr={mrr_:.2f} avg_latency={latency:.2f}ms issues={issues}".format(
                 top_k=run["top_k"],
                 suffix=suffix,
                 status=search["status"],
                 hit=search["case_hit_at_k"],
                 recall=search["expected_tool_recall_at_k"],
+                selector=search["target_selector_exact_at_k"],
                 top1=search["top_1_hit_at_k"],
                 top3=search["top_3_hit_at_k"],
                 mrr_=search["mean_mrr"],
@@ -1044,11 +1126,13 @@ def _print_ablation_report(report: dict[str, Any]) -> None:
         if search["status"] != "skipped":
             print(
                 "  search: hit@K={hit:.2f} recall@K={recall:.2f} top1={top1:.2f} "
-                "top3={top3:.2f} mrr={mrr_:.2f} avg_latency={latency:.2f}ms".format(
+                "top3={top3:.2f} selector={selector:.2f} mrr={mrr_:.2f} "
+                "avg_latency={latency:.2f}ms".format(
                     hit=search["case_hit_at_k"],
                     recall=search["expected_tool_recall_at_k"],
                     top1=search["top_1_hit_at_k"],
                     top3=search["top_3_hit_at_k"],
+                    selector=search["target_selector_exact_at_k"],
                     mrr_=search["mean_mrr"],
                     latency=search["avg_latency_ms"],
                 )

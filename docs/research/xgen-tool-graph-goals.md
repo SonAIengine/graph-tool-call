@@ -40,6 +40,7 @@ live acceptance run을 별도로 둔다.
 | X2BEE BO graph edges | `8,579` |
 | X2BEE Korean product cases | `19` |
 | X2BEE Korean product hit@3 | `1.00` |
+| X2BEE target selector exact@3 | `1.00` |
 | X2BEE expected tool recall@10 | `1.00` |
 | X2BEE mean MRR | `1.00` |
 
@@ -48,9 +49,10 @@ row-source upper bound 대비 아직 10pt 이상 손실이 있고, 복합 tool s
 retrieval miss와 candidate ambiguity가 크다. XGEN deterministic fixture에서는
 target recall@5와 query-action target selector exact@5가 모두 `1.00`까지
 올라왔다. 즉 built-in fixture에서는 top-5 안에 정답을 넣는 단계와 그중 실제
-target을 고르는 단계가 모두 통과한다. X2BEE-scale에서는 target이 top-10 후보
-안에 들어오는 baseline과 top-3 압축 hard-case 개선은 확인됐지만, producer
-chain과 target selector까지 live scale로 이어지는 검증은 계속 연구 대상이다.
+target을 고르는 단계가 모두 통과한다. X2BEE-scale에서도 19개 product-level
+Korean BO case 기준 target selector exact@3/5/10이 모두 `1.00`까지 확인됐다.
+남은 live-scale 연구는 producer chain, request/response binding, 실행 전
+readiness까지 이어지는 검증이다.
 
 `2026-07-19` rank-compression branch에서는 X2BEE live sweep에서 기존 hard
 case인 `order_query_ko`, `page_role_buttons_ko`, `settlement_compare_ko`,
@@ -59,6 +61,12 @@ OUT=/tmp/gtc-x2bee-sweep-after3.json TOP_KS=3,5,10` 기준 `hit@3=1.00`,
 `expected recall@3=1.00`, `top-3 hit=1.00`, `mean MRR=0.833`까지 개선됐고,
 page-role button multi-target은 rank `1`/`2`로 압축됐다. 상세 runner와
 artifact 규칙은 [`validation-loop.md`](validation-loop.md)에 둔다.
+
+`2026-07-19` scale selector branch에서는 같은 live X2BEE sweep artifact에
+`selected_target`, `target_selector_exact`, `target_selector_rank`,
+`target_action_priority`, `target_selector_rank_buckets`를 추가했다. 1084개
+unique tool, 19개 Korean BO case 기준 top-K `3,5,10` 모두
+`target_selector_exact_at_k=1.00`, `target_selector_miss_count=0`이다.
 
 ## Product Maturity Levels
 
