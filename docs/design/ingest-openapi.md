@@ -259,6 +259,9 @@ item별 required/value constraint를 preflight에서 검사한다. Leaf argument
 리스트로 들어오면 같은 wildcard item path끼리 index 기준으로 묶어
 `[{"goodsNo": "G-1", "quantity": 2}, ...]` 또는
 `{"items": [{"goodsNo": "G-1", "quantity": 2}, ...]}` 형태로 렌더링한다.
+required wildcard leaf가 sibling item field보다 짧으면 `missing_required`에
+`array_path`, `missing_indexes`, `item_count`를 붙여 어떤 row가 불완전한지
+노출한다.
 JSON object request body는 schema field 이름이 `body`가 아닐 때 executor에
 raw `body` object로 전달할 수도 있다. `apiKey`
 security scheme은 query/header/cookie argument 또는 executor header/cookie로

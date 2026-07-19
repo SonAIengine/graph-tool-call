@@ -660,7 +660,7 @@ def _missing_required_inputs(
     missing: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
 
-    def add(row: dict[str, Any]) -> None:
+    def add(row: dict[str, Any], *, force: bool = False) -> None:
         name = str(row.get("name") or "")
         location = str(row.get("location") or "")
         if not name or not location:
@@ -668,7 +668,7 @@ def _missing_required_inputs(
         key = (location, name)
         if key in seen:
             return
-        if _required_argument_present(name, location, arguments, headers):
+        if not force and _required_argument_present(name, location, arguments, headers):
             return
         seen.add(key)
         missing.append(row)
@@ -717,6 +717,13 @@ def _missing_required_inputs(
         raw_body_supported=raw_body_supported,
     )
     body_field_metadata = _body_field_metadata_from_rows(body_rows)
+    if not has_raw_body_argument:
+        for item in _missing_required_array_leaf_indexes(
+            body_rows,
+            arguments,
+            selected_content_type=selected_content_type,
+        ):
+            add(item, force=True)
     for row in body_rows:
         if not isinstance(row, dict) or not row.get("required"):
             continue
@@ -817,6 +824,78 @@ def _missing_required_inputs(
             item["enum"] = list(param.enum)
         add(item)
     return missing
+
+
+def _missing_required_array_leaf_indexes(
+    body_rows: list[dict[str, Any]],
+    arguments: dict[str, Any],
+    *,
+    selected_content_type: str,
+) -> list[dict[str, Any]]:
+    """Return required wildcard body leaves missing from some rendered items."""
+    item_count_by_array_path: dict[str, int] = {}
+    for row in body_rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("field_name") or "")
+        json_path = str(row.get("json_path") or "")
+        if not name or name not in arguments:
+            continue
+        array_path = _wildcard_array_path(json_path)
+        if not array_path:
+            continue
+        item_count = _wildcard_argument_item_count(row, arguments[name])
+        if item_count > item_count_by_array_path.get(array_path, 0):
+            item_count_by_array_path[array_path] = item_count
+
+    missing: list[dict[str, Any]] = []
+    for array_path, item_count in item_count_by_array_path.items():
+        if item_count <= 1:
+            continue
+        candidate_rows = [
+            row
+            for row in body_rows
+            if isinstance(row, dict)
+            and row.get("required")
+            and _wildcard_array_path(str(row.get("json_path") or "")) == array_path
+        ]
+        for row in candidate_rows:
+            name = str(row.get("field_name") or "")
+            if not name:
+                continue
+            present_count = (
+                _wildcard_argument_item_count(row, arguments[name]) if name in arguments else 0
+            )
+            if present_count >= item_count:
+                continue
+            item = {
+                "name": name,
+                "location": "body",
+                "source": "request_body",
+                "array_path": array_path,
+                "missing_indexes": list(range(present_count, item_count)),
+                "item_count": item_count,
+            }
+            if selected_content_type:
+                item["content_type"] = selected_content_type
+            _copy_validation_hint(row, item)
+            missing.append(item)
+    return missing
+
+
+def _wildcard_argument_item_count(row: dict[str, Any], value: Any) -> int:
+    if _body_argument_value_selects_many(row, value):
+        return len(value)
+    return 1 if value is not None else 0
+
+
+def _wildcard_array_path(json_path: str) -> str:
+    if json_path.count("[*]") != 1:
+        return ""
+    marker = json_path.find("[*]")
+    if marker < 0:
+        return ""
+    return json_path[: marker + 3]
 
 
 def _invalid_argument_values(

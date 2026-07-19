@@ -274,7 +274,10 @@ OpenAPI `json_path`. Nested object fields such as `$.shipping.city` become
 `{"shipping": {"city": ...}}`; root or nested array item paths such as
 `$[*].goodsNo` and `$.items[*].quantity` can accept equal-length leaf lists and
 render row-wise array items. The same item values are checked by preflight
-validation before network I/O.
+validation before network I/O. If required wildcard leaves have shorter direct
+argument lists than sibling item fields, `missing_required` includes
+`array_path`, `missing_indexes`, and `item_count` so adapters can point the user
+at the incomplete rows.
 
 By default, `build_request()` and `execute()` raise
 `OpenAPIRequestValidationError` before network I/O when required inputs,

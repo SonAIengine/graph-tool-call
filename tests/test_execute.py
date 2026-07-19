@@ -372,6 +372,78 @@ class TestBuildRequest:
         assert invalid["invalid_arguments"][0]["name"] == "quantity"
         assert invalid["invalid_arguments"][0]["reason"] == "minimum"
 
+    def test_root_array_request_body_reports_missing_required_leaf_indexes(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Bulk API", "version": "1.0.0"},
+            "paths": {
+                "/bulk-products": {
+                    "post": {
+                        "operationId": "bulkCreateProducts",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "required": ["goodsNo", "quantity"],
+                                            "properties": {
+                                                "goodsNo": {"type": "string"},
+                                                "quantity": {"type": "integer", "minimum": 1},
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(
+            tools[0],
+            {"goodsNo": ["G-1", "G-2"], "quantity": [2]},
+        )
+
+        assert diagnostics["valid"] is False
+        assert {
+            key: diagnostics["missing_required"][0][key]
+            for key in (
+                "name",
+                "location",
+                "source",
+                "content_type",
+                "field_type",
+                "json_path",
+                "minimum",
+                "array_path",
+                "missing_indexes",
+                "item_count",
+            )
+        } == {
+            "name": "quantity",
+            "location": "body",
+            "source": "request_body",
+            "content_type": "application/json",
+            "field_type": "integer",
+            "json_path": "$[*].quantity",
+            "minimum": 1,
+            "array_path": "$[*]",
+            "missing_indexes": [1],
+            "item_count": 2,
+        }
+        with pytest.raises(OpenAPIRequestValidationError):
+            executor.build_request(
+                tools[0],
+                {"goodsNo": ["G-1", "G-2"], "quantity": [2]},
+            )
+
     def test_root_primitive_request_body_accepts_raw_body_argument(self):
         spec = {
             "openapi": "3.0.0",
@@ -643,6 +715,66 @@ class TestBuildRequest:
             ],
             "memo": "two rows",
         }
+
+    def test_nested_array_request_body_reports_missing_required_leaf_indexes(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Nested Bulk API", "version": "1.0.0"},
+            "paths": {
+                "/batches": {
+                    "post": {
+                        "operationId": "createBatch",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["items"],
+                                        "properties": {
+                                            "items": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "required": ["goodsNo", "quantity"],
+                                                    "properties": {
+                                                        "goodsNo": {"type": "string"},
+                                                        "quantity": {
+                                                            "type": "integer",
+                                                            "minimum": 1,
+                                                        },
+                                                    },
+                                                },
+                                            }
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(
+            tools[0],
+            {"goodsNo": ["G-1", "G-2"], "quantity": [2]},
+        )
+
+        assert diagnostics["valid"] is False
+        assert diagnostics["missing_required"][0]["name"] == "quantity"
+        assert diagnostics["missing_required"][0]["json_path"] == "$.items[*].quantity"
+        assert diagnostics["missing_required"][0]["array_path"] == "$.items[*]"
+        assert diagnostics["missing_required"][0]["missing_indexes"] == [1]
+        assert diagnostics["missing_required"][0]["item_count"] == 2
+        with pytest.raises(OpenAPIRequestValidationError):
+            executor.build_request(
+                tools[0],
+                {"goodsNo": ["G-1", "G-2"], "quantity": [2]},
+            )
 
     def test_required_object_container_is_satisfied_by_nested_leaf_arguments(self):
         spec = {
