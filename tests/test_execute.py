@@ -353,6 +353,77 @@ class TestBuildRequest:
         assert invalid["valid"] is False
         assert invalid["invalid_arguments"][0]["reason"] == "min_length"
 
+    def test_text_plain_root_request_body_sends_raw_text(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Text API", "version": "1.0.0"},
+            "paths": {
+                "/messages": {
+                    "post": {
+                        "operationId": "sendMessageText",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "text/plain": {
+                                    "schema": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"202": {"description": "Accepted"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tools[0], {"body": "안녕하세요"})
+        req = executor.build_request(tools[0], {"body": "안녕하세요"})
+
+        assert tools[0].parameters[0].name == "body"
+        assert diagnostics["valid"] is True
+        assert diagnostics["selected_content_type"] == "text/plain"
+        assert req.headers["Content-type"] == "text/plain"
+        assert req.data == "안녕하세요".encode()
+
+    def test_binary_root_request_body_sends_raw_bytes(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Binary API", "version": "1.0.0"},
+            "paths": {
+                "/files": {
+                    "put": {
+                        "operationId": "replaceFile",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/octet-stream": {
+                                    "schema": {
+                                        "type": "string",
+                                        "format": "binary",
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"204": {"description": "No Content"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        diagnostics = executor.validate_request(tools[0], {"body": b"\x00PNG"})
+        req = executor.build_request(tools[0], {"body": b"\x00PNG"})
+
+        assert diagnostics["valid"] is True
+        assert diagnostics["selected_content_type"] == "application/octet-stream"
+        assert req.headers["Content-type"] == "application/octet-stream"
+        assert req.data == b"\x00PNG"
+
     def test_nested_array_request_body_can_build_single_item_from_leaf_arguments(self):
         spec = {
             "openapi": "3.0.0",

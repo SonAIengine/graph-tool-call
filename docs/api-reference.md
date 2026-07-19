@@ -217,6 +217,9 @@ arguments select the multipart candidate when one is declared. OpenAPI
 static/default/example part headers when available. For multipart object parts,
 nested leaf arguments can be grouped back into the encoded top-level part, e.g.
 `title` / `category` under `$.metadata.*` become one `metadata` JSON part.
+Other declared request-body media types such as `text/plain` and
+`application/octet-stream` are sent as raw body bytes rather than JSON-wrapped
+payloads; the synthetic root `body` slot is used when present.
 
 `HttpExecutor.validate_request(tool, params)` returns structured preflight
 diagnostics for XGEN popup/resume flows:

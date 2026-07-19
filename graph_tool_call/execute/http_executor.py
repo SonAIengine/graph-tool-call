@@ -212,12 +212,19 @@ class HttpExecutor:
                     if isinstance(api_metadata.get("request_body"), dict)
                     else {}
                 )
-                body = _build_json_body(
-                    body_params,
-                    body_field_paths,
-                    request_body=request_body,
-                )
-                data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+                if _is_json_content_type(content_type):
+                    body = _build_json_body(
+                        body_params,
+                        body_field_paths,
+                        request_body=request_body,
+                    )
+                    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+                else:
+                    data = _encode_raw_body(
+                        body_params,
+                        body_field_paths,
+                        request_body=request_body,
+                    )
 
         return urllib.request.Request(url, data=data, headers=headers, method=method)
 
@@ -2221,6 +2228,48 @@ def _multipart_boundary(content_type: str) -> str | None:
 
 def _quote_multipart_header_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "").replace("\n", "")
+
+
+def _encode_raw_body(
+    body_params: dict[str, Any],
+    body_field_paths: dict[str, str],
+    *,
+    request_body: dict[str, Any] | None = None,
+) -> bytes:
+    raw_body = _raw_request_body_value(body_params, body_field_paths, request_body=request_body)
+    return _raw_body_bytes(raw_body)
+
+
+def _raw_request_body_value(
+    body_params: dict[str, Any],
+    body_field_paths: dict[str, str],
+    *,
+    request_body: dict[str, Any] | None = None,
+) -> Any:
+    raw_body = _raw_json_body(body_params, body_field_paths)
+    if raw_body is not _NO_RAW_BODY:
+        return raw_body
+
+    if len(body_params) == 1:
+        return next(iter(body_params.values()))
+
+    return _build_json_body(body_params, body_field_paths, request_body=request_body)
+
+
+def _raw_body_bytes(value: Any) -> bytes:
+    if hasattr(value, "read"):
+        return _raw_body_bytes(value.read())
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    if isinstance(value, dict | list):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if value is None:
+        return b""
+    return _primitive_text(value).encode("utf-8")
 
 
 def _build_json_body(
