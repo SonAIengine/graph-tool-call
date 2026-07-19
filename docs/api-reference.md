@@ -111,7 +111,8 @@ tool's metadata:
   Non-property JSON bodies such as root arrays, primitive payloads, and opaque
   map bodies also include `root` with `request_body_root=true` and a synthetic
   executable `body` slot, while leaf fields remain available for graph/plan
-  contracts.
+  contracts. JSON object request bodies can also be executed by passing an
+  explicit raw `body` object when no schema field is named `body`.
 - `metadata.openapi.response`: selected success status, content type, schema,
   description, leaf fields, declared response headers, optional response
   envelope metadata, and selected OpenAPI response links
@@ -252,7 +253,9 @@ diagnostics for XGEN popup/resume flows:
   violate schema hints such as const, enum, type, numeric bounds, string
   length, pattern, array item count, object property count, or multiple-of
   constraints; discriminator-selected request bodies also reject fields that
-  belong only to another branch with `reason=discriminator_branch`
+  belong only to another branch with `reason=discriminator_branch`. The same
+  branch diagnostics apply to leaf arguments and explicit raw JSON `body`
+  payloads.
 - branch-local missing fields are reported as `source=request_body_branch` when
   the caller supplied a discriminator value that selects that branch
 - explicit JSON body `None` values are treated as present body fields; nullable

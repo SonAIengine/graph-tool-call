@@ -1458,6 +1458,126 @@ class TestBuildRequest:
         with pytest.raises(OpenAPIRequestValidationError, match="body:bankCode"):
             executor.build_request(tools[0], arguments)
 
+    def test_raw_discriminator_body_validates_selected_branch(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Payment API", "version": "1.0.0"},
+            "components": {
+                "schemas": {
+                    "CardPayment": {
+                        "type": "object",
+                        "required": ["cardNumber"],
+                        "properties": {"cardNumber": {"type": "string"}},
+                    },
+                    "BankPayment": {
+                        "type": "object",
+                        "required": ["bankCode"],
+                        "properties": {"bankCode": {"type": "string"}},
+                    },
+                }
+            },
+            "paths": {
+                "/payments": {
+                    "post": {
+                        "operationId": "createPayment",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "oneOf": [
+                                            {"$ref": "#/components/schemas/CardPayment"},
+                                            {"$ref": "#/components/schemas/BankPayment"},
+                                        ],
+                                        "discriminator": {
+                                            "propertyName": "paymentType",
+                                            "mapping": {
+                                                "card": "#/components/schemas/CardPayment",
+                                                "bank": "#/components/schemas/BankPayment",
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        executor = HttpExecutor("https://api.example.com")
+
+        valid = executor.validate_request(
+            tools[0],
+            {"body": {"paymentType": "bank", "bankCode": "004"}},
+        )
+        missing = executor.validate_request(tools[0], {"body": {"paymentType": "card"}})
+        mismatch = executor.validate_request(
+            tools[0],
+            {
+                "body": {
+                    "paymentType": "card",
+                    "cardNumber": "4111111111111111",
+                    "bankCode": "004",
+                }
+            },
+        )
+        req = executor.build_request(
+            tools[0],
+            {"body": {"paymentType": "bank", "bankCode": "004"}},
+        )
+
+        assert valid["valid"] is True
+        assert valid["used_arguments"]["body"] == ["body"]
+        assert valid["unused_arguments"] == []
+        assert json.loads(req.data.decode("utf-8")) == {
+            "paymentType": "bank",
+            "bankCode": "004",
+        }
+        assert missing["valid"] is False
+        assert missing["missing_required"] == [
+            {
+                "name": "cardNumber",
+                "location": "body",
+                "source": "request_body_branch",
+                "content_type": "application/json",
+                "field_type": "string",
+                "json_path": "$.cardNumber",
+                "schema_combinator": "oneOf",
+                "schema_branch": 0,
+                "schema_branch_count": 2,
+                "schema_branches": [0],
+                "required_in_branch": True,
+                "schema_ref": "#/components/schemas/CardPayment",
+                "discriminator_property": "paymentType",
+                "discriminator_value": "card",
+                "discriminator_values": ["card"],
+            }
+        ]
+        assert mismatch["valid"] is False
+        assert mismatch["invalid_arguments"] == [
+            {
+                "name": "bankCode",
+                "location": "body",
+                "source": "request_body_branch",
+                "reason": "discriminator_branch",
+                "field_type": "string",
+                "json_path": "$.bankCode",
+                "schema_combinator": "oneOf",
+                "schema_branch": 1,
+                "schema_branch_count": 2,
+                "schema_branches": [1],
+                "required_in_branch": True,
+                "schema_ref": "#/components/schemas/BankPayment",
+                "content_type": "application/json",
+                "discriminator_property": "paymentType",
+                "discriminator_value": "bank",
+                "discriminator_values": ["bank"],
+                "selected_discriminator_value": "card",
+            }
+        ]
+
     def test_validate_request_reports_missing_required_and_unused_arguments(self):
         tool = _make_tool(
             name="updateOrder",

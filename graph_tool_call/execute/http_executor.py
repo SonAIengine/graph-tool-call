@@ -245,6 +245,8 @@ class HttpExecutor:
                 include_content_type_rows=False,
             )
             body_field_paths = _body_field_paths_from_rows(body_rows)
+            if _supports_raw_json_body_argument(api_metadata, body_rows):
+                body_field_paths.setdefault("body", "$")
             if _is_form_content_type(content_type):
                 body_field_metadata = _body_field_metadata_from_rows(body_rows)
                 headers["Content-Type"] = content_type
@@ -575,9 +577,12 @@ def _iter_known_argument_names(
     for param in api_metadata.get("parameters") or []:
         if isinstance(param, dict):
             add(str(param.get("name") or ""))
-    for row in _body_rows(api_metadata):
+    body_rows = _body_rows(api_metadata)
+    for row in body_rows:
         if isinstance(row, dict):
             add(str(row.get("field_name") or ""))
+    if _supports_raw_json_body_argument(api_metadata, body_rows):
+        add("body")
     for name in _security_api_key_locations(api_metadata):
         add(name)
     return names
@@ -697,7 +702,12 @@ def _missing_required_inputs(
             path_template=path_template,
         )["body"]
     )
-    has_raw_body_argument = _raw_body_argument_present(body_rows, arguments)
+    raw_body_supported = _supports_raw_json_body_argument(api_metadata, body_rows)
+    has_raw_body_argument = _raw_body_argument_present(
+        body_rows,
+        arguments,
+        raw_body_supported=raw_body_supported,
+    )
     for row in body_rows:
         if not isinstance(row, dict) or not row.get("required"):
             continue
@@ -725,6 +735,7 @@ def _missing_required_inputs(
         body_rows,
         arguments,
         selected_content_type=selected_content_type,
+        raw_body_supported=raw_body_supported,
     ):
         add(item)
 
@@ -833,6 +844,7 @@ def _invalid_argument_values(
         content_type=selected_content_type,
         include_content_type_rows=False,
     )
+    raw_body_supported = _supports_raw_json_body_argument(api_metadata, body_rows)
     for row in body_rows:
         if isinstance(row, dict):
             add_contract({**row, "location": "body", "source": "request_body"})
@@ -841,6 +853,7 @@ def _invalid_argument_values(
             body_rows,
             arguments,
             selected_content_type=selected_content_type,
+            raw_body_supported=raw_body_supported,
         )
     )
 
@@ -1300,8 +1313,13 @@ def _missing_branch_required_inputs(
     arguments: dict[str, Any],
     *,
     selected_content_type: str,
+    raw_body_supported: bool = False,
 ) -> list[dict[str, Any]]:
-    discriminator = _selected_discriminator(body_rows, arguments)
+    discriminator = _selected_discriminator(
+        body_rows,
+        arguments,
+        raw_body_supported=raw_body_supported,
+    )
     if not discriminator:
         return []
     property_name, value = discriminator
@@ -1314,7 +1332,12 @@ def _missing_branch_required_inputs(
         name = str(row.get("field_name") or "")
         if not name or name == property_name:
             continue
-        if _argument_present(name, "body", arguments, {}):
+        if _body_row_has_value(
+            row,
+            body_rows,
+            arguments,
+            raw_body_supported=raw_body_supported,
+        ):
             continue
         item = {
             "name": name,
@@ -1333,8 +1356,13 @@ def _invalid_branch_argument_values(
     arguments: dict[str, Any],
     *,
     selected_content_type: str,
+    raw_body_supported: bool = False,
 ) -> list[dict[str, Any]]:
-    discriminator = _selected_discriminator(body_rows, arguments)
+    discriminator = _selected_discriminator(
+        body_rows,
+        arguments,
+        raw_body_supported=raw_body_supported,
+    )
     if not discriminator:
         return []
     property_name, value = discriminator
@@ -1354,7 +1382,12 @@ def _invalid_branch_argument_values(
         name = str(row.get("field_name") or "")
         if not name or name == property_name or name in seen:
             continue
-        if not _argument_present(name, "body", arguments, {}):
+        if not _body_row_has_value(
+            row,
+            body_rows,
+            arguments,
+            raw_body_supported=raw_body_supported,
+        ):
             continue
         contract = {
             "name": name,
@@ -1374,17 +1407,86 @@ def _invalid_branch_argument_values(
 def _selected_discriminator(
     body_rows: list[dict[str, Any]],
     arguments: dict[str, Any],
+    *,
+    raw_body_supported: bool = False,
 ) -> tuple[str, Any] | None:
     for row in body_rows:
         if not isinstance(row, dict):
             continue
         property_name = str(row.get("discriminator_property") or "")
-        if not property_name or property_name not in arguments:
+        if not property_name:
             continue
-        value = arguments.get(property_name)
-        if value is not None:
+        value = _discriminator_argument_value(
+            property_name,
+            body_rows,
+            arguments,
+            raw_body_supported=raw_body_supported,
+        )
+        if value is not _NO_DEFAULT:
             return property_name, value
     return None
+
+
+def _discriminator_argument_value(
+    property_name: str,
+    body_rows: list[dict[str, Any]],
+    arguments: dict[str, Any],
+    *,
+    raw_body_supported: bool,
+) -> Any:
+    if property_name in arguments and arguments[property_name] is not None:
+        return arguments[property_name]
+    for row in body_rows:
+        if not isinstance(row, dict) or str(row.get("field_name") or "") != property_name:
+            continue
+        values = _body_row_values(
+            row,
+            body_rows,
+            arguments,
+            raw_body_supported=raw_body_supported,
+        )
+        for value in values:
+            if value is not None:
+                return value
+    return _NO_DEFAULT
+
+
+def _body_row_has_value(
+    row: dict[str, Any],
+    body_rows: list[dict[str, Any]],
+    arguments: dict[str, Any],
+    *,
+    raw_body_supported: bool,
+) -> bool:
+    return any(
+        value is not None
+        for value in _body_row_values(
+            row,
+            body_rows,
+            arguments,
+            raw_body_supported=raw_body_supported,
+        )
+    )
+
+
+def _body_row_values(
+    row: dict[str, Any],
+    body_rows: list[dict[str, Any]],
+    arguments: dict[str, Any],
+    *,
+    raw_body_supported: bool,
+) -> list[Any]:
+    name = str(row.get("field_name") or "")
+    if name in arguments:
+        return [arguments[name]]
+    raw_present, raw_body = _raw_body_argument_value(
+        body_rows,
+        arguments,
+        raw_body_supported=raw_body_supported,
+    )
+    if not raw_present:
+        return []
+    return _json_path_values(raw_body, str(row.get("json_path") or ""))
 
 
 def _has_discriminator_branch_hint(row: dict[str, Any], property_name: str) -> bool:
@@ -1418,9 +1520,12 @@ def _location_by_param(api_metadata: dict[str, Any]) -> dict[str, str]:
         loc = str(param.get("in") or "")
         if name and loc:
             locations[name] = loc
-    for row in _body_rows(api_metadata):
+    body_rows = _body_rows(api_metadata)
+    for row in body_rows:
         if isinstance(row, dict) and row.get("field_name"):
             locations.setdefault(str(row["field_name"]), "body")
+    if _supports_raw_json_body_argument(api_metadata, body_rows):
+        locations.setdefault("body", "body")
     for name, location in _security_api_key_locations(api_metadata).items():
         locations.setdefault(name, location)
     return locations
@@ -1493,17 +1598,55 @@ def _body_field_metadata_from_rows(body_rows: list[dict[str, Any]]) -> dict[str,
     return metadata
 
 
+def _supports_raw_json_body_argument(
+    api_metadata: dict[str, Any],
+    body_rows: list[dict[str, Any]],
+) -> bool:
+    request_body = api_metadata.get("request_body")
+    if not isinstance(request_body, dict) or not request_body:
+        return False
+    if any(
+        isinstance(row, dict)
+        and (str(row.get("field_name") or "") == "body" or _is_request_body_root_row(row))
+        for row in body_rows
+    ):
+        return False
+    content_types = _request_content_type_candidates(request_body)
+    selected_content_type = str(request_body.get("content_type") or "")
+    if selected_content_type:
+        content_types.insert(0, selected_content_type)
+    return any(_is_json_content_type(content_type) for content_type in content_types)
+
+
 def _raw_body_argument_present(
     body_rows: list[dict[str, Any]],
     arguments: dict[str, Any],
+    *,
+    raw_body_supported: bool = False,
 ) -> bool:
+    present, _value = _raw_body_argument_value(
+        body_rows,
+        arguments,
+        raw_body_supported=raw_body_supported,
+    )
+    return present
+
+
+def _raw_body_argument_value(
+    body_rows: list[dict[str, Any]],
+    arguments: dict[str, Any],
+    *,
+    raw_body_supported: bool = False,
+) -> tuple[bool, Any]:
     for row in body_rows:
         if not isinstance(row, dict) or not _is_request_body_root_row(row):
             continue
         name = str(row.get("field_name") or "")
         if name and name in arguments:
-            return True
-    return False
+            return True, arguments[name]
+    if raw_body_supported and "body" in arguments:
+        return True, arguments["body"]
+    return False, None
 
 
 def _body_container_fields_satisfied_by_leaf_args(
@@ -1539,6 +1682,58 @@ def _json_path_descends_from(candidate: str, parent: str) -> bool:
     if not candidate or not parent or candidate == parent:
         return False
     return candidate.startswith(f"{parent}.") or candidate.startswith(f"{parent}[")
+
+
+def _json_path_values(value: Any, json_path: str) -> list[Any]:
+    if json_path == "$":
+        return [value]
+    if not json_path.startswith("$"):
+        return []
+
+    if json_path.startswith("$."):
+        raw_tokens = [token for token in json_path.removeprefix("$.").split(".") if token]
+    elif json_path.startswith("$[*]"):
+        suffix = json_path.removeprefix("$[*]")
+        if suffix.startswith("."):
+            raw_tokens = ["[*]", *[token for token in suffix[1:].split(".") if token]]
+        elif not suffix:
+            raw_tokens = ["[*]"]
+        else:
+            return []
+    else:
+        return []
+
+    values = [value]
+    for token in raw_tokens:
+        next_values: list[Any] = []
+        if token == "[*]":
+            for item in values:
+                if isinstance(item, list):
+                    next_values.extend(item)
+            values = next_values
+            continue
+        if token == "*":
+            for item in values:
+                if isinstance(item, dict):
+                    next_values.extend(item.values())
+            values = next_values
+            continue
+
+        is_array_token = token.endswith("[*]")
+        key = token.removesuffix("[*]") if is_array_token else token
+        if not key:
+            return []
+        for item in values:
+            if not isinstance(item, dict) or key not in item:
+                continue
+            child = item[key]
+            if is_array_token:
+                if isinstance(child, list):
+                    next_values.extend(child)
+            else:
+                next_values.append(child)
+        values = next_values
+    return values
 
 
 def _is_request_body_root_row(row: dict[str, Any]) -> bool:
