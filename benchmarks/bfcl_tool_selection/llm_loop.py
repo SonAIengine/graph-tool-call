@@ -665,7 +665,9 @@ def _messages_for_case(
         "them with made-up arrays or sample values. If the same tool must be "
         "applied to multiple distinct entities, times, or parameter sets, emit "
         "one tool call per distinct set; do not merge them into array arguments "
-        "unless the schema explicitly asks for an array."
+        "just because the schema uses array fields. When the request gives paired "
+        "values such as item A at time A and item B at time B, emit one tool call "
+        "per pair and put only that pair's values in each call."
     )
     if candidate_selection_guidance:
         system += (
@@ -1241,6 +1243,12 @@ def _add_property_value_hint(name: str, schema: dict[str, Any], *, query: str) -
         hints.append(
             "Pass a JSON object as this argument's value; keep nested fields inside "
             "this argument, not as top-level arguments."
+        )
+    if _json_schema_type(schema.get("type")) == "array":
+        hints.append(
+            "If the user gives separate entity/time or item/value pairings for repeated "
+            "calls, include only the values for one pairing in this array for the current "
+            "tool call; emit another tool call for the next pairing."
         )
     symbolic_reference = _symbolic_argument_reference(name, query)
     if symbolic_reference:
