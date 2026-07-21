@@ -2286,10 +2286,66 @@ def _serialize_query_params(
     params: dict[str, Any],
     parameter_metadata: dict[str, dict[str, Any]],
 ) -> str:
+    params, parameter_metadata = _group_expanded_query_content_parameters(
+        params,
+        parameter_metadata,
+    )
     segments: list[str] = []
     for name, value in params.items():
         segments.extend(_serialize_query_parameter(name, value, parameter_metadata.get(name, {})))
     return "&".join(segments)
+
+
+def _group_expanded_query_content_parameters(
+    params: dict[str, Any],
+    parameter_metadata: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    grouped_metadata: dict[str, dict[str, Any]] = {}
+    passthrough: dict[str, Any] = {}
+
+    for name, value in params.items():
+        metadata = parameter_metadata.get(name, {})
+        wrapper_name = str(metadata.get("schema_expanded_from") or "")
+        expansion = str(metadata.get("schema_expansion") or "")
+        content_type = str(metadata.get("content_type") or "")
+        if (
+            not wrapper_name
+            or expansion != "query_content_object_parameter"
+            or not _is_json_content_type(content_type)
+        ):
+            passthrough[name] = value
+            continue
+
+        grouped_value = grouped.setdefault(wrapper_name, {})
+        json_path = str(metadata.get("json_path") or f"$.{name}")
+        if not _assign_json_body_value(grouped_value, json_path, value):
+            grouped_value[str(name)] = value
+        grouped_metadata.setdefault(
+            wrapper_name,
+            {
+                "name": wrapper_name,
+                "in": "query",
+                "content_type": content_type,
+                **{
+                    key: copy.deepcopy(metadata[key])
+                    for key in ("style", "explode", "allowReserved")
+                    if key in metadata
+                },
+            },
+        )
+
+    if not grouped:
+        return params, parameter_metadata
+
+    merged_params = dict(passthrough)
+    for wrapper_name, value in grouped.items():
+        if wrapper_name not in merged_params:
+            merged_params[wrapper_name] = value
+
+    merged_metadata = dict(parameter_metadata)
+    merged_metadata.update(grouped_metadata)
+    return merged_params, merged_metadata
 
 
 def _serialize_query_parameter(

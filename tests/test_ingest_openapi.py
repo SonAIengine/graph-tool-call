@@ -1066,31 +1066,30 @@ class TestIngestOpenAPI30:
         tool = tools[0]
         openapi = tool.metadata["openapi"]
         parameter_rows = {row["name"]: row for row in openapi["parameters"]}
-        filter_param = next(param for param in tool.parameters if param.name == "filter")
-        filter_row = parameter_rows["filter"]
+        params = {param.name: param for param in tool.parameters}
 
-        assert filter_param.type == "object"
-        assert filter_param.required is True
-        assert "brandNo" in filter_param.description
-        assert filter_row["content_type"] == "application/json"
-        assert filter_row["content_schema_type"] == "object"
-        assert filter_row["content_types"][0]["selected"] is True
-        assert filter_row["content_types"][0]["examples"][0]["value"] == {
-            "status": "SALE",
-            "brandNo": "B1",
-        }
-        content_fields = {row["field_name"]: row for row in filter_row["content_fields"]}
-        assert content_fields["status"]["enum"] == ["SALE", "SOLD_OUT"]
-        assert content_fields["brandNo"]["description"] == "브랜드 번호"
-        assert openapi["input_locations"]["query"] == ["filter"]
+        assert set(params) == {"status", "brandNo"}
+        assert params["status"].required is True
+        assert params["status"].enum == ["SALE", "SOLD_OUT"]
+        assert params["brandNo"].description == "브랜드 번호"
+        assert parameter_rows["status"]["content_type"] == "application/json"
+        assert parameter_rows["status"]["schema_expanded_from"] == "filter"
+        assert parameter_rows["status"]["schema_expansion"] == "query_content_object_parameter"
+        assert parameter_rows["status"]["json_path"] == "$.status"
+        assert parameter_rows["brandNo"]["content_type"] == "application/json"
+        assert parameter_rows["brandNo"]["schema_expanded_from"] == "filter"
+        assert openapi["input_locations"]["query"] == ["status", "brandNo"]
 
         consumes = {row["field_name"]: row for row in tool.metadata["api_contract"]["consumes"]}
-        assert consumes["filter"]["content_type"] == "application/json"
-        assert consumes["filter"]["content_fields"][0]["location"] == "query"
+        assert consumes["status"]["content_type"] == "application/json"
+        assert consumes["status"]["schema_expanded_from"] == "filter"
+        assert consumes["status"]["enum"] == ["SALE", "SOLD_OUT"]
+        assert consumes["brandNo"]["content_type"] == "application/json"
+        assert consumes["brandNo"]["description"] == "브랜드 번호"
 
         request = HttpExecutor("https://api.example.com").build_request(
             tool,
-            {"filter": {"status": "SALE", "brandNo": "B1"}},
+            {"status": "SALE", "brandNo": "B1"},
         )
         parsed = urlparse(request.full_url)
         assert parsed.path == "/goods/search"
@@ -1439,6 +1438,69 @@ class TestIngestOpenAPI30:
         parsed = urlparse(request.full_url)
         assert parsed.path == "/items"
         assert parse_qs(parsed.query) == {"filter[status]": ["paid"]}
+
+    def test_query_content_object_parameter_metadata_expands_to_inner_fields(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Member API", "version": "1.0.0"},
+            "paths": {
+                "/members": {
+                    "get": {
+                        "operationId": "getMemberList",
+                        "parameters": [
+                            {
+                                "name": "mbrMgmtSearchRequest",
+                                "in": "query",
+                                "required": True,
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "required": ["loginId"],
+                                            "properties": {
+                                                "loginId": {
+                                                    "type": "string",
+                                                    "description": "로그인아이디",
+                                                },
+                                                "mbrNm": {
+                                                    "type": "string",
+                                                    "description": "회원명",
+                                                },
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        openapi = tool.metadata["openapi"]
+
+        params = {param.name: param for param in tool.parameters}
+        assert set(params) == {"loginId", "mbrNm"}
+        assert params["loginId"].required is True
+        assert params["mbrNm"].required is False
+
+        parameter_rows = {row["name"]: row for row in openapi["parameters"]}
+        assert "mbrMgmtSearchRequest" not in parameter_rows
+        assert parameter_rows["loginId"]["schema_expanded_from"] == "mbrMgmtSearchRequest"
+        assert parameter_rows["loginId"]["schema_expansion"] == "query_content_object_parameter"
+        assert parameter_rows["loginId"]["content_type"] == "application/json"
+        assert parameter_rows["loginId"]["json_path"] == "$.loginId"
+
+        consumes = {
+            (row["field_name"], row["location"]): row
+            for row in tool.metadata["api_contract"]["consumes"]
+        }
+        assert ("mbrMgmtSearchRequest", "query") not in consumes
+        assert consumes[("loginId", "query")]["schema_expanded_from"] == "mbrMgmtSearchRequest"
+        assert consumes[("loginId", "query")]["content_type"] == "application/json"
 
     def test_readonly_writeonly_fields_respect_request_response_direction(self) -> None:
         """Direction-only OpenAPI fields should not pollute inverse IO contracts."""

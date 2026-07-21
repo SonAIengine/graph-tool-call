@@ -293,16 +293,42 @@ class PathSynthesizer:
         # so frontend can show the same enum/popup the operator
         # registered for that field.
         user_input_slots: list[dict[str, Any]] = []
+        fallback_by_field = {
+            (str(row.get("tool") or ""), str(row.get("field_name") or "")): row
+            for row in self._user_input_fallbacks
+            if isinstance(row, dict)
+        }
         for step in final_steps:
             for arg_name, arg_val in (step.args or {}).items():
                 if isinstance(arg_val, str) and arg_val.startswith("${user_input."):
-                    user_input_slots.append(
-                        {
-                            "step_id": step.id,
-                            "tool": step.tool,
-                            "field_name": arg_name,
-                        }
-                    )
+                    slot: dict[str, Any] = {
+                        "step_id": step.id,
+                        "tool": step.tool,
+                        "field_name": arg_name,
+                    }
+                    consume = self._consume_for(step.tool, arg_name)
+                    if consume:
+                        for key in (
+                            "required",
+                            "kind",
+                            "field_type",
+                            "location",
+                            "json_path",
+                            "semantic_tag",
+                            "schema_expanded_from",
+                            "schema_expansion",
+                            "content_type",
+                        ):
+                            value = consume.get(key)
+                            if value not in (None, "", []):
+                                slot[key] = value
+                    fallback = fallback_by_field.get((step.tool, arg_name))
+                    if fallback:
+                        for key in ("reason", "cause"):
+                            value = fallback.get(key)
+                            if value not in (None, "", []):
+                                slot[key] = value
+                    user_input_slots.append(slot)
 
         plan = Plan(
             id=str(uuid.uuid4()),
@@ -1180,6 +1206,14 @@ class PathSynthesizer:
         if field_name and field_name in self._context_defaults:
             return self._context_defaults[field_name]
         return None
+
+    def _consume_for(self, tool_name: str, field_name: str) -> dict[str, Any]:
+        tool = self._tools.get(tool_name) or {}
+        metadata = tool.get("metadata") or {}
+        for consume in metadata.get("consumes") or []:
+            if isinstance(consume, dict) and consume.get("field_name") == field_name:
+                return consume
+        return {}
 
     def _match_entity(
         self,

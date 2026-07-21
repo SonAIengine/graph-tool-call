@@ -135,9 +135,10 @@ def analyze_openapi_tools(
         metadata = _metadata(tool)
         openapi = _openapi(metadata)
         contract = _api_contract(metadata)
-        operation_id = str(openapi.get("operation_id") or "").strip()
-        if operation_id:
-            operation_ids.add(operation_id)
+        if _is_openapi_operation(tool, metadata):
+            operation_id = _operation_id(tool, openapi, metadata)
+            if operation_id:
+                operation_ids.add(operation_id)
         if openapi.get("deprecated"):
             deprecated_count += 1
 
@@ -183,7 +184,9 @@ def analyze_openapi_tools(
 
     summary = {
         "tool_count": len(tool_list),
-        "operation_count": sum(1 for tool in tool_list if _openapi(_metadata(tool))),
+        "operation_count": sum(
+            1 for tool in tool_list if _is_openapi_operation(tool, _metadata(tool))
+        ),
         "unique_tool_count": len({tool.name for tool in tool_list}),
         "unique_operation_count": len(operation_ids),
         "deprecated_tool_count": deprecated_count,
@@ -304,9 +307,13 @@ def _update_coverage(
     response = _dict(openapi.get("response"))
     if _has_request_body(request_body):
         coverage["request_body_tool_count"] += 1
-    if _dict(request_body.get("schema")):
+    if _dict(request_body.get("schema")) or _rows(request_body.get("fields")):
         coverage["request_schema_tool_count"] += 1
-    if _dict(response.get("schema")):
+    if (
+        _dict(response.get("schema"))
+        or _rows(response.get("fields"))
+        or _rows(response.get("headers"))
+    ):
         coverage["response_schema_tool_count"] += 1
     if _dict(response.get("envelope")):
         coverage["response_envelope_tool_count"] += 1
@@ -748,7 +755,106 @@ def _metadata(tool: ToolSchema) -> dict[str, Any]:
 
 
 def _openapi(metadata: dict[str, Any]) -> dict[str, Any]:
-    return _dict(metadata.get("openapi"))
+    openapi = _dict(metadata.get("openapi"))
+    if openapi:
+        return openapi
+    if not _looks_like_persisted_openapi_metadata(metadata):
+        return {}
+
+    contract = _api_contract(metadata)
+    consumes = _rows(contract.get("consumes"))
+    produces = _rows(contract.get("produces"))
+    links = _rows(contract.get("links"))
+    request_body_fields = [
+        row for row in consumes if str(row.get("location") or "").lower() == "body"
+    ]
+    parameter_rows = [
+        _parameter_row_from_contract(row)
+        for row in consumes
+        if str(row.get("location") or "").lower() in {"path", "query", "header", "cookie"}
+        and str(row.get("kind") or "data").lower() != "auth"
+    ]
+    response_fields = [
+        row
+        for row in produces
+        if str(row.get("location") or "response").lower() != "response_header"
+    ]
+    response_headers = [
+        row for row in produces if str(row.get("location") or "").lower() == "response_header"
+    ]
+
+    return {
+        "tool_name": metadata.get("tool_name") or metadata.get("name") or "",
+        "operation_id": metadata.get("operation_id") or metadata.get("operationId") or "",
+        "summary": metadata.get("summary") or "",
+        "description": metadata.get("description") or "",
+        "deprecated": bool(metadata.get("deprecated", False)),
+        "parameters": parameter_rows,
+        "request_body": {
+            "required": any(bool(row.get("required")) for row in request_body_fields),
+            "fields": request_body_fields,
+            "all_fields": request_body_fields,
+        },
+        "response": {
+            "status": metadata.get("response_status") or metadata.get("status") or "",
+            "fields": response_fields,
+            **({"headers": response_headers} if response_headers else {}),
+            **({"links": links} if links else {}),
+        },
+    }
+
+
+def _looks_like_persisted_openapi_metadata(metadata: dict[str, Any]) -> bool:
+    if str(metadata.get("source") or "").lower() == "openapi":
+        return True
+    if metadata.get("method") and metadata.get("path"):
+        return True
+    return False
+
+
+def _parameter_row_from_contract(row: dict[str, Any]) -> dict[str, Any]:
+    out = {
+        "name": str(row.get("field_name") or row.get("name") or ""),
+        "in": str(row.get("location") or row.get("in") or ""),
+        "required": bool(row.get("required")),
+        "field_type": str(row.get("field_type") or "string"),
+    }
+    for key in (
+        "json_path",
+        "enum",
+        "description",
+        "schema_expanded_from",
+        "schema_expansion",
+        "content_type",
+        "style",
+        "explode",
+        "allowReserved",
+    ):
+        value = row.get(key)
+        if value not in (None, "", []):
+            out[key] = value
+    return out
+
+
+def _operation_id(tool: ToolSchema, openapi: dict[str, Any], metadata: dict[str, Any]) -> str:
+    return str(
+        openapi.get("operation_id")
+        or metadata.get("operation_id")
+        or metadata.get("operationId")
+        or openapi.get("tool_name")
+        or metadata.get("tool_name")
+        or tool.name
+        or ""
+    ).strip()
+
+
+def _is_openapi_operation(tool: ToolSchema, metadata: dict[str, Any]) -> bool:
+    openapi = _openapi(metadata)
+    if openapi:
+        return True
+    return _operation_id(tool, openapi, metadata) != "" and _looks_like_persisted_openapi_metadata(
+        metadata
+    )
 
 
 def _api_contract(metadata: dict[str, Any]) -> dict[str, Any]:

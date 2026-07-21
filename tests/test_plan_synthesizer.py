@@ -204,6 +204,50 @@ def test_synthesize_falls_back_to_user_input_placeholder():
     assert plan.steps[0].args == {"mysteryField": "${user_input.mysteryField}"}
 
 
+def test_user_input_slots_preserve_required_contract_metadata():
+    g = {
+        "tools": {
+            "searchMembers": {
+                "metadata": {
+                    "consumes": [
+                        {
+                            "field_name": "loginId",
+                            "field_type": "string",
+                            "kind": "data",
+                            "required": True,
+                            "location": "query",
+                            "json_path": "$.loginId",
+                            "schema_expanded_from": "mbrMgmtSearchRequest",
+                            "semantic_tag": "member_login_id",
+                        }
+                    ],
+                    "produces": [],
+                    "ai_metadata": {"canonical_action": "search"},
+                },
+            },
+        },
+    }
+
+    plan = PathSynthesizer(g).synthesize(target="searchMembers", entities={})
+
+    assert plan.metadata["user_input_slots"] == [
+        {
+            "step_id": "s1",
+            "tool": "searchMembers",
+            "field_name": "loginId",
+            "required": True,
+            "kind": "data",
+            "field_type": "string",
+            "location": "query",
+            "json_path": "$.loginId",
+            "semantic_tag": "member_login_id",
+            "schema_expanded_from": "mbrMgmtSearchRequest",
+            "reason": "user_input_fallback",
+            "cause": "search_filter",
+        }
+    ]
+
+
 def test_synthesize_unknown_target_raises():
     syn = PathSynthesizer(_basic_graph())
     with pytest.raises(PlanSynthesisError):

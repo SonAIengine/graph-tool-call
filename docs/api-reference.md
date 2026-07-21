@@ -147,6 +147,10 @@ OpenAPI field direction is enforced before graph/search promotion:
   single-schema `anyOf` / `oneOf` null unions are exposed as `nullable=true`.
 - OpenAPI3 query object wrappers are expanded into their real inner fields for
   `metadata.openapi.parameters`, `input_locations`, and `api_contract.consumes`.
+- OpenAPI3 JSON `content` query object wrappers are also exposed as inner leaf
+  fields for search and Planflow, while preserving `schema_expanded_from`,
+  `schema_expansion`, `content_type`, and `json_path` so the executor can render
+  the original wrapper JSON query parameter.
 - Root JSON array request bodies can be executed either by passing raw
   `{"body": [...]}` or, for a single array item, by passing the extracted item
   leaf arguments; the executor emits the array body instead of inventing an
@@ -283,6 +287,10 @@ tg = ToolGraph()
 tg.ingest_openapi("openapi.json")
 report = tg.analyze_openapi(context_field_names={"siteNo", "tenantId"})
 ```
+
+Stored graphs that no longer include the full `metadata.openapi` block can still
+be analyzed when OpenAPI-like metadata and `metadata.api_contract` rows are
+present.
 
 The report is deterministic and does not call an LLM, execute APIs, or inspect
 runtime credentials. It returns:
