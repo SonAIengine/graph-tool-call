@@ -744,6 +744,81 @@ def _expandable_parameter_properties(
     return {}, set()
 
 
+def _expanded_parameter_leaf_rows(
+    parameter: dict[str, Any],
+    schema: dict[str, Any],
+    ptype: str,
+    *,
+    sibling_names: set[str],
+    required_only: bool = False,
+    content_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """Expand a query object wrapper into executable leaf parameter rows."""
+    if not isinstance(schema, dict) or not schema:
+        return []
+
+    wrapper_name = str(parameter.get("name") or "")
+    location = str(parameter.get("in") or "")
+    expansion = "query_content_object_parameter" if content_type else "query_object_parameter"
+
+    leaves: list[FieldLeaf]
+    if content_type:
+        leaves = [
+            leaf
+            for leaf in extract_leaves(schema, base_path="$")
+            if not leaf.read_only and leaf.field_type not in {"object", "array"}
+        ]
+        required_by_leaf_name: dict[str, bool] = {}
+    else:
+        wrapper_props, wrapper_required = _expandable_parameter_properties(schema, ptype)
+        if not wrapper_props:
+            return []
+        leaves = []
+        required_by_leaf_name = {}
+        for prop_name, prop_schema in wrapper_props.items():
+            prop_schema = prop_schema if isinstance(prop_schema, dict) else {}
+            for leaf in extract_leaves(prop_schema, base_path=f"$.{prop_name}"):
+                if leaf.read_only or leaf.field_type in {"object", "array"}:
+                    continue
+                leaves.append(leaf)
+                if leaf.json_path == f"$.{prop_name}":
+                    required_by_leaf_name[leaf.field_name] = prop_name in wrapper_required
+
+    if not leaves:
+        return []
+    if all(leaf.field_name in sibling_names for leaf in leaves):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for leaf in leaves:
+        if leaf.field_name in sibling_names:
+            continue
+        is_required = bool(leaf.required or required_by_leaf_name.get(leaf.field_name, False))
+        if required_only and not is_required:
+            continue
+        row = {
+            "name": leaf.field_name,
+            "in": location,
+            "required": is_required,
+            "field_type": leaf.field_type,
+            "json_path": leaf.json_path,
+            "schema_expanded_from": wrapper_name,
+            "schema_expansion": expansion,
+        }
+        if content_type:
+            row["content_type"] = content_type
+        if leaf.description:
+            row["description"] = leaf.description[:300]
+        if leaf.enum:
+            row["enum"] = list(leaf.enum)
+        _copy_row_hints(_leaf_row(leaf, location=location), row)
+        for key in ("style", "explode", "allowReserved", "deprecated"):
+            if key in parameter:
+                row[key] = parameter[key]
+        rows.append(row)
+    return rows
+
+
 def _schema_description(schema: dict[str, Any]) -> str:
     if not isinstance(schema, dict):
         return ""
@@ -936,31 +1011,24 @@ def _extract_params_openapi3(
             ptype in ("object", "array")
             and p.get("in") == "query"
             and p.get("style") != "deepObject"
-            and not content_type
         ):
-            wrapper_props, wrapper_required = _expandable_parameter_properties(schema, ptype)
-            if wrapper_props:
-                # If every inner property is already a sibling parameter,
-                # drop the wrapper entirely (deduplication).
-                if all(prop in sibling_names for prop in wrapper_props):
-                    continue
-                # Otherwise expand the wrapper into individual leaves so
-                # producer matching has real field names to chase.
-                for prop_name, prop_schema in wrapper_props.items():
-                    if prop_name in sibling_names:
-                        continue  # don't double-list ones already exposed
-                    inner_required = prop_name in wrapper_required
-                    if required_only and not inner_required:
-                        continue
-                    prop_schema = prop_schema if isinstance(prop_schema, dict) else {}
-                    inner_type = _schema_type(prop_schema)
+            expanded_rows = _expanded_parameter_leaf_rows(
+                p,
+                schema,
+                ptype,
+                sibling_names=sibling_names,
+                required_only=required_only,
+                content_type=content_type,
+            )
+            if expanded_rows:
+                for row in expanded_rows:
                     params.append(
                         ToolParameter(
-                            name=prop_name,
-                            type=inner_type,
-                            description=_schema_description(prop_schema),
-                            required=inner_required,
-                            enum=_schema_enum(prop_schema) or None,
+                            name=str(row["name"]),
+                            type=str(row.get("field_type") or "string"),
+                            description=str(row.get("description") or ""),
+                            required=bool(row.get("required")),
+                            enum=row.get("enum") if isinstance(row.get("enum"), list) else None,
                         )
                     )
                 continue  # wrapper itself is not added
@@ -1549,42 +1617,16 @@ def _openapi_parameter_rows(
             required = True
         ptype = _schema_type(schema)
 
-        if (
-            ptype in ("object", "array")
-            and location == "query"
-            and p.get("style") != "deepObject"
-            and not content_type
-        ):
-            wrapper_props, wrapper_required = _expandable_parameter_properties(schema, ptype)
-            if wrapper_props:
-                if all(prop in sibling_names for prop in wrapper_props):
-                    continue
-                for prop_name, prop_schema in wrapper_props.items():
-                    if prop_name in sibling_names:
-                        continue
-                    prop_schema = prop_schema if isinstance(prop_schema, dict) else {}
-                    row = {
-                        "name": str(prop_name),
-                        "in": location,
-                        "required": prop_name in wrapper_required,
-                        "field_type": _schema_type(prop_schema),
-                        "schema_expanded_from": str(p["name"]),
-                        "schema_expansion": "query_object_parameter",
-                    }
-                    _add_schema_hints(row, prop_schema)
-                    desc = _schema_description(prop_schema)
-                    if desc:
-                        row["description"] = desc[:300]
-                    enum = _schema_enum(prop_schema)
-                    if isinstance(enum, list) and enum:
-                        row["enum"] = list(enum)
-                    examples = _example_rows(prop_schema, location=location)
-                    if examples:
-                        row["examples"] = examples[:_MAX_EXAMPLES_PER_BLOCK]
-                    for key in ("style", "explode", "allowReserved", "deprecated"):
-                        if key in p:
-                            row[key] = p[key]
-                    rows.append(row)
+        if ptype in ("object", "array") and location == "query" and p.get("style") != "deepObject":
+            expanded_rows = _expanded_parameter_leaf_rows(
+                p,
+                schema,
+                ptype,
+                sibling_names=sibling_names,
+                content_type=content_type,
+            )
+            if expanded_rows:
+                rows.extend(expanded_rows)
                 continue
 
         enum = _schema_enum(p if is_swagger2 else schema)

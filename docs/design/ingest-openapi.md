@@ -155,9 +155,14 @@ OpenAPI3 Parameter Object가 `schema` 대신 `content`를 사용하는 경우에
 선택된 media type, schema field, example field를 보존한다. JSON content
 parameter는 `content_type`, `content_schema_type`, `content_fields`,
 `content_types`를 `metadata.openapi.parameters`와 `api_contract.consumes`에
-남기며, executor는 object/list 값을 하나의 JSON 문자열 parameter로 직렬화한다.
-이 경우 parameter 이름 자체가 wire format의 입력이므로 query DTO 펼침 규칙을
-적용하지 않는다.
+남긴다. JSON content query parameter가 object DTO처럼 쓰이면 검색/Planflow
+입력은 내부 leaf field로 펼치되, 각 row에 `schema_expanded_from`,
+`schema_expansion=query_content_object_parameter`, `content_type`, `json_path`를
+보존한다. executor는 이 metadata를 사용해 leaf 입력을 원래 wrapper parameter의
+JSON 문자열로 다시 묶어 wire format을 유지한다. 예를 들어
+`mbrMgmtSearchRequest` content parameter의 `loginId`, `mbrNm` leaf는 plan에는
+각각 입력 slot으로 보이지만 HTTP query는
+`mbrMgmtSearchRequest={"loginId":...,"mbrNm":...}` 형태로 나간다.
 
 JSON Schema `additionalProperties`는 동적 key map으로 보존한다. map value가
 object면 내부 field를 `$.data.*.goodsNo` 같은 path로 추출하고

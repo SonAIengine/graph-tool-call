@@ -1211,6 +1211,49 @@ class TestBuildRequest:
         assert cookie_name == "prefs"
         assert json.loads(unquote(cookie_value)) == {"locale": "ko"}
 
+    def test_expanded_query_content_object_parameters_serialize_to_wrapper_json(self):
+        tool = _make_tool(
+            name="getMemberList",
+            method="GET",
+            path="/members",
+            params=[
+                ToolParam(name="loginId", type="string", required=True),
+                ToolParam(name="mbrNm", type="string"),
+            ],
+        )
+        tool.metadata["openapi"] = {
+            "parameters": [
+                {
+                    "name": "loginId",
+                    "in": "query",
+                    "required": True,
+                    "content_type": "application/json",
+                    "json_path": "$.loginId",
+                    "schema_expanded_from": "mbrMgmtSearchRequest",
+                    "schema_expansion": "query_content_object_parameter",
+                },
+                {
+                    "name": "mbrNm",
+                    "in": "query",
+                    "content_type": "application/json",
+                    "json_path": "$.mbrNm",
+                    "schema_expanded_from": "mbrMgmtSearchRequest",
+                    "schema_expansion": "query_content_object_parameter",
+                },
+            ]
+        }
+        executor = HttpExecutor("https://api.example.com")
+
+        req = executor.build_request(tool, {"loginId": "user01", "mbrNm": "홍길동"})
+
+        parsed = urlparse(req.full_url)
+        assert parsed.path == "/members"
+        assert json.loads(parse_qs(parsed.query)["mbrMgmtSearchRequest"][0]) == {
+            "loginId": "user01",
+            "mbrNm": "홍길동",
+        }
+        assert "loginId" not in parse_qs(parsed.query)
+
     def test_form_request_body_uses_urlencoding(self):
         tool = _make_tool(
             name="submitSearch",

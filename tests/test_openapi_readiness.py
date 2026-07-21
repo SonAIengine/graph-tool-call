@@ -9,6 +9,7 @@ from pathlib import Path
 
 from graph_tool_call import ToolGraph
 from graph_tool_call.analyze import analyze_openapi_collection
+from graph_tool_call.core.tool import ToolParameter, ToolSchema
 
 
 def _ready_crud_spec() -> dict:
@@ -97,6 +98,90 @@ def test_analyze_openapi_collection_reports_contract_coverage() -> None:
     assert payload["coverage"]["consumes_field_count"] >= 3
     assert payload["coverage"]["produces_field_count"] >= 4
     assert not any(issue["severity"] == "blocker" for issue in payload["issues"])
+
+
+def test_readiness_accepts_persisted_openapi_contract_without_openapi_block() -> None:
+    tool = ToolSchema(
+        name="getMemberList",
+        description="회원 목록 조회",
+        parameters=[
+            ToolParameter(name="loginId", type="string", required=True),
+            ToolParameter(name="siteNo", type="integer", required=False),
+        ],
+        metadata={
+            "source": "openapi",
+            "method": "get",
+            "path": "/v1/member/memberMgmt/getMemberList",
+            "api_contract": {
+                "consumes": [
+                    {
+                        "field_name": "loginId",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "query",
+                        "kind": "data",
+                    },
+                    {
+                        "field_name": "siteNo",
+                        "field_type": "integer",
+                        "required": False,
+                        "location": "query",
+                        "kind": "context",
+                    },
+                ],
+                "produces": [
+                    {
+                        "field_name": "mbrNo",
+                        "field_type": "string",
+                        "json_path": "$.payloads[*].mbrNo",
+                        "location": "response",
+                    }
+                ],
+            },
+        },
+    )
+
+    report = analyze_openapi_collection([tool], context_field_names={"siteNo"})
+
+    assert report.summary["tool_count"] == 1
+    assert report.summary["operation_count"] == 1
+    assert report.summary["unique_operation_count"] == 1
+    assert report.coverage["consumes_field_count"] == 2
+    assert report.coverage["response_schema_tool_count"] == 1
+    assert report.coverage["context_field_count"] == 1
+    assert "missing_response_schema" not in {issue.code for issue in report.issues}
+
+
+def test_readiness_does_not_treat_contract_only_tool_as_openapi_operation() -> None:
+    tool = ToolSchema(
+        name="localSearch",
+        description="Local non-OpenAPI tool",
+        parameters=[ToolParameter(name="keyword", type="string", required=True)],
+        metadata={
+            "api_contract": {
+                "consumes": [
+                    {
+                        "field_name": "keyword",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "query",
+                    }
+                ],
+                "produces": [
+                    {
+                        "field_name": "result",
+                        "field_type": "string",
+                        "location": "response",
+                    }
+                ],
+            }
+        },
+    )
+
+    report = analyze_openapi_collection([tool])
+
+    assert report.summary["operation_count"] == 0
+    assert report.summary["unique_operation_count"] == 0
 
 
 def test_readiness_reports_generic_and_missing_schema_issues() -> None:

@@ -137,6 +137,13 @@ events to XGEN SSE/logging. The adapter should preserve fields such as:
 - `user_input_slots`
 - `failed_step`
 
+`user_input_slots` are not only labels. For OpenAPI-derived tools they may carry
+`required`, `kind`, `field_type`, `location`, `json_path`, `semantic_tag`,
+`schema_expanded_from`, `schema_expansion`, `content_type`, `reason`, and
+`cause`. XGEN should use this metadata to render missing-field popup/resume
+forms and to keep query DTO wrappers such as `mbrMgmtSearchRequest` recoverable
+when leaf fields are shown to the user.
+
 ## XGEN Responsibilities
 
 Do not move these into graph-tool-call:

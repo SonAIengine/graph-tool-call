@@ -28,6 +28,12 @@ Already-ingested graphs can use:
 report = tg.analyze_openapi(context_field_names={"siteNo"})
 ```
 
+When the graph was loaded from storage and no longer contains the full
+`metadata.openapi` block, the report falls back to persisted OpenAPI-like
+metadata and `metadata.api_contract`. This keeps operation counts,
+consumes/produces coverage, response schema coverage, and context/auth
+classification stable for stored XGEN API Collection graphs.
+
 The CLI exposes the same report:
 
 ```bash
