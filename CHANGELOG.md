@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-07-21
+
+### Added
+- **Persisted OpenAPI readiness fallback** — OpenAPI readiness analysis now
+  reconstructs operation, consumes/produces, response, and context/auth
+  coverage from stored `metadata.api_contract` rows when full
+  `metadata.openapi` blocks are absent from XGEN-style collection graphs.
+- **Query DTO execution contract** — OpenAPI JSON `content` query object
+  parameters are exposed as searchable leaf inputs while preserving
+  `schema_expanded_from`, `schema_expansion`, `content_type`, and `json_path`
+  so HTTP execution can recompose the original wrapper JSON query parameter.
+
+### Changed
+- **Planflow missing-input metadata** — `Plan.metadata.user_input_slots` now
+  includes OpenAPI contract metadata such as `required`, `location`,
+  `json_path`, semantic tags, wrapper expansion metadata, and fallback reason
+  fields for XGEN popup/resume flows.
+- **OpenAPI query parameter expansion** — schema-backed and content-backed
+  query object wrappers now share the same leaf-row extraction path, preserving
+  required flags and schema hints consistently.
+
 ## [0.27.0] - 2026-07-20
 
 ### Added
@@ -500,7 +521,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.28.0...HEAD
 [0.25.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.22.0...v0.23.0
@@ -525,3 +546,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SonAIengine/graph-tool-call/releases/tag/v0.1.0
 [0.8.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.5.0...v0.8.0
+[0.28.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.27.0...v0.28.0
