@@ -116,7 +116,18 @@ def test_build_openapi_collection_artifact_is_loadable_and_preserves_build_evide
     assert len(artifact["source_snapshot_manifest"]["specs"][0]["sha256"]) == 64
     assert artifact["ingest_summary"]["registered_tool_count"] == 2
     assert artifact["edge_stats"]["tool_count"] == 2
+    assert artifact["semantic_summary"]["canonical_action_known_rate"] == 1.0
+    assert artifact["semantic_summary"]["primary_resource_assigned_rate"] == 1.0
+    assert artifact["edge_quality_summary"]["total"] == len(artifact["graph"]["edges"])
+    assert artifact["metadata"]["semantic_summary"]["path_module_assigned_rate"] == 1.0
+    assert artifact["metadata"]["edge_quality_summary"]["total"] == len(artifact["graph"]["edges"])
+    assert artifact["metadata"]["build_options"]["derive_semantic_metadata"] is True
     assert "graph" in artifact and "tools" in artifact
+    list_brands_ai = artifact["tools"]["listBrands"]["metadata"]["ai_metadata"]
+    assert list_brands_ai["canonical_action"] == "search"
+    assert artifact["tools"]["createProduct"]["metadata"]["ai_metadata"]["primary_resource"] == (
+        "products"
+    )
 
     path = tmp_path / "collection.json"
     path.write_text(json.dumps(artifact, ensure_ascii=False), encoding="utf-8")
@@ -166,3 +177,5 @@ def test_build_openapi_collection_cli_writes_artifact(tmp_path: Path) -> None:
     assert "Built OpenAPI collection:" in result.stdout
     assert payload["readiness_report"]["summary"]["tool_count"] == 2
     assert payload["metadata"]["build_options"]["context_field_names"] == ["siteNo"]
+    assert payload["metadata"]["build_options"]["derive_semantic_metadata"] is True
+    assert payload["semantic_summary"]["canonical_action_known_rate"] == 1.0

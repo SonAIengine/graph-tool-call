@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_GATE_PROFILE = "xgen-scale-0.27"
-SNAPSHOT_PROVENANCE_REQUIRED_PROFILES = {"xgen-scale-0.28"}
+SNAPSHOT_PROVENANCE_REQUIRED_PROFILES = {"xgen-scale-0.28", "xgen-scale-semantic-0.28"}
+SEMANTIC_REQUIRED_PROFILES = {"xgen-scale-semantic-0.28"}
 SUPPORTED_METHODOLOGIES = {
     "xgen_large_openapi_acceptance",
     "xgen_large_openapi_top_k_sweep",
@@ -63,6 +64,7 @@ def evaluate_gate(
             "search": dict(search.get("checks") or {}),
             "snapshot_provenance_required": _snapshot_provenance_required(profile),
             "snapshot_provenance_complete": snapshot_provenance["snapshot_provenance_complete"],
+            "semantic_required": _semantic_required(profile),
         },
         "metrics": _gate_metrics(scale, search, snapshot_provenance=snapshot_provenance),
         "issues": issues,
@@ -126,6 +128,13 @@ def _gate_issues(
             < snapshot_provenance["snapshot_spec_count"]
         ):
             issues.append("snapshot_manifest_sha256_missing")
+    if _semantic_required(profile):
+        if float(scale.get("canonical_action_known_rate") or 0.0) < 0.9:
+            issues.append("semantic_action_known_rate_below_threshold")
+        if float(scale.get("primary_resource_assigned_rate") or 0.0) < 0.75:
+            issues.append("semantic_resource_assigned_rate_below_threshold")
+        if float(scale.get("path_module_assigned_rate") or 0.0) < 0.95:
+            issues.append("semantic_module_assigned_rate_below_threshold")
     return issues
 
 
@@ -166,6 +175,10 @@ def _gate_metrics(
         "duplicate_tool_count": scale.get("duplicate_tool_count"),
         "edge_count": scale.get("edge_count"),
         "build_seconds": scale.get("build_seconds"),
+        "canonical_action_known_rate": scale.get("canonical_action_known_rate"),
+        "primary_resource_assigned_rate": scale.get("primary_resource_assigned_rate"),
+        "path_module_assigned_rate": scale.get("path_module_assigned_rate"),
+        "strong_deterministic_edge_rate": scale.get("strong_deterministic_edge_rate"),
         "cases": search.get("cases"),
     }
     metrics.update({name: search.get(name) for name in metric_names if name in search})
@@ -187,6 +200,10 @@ def _sweep_acceptance_run_missing(report: dict[str, Any]) -> bool:
 
 def _snapshot_provenance_required(profile: str) -> bool:
     return profile in SNAPSHOT_PROVENANCE_REQUIRED_PROFILES
+
+
+def _semantic_required(profile: str) -> bool:
+    return profile in SEMANTIC_REQUIRED_PROFILES
 
 
 def _snapshot_provenance(report: dict[str, Any]) -> dict[str, Any]:
@@ -244,11 +261,27 @@ def format_gate(gate: dict[str, Any]) -> str:
             spec_count=metrics.get("snapshot_spec_count"),
             sha256_count=metrics.get("snapshot_sha256_count"),
         )
+    semantic_suffix = ""
+    if any(
+        metrics.get(key) is not None
+        for key in (
+            "canonical_action_known_rate",
+            "primary_resource_assigned_rate",
+            "path_module_assigned_rate",
+        )
+    ):
+        semantic_suffix = (
+            " semantic_action={action} semantic_resource={resource} semantic_module={module}"
+        ).format(
+            action=metrics.get("canonical_action_known_rate"),
+            resource=metrics.get("primary_resource_assigned_rate"),
+            module=metrics.get("path_module_assigned_rate"),
+        )
     return (
         "xgen-scale gate profile={profile} status={status} methodology={methodology} "
         "acceptance_top_k={top_k} unique_tools={tools} cases={cases} "
         "recall@K={recall} selector={selector} candidates={candidates} "
-        "schema_reduction={schema_reduction}{snapshot_suffix} issues={issues}"
+        "schema_reduction={schema_reduction}{semantic_suffix}{snapshot_suffix} issues={issues}"
     ).format(
         profile=gate.get("profile"),
         status=gate.get("status"),
@@ -260,6 +293,7 @@ def format_gate(gate: dict[str, Any]) -> str:
         selector=metrics.get("target_selector_exact_at_k"),
         candidates=metrics.get("avg_candidate_count"),
         schema_reduction=metrics.get("avg_schema_context_reduction"),
+        semantic_suffix=semantic_suffix,
         snapshot_suffix=snapshot_suffix,
         issues=gate.get("issues") or ["pass"],
     )

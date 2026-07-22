@@ -42,6 +42,7 @@ _ACTION_TERMS = frozenset(
         "apply",
         "assign",
         "checkout",
+        "issue",
         "validate",
         "전송",
         "승인",
@@ -49,6 +50,7 @@ _ACTION_TERMS = frozenset(
         "실행",
         "적용",
         "부여",
+        "발급",
         "결제",
         "검증",
     }
@@ -126,12 +128,12 @@ def target_action_priority_for_query(query: str) -> dict[str, int]:
         _NOTIFICATION_SEND_TERMS,
     ):
         return dict(_ACTION_PRIORITY_NOTIFICATION)
-    if has_read and _has_action_term(terms, _DETAIL_READ_TERMS):
-        return dict(_ACTION_PRIORITY_READ)
     if has_delete:
         return dict(_ACTION_PRIORITY_DELETE)
     if has_action:
         return dict(_ACTION_PRIORITY_ACTION)
+    if has_read and _has_action_term(terms, _DETAIL_READ_TERMS):
+        return dict(_ACTION_PRIORITY_READ)
     if has_update:
         return dict(_ACTION_PRIORITY_UPDATE)
     if has_create:

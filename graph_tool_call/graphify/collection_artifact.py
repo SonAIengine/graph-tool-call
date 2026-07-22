@@ -23,6 +23,10 @@ from graph_tool_call.graphify.metadata import (
     COLLECTION_GRAPH_VERSION,
     annotate_graphify_metadata,
 )
+from graph_tool_call.graphify.semantics import (
+    summarize_edge_quality,
+    summarize_openapi_semantics,
+)
 from graph_tool_call.ingest.openapi import _load_spec, ingest_openapi
 from graph_tool_call.tool_graph import _discover_spec_urls
 
@@ -47,6 +51,9 @@ def build_openapi_collection_artifact(
     promote_contract_signals: bool = True,
     contract_signal_options: dict[str, Any] | None = None,
     max_contract_producers_per_field: int = 3,
+    derive_semantic_metadata: bool = True,
+    semantic_options: dict[str, Any] | None = None,
+    overwrite_ai_metadata: bool = False,
     user_input_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
     context_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
     auth_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
@@ -88,12 +95,17 @@ def build_openapi_collection_artifact(
         promote_contract_signals=promote_contract_signals,
         contract_signal_options=contract_signal_options,
         max_contract_producers_per_field=max_contract_producers_per_field,
+        derive_semantic_metadata=derive_semantic_metadata,
+        semantic_options=semantic_options,
+        overwrite_ai_metadata=overwrite_ai_metadata,
         user_input_field_names=user_input_field_names,
         context_field_names=context_field_names,
         auth_field_names=auth_field_names,
         paging_field_names=paging_field_names,
         search_filter_field_names=search_filter_field_names,
     )
+    semantic_summary = summarize_openapi_semantics(unique_tools, options=semantic_options)
+    edge_quality_summary = summarize_edge_quality(tg.graph)
     readiness_report = analyze_openapi_tools(
         unique_tools,
         graph=tg.graph,
@@ -108,6 +120,8 @@ def build_openapi_collection_artifact(
         "skip_deprecated": bool(skip_deprecated),
         "promote_contract_signals": bool(promote_contract_signals),
         "max_contract_producers_per_field": int(max_contract_producers_per_field),
+        "derive_semantic_metadata": bool(derive_semantic_metadata),
+        "overwrite_ai_metadata": bool(overwrite_ai_metadata),
         "allow_private_hosts": bool(allow_private_hosts),
         "max_response_bytes": int(max_response_bytes),
         "context_field_names": _sorted_names(context_field_names),
@@ -118,6 +132,8 @@ def build_openapi_collection_artifact(
     }
     if contract_signal_options:
         build_options["contract_signal_options"] = dict(contract_signal_options)
+    if semantic_options:
+        build_options["semantic_options"] = _json_safe_options(semantic_options)
 
     artifact_metadata: dict[str, Any] = {
         "built_at": datetime.now(timezone.utc).isoformat(),
@@ -129,6 +145,8 @@ def build_openapi_collection_artifact(
         "readiness_summary": dict(readiness_report.summary),
         "ingest_summary": ingest_summary,
         "edge_stats": edge_stats,
+        "semantic_summary": semantic_summary,
+        "edge_quality_summary": edge_quality_summary,
         "build_options": build_options,
     }
     if metadata:
@@ -146,6 +164,8 @@ def build_openapi_collection_artifact(
         "source_snapshot_manifest": snapshot_manifest,
         "ingest_summary": ingest_summary,
         "edge_stats": edge_stats,
+        "semantic_summary": semantic_summary,
+        "edge_quality_summary": edge_quality_summary,
     }
     return annotate_graphify_metadata(
         graph_payload,
@@ -324,6 +344,10 @@ def _spec_label(spec: dict[str, Any], *, source: str, index: int) -> str:
 
 def _sorted_names(values: set[str] | list[str] | tuple[str, ...] | None) -> list[str]:
     return sorted({str(value) for value in values or [] if str(value).strip()})
+
+
+def _json_safe_options(values: dict[str, Any]) -> dict[str, Any]:
+    return json.loads(json.dumps(values, ensure_ascii=False, default=str))
 
 
 __all__ = ["build_openapi_collection_artifact"]

@@ -24,8 +24,11 @@ from benchmarks.xgen_api_scale.manifest import load_snapshot_manifest
 from graph_tool_call import ToolGraph, __version__
 from graph_tool_call.core.contract_matching import description_alias_key
 from graph_tool_call.graphify import (
+    annotate_openapi_tool_semantics,
     build_candidate_set,
     promote_api_contract_signals,
+    summarize_edge_quality,
+    summarize_openapi_semantics,
     target_action_priority_for_query,
 )
 from graph_tool_call.ingest.openapi import _load_spec, ingest_openapi
@@ -603,6 +606,8 @@ def build_scale_graph(
             unique_tools[tool.name] = tool
 
     unique_tool_list = list(unique_tools.values())
+    annotate_openapi_tool_semantics(unique_tool_list)
+    semantic_metadata = summarize_openapi_semantics(unique_tool_list)
     contract_signal_promotion: dict[str, Any] = {
         "enabled": bool(promote_contract_signals),
         "tools_promoted": 0,
@@ -640,6 +645,7 @@ def build_scale_graph(
         "contract_produces_field_count": contract_produces_field_count,
         "contract_input_locations": dict(sorted(contract_input_locations.items())),
         "contract_signal_promotion": contract_signal_promotion,
+        "semantic_metadata": semantic_metadata,
     }
 
 
@@ -815,6 +821,8 @@ def summarize_scale(
         "min_unique_tools": unique_tools >= min_unique_tools,
         "max_build_seconds": build_seconds <= max_build_seconds,
     }
+    semantic_summary = summarize_openapi_semantics(graph.tools)
+    edge_quality_summary = summarize_edge_quality(graph.graph)
     return {
         "status": "pass" if all(checks.values()) else "fail",
         "checks": checks,
@@ -846,6 +854,14 @@ def summarize_scale(
         "contract_produces_field_count": ingest_summary["contract_produces_field_count"],
         "contract_input_locations": ingest_summary["contract_input_locations"],
         "contract_signal_promotion": ingest_summary["contract_signal_promotion"],
+        "semantic_summary": semantic_summary,
+        "edge_quality_summary": edge_quality_summary,
+        "canonical_action_known_rate": semantic_summary["canonical_action_known_rate"],
+        "primary_resource_assigned_rate": semantic_summary["primary_resource_assigned_rate"],
+        "path_module_assigned_rate": semantic_summary["path_module_assigned_rate"],
+        "strong_deterministic_edge_rate": edge_quality_summary[
+            "strong_deterministic_evidence_rate"
+        ],
     }
 
 

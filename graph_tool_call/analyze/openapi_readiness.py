@@ -167,8 +167,26 @@ def analyze_openapi_tools(
             )
         )
 
+    from graph_tool_call.graphify.semantics import summarize_openapi_semantics
+
+    semantic_summary = summarize_openapi_semantics(tool_list)
+    coverage.update(
+        {
+            "semantic_action_known_count": semantic_summary["canonical_action_known_count"],
+            "semantic_action_known_rate": semantic_summary["canonical_action_known_rate"],
+            "semantic_resource_assigned_count": semantic_summary["primary_resource_assigned_count"],
+            "semantic_resource_assigned_rate": semantic_summary["primary_resource_assigned_rate"],
+            "semantic_module_assigned_count": semantic_summary["path_module_assigned_count"],
+            "semantic_module_assigned_rate": semantic_summary["path_module_assigned_rate"],
+            "semantic_confidence_counts": semantic_summary["semantic_confidence_counts"],
+            "semantic_unknown_samples": semantic_summary["unknown_samples"],
+        }
+    )
+
     graph_readiness = _graph_readiness(graph, tool_list)
     issues.extend(_graph_issues(graph_readiness, tool_count=len(tool_list)))
+    issues.extend(_semantic_issues(semantic_summary))
+    issues.extend(_edge_quality_issues(graph_readiness))
     issues.sort(key=lambda issue: (_SEVERITY_RANK[issue.severity], issue.tool or "", issue.code))
 
     blocker_count = sum(1 for issue in issues if issue.severity == "blocker")
@@ -274,7 +292,7 @@ def _looks_like_openapi_spec(value: dict[str, Any]) -> bool:
     return "paths" in value and ("openapi" in value or "swagger" in value)
 
 
-def _empty_coverage() -> dict[str, int]:
+def _empty_coverage() -> dict[str, Any]:
     return {
         "request_body_tool_count": 0,
         "request_schema_tool_count": 0,
@@ -605,6 +623,8 @@ def _array_alignment_issues(
 
 
 def _graph_readiness(graph: GraphEngine | None, tools: list[ToolSchema]) -> dict[str, Any]:
+    from graph_tool_call.graphify.semantics import summarize_edge_quality
+
     relation_counts: dict[str, int] = {}
     producer_edge_count = 0
     orphan_tools: list[str] = []
@@ -619,6 +639,7 @@ def _graph_readiness(graph: GraphEngine | None, tools: list[ToolSchema]) -> dict
                 orphan_tools.append(tool.name)
 
     candidate_count = _producer_consumer_candidate_count(tools)
+    edge_quality_summary = summarize_edge_quality(graph)
     return {
         "edge_count": graph.edge_count() if graph is not None else 0,
         "relation_counts": dict(sorted(relation_counts.items())),
@@ -628,6 +649,7 @@ def _graph_readiness(graph: GraphEngine | None, tools: list[ToolSchema]) -> dict
         "orphan_tools": sorted(orphan_tools),
         "producer_consumer_candidate_count": candidate_count,
         "graph_available": graph is not None,
+        "edge_quality_summary": edge_quality_summary,
     }
 
 
@@ -675,6 +697,102 @@ def _graph_issues(
             )
         ]
     return []
+
+
+def _semantic_issues(semantic_summary: dict[str, Any]) -> list[OpenAPIReadinessIssue]:
+    tool_count = int(semantic_summary.get("tool_count") or 0)
+    if tool_count <= 1:
+        return []
+
+    issues: list[OpenAPIReadinessIssue] = []
+    action_rate = float(semantic_summary.get("canonical_action_known_rate") or 0.0)
+    resource_rate = float(semantic_summary.get("primary_resource_assigned_rate") or 0.0)
+    module_rate = float(semantic_summary.get("path_module_assigned_rate") or 0.0)
+    unknown_samples = list(semantic_summary.get("unknown_samples") or [])[:10]
+    if action_rate < 0.9:
+        issues.append(
+            _issue(
+                "warning",
+                "semantic_action_unknown_rate_high",
+                None,
+                "Canonical action coverage is below the XGEN semantic graph target.",
+                {
+                    "canonical_action_known_rate": action_rate,
+                    "target": 0.9,
+                    "unknown_samples": unknown_samples,
+                },
+                (
+                    "Add operationId verbs, summaries, or adapter action_aliases so search "
+                    "can distinguish search/read/write/action tools."
+                ),
+            )
+        )
+    if resource_rate < 0.75:
+        issues.append(
+            _issue(
+                "warning",
+                "semantic_resource_unassigned_rate_high",
+                None,
+                "Primary resource coverage is below the XGEN semantic graph target.",
+                {
+                    "primary_resource_assigned_rate": resource_rate,
+                    "target": 0.75,
+                    "unknown_samples": unknown_samples,
+                },
+                (
+                    "Use tags, stable path modules, or adapter resource_aliases so the graph "
+                    "can cluster tools by business resource."
+                ),
+            )
+        )
+    top_modules = semantic_summary.get("top_modules") or []
+    largest = top_modules[0] if top_modules and isinstance(top_modules[0], dict) else {}
+    largest_rate = float(largest.get("rate") or 0.0)
+    if tool_count >= 100 and (largest_rate >= 0.5 or module_rate < 0.95):
+        issues.append(
+            _issue(
+                "info",
+                "module_cluster_too_large",
+                None,
+                "One module cluster is large enough to reduce graph browsing value.",
+                {
+                    "largest_module": largest,
+                    "path_module_assigned_rate": module_rate,
+                },
+                (
+                    "Pass module_aliases or improve path grouping so XGEN can show smaller "
+                    "collection map clusters before rendering node-level graphs."
+                ),
+            )
+        )
+    return issues
+
+
+def _edge_quality_issues(graph_readiness: dict[str, Any]) -> list[OpenAPIReadinessIssue]:
+    edge_count = int(graph_readiness.get("edge_count") or 0)
+    if edge_count <= 0:
+        return []
+    quality = (
+        graph_readiness.get("edge_quality_summary")
+        if isinstance(graph_readiness.get("edge_quality_summary"), dict)
+        else {}
+    )
+    strong = int(quality.get("strong_deterministic_evidence") or 0)
+    if strong > 0:
+        return []
+    return [
+        _issue(
+            "warning",
+            "weak_edge_evidence",
+            None,
+            "Graph has edges, but none carry strong deterministic evidence.",
+            {"edge_count": edge_count, "edge_quality_summary": quality},
+            (
+                "Prefer api_contract/openapi_link/manual/run evidence for Planflow graph "
+                "edges and keep name-based edges as low-trust expansion hints."
+            ),
+        )
+    ]
 
 
 def _producer_consumer_candidate_count(tools: list[ToolSchema]) -> int:

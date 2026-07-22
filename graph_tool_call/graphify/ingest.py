@@ -42,6 +42,10 @@ from graph_tool_call.graphify.edges import (
     normalize_graph_edge,
 )
 from graph_tool_call.graphify.io_contract import FieldPredicate, promote_api_contract_signals
+from graph_tool_call.graphify.semantics import (
+    annotate_openapi_tool_semantics,
+    summarize_openapi_semantics,
+)
 from graph_tool_call.ontology.schema import Confidence, RelationType
 from graph_tool_call.tool_graph import ToolGraph
 
@@ -827,6 +831,9 @@ def ingest_openapi_graphify(
     promote_contract_signals: bool = False,
     contract_signal_options: dict[str, Any] | None = None,
     max_contract_producers_per_field: int = 3,
+    derive_semantic_metadata: bool = True,
+    semantic_options: dict[str, Any] | None = None,
+    overwrite_ai_metadata: bool = False,
     user_input_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
     context_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
     auth_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
@@ -863,6 +870,10 @@ def ingest_openapi_graphify(
         ingest conservative on very large, noisy Swagger specs.
     contract_signal_options:
         Optional keyword overrides forwarded to ``promote_api_contract_signals``.
+    derive_semantic_metadata:
+        When True, fill missing OpenAPI semantic metadata before building
+        graph/search artifacts. Existing ``ai_metadata`` values are preserved
+        unless ``overwrite_ai_metadata`` is True.
 
     Returns
     -------
@@ -875,6 +886,15 @@ def ingest_openapi_graphify(
           refs_preserved:                           int  (tools touched by
                                                           preserve_refs_for_detection)
     """
+    semantic_summary: dict[str, Any] = {}
+    if derive_semantic_metadata:
+        annotate_openapi_tool_semantics(
+            schemas,
+            options=semantic_options,
+            overwrite=overwrite_ai_metadata,
+        )
+        semantic_summary = summarize_openapi_semantics(schemas, options=semantic_options)
+
     if promote_contract_signals:
         options = dict(contract_signal_options or {})
         defaults = {
@@ -917,6 +937,7 @@ def ingest_openapi_graphify(
         "contract_edges": {},
         "openapi_link_signals": openapi_link_signal_stats,
         "openapi_link_edges": {},
+        "semantic_metadata": semantic_summary,
     }
 
     if len(schemas) < 2:

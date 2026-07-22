@@ -483,11 +483,18 @@ def retrieve_graphify(
             prov = provenance.get(name) or {}
             seed_score = float(prov.get("seed_score") or 0.0) if prov.get("seed") else 0.0
             graph_score = 0.0 if prov.get("seed") else round(score, 6)
+            semantic = _semantic_match_evidence(tg.tools[name], query)
             row["score_breakdown"] = {
                 "seed": round(seed_score, 6),
                 "graph": graph_score,
                 "history_demoted": bool(history and name in history),
+                "action_match": 1.0 if semantic["action_match"] else 0.0,
+                "resource_match": 1.0 if semantic["resource_match"] else 0.0,
+                "module_match": 1.0 if semantic["module_match"] else 0.0,
+                "contract_match": 1.0 if semantic["contract_match"] else 0.0,
+                "graph_expansion": 0.0 if prov.get("seed") else 1.0,
             }
+            row["semantic_evidence"] = semantic
             if prov.get("expanded_from"):
                 row["expanded_from"] = prov["expanded_from"]
             edge = prov.get("edge")
@@ -511,6 +518,78 @@ def retrieve_graphify(
             include_evidence=include_evidence,
         ),
     }
+
+
+def _semantic_match_evidence(tool: ToolSchema, query: str) -> dict[str, Any]:
+    metadata = tool.metadata if isinstance(tool.metadata, dict) else {}
+    openapi = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
+    ai = metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
+    query_terms = _semantic_terms(query)
+
+    action = str(ai.get("canonical_action") or "").strip().lower()
+    resource = str(ai.get("primary_resource") or "").strip().lower()
+    module = str(openapi.get("path_module") or "").strip().lower()
+    contract_rows = [
+        row
+        for key in ("produces", "consumes")
+        for row in (metadata.get(key) or [])
+        if isinstance(row, dict)
+    ]
+    if not contract_rows:
+        contract = (
+            metadata.get("api_contract") if isinstance(metadata.get("api_contract"), dict) else {}
+        )
+        contract_rows = [
+            row
+            for key in ("produces", "consumes")
+            for row in (contract.get(key) or [])
+            if isinstance(row, dict)
+        ]
+
+    action_terms = _semantic_terms(action) | _canonical_action_terms(action)
+    resource_terms = _semantic_terms(resource.replace("/", " "))
+    module_terms = _semantic_terms(module.replace("/", " "))
+    contract_terms = {
+        term
+        for row in contract_rows
+        for value in (
+            row.get("field_name"),
+            row.get("semantic_tag"),
+            row.get("description"),
+            row.get("json_path"),
+        )
+        for term in _semantic_terms(str(value or ""))
+    }
+
+    return {
+        "canonical_action": action,
+        "primary_resource": resource,
+        "path_module": module,
+        "action_match": bool(query_terms & action_terms),
+        "resource_match": bool(query_terms & resource_terms),
+        "module_match": bool(query_terms & module_terms),
+        "contract_match": bool(query_terms & contract_terms),
+        "matched_terms": sorted(
+            query_terms & (action_terms | resource_terms | module_terms | contract_terms)
+        ),
+    }
+
+
+def _semantic_terms(value: str) -> set[str]:
+    normalized = unicodedata.normalize("NFKC", str(value or "")).lower()
+    normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", normalized)
+    return {term for term in re.split(r"[\s_\-/.,;:!?()[\]{}$#]+", normalized) if len(term) > 1}
+
+
+def _canonical_action_terms(action: str) -> set[str]:
+    return {
+        "search": {"search", "list", "query", "검색", "목록", "조회"},
+        "read": {"read", "get", "detail", "조회", "상세", "정보"},
+        "create": {"create", "add", "등록", "생성", "추가"},
+        "update": {"update", "save", "수정", "저장", "변경"},
+        "delete": {"delete", "remove", "삭제", "제거"},
+        "action": {"action", "process", "처리", "실행", "승인", "취소"},
+    }.get(str(action or "").lower(), set())
 
 
 def _stats(
