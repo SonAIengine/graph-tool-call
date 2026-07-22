@@ -19,6 +19,7 @@ from graph_tool_call.graphify.catalog import (
     target_action_priority_for_query,
 )
 from graph_tool_call.graphify.collection_artifact import build_openapi_collection_artifact
+from graph_tool_call.graphify.contract_index import extract_openapi_contract_index
 from graph_tool_call.graphify.edges import (
     EVIDENCE_API_CONTRACT,
     EVIDENCE_LLM_CURATED,
@@ -83,6 +84,7 @@ __all__ = [
     "derive_openapi_tool_semantics",
     "detect_enrichment_status",
     "expand_candidates_with_producers",
+    "extract_openapi_contract_index",
     "ingest_openapi_graphify",
     "merge_graph_edges",
     "normalize_graph_edge",

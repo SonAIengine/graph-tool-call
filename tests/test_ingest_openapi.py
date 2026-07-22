@@ -11,6 +11,7 @@ import pytest
 
 from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.execute import HttpExecutor
+from graph_tool_call.graphify import extract_openapi_contract_index
 from graph_tool_call.ingest.openapi import ingest_openapi
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -389,6 +390,107 @@ class TestIngestOpenAPI30:
         assert site_auth["security_schemes"] == ["siteHeader"]
         assert site_auth["auth_type"] == "apiKey"
         assert site_auth["credential_name"] == "X-Site-No"
+
+    def test_extract_openapi_contract_index_preserves_executable_contract(self) -> None:
+        spec: dict = {
+            "openapi": "3.0.3",
+            "info": {"title": "X2BEE BO style API", "version": "1.0.0"},
+            "components": {
+                "securitySchemes": {
+                    "bearerAuth": {"type": "http", "scheme": "bearer"},
+                    "boToken": {"type": "apiKey", "in": "header", "name": "X-BO-Token"},
+                },
+                "schemas": {
+                    "GoodsSearchRequest": {
+                        "type": "object",
+                        "properties": {
+                            "goodsNo": {"type": "string"},
+                            "pageIdx": {"type": "integer"},
+                        },
+                    },
+                    "GoodsEnvelope": {
+                        "type": "object",
+                        "properties": {
+                            "data": {
+                                "type": "object",
+                                "properties": {
+                                    "list": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "goodsNo": {"type": "string"},
+                                                "goodsNm": {"type": "string"},
+                                            },
+                                        },
+                                    }
+                                },
+                            },
+                            "meta": {
+                                "type": "object",
+                                "properties": {"totalCount": {"type": "integer"}},
+                            },
+                        },
+                    },
+                },
+            },
+            "security": [{"bearerAuth": []}],
+            "paths": {
+                "/api/bo/v2/goods/goodsCommonApi/getGoodsList": {
+                    "post": {
+                        "operationId": "getGoodsList",
+                        "summary": "상품 목록 조회",
+                        "security": [{"boToken": []}],
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/GoodsSearchRequest"}
+                                }
+                            },
+                        },
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "*/*": {
+                                        "schema": {"$ref": "#/components/schemas/GoodsEnvelope"}
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        index = extract_openapi_contract_index(spec)
+
+        assert index["version"] == 1
+        assert index["operation_count"] == 1
+        op = index["operations"][0]
+        assert index["by_operation_id"]["getGoodsList"] == (
+            "POST /api/bo/v2/goods/goodsCommonApi/getGoodsList"
+        )
+        assert index["by_tool_name"]["getGoodsList"] == op["key"]
+        assert op["method"] == "post"
+        assert op["path"] == "/api/bo/v2/goods/goodsCommonApi/getGoodsList"
+        assert op["request_content_type"] == "application/json"
+        assert op["response_content_type"] == "*/*"
+        assert op["request_body_schema"]["properties"]["goodsNo"]["type"] == "string"
+        assert op["response_schema"]["properties"]["data"]["properties"]["list"]["type"] == "array"
+        assert op["response"]["envelope"]["wrapper_path"] == "$.data"
+
+        consumes = {
+            (row["field_name"], row["location"]): row for row in op["api_contract"]["consumes"]
+        }
+        produces = {row["field_name"]: row for row in op["api_contract"]["produces"]}
+        assert consumes[("goodsNo", "body")]["field_type"] == "string"
+        assert consumes[("X-BO-Token", "header")]["kind"] == "auth"
+        assert produces["goodsNo"]["json_path"] == "$.data.list[*].goodsNo"
+        assert produces["totalCount"]["json_path"] == "$.meta.totalCount"
+        assert index["summary"]["response_schema_coverage"] == 1.0
+        assert index["summary"]["produces_field_count"] >= 3
 
     def test_request_body_encoding_metadata_is_attached_to_body_fields(self) -> None:
         """OpenAPI requestBody.encoding should survive into executable field rows."""
