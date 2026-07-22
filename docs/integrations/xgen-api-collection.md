@@ -49,6 +49,11 @@ artifact = build_openapi_collection_artifact(
     context_field_names=xgen_context_field_names,
     paging_field_names=xgen_paging_field_names,
     search_filter_field_names=xgen_search_filter_field_names,
+    semantic_options={
+        "resource_aliases": xgen_resource_aliases,
+        "module_aliases": xgen_module_aliases,
+        "action_aliases": xgen_action_aliases,
+    },
     promote_contract_signals=True,
 )
 ```
@@ -75,6 +80,8 @@ The persisted collection artifact should include:
 - `enrichment_status`
 - `readiness_report`
 - `source_snapshot_manifest`
+- `semantic_summary`
+- `edge_quality_summary`
 - sha256 for every source spec used by the collection
 - tool count, operation count, duplicate count, edge count
 - coverage and issue summaries from `OpenAPICollectionReport`
@@ -84,7 +91,12 @@ Blocker issue codes such as `missing_response_schema`,
 `generic_request_body`, `duplicate_operation_id`, and
 `unsupported_content_type` should block or require an explicit override.
 Warnings such as `auth_required`, `response_envelope_detected`, or
-`array_leaf_alignment_required` should be visible in the collection detail UI.
+`array_leaf_alignment_required`, `semantic_action_unknown_rate_high`,
+`semantic_resource_unassigned_rate_high`, or `weak_edge_evidence` should be
+visible in the collection detail UI. The collection graph screen should prefer
+`semantic_summary.path_module_assigned_rate`, `primary_resource_assigned_rate`,
+and `edge_quality_summary.visual_edge_candidate_count` for deciding whether to
+show a node-level graph or a cluster map first.
 
 ## Runtime Search Path
 

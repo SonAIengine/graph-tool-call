@@ -1473,7 +1473,20 @@ def test_edge_normalize_merge_and_trace_derivation_contract():
 
 def test_retrieve_graphify_evidence_contract():
     tg = ToolGraph()
-    tg.add_tool(ToolSchema(name="searchProduct", description="상품 검색"))
+    tg.add_tool(
+        ToolSchema(
+            name="searchProduct",
+            description="상품 검색",
+            metadata={
+                "ai_metadata": {
+                    "canonical_action": "search",
+                    "primary_resource": "product",
+                },
+                "openapi": {"path_module": "goods"},
+                "produces": [{"field_name": "goodsNo", "semantic_tag": "product_id"}],
+            },
+        )
+    )
     tg.add_tool(ToolSchema(name="readOpaque", description=""))
     tg.add_relation(
         "searchProduct",
@@ -1494,6 +1507,8 @@ def test_retrieve_graphify_evidence_contract():
     assert by_name["readOpaque"]["edge_evidence"][0]["evidence"] == (
         "search result supplies goodsNo"
     )
+    assert by_name["searchProduct"]["semantic_evidence"]["action_match"] is True
+    assert "action_match" in by_name["searchProduct"]["score_breakdown"]
     assert result["stats"]["token_budget_used"] >= 0
 
 

@@ -1037,6 +1037,13 @@ class PathSynthesizer:
         because the "domain set" can't be computed.
         """
         producer = self._tools.get(producer_name) or {}
+        target = self._tools.get(target_tool) or {}
+        t_meta_full = target.get("metadata") or {}
+        if self._has_workflow_edge_to(target_tool, producer_name) and (
+            _producer_satisfies_target_contract(producer.get("metadata") or {}, t_meta_full)
+        ):
+            return True
+
         p_meta = (producer.get("metadata") or {}).get("ai_metadata") or {}
         p_action = str(p_meta.get("canonical_action") or "").strip().lower()
         if not p_action:
@@ -1048,8 +1055,6 @@ class PathSynthesizer:
         if not p_resource:
             return True
 
-        target = self._tools.get(target_tool) or {}
-        t_meta_full = target.get("metadata") or {}
         t_meta = t_meta_full.get("ai_metadata") or {}
         t_resource = str(t_meta.get("primary_resource") or "").strip().lower()
 
@@ -1072,6 +1077,12 @@ class PathSynthesizer:
 
         p_prefix = p_resource.split("_", 1)[0] if "_" in p_resource else p_resource
         return p_resource in related or p_prefix in related
+
+    def _has_workflow_edge_to(self, source_tool: str, target_tool: str) -> bool:
+        return any(
+            edge.get("target") == target_tool
+            for edge in self._workflow_edges_out.get(source_tool) or []
+        )
 
     def _rank_producers(
         self,
@@ -1341,6 +1352,45 @@ def _jsonpath_startswith(path: str, prefix: str) -> bool:
     if prefix == "$":
         return path == "$" or path.startswith("$.") or path.startswith("$[")
     return path == prefix or path.startswith(f"{prefix}.") or path.startswith(f"{prefix}[")
+
+
+def _producer_satisfies_target_contract(
+    producer_metadata: dict[str, Any],
+    target_metadata: dict[str, Any],
+) -> bool:
+    produces = [row for row in producer_metadata.get("produces") or [] if isinstance(row, dict)]
+    consumes = [
+        row
+        for row in target_metadata.get("consumes") or []
+        if isinstance(row, dict) and str(row.get("kind") or "data").lower() == "data"
+    ]
+    if not produces or not consumes:
+        return False
+
+    producer_keys: set[tuple[str, str]] = set()
+    for produce in produces:
+        producer_keys.update(_contract_match_key(produce))
+    for consume in consumes:
+        if producer_keys & _contract_match_key(consume):
+            return True
+    return False
+
+
+def _contract_match_key(row: dict[str, Any]) -> set[tuple[str, str]]:
+    keys: set[tuple[str, str]] = set()
+    semantic = str(row.get("semantic_tag") or "").strip()
+    field = str(row.get("field_name") or "").strip()
+    description_key = description_alias_key(row)
+    if semantic:
+        keys.add(("semantic", semantic.lower()))
+    if field:
+        keys.add(("field", field.lower()))
+        loose = _normalize_field_name(field)
+        if loose:
+            keys.add(("loose", loose))
+    if description_key:
+        keys.add(("description", description_key))
+    return keys
 
 
 __all__ = [

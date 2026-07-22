@@ -97,6 +97,9 @@ def test_analyze_openapi_collection_reports_contract_coverage() -> None:
     assert payload["coverage"]["response_schema_tool_count"] == 2
     assert payload["coverage"]["consumes_field_count"] >= 3
     assert payload["coverage"]["produces_field_count"] >= 4
+    assert payload["coverage"]["semantic_action_known_rate"] == 1.0
+    assert payload["coverage"]["semantic_resource_assigned_rate"] == 1.0
+    assert payload["coverage"]["semantic_module_assigned_rate"] == 1.0
     assert not any(issue["severity"] == "blocker" for issue in payload["issues"])
 
 
@@ -149,6 +152,7 @@ def test_readiness_accepts_persisted_openapi_contract_without_openapi_block() ->
     assert report.coverage["consumes_field_count"] == 2
     assert report.coverage["response_schema_tool_count"] == 1
     assert report.coverage["context_field_count"] == 1
+    assert report.coverage["semantic_action_known_rate"] == 1.0
     assert "missing_response_schema" not in {issue.code for issue in report.issues}
 
 
@@ -182,6 +186,30 @@ def test_readiness_does_not_treat_contract_only_tool_as_openapi_operation() -> N
 
     assert report.summary["operation_count"] == 0
     assert report.summary["unique_operation_count"] == 0
+
+
+def test_readiness_reports_semantic_coverage_issues_for_unstructured_operations() -> None:
+    tools = [
+        ToolSchema(
+            name=f"tool{i}",
+            description="",
+            metadata={
+                "source": "openapi",
+                "method": "",
+                "path": "",
+                "openapi": {"operation_id": f"tool{i}"},
+            },
+        )
+        for i in range(5)
+    ]
+
+    report = analyze_openapi_collection(tools)
+    issues = {issue.code for issue in report.issues}
+
+    assert report.coverage["semantic_action_known_rate"] == 0.0
+    assert report.coverage["semantic_resource_assigned_rate"] == 0.0
+    assert "semantic_action_unknown_rate_high" in issues
+    assert "semantic_resource_unassigned_rate_high" in issues
 
 
 def test_readiness_reports_generic_and_missing_schema_issues() -> None:

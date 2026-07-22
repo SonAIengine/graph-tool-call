@@ -379,6 +379,7 @@ tg, stats = ingest_openapi_graphify(
     tools,
     raw_spec=spec,
     promote_contract_signals=True,
+    derive_semantic_metadata=True,
     context_field_names={"siteNo"},
     paging_field_names={"pageNo", "pageSize"},
 )
@@ -387,6 +388,23 @@ tg, stats = ingest_openapi_graphify(
 The promotion step adds high-value fields to `metadata.produces` /
 `metadata.consumes`, classifies `kind=data|context|auth`, and derives
 `consumer --requires--> producer` data-flow edges with `api_contract` evidence.
+Before graph construction, graphify also fills missing deterministic semantic
+metadata by default:
+
+- `metadata.ai_metadata.canonical_action`
+- `metadata.ai_metadata.primary_resource`
+- `metadata.ai_metadata.one_line_summary`
+- `metadata.ai_metadata.when_to_use`
+- `metadata.ai_metadata.semantic_confidence`
+- `metadata.ai_metadata.semantic_evidence`
+- `metadata.openapi.path_module`
+- `metadata.openapi.operation_group`
+- `metadata.openapi.semantic_sources`
+
+Existing human/LLM `ai_metadata` is preserved unless
+`overwrite_ai_metadata=True`. Product adapters can pass
+`semantic_options={"resource_aliases": ..., "action_aliases": ..., "module_aliases": ...}`
+without hard-coding product vocabulary in the library.
 OpenAPI response links add `openapi_link` evidence and can bridge mismatched
 field names, for example a producer response `id` or response header
 `X-Session-Token` feeding a consumer `userId` or `sessionToken`.
@@ -428,11 +446,15 @@ The artifact includes:
   JSON sha256 values
 - `ingest_summary`: total/registered/duplicate tool counts
 - `edge_stats`: graphify edge and contract-promotion statistics
+- `semantic_summary`: action/resource/module coverage and unknown samples
+- `edge_quality_summary`: deterministic/manual/run/name-based edge provenance
 
 The CLI equivalent is:
 
 ```bash
-graph-tool-call build-openapi-collection openapi.json -o collection.json
+graph-tool-call build-openapi-collection openapi.json -o collection.json \
+  --resource-alias goods=product \
+  --module-alias goodsCommonApi=goods_common
 ```
 
 Use `build_candidate_set()` when an adapter has a target-selection step. The

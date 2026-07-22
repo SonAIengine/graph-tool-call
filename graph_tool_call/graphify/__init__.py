@@ -51,6 +51,12 @@ from graph_tool_call.graphify.retrieval import (
     render_subgraph_text,
     retrieve_graphify,
 )
+from graph_tool_call.graphify.semantics import (
+    annotate_openapi_tool_semantics,
+    derive_openapi_tool_semantics,
+    summarize_edge_quality,
+    summarize_openapi_semantics,
+)
 
 __all__ = [
     "COLLECTION_GRAPH_VERSION",
@@ -67,12 +73,14 @@ __all__ = [
     "EVIDENCE_STRUCTURAL",
     "_apply_pair_hints",
     "annotate_graphify_metadata",
+    "annotate_openapi_tool_semantics",
     "bucket_confidence",
     "build_candidate_set",
     "build_openapi_collection_artifact",
     "build_io_contract",
     "build_tool_equivalence_groups",
     "derive_plan_trace_edges",
+    "derive_openapi_tool_semantics",
     "detect_enrichment_status",
     "expand_candidates_with_producers",
     "ingest_openapi_graphify",
@@ -82,5 +90,7 @@ __all__ = [
     "promote_api_contract_signals",
     "render_subgraph_text",
     "retrieve_graphify",
+    "summarize_edge_quality",
+    "summarize_openapi_semantics",
     "target_action_priority_for_query",
 ]

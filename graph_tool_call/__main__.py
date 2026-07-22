@@ -120,6 +120,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Do not promote selected IO contract fields into graphify signals",
     )
     p_build_collection.add_argument(
+        "--no-derive-semantic-metadata",
+        action="store_true",
+        help="Do not derive deterministic action/resource/module metadata",
+    )
+    p_build_collection.add_argument(
         "--context-field",
         action="append",
         dest="context_fields",
@@ -155,6 +160,27 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="user_input_fields",
         default=[],
         help="Field name to keep as user-provided data (repeatable or comma-separated)",
+    )
+    p_build_collection.add_argument(
+        "--resource-alias",
+        action="append",
+        dest="resource_aliases",
+        default=[],
+        help="Resource alias mapping alias=canonical (repeatable or comma-separated)",
+    )
+    p_build_collection.add_argument(
+        "--action-alias",
+        action="append",
+        dest="action_aliases",
+        default=[],
+        help="Action alias mapping alias=canonical_action (repeatable or comma-separated)",
+    )
+    p_build_collection.add_argument(
+        "--module-alias",
+        action="append",
+        dest="module_aliases",
+        default=[],
+        help="Module alias mapping alias=canonical_module (repeatable or comma-separated)",
     )
 
     # --- search (one-liner: ingest + retrieve) ---
@@ -476,6 +502,24 @@ def _split_option_values(values: list[str] | None) -> list[str]:
     return result
 
 
+def _split_alias_values(values: list[str] | None) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for value in values or []:
+        for item in str(value).split(","):
+            item = item.strip()
+            if not item:
+                continue
+            if "=" not in item:
+                msg = f"Alias mapping must use alias=canonical syntax: {item}"
+                raise SystemExit(msg)
+            alias, canonical = item.split("=", 1)
+            alias = alias.strip()
+            canonical = canonical.strip()
+            if alias and canonical:
+                aliases[alias] = canonical
+    return aliases
+
+
 def cmd_inspect_openapi(args: argparse.Namespace) -> None:
     from graph_tool_call.analyze import analyze_openapi_collection
 
@@ -509,6 +553,9 @@ def cmd_inspect_openapi(args: argparse.Namespace) -> None:
     print(f"  auth fields: {coverage['auth_field_count']}")
     print(f"  context fields: {coverage['context_field_count']}")
     print(f"  response envelopes: {coverage['response_envelope_tool_count']}")
+    print(f"  semantic action known: {coverage.get('semantic_action_known_rate', 0):.1%}")
+    print(f"  semantic resource assigned: {coverage.get('semantic_resource_assigned_rate', 0):.1%}")
+    print(f"  semantic module assigned: {coverage.get('semantic_module_assigned_rate', 0):.1%}")
     print("\nGraph readiness:")
     print(f"  edges: {graph['edge_count']}")
     print(f"  producer edges: {graph['producer_edge_count']}")
@@ -539,6 +586,16 @@ def cmd_build_openapi_collection(args: argparse.Namespace) -> None:
         skip_deprecated=not args.include_deprecated,
         allow_private_hosts=args.allow_private_hosts,
         promote_contract_signals=not args.no_promote_contract_signals,
+        derive_semantic_metadata=not args.no_derive_semantic_metadata,
+        semantic_options={
+            key: value
+            for key, value in {
+                "resource_aliases": _split_alias_values(args.resource_aliases),
+                "action_aliases": _split_alias_values(args.action_aliases),
+                "module_aliases": _split_alias_values(args.module_aliases),
+            }.items()
+            if value
+        },
         context_field_names=_split_option_values(args.context_fields),
         paging_field_names=_split_option_values(args.paging_fields),
         search_filter_field_names=_split_option_values(args.search_filter_fields),
