@@ -183,6 +183,8 @@ def analyze_openapi_tools(
         }
     )
 
+    _finalize_contract_coverage(coverage, tool_count=len(tool_list), issues=issues)
+
     graph_readiness = _graph_readiness(graph, tool_list)
     issues.extend(_graph_issues(graph_readiness, tool_count=len(tool_list)))
     issues.extend(_semantic_issues(semantic_summary))
@@ -296,7 +298,13 @@ def _empty_coverage() -> dict[str, Any]:
     return {
         "request_body_tool_count": 0,
         "request_schema_tool_count": 0,
+        "request_schema_coverage": 0.0,
         "response_schema_tool_count": 0,
+        "response_schema_coverage": 0.0,
+        "contract_tool_count": 0,
+        "contract_tool_coverage": 0.0,
+        "observed_contract_coverage": {"tool_count": 0, "rate": 0.0},
+        "contract_source_counts": {},
         "consumes_field_count": 0,
         "produces_field_count": 0,
         "auth_field_count": 0,
@@ -304,13 +312,16 @@ def _empty_coverage() -> dict[str, Any]:
         "enum_field_count": 0,
         "example_inferred_field_count": 0,
         "response_envelope_tool_count": 0,
+        "response_envelope_sample_count": 0,
+        "response_envelope_samples": [],
+        "missing_contract_by_reason": {},
         "body_view_candidate_count": 0,
         "openapi_link_count": 0,
     }
 
 
 def _update_coverage(
-    coverage: dict[str, int],
+    coverage: dict[str, Any],
     *,
     tool: ToolSchema,
     openapi: dict[str, Any],
@@ -335,6 +346,11 @@ def _update_coverage(
         coverage["response_schema_tool_count"] += 1
     if _dict(response.get("envelope")):
         coverage["response_envelope_tool_count"] += 1
+        _append_response_envelope_sample(coverage, tool=tool, openapi=openapi, response=response)
+
+    if produces or consumes or links:
+        coverage["contract_tool_count"] += 1
+    _update_contract_source_counts(coverage, produces=produces, consumes=consumes, links=links)
 
     coverage["consumes_field_count"] += len(consumes)
     coverage["produces_field_count"] += len(produces)
@@ -364,6 +380,86 @@ def _update_coverage(
 
     # Keep linters honest when only top-level metadata matters in future edits.
     _ = tool
+
+
+def _append_response_envelope_sample(
+    coverage: dict[str, Any],
+    *,
+    tool: ToolSchema,
+    openapi: dict[str, Any],
+    response: dict[str, Any],
+) -> None:
+    samples = coverage.setdefault("response_envelope_samples", [])
+    if not isinstance(samples, list) or len(samples) >= 20:
+        return
+    envelope = _dict(response.get("envelope"))
+    samples.append(
+        {
+            "tool": tool.name,
+            "operation_id": openapi.get("operation_id") or tool.name,
+            "method": openapi.get("method"),
+            "path": openapi.get("path"),
+            "status": response.get("status"),
+            "wrapper_path": envelope.get("wrapper_path"),
+            "collection_path": envelope.get("collection_path"),
+            "item_path": envelope.get("item_path"),
+        }
+    )
+
+
+def _update_contract_source_counts(
+    coverage: dict[str, Any],
+    *,
+    produces: list[dict[str, Any]],
+    consumes: list[dict[str, Any]],
+    links: list[dict[str, Any]],
+) -> None:
+    counts = coverage.setdefault("contract_source_counts", {})
+    if not isinstance(counts, dict):
+        return
+    for row in [*produces, *consumes, *links]:
+        source = str(row.get("contract_source") or row.get("source") or "api_contract").strip()
+        if not source:
+            source = "api_contract"
+        counts[source] = int(counts.get(source) or 0) + 1
+
+
+def _finalize_contract_coverage(
+    coverage: dict[str, Any],
+    *,
+    tool_count: int,
+    issues: list[OpenAPIReadinessIssue],
+) -> None:
+    total = max(1, int(tool_count))
+    contract_tool_count = int(coverage.get("contract_tool_count") or 0)
+    coverage["request_schema_coverage"] = round(
+        int(coverage.get("request_schema_tool_count") or 0) / total,
+        4,
+    )
+    coverage["response_schema_coverage"] = round(
+        int(coverage.get("response_schema_tool_count") or 0) / total,
+        4,
+    )
+    coverage["contract_tool_coverage"] = round(contract_tool_count / total, 4)
+    coverage["observed_contract_coverage"] = {
+        "tool_count": contract_tool_count,
+        "rate": coverage["contract_tool_coverage"],
+    }
+    samples = coverage.get("response_envelope_samples")
+    coverage["response_envelope_sample_count"] = len(samples) if isinstance(samples, list) else 0
+
+    missing_codes = {
+        "missing_request_schema",
+        "generic_request_body",
+        "missing_response_schema",
+        "unsupported_content_type",
+        "no_contract_fields",
+    }
+    reason_counts: dict[str, int] = {}
+    for issue in issues:
+        if issue.code in missing_codes:
+            reason_counts[issue.code] = reason_counts.get(issue.code, 0) + 1
+    coverage["missing_contract_by_reason"] = dict(sorted(reason_counts.items()))
 
 
 def _tool_issues(

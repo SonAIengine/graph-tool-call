@@ -134,6 +134,25 @@ tool's metadata:
   `credential_name`, and `security_required`; runtime secret values stay in the
   caller/executor layer.
 
+Adapters that need operation-level facts without depending on ingest internals
+can use the public contract index helper:
+
+```python
+from graph_tool_call.graphify import extract_openapi_contract_index
+
+index = extract_openapi_contract_index("openapi.json")
+operation = index["operations"][0]
+print(operation["method"], operation["path"])
+print(operation["request_body_schema"], operation["response_schema"])
+print(operation["api_contract"]["consumes"], operation["api_contract"]["produces"])
+```
+
+The index is keyed redundantly by operationId, tool name, and `METHOD path`.
+It preserves OpenAPI3 and Swagger2 parameters, request/response content types
+including `*/*` and `application/*+json`, security metadata, response envelopes,
+response links, `$ref`-expanded schemas, and the same `metadata.openapi` /
+`metadata.api_contract` blocks used by graph build and Planflow.
+
 OpenAPI field direction is enforced before graph/search promotion:
 
 - request-body consumes exclude `readOnly` fields and preserve `writeOnly`

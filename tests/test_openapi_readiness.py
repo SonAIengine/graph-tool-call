@@ -94,7 +94,11 @@ def test_analyze_openapi_collection_reports_contract_coverage() -> None:
     assert payload["summary"]["operation_count"] == 2
     assert payload["summary"]["status"] in {"ready", "warning"}
     assert payload["coverage"]["request_schema_tool_count"] == 1
+    assert payload["coverage"]["request_schema_coverage"] == 0.5
     assert payload["coverage"]["response_schema_tool_count"] == 2
+    assert payload["coverage"]["response_schema_coverage"] == 1.0
+    assert payload["coverage"]["observed_contract_coverage"]["tool_count"] == 2
+    assert payload["coverage"]["observed_contract_coverage"]["rate"] == 1.0
     assert payload["coverage"]["consumes_field_count"] >= 3
     assert payload["coverage"]["produces_field_count"] >= 4
     assert payload["coverage"]["semantic_action_known_rate"] == 1.0
@@ -150,6 +154,7 @@ def test_readiness_accepts_persisted_openapi_contract_without_openapi_block() ->
     assert report.summary["operation_count"] == 1
     assert report.summary["unique_operation_count"] == 1
     assert report.coverage["consumes_field_count"] == 2
+    assert report.coverage["contract_tool_coverage"] == 1.0
     assert report.coverage["response_schema_tool_count"] == 1
     assert report.coverage["context_field_count"] == 1
     assert report.coverage["semantic_action_known_rate"] == 1.0
@@ -336,6 +341,8 @@ def test_readiness_reports_operation_auth_array_and_envelope_signals() -> None:
     assert report.coverage["auth_field_count"] >= 1
     assert report.coverage["context_field_count"] == 1
     assert report.coverage["response_envelope_tool_count"] == 1
+    assert report.coverage["response_envelope_samples"][0]["tool"]
+    assert report.coverage["response_envelope_samples"][0]["wrapper_path"] == "$.data"
     assert report.coverage["body_view_candidate_count"] >= 1
 
 
@@ -360,6 +367,7 @@ def test_inspect_openapi_cli_json_and_text(tmp_path: Path) -> None:
     assert payload["summary"]["tool_count"] == 2
     assert "readiness_score" in payload["summary"]
     assert "coverage" in payload
+    assert "missing_contract_by_reason" in payload["coverage"]
 
     text_result = subprocess.run(
         [
