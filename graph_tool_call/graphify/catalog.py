@@ -374,13 +374,25 @@ def select_target_candidate(
         6,
     )
     llm_row = next((row for row in scored if row["name"] == llm_name), None) if llm_name else None
+    llm_margin = (
+        round(
+            float(winner["selector_score"]) - float(llm_row["selector_score"]),
+            6,
+        )
+        if llm_row
+        else None
+    )
     selected = llm_row or winner
     overrode = False
     ambiguous = False
     reason_codes: list[str] = []
 
     if llm_name and llm_row and llm_row["name"] != winner["name"]:
-        strong = bool(winner["strong_evidence"]) and margin >= _SELECTOR_OVERRIDE_MARGIN
+        strong = (
+            bool(winner["strong_evidence"])
+            and llm_margin is not None
+            and llm_margin >= _SELECTOR_OVERRIDE_MARGIN
+        )
         if policy == "strong_evidence" and strong:
             selected = winner
             overrode = True
@@ -392,9 +404,12 @@ def select_target_candidate(
         reason_codes.append("llm_target_not_in_candidates")
 
     if margin < _SELECTOR_OVERRIDE_MARGIN and len(scored) > 1:
-        ambiguous = True
-        if "ambiguous_target" not in reason_codes:
-            reason_codes.append("ambiguous_target")
+        if overrode:
+            reason_codes.append("candidate_tie")
+        else:
+            ambiguous = True
+            if "ambiguous_target" not in reason_codes:
+                reason_codes.append("ambiguous_target")
     if selected["name"] != winner["name"] and not overrode:
         reason_codes.append("llm_target_preserved")
     if not reason_codes:
@@ -419,6 +434,7 @@ def select_target_candidate(
         "ambiguous": ambiguous,
         "reason_codes": reason_codes,
         "margin": margin,
+        "llm_margin": llm_margin,
         "policy": policy,
         "rank_signals": rank_signals,
         "candidate_evidence": [

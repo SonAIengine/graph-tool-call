@@ -1566,6 +1566,76 @@ def test_select_target_candidate_prefers_identifier_detail_when_shape_metadata_i
     assert any(row["source"] == "identifier_detail_contract" for row in selected["evidence"])
 
 
+def test_select_target_candidate_overrides_llm_when_winner_beats_llm_despite_candidate_tie():
+    detail_tool = {
+        "description": "Invoice detail lookup by invoice id",
+        "metadata": {
+            "ai_metadata": {"canonical_action": "read", "primary_resource": "invoice"},
+            "openapi": {
+                "operation_id": "getInvoiceDetail",
+                "summary": "Get invoice detail",
+                "path": "/api/v1/invoice/detail",
+                "path_module": "invoice",
+            },
+            "api_contract": {
+                "consumes": [
+                    {
+                        "field_name": "invoiceId",
+                        "semantic_tag": "invoice_id",
+                        "description": "Invoice identifier",
+                        "required": True,
+                        "kind": "data",
+                    }
+                ]
+            },
+        },
+    }
+    tools = {
+        "getInvoiceDetail": detail_tool,
+        "fetchInvoiceDetail": {
+            **detail_tool,
+            "metadata": {
+                **detail_tool["metadata"],
+                "openapi": {
+                    **detail_tool["metadata"]["openapi"],
+                    "operation_id": "fetchInvoiceDetail",
+                },
+            },
+        },
+        "getInvoiceInfo": {
+            "description": "General invoice information lookup",
+            "metadata": {
+                "ai_metadata": {"canonical_action": "read", "primary_resource": "invoice"},
+                "openapi": {
+                    "operation_id": "getInvoiceInfo",
+                    "summary": "Get general invoice information",
+                    "path": "/api/v1/invoice/general-info",
+                    "path_module": "invoice",
+                },
+            },
+        },
+    }
+
+    result = select_target_candidate(
+        "show invoice detail for invoice id 42",
+        ["getInvoiceDetail", "fetchInvoiceDetail", "getInvoiceInfo"],
+        tools,
+        retrieval_results=[
+            {"name": "getInvoiceDetail", "score": 0.02},
+            {"name": "fetchInvoiceDetail", "score": 0.02},
+            {"name": "getInvoiceInfo", "score": 0.019},
+        ],
+        llm_target="getInvoiceInfo",
+    )
+
+    assert result["selected_target"] == "getInvoiceDetail"
+    assert result["overrode_llm"] is True
+    assert "llm_target_overridden" in result["reason_codes"]
+    assert "candidate_tie" in result["reason_codes"]
+    assert result["margin"] < 0.12
+    assert result["llm_margin"] >= 0.12
+
+
 def test_select_target_candidate_preserves_general_target_for_non_detail_query():
     tools = {
         "getGeneralGoodsInfo": {
