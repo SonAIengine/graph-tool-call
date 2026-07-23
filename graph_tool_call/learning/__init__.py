@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 SUGGESTION_TARGET_PREFERENCE = "target_preference"
@@ -122,7 +122,7 @@ def build_trace_learning_record(
         "latency_ms": int(latency_ms) if latency_ms is not None else None,
         "target_selector": clean_target_selector,
         "trace_edges": clean_trace_edges,
-        "created_at": created_at or datetime.now(UTC).isoformat(),
+        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
     }
 
 
