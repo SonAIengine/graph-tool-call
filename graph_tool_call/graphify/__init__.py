@@ -16,6 +16,7 @@ from graph_tool_call.graphify.catalog import (
     build_candidate_set,
     build_tool_equivalence_groups,
     expand_candidates_with_producers,
+    select_target_candidate,
     target_action_priority_for_query,
 )
 from graph_tool_call.graphify.collection_artifact import build_openapi_collection_artifact
@@ -92,6 +93,7 @@ __all__ = [
     "promote_api_contract_signals",
     "render_subgraph_text",
     "retrieve_graphify",
+    "select_target_candidate",
     "summarize_edge_quality",
     "summarize_openapi_semantics",
     "target_action_priority_for_query",
