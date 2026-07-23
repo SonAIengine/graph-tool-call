@@ -125,9 +125,15 @@ def test_build_openapi_collection_artifact_is_loadable_and_preserves_build_evide
     assert "graph" in artifact and "tools" in artifact
     list_brands_ai = artifact["tools"]["listBrands"]["metadata"]["ai_metadata"]
     assert list_brands_ai["canonical_action"] == "search"
+    assert list_brands_ai["result_shape"] == "list"
     assert artifact["tools"]["createProduct"]["metadata"]["ai_metadata"]["primary_resource"] == (
         "products"
     )
+    assert artifact["tools"]["createProduct"]["metadata"]["ai_metadata"]["result_shape"] == (
+        "mutation"
+    )
+    assert artifact["semantic_summary"]["result_shape_counts"]["list"] == 1
+    assert artifact["semantic_summary"]["result_shape_counts"]["mutation"] == 1
 
     path = tmp_path / "collection.json"
     path.write_text(json.dumps(artifact, ensure_ascii=False), encoding="utf-8")

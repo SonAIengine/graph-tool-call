@@ -491,6 +491,7 @@ def retrieve_graphify(
                 "action_match": 1.0 if semantic["action_match"] else 0.0,
                 "resource_match": 1.0 if semantic["resource_match"] else 0.0,
                 "module_match": 1.0 if semantic["module_match"] else 0.0,
+                "shape_match": 1.0 if semantic["shape_match"] else 0.0,
                 "contract_match": 1.0 if semantic["contract_match"] else 0.0,
                 "graph_expansion": 0.0 if prov.get("seed") else 1.0,
             }
@@ -528,6 +529,7 @@ def _semantic_match_evidence(tool: ToolSchema, query: str) -> dict[str, Any]:
 
     action = str(ai.get("canonical_action") or "").strip().lower()
     resource = str(ai.get("primary_resource") or "").strip().lower()
+    result_shape = str(ai.get("result_shape") or "").strip().lower()
     module = str(openapi.get("path_module") or "").strip().lower()
     contract_rows = [
         row
@@ -549,6 +551,7 @@ def _semantic_match_evidence(tool: ToolSchema, query: str) -> dict[str, Any]:
     action_terms = _semantic_terms(action) | _canonical_action_terms(action)
     resource_terms = _semantic_terms(resource.replace("/", " "))
     module_terms = _semantic_terms(module.replace("/", " "))
+    shape_terms = _result_shape_terms(result_shape)
     contract_terms = {
         term
         for row in contract_rows
@@ -564,13 +567,16 @@ def _semantic_match_evidence(tool: ToolSchema, query: str) -> dict[str, Any]:
     return {
         "canonical_action": action,
         "primary_resource": resource,
+        "result_shape": result_shape,
         "path_module": module,
         "action_match": bool(query_terms & action_terms),
         "resource_match": bool(query_terms & resource_terms),
         "module_match": bool(query_terms & module_terms),
+        "shape_match": bool(query_terms & shape_terms),
         "contract_match": bool(query_terms & contract_terms),
         "matched_terms": sorted(
-            query_terms & (action_terms | resource_terms | module_terms | contract_terms)
+            query_terms
+            & (action_terms | resource_terms | module_terms | shape_terms | contract_terms)
         ),
     }
 
@@ -590,6 +596,15 @@ def _canonical_action_terms(action: str) -> set[str]:
         "delete": {"delete", "remove", "삭제", "제거"},
         "action": {"action", "process", "처리", "실행", "승인", "취소"},
     }.get(str(action or "").lower(), set())
+
+
+def _result_shape_terms(shape: str) -> set[str]:
+    return {
+        "single": {"single", "detail", "details", "info", "상세", "정보", "단건"},
+        "list": {"list", "lists", "search", "query", "목록", "리스트", "검색"},
+        "count": {"count", "total", "cnt", "건수", "개수", "카운트"},
+        "mutation": {"create", "update", "delete", "action", "등록", "수정", "삭제", "처리"},
+    }.get(str(shape or "").lower(), set())
 
 
 def _stats(

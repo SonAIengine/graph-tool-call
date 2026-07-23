@@ -15,6 +15,8 @@ _ACTION_PRIORITY_UPDATE = {"update": 6, "action": 5, "create": 3, "read": 2, "se
 _ACTION_PRIORITY_ACTION = {"action": 6, "update": 4, "create": 3, "read": 2, "search": 1}
 _ACTION_PRIORITY_DELETE = {"delete": 6, "action": 5, "update": 3, "read": 1, "search": 1}
 _ACTION_PRIORITY_NOTIFICATION = {"create": 7, "action": 6, "update": 3, "read": 2, "search": 1}
+_SELECTOR_OVERRIDE_MARGIN = 0.12
+_SELECTOR_STRONG_SCORE = 0.45
 
 _SEARCH_TERMS = frozenset(
     {"search", "find", "query", "lookup", "list", "browse", "검색", "찾", "목록", "리스트"}
@@ -23,6 +25,12 @@ _READ_TERMS = frozenset(
     {"get", "read", "detail", "view", "show", "check", "retrieve", "조회", "상세", "보기", "확인"}
 )
 _DETAIL_READ_TERMS = frozenset({"detail", "details", "view", "show", "상세", "보기", "보여"})
+_SINGLE_TERMS = frozenset({"detail", "details", "info", "view", "single", "상세", "정보", "단건"})
+_LIST_TERMS = frozenset({"list", "lists", "search", "find", "query", "목록", "리스트", "검색"})
+_COUNT_TERMS = frozenset({"count", "total", "cnt", "건수", "개수", "카운트"})
+_GENERAL_SURFACE_TERMS = frozenset(
+    {"general", "common", "base", "basic", "default", "일반", "공통", "기본"}
+)
 _AUDIT_READ_TERMS = frozenset(
     {"audit", "log", "logs", "history", "event", "events", "감사", "로그", "이력", "기록"}
 )
@@ -247,6 +255,127 @@ def build_candidate_set(
     }
 
 
+def select_target_candidate(
+    query: str,
+    candidates: list[str] | list[dict[str, Any]],
+    tools: dict[str, Any],
+    *,
+    retrieval_results: list[dict[str, Any]] | None = None,
+    llm_target: str | None = None,
+    policy: str = "strong_evidence",
+) -> dict[str, Any]:
+    """Select the final target from retrieval candidates with stable evidence.
+
+    The selector is product-neutral: it reads only generic tool surface,
+    OpenAPI/semantic metadata, and retrieval ranks. When ``llm_target`` is
+    supplied the default ``strong_evidence`` policy overrides it only if the
+    deterministic winner has strong evidence and a sufficient margin.
+    """
+
+    candidate_names = _candidate_names(candidates)
+    tools_by_name = {name: _tool_dict(tool) for name, tool in (tools or {}).items()}
+    llm_name = str(llm_target or "").strip()
+    if llm_name and llm_name not in candidate_names and llm_name in tools_by_name:
+        candidate_names.append(llm_name)
+    candidate_names = [name for name in _dedupe_names(candidate_names) if name in tools_by_name]
+
+    if not candidate_names:
+        return {
+            "selected_target": llm_name or "",
+            "confidence": 0.0,
+            "overrode_llm": False,
+            "ambiguous": False,
+            "reason_codes": ["no_candidates"],
+            "rank_signals": [],
+            "candidate_evidence": [],
+            "llm_target": llm_name or None,
+            "policy": policy,
+        }
+
+    retrieval_by_name = _retrieval_signal_map(candidates, retrieval_results)
+    action_priority = target_action_priority_for_query(query)
+    shape_priority = _result_shape_priority_for_query(query)
+    query_terms = _selector_terms(query)
+    scored = [
+        _score_target_candidate(
+            name,
+            tools_by_name[name],
+            query_terms=query_terms,
+            retrieval_signal=retrieval_by_name.get(name) or {},
+            action_priority=action_priority,
+            shape_priority=shape_priority,
+        )
+        for name in candidate_names
+    ]
+    scored.sort(key=lambda row: (-float(row["selector_score"]), int(row["original_rank"] or 9999)))
+
+    winner = scored[0]
+    runner_up = scored[1] if len(scored) > 1 else None
+    margin = round(
+        float(winner["selector_score"]) - float(runner_up["selector_score"] if runner_up else 0.0),
+        6,
+    )
+    llm_row = next((row for row in scored if row["name"] == llm_name), None) if llm_name else None
+    selected = llm_row or winner
+    overrode = False
+    ambiguous = False
+    reason_codes: list[str] = []
+
+    if llm_name and llm_row and llm_row["name"] != winner["name"]:
+        strong = bool(winner["strong_evidence"]) and margin >= _SELECTOR_OVERRIDE_MARGIN
+        if policy == "strong_evidence" and strong:
+            selected = winner
+            overrode = True
+            reason_codes.append("llm_target_overridden")
+        else:
+            ambiguous = True
+            reason_codes.append("ambiguous_target")
+    elif llm_name and not llm_row:
+        reason_codes.append("llm_target_not_in_candidates")
+
+    if margin < _SELECTOR_OVERRIDE_MARGIN and len(scored) > 1:
+        ambiguous = True
+        if "ambiguous_target" not in reason_codes:
+            reason_codes.append("ambiguous_target")
+    if selected["name"] != winner["name"] and not overrode:
+        reason_codes.append("llm_target_preserved")
+    if not reason_codes:
+        reason_codes.append(
+            "selected_by_strong_evidence" if winner["strong_evidence"] else "selected_by_rank"
+        )
+
+    selected_name = str(selected["name"])
+    rank_signals = [
+        {
+            **row,
+            "selected": row["name"] == selected_name,
+            "llm_target": row["name"] == llm_name if llm_name else False,
+        }
+        for row in scored
+    ]
+    return {
+        "selected_target": selected_name,
+        "llm_target": llm_name or None,
+        "confidence": round(float(selected["selector_score"]), 6),
+        "overrode_llm": overrode,
+        "ambiguous": ambiguous,
+        "reason_codes": reason_codes,
+        "margin": margin,
+        "policy": policy,
+        "rank_signals": rank_signals,
+        "candidate_evidence": [
+            {
+                "name": row["name"],
+                "selector_score": row["selector_score"],
+                "evidence": row["evidence"],
+            }
+            for row in rank_signals
+        ],
+        "target_action_priority": action_priority,
+        "result_shape_priority": shape_priority,
+    }
+
+
 def build_tool_equivalence_groups(
     candidate_names: list[str],
     tools_by_name: dict[str, dict[str, Any]],
@@ -402,6 +531,235 @@ def _producers_for_required_inputs(
 
 def _dedupe_names(names: list[str]) -> list[str]:
     return list(dict.fromkeys(str(name) for name in names if str(name)))
+
+
+def _candidate_names(candidates: list[str] | list[dict[str, Any]]) -> list[str]:
+    names: list[str] = []
+    for item in candidates or []:
+        if isinstance(item, dict):
+            value = item.get("name") or item.get("tool") or item.get("target") or item.get("id")
+        else:
+            value = item
+        if value:
+            names.append(str(value))
+    return _dedupe_names(names)
+
+
+def _tool_dict(tool: Any) -> dict[str, Any]:
+    if isinstance(tool, dict):
+        return tool
+    to_dict = getattr(tool, "to_dict", None)
+    if callable(to_dict):
+        try:
+            return to_dict()
+        except Exception:
+            pass
+    return {
+        "name": getattr(tool, "name", ""),
+        "description": getattr(tool, "description", ""),
+        "metadata": getattr(tool, "metadata", {}) or {},
+        "tags": getattr(tool, "tags", []) or [],
+        "parameters": getattr(tool, "parameters", {}) or {},
+    }
+
+
+def _retrieval_signal_map(
+    candidates: list[str] | list[dict[str, Any]],
+    retrieval_results: list[dict[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    rows: list[Any] = list(retrieval_results or candidates or [])
+    for idx, item in enumerate(rows, start=1):
+        if isinstance(item, dict):
+            name = str(
+                item.get("name") or item.get("tool") or item.get("target") or item.get("id") or ""
+            )
+            score = item.get("score") if item.get("score") is not None else item.get("final_score")
+        else:
+            name = str(item)
+            score = None
+        if not name or name in out:
+            continue
+        try:
+            numeric_score = float(score) if score is not None else 0.0
+        except (TypeError, ValueError):
+            numeric_score = 0.0
+        out[name] = {"rank": idx, "score": numeric_score}
+    return out
+
+
+def _score_target_candidate(
+    name: str,
+    tool: dict[str, Any],
+    *,
+    query_terms: set[str],
+    retrieval_signal: dict[str, Any],
+    action_priority: dict[str, int],
+    shape_priority: dict[str, int],
+) -> dict[str, Any]:
+    metadata = tool.get("metadata") if isinstance(tool.get("metadata"), dict) else {}
+    openapi = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
+    ai = metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
+    action = str(ai.get("canonical_action") or "").strip().lower()
+    resource = str(ai.get("primary_resource") or "").strip().lower()
+    result_shape = str(ai.get("result_shape") or "").strip().lower()
+    module = str(openapi.get("path_module") or "").strip().lower()
+    operation_id = str(openapi.get("operation_id") or name)
+    summary = str(openapi.get("summary") or tool.get("description") or "")
+    path = str(metadata.get("path") or openapi.get("path") or "")
+    rank = int(retrieval_signal.get("rank") or 9999)
+    retrieval_score = float(retrieval_signal.get("score") or 0.0)
+
+    evidence: list[dict[str, Any]] = []
+    score = 0.0
+    if rank < 9999:
+        rank_score = max(0.0, 0.22 - min(rank - 1, 10) * 0.015)
+        score += rank_score
+        evidence.append({"source": "retrieval_rank", "value": rank, "score": round(rank_score, 6)})
+    if retrieval_score > 0:
+        value = min(0.08, retrieval_score)
+        score += value
+        evidence.append(
+            {"source": "retrieval_score", "value": retrieval_score, "score": round(value, 6)}
+        )
+
+    action_score = _normalized_priority(action_priority, action)
+    if action_score:
+        value = 0.2 * action_score
+        score += value
+        evidence.append({"source": "canonical_action", "value": action, "score": round(value, 6)})
+
+    shape_score = _normalized_priority(shape_priority, result_shape)
+    if shape_score:
+        value = 0.18 * shape_score
+        score += value
+        evidence.append({"source": "result_shape", "value": result_shape, "score": round(value, 6)})
+
+    surface = " ".join([name, operation_id, summary, path, resource, module]).strip()
+    surface_terms = _selector_terms(surface)
+    overlap = query_terms & surface_terms
+    if overlap:
+        value = min(0.18, 0.04 * len(overlap))
+        score += value
+        evidence.append(
+            {
+                "source": "surface_terms",
+                "matched_terms": sorted(overlap)[:12],
+                "score": round(value, 6),
+            }
+        )
+
+    strict_detail_query = _query_has_strict_detail(query_terms)
+    if strict_detail_query and _surface_has_detail(surface_terms):
+        score += 0.14
+        evidence.append({"source": "detail_surface", "value": "detail", "score": 0.14})
+    elif strict_detail_query and _surface_has_general(surface_terms):
+        score -= 0.06
+        evidence.append({"source": "general_surface_penalty", "value": "general", "score": -0.06})
+
+    contract_overlap = _contract_term_overlap(query_terms, metadata)
+    if contract_overlap:
+        value = min(0.12, 0.035 * len(contract_overlap))
+        score += value
+        evidence.append(
+            {
+                "source": "api_contract",
+                "matched_terms": sorted(contract_overlap)[:12],
+                "score": round(value, 6),
+            }
+        )
+
+    score = max(0.0, min(1.0, score))
+    strong = score >= _SELECTOR_STRONG_SCORE and any(
+        row["source"] in {"surface_terms", "detail_surface", "api_contract", "result_shape"}
+        for row in evidence
+    )
+    return {
+        "name": name,
+        "selector_score": round(score, 6),
+        "original_rank": rank if rank < 9999 else None,
+        "retrieval_score": retrieval_score,
+        "canonical_action": action,
+        "primary_resource": resource,
+        "path_module": module,
+        "result_shape": result_shape,
+        "strong_evidence": strong,
+        "evidence": evidence,
+    }
+
+
+def _result_shape_priority_for_query(query: str) -> dict[str, int]:
+    terms = _query_terms(query)
+    if _has_action_term(terms, _COUNT_TERMS):
+        return {"count": 6, "list": 3, "single": 1}
+    if _query_has_detail(terms):
+        return {"single": 6, "list": 2, "count": 1}
+    if _has_action_term(terms, _LIST_TERMS):
+        return {"list": 6, "count": 3, "single": 1}
+    if _has_action_term(terms, _CREATE_TERMS | _UPDATE_TERMS | _DELETE_TERMS | _ACTION_TERMS):
+        return {"mutation": 5, "single": 1}
+    return {}
+
+
+def _normalized_priority(priority: dict[str, int], key: str) -> float:
+    if not priority or not key:
+        return 0.0
+    max_value = max(priority.values(), default=0)
+    if max_value <= 0:
+        return 0.0
+    return max(0.0, float(priority.get(key, 0)) / max_value)
+
+
+def _selector_terms(text: str) -> set[str]:
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(text or ""))
+    return {term for term in re.split(r"[\s_\-/.,;:!?()[\]{}$#]+", spaced.lower()) if len(term) > 1}
+
+
+def _query_has_detail(terms: set[str]) -> bool:
+    return _has_action_term(terms, _SINGLE_TERMS)
+
+
+def _query_has_strict_detail(terms: set[str]) -> bool:
+    return _has_action_term(terms, _DETAIL_READ_TERMS)
+
+
+def _surface_has_detail(terms: set[str]) -> bool:
+    return bool(terms & _DETAIL_READ_TERMS)
+
+
+def _surface_has_general(terms: set[str]) -> bool:
+    return bool(terms & _GENERAL_SURFACE_TERMS)
+
+
+def _contract_term_overlap(query_terms: set[str], metadata: dict[str, Any]) -> set[str]:
+    rows = [
+        row
+        for key in ("produces", "consumes")
+        for row in (metadata.get(key) or [])
+        if isinstance(row, dict)
+    ]
+    if not rows:
+        contract = (
+            metadata.get("api_contract") if isinstance(metadata.get("api_contract"), dict) else {}
+        )
+        rows = [
+            row
+            for key in ("produces", "consumes")
+            for row in (contract.get(key) or [])
+            if isinstance(row, dict)
+        ]
+    terms = {
+        term
+        for row in rows
+        for value in (
+            row.get("field_name"),
+            row.get("semantic_tag"),
+            row.get("description"),
+            row.get("json_path"),
+        )
+        for term in _selector_terms(str(value or ""))
+    }
+    return query_terms & terms
 
 
 def _query_terms(query: str) -> set[str]:
@@ -862,5 +1220,6 @@ __all__ = [
     "build_candidate_set",
     "build_tool_equivalence_groups",
     "expand_candidates_with_producers",
+    "select_target_candidate",
     "target_action_priority_for_query",
 ]

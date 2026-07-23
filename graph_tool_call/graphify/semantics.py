@@ -24,6 +24,7 @@ from graph_tool_call.graphify.edges import (
 )
 
 ACTION_TAXONOMY = ("search", "read", "create", "update", "delete", "action", "unknown")
+RESULT_SHAPE_TAXONOMY = ("single", "list", "count", "mutation", "unknown")
 
 _CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣]+")
@@ -221,6 +222,14 @@ def derive_openapi_tool_semantics(
     )
     path_module, module_evidence = _derive_path_module(path_segments, module_aliases)
     operation_group = _derive_operation_group(tool.tags, path_module, primary_resource)
+    result_shape, result_shape_evidence = _derive_result_shape(
+        canonical_action=canonical_action,
+        method=method,
+        operation_words=operation_words,
+        text_blob=text_blob,
+        contract=contract,
+        openapi=openapi,
+    )
 
     confidence, confidence_score = _semantic_confidence(
         action=canonical_action,
@@ -260,9 +269,10 @@ def derive_openapi_tool_semantics(
             "primary_resource": primary_resource,
             "one_line_summary": one_line_summary,
             "when_to_use": when_to_use,
+            "result_shape": result_shape,
             "semantic_confidence": confidence,
             "semantic_confidence_score": confidence_score,
-            "semantic_evidence": evidence,
+            "semantic_evidence": [*evidence, result_shape_evidence],
         },
         "openapi": {
             "path_module": path_module,
@@ -320,6 +330,7 @@ def summarize_openapi_semantics(
     action_counts: Counter[str] = Counter()
     resource_counts: Counter[str] = Counter()
     module_counts: Counter[str] = Counter()
+    result_shape_counts: Counter[str] = Counter()
     confidence_counts: Counter[str] = Counter()
     unknown_samples: list[dict[str, Any]] = []
 
@@ -343,12 +354,16 @@ def summarize_openapi_semantics(
         confidence = str(
             ai.get("semantic_confidence") or derived_ai.get("semantic_confidence") or "low"
         )
+        result_shape = str(ai.get("result_shape") or derived_ai.get("result_shape") or "unknown")
+        if result_shape not in RESULT_SHAPE_TAXONOMY:
+            result_shape = "unknown"
 
         if action not in ACTION_TAXONOMY:
             action = "unknown"
         action_counts[action] += 1
         resource_counts[resource or "unassigned"] += 1
         module_counts[path_module or "unassigned"] += 1
+        result_shape_counts[result_shape] += 1
         confidence_counts[confidence] += 1
 
         missing = []
@@ -388,6 +403,7 @@ def summarize_openapi_semantics(
         "action_counts": dict(sorted(action_counts.items())),
         "resource_counts": dict(resource_counts.most_common(50)),
         "module_counts": dict(module_counts.most_common(50)),
+        "result_shape_counts": dict(sorted(result_shape_counts.items())),
         "top_modules": top_modules,
         "semantic_confidence_counts": dict(sorted(confidence_counts.items())),
         "unknown_samples": unknown_samples,
@@ -532,6 +548,58 @@ def _derive_operation_group(
         if candidate:
             return candidate
     return path_module or primary_resource or ""
+
+
+def _derive_result_shape(
+    *,
+    canonical_action: str,
+    method: str,
+    operation_words: list[str],
+    text_blob: str,
+    contract: Mapping[str, Any],
+    openapi: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    """Infer the user-visible result shape from generic OpenAPI facts."""
+
+    text = " ".join([*operation_words, text_blob]).lower()
+    if canonical_action in {"create", "update", "delete"}:
+        return "mutation", _evidence("action", canonical_action, "mutation_action", 0.86)
+    if canonical_action == "action" and method and method != "get":
+        return "mutation", _evidence("method", method, "non_get_action", 0.72)
+
+    if _has_any(text, {"count", "total", "cnt", "건수", "개수", "카운트"}):
+        return "count", _evidence("operation", text[:160], "count_signal", 0.88)
+    if _contract_looks_like_list(contract, openapi) or _has_any(
+        text,
+        {"list", "lists", "search", "find", "query", "목록", "리스트", "검색"},
+    ):
+        return "list", _evidence("operation", text[:160], "list_signal", 0.82)
+    if canonical_action == "read" or _has_any(
+        text,
+        {"detail", "details", "info", "view", "single", "상세", "정보", "단건", "보기"},
+    ):
+        return "single", _evidence("operation", text[:160], "single_signal", 0.78)
+    if canonical_action == "search":
+        return "list", _evidence("action", canonical_action, "search_action", 0.7)
+    return "unknown", _evidence("result_shape", "", "unknown", 0.0)
+
+
+def _contract_looks_like_list(contract: Mapping[str, Any], openapi: Mapping[str, Any]) -> bool:
+    for row in contract.get("produces") or []:
+        if not isinstance(row, Mapping):
+            continue
+        path = str(row.get("json_path") or row.get("response_collection_path") or "")
+        field_type = str(row.get("field_type") or "").lower()
+        if "[*]" in path or field_type == "array":
+            return True
+    response = openapi.get("response") if isinstance(openapi.get("response"), Mapping) else {}
+    envelope = response.get("envelope") if isinstance(response.get("envelope"), Mapping) else {}
+    collection_path = str(envelope.get("collection_path") or envelope.get("item_path") or "")
+    return "[*]" in collection_path
+
+
+def _has_any(text: str, needles: set[str]) -> bool:
+    return any(needle and needle in text for needle in needles)
 
 
 def _semantic_confidence(

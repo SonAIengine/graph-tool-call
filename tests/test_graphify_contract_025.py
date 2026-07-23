@@ -20,6 +20,7 @@ from graph_tool_call.graphify import (
     normalize_graph_edge,
     promote_api_contract_signals,
     retrieve_graphify,
+    select_target_candidate,
     target_action_priority_for_query,
 )
 from graph_tool_call.ingest.openapi import ingest_openapi
@@ -45,6 +46,7 @@ def test_graphify_public_contract_imports():
     assert callable(merge_graph_edges)
     assert callable(derive_plan_trace_edges)
     assert callable(retrieve_graphify)
+    assert callable(select_target_candidate)
 
 
 def test_build_io_contract_preserves_kind_required_enum_and_semantics():
@@ -1412,6 +1414,125 @@ def test_build_candidate_set_can_use_query_derived_action_priority():
     assert result["target_rank_signals"][0]["action_priority"] == 6
 
 
+def test_select_target_candidate_prefers_detail_target_over_general_sibling():
+    tools = {
+        "getGoodsListDetail": {
+            "description": "상품 목록 상세 조회",
+            "metadata": {
+                "ai_metadata": {
+                    "canonical_action": "search",
+                    "primary_resource": "goods",
+                    "result_shape": "list",
+                },
+                "openapi": {
+                    "operation_id": "getGoodsListDetail",
+                    "summary": "상품 목록 상세 조회",
+                    "path_module": "goods",
+                },
+            },
+        },
+        "getGoodsDetailInfo": {
+            "description": "상품번호 기준 상품 상세 정보 조회",
+            "metadata": {
+                "ai_metadata": {
+                    "canonical_action": "read",
+                    "primary_resource": "goods",
+                    "result_shape": "single",
+                },
+                "openapi": {
+                    "operation_id": "getGoodsDetailInfo",
+                    "summary": "상품 상세 정보 조회",
+                    "path_module": "goods",
+                },
+                "consumes": [
+                    {
+                        "field_name": "goodsNo",
+                        "semantic_tag": "goods_no",
+                        "description": "상품번호",
+                        "required": True,
+                    }
+                ],
+            },
+        },
+        "getGeneralGoodsInfo": {
+            "description": "일반 상품 정보 조회",
+            "metadata": {
+                "ai_metadata": {
+                    "canonical_action": "read",
+                    "primary_resource": "goods",
+                    "result_shape": "single",
+                },
+                "openapi": {
+                    "operation_id": "getGeneralGoodsInfo",
+                    "summary": "일반 상품 정보 조회",
+                    "path_module": "goods",
+                },
+            },
+        },
+    }
+    retrieval_results = [
+        {"name": "getGoodsListDetail", "score": 0.019},
+        {"name": "getGoodsDetailInfo", "score": 0.017},
+        {"name": "getGeneralGoodsInfo", "score": 0.016},
+    ]
+
+    result = select_target_candidate(
+        "상품번호로 상품 상세 조회",
+        [row["name"] for row in retrieval_results],
+        tools,
+        retrieval_results=retrieval_results,
+        llm_target="getGeneralGoodsInfo",
+    )
+
+    assert result["selected_target"] == "getGoodsDetailInfo"
+    assert result["overrode_llm"] is True
+    assert "llm_target_overridden" in result["reason_codes"]
+    selected = next(row for row in result["rank_signals"] if row["selected"])
+    assert selected["result_shape"] == "single"
+    assert any(row["source"] == "detail_surface" for row in selected["evidence"])
+
+
+def test_select_target_candidate_preserves_llm_target_when_margin_is_weak():
+    tools = {
+        "getOrderDetail": {
+            "metadata": {
+                "ai_metadata": {
+                    "canonical_action": "read",
+                    "primary_resource": "order",
+                    "result_shape": "single",
+                },
+                "openapi": {"summary": "주문 상세 조회"},
+            }
+        },
+        "getOrderInfo": {
+            "metadata": {
+                "ai_metadata": {
+                    "canonical_action": "read",
+                    "primary_resource": "order",
+                    "result_shape": "single",
+                },
+                "openapi": {"summary": "주문 정보 조회"},
+            }
+        },
+    }
+
+    result = select_target_candidate(
+        "주문 정보 조회",
+        ["getOrderDetail", "getOrderInfo"],
+        tools,
+        retrieval_results=[
+            {"name": "getOrderDetail", "score": 0.02},
+            {"name": "getOrderInfo", "score": 0.019},
+        ],
+        llm_target="getOrderInfo",
+    )
+
+    assert result["selected_target"] == "getOrderInfo"
+    assert result["overrode_llm"] is False
+    assert result["ambiguous"] is True
+    assert "ambiguous_target" in result["reason_codes"]
+
+
 def test_edge_normalize_merge_and_trace_derivation_contract():
     structural = normalize_graph_edge(
         {
@@ -1481,6 +1602,7 @@ def test_retrieve_graphify_evidence_contract():
                 "ai_metadata": {
                     "canonical_action": "search",
                     "primary_resource": "product",
+                    "result_shape": "list",
                 },
                 "openapi": {"path_module": "goods"},
                 "produces": [{"field_name": "goodsNo", "semantic_tag": "product_id"}],
@@ -1508,7 +1630,9 @@ def test_retrieve_graphify_evidence_contract():
         "search result supplies goodsNo"
     )
     assert by_name["searchProduct"]["semantic_evidence"]["action_match"] is True
+    assert by_name["searchProduct"]["semantic_evidence"]["shape_match"] is True
     assert "action_match" in by_name["searchProduct"]["score_breakdown"]
+    assert "shape_match" in by_name["searchProduct"]["score_breakdown"]
     assert result["stats"]["token_budget_used"] >= 0
 
 
