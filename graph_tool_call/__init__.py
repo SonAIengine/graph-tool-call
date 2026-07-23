@@ -32,7 +32,7 @@ __all__ = [
     "scrub_trace_payload",
 ]
 
-__version__ = "0.31.0"
+__version__ = "0.32.0"
 
 # Lazy imports for analyze/assist symbols — avoid loading heavy submodules at import time
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
