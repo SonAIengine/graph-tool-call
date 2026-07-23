@@ -1490,6 +1490,135 @@ def test_select_target_candidate_prefers_detail_target_over_general_sibling():
     selected = next(row for row in result["rank_signals"] if row["selected"])
     assert selected["result_shape"] == "single"
     assert any(row["source"] == "detail_surface" for row in selected["evidence"])
+    assert any(row["source"] == "identifier_detail_contract" for row in selected["evidence"])
+
+
+def test_select_target_candidate_prefers_identifier_detail_when_shape_metadata_is_sparse():
+    tools = {
+        "getInvoiceInfo": {
+            "description": "General invoice information lookup",
+            "metadata": {
+                "ai_metadata": {"canonical_action": "read", "primary_resource": "invoice"},
+                "openapi": {
+                    "operation_id": "getInvoiceInfo",
+                    "summary": "Get general invoice information",
+                    "path": "/api/v1/invoice/general-info",
+                    "path_module": "invoice",
+                },
+            },
+        },
+        "getInvoiceDetail": {
+            "description": "Invoice detail lookup by invoice id",
+            "metadata": {
+                "ai_metadata": {"canonical_action": "read", "primary_resource": "invoice"},
+                "openapi": {
+                    "operation_id": "getInvoiceDetail",
+                    "summary": "Get invoice detail",
+                    "path": "/api/v1/invoice/detail",
+                    "path_module": "invoice",
+                },
+                "api_contract": {
+                    "consumes": [
+                        {
+                            "field_name": "invoiceId",
+                            "semantic_tag": "invoice_id",
+                            "description": "Invoice identifier",
+                            "required": True,
+                            "kind": "data",
+                        }
+                    ],
+                    "produces": [{"field_name": "invoiceId", "semantic_tag": "invoice_id"}],
+                },
+            },
+        },
+        "listInvoices": {
+            "description": "Search invoice list",
+            "metadata": {
+                "ai_metadata": {"canonical_action": "search", "primary_resource": "invoice"},
+                "openapi": {
+                    "operation_id": "listInvoices",
+                    "summary": "Search invoice list",
+                    "path": "/api/v1/invoice/list",
+                    "path_module": "invoice",
+                },
+            },
+        },
+    }
+
+    result = select_target_candidate(
+        "show invoice detail for invoice id 42",
+        ["getInvoiceInfo", "getInvoiceDetail", "listInvoices"],
+        tools,
+        retrieval_results=[
+            {"name": "getInvoiceInfo", "score": 0.02},
+            {"name": "getInvoiceDetail", "score": 0.019},
+            {"name": "listInvoices", "score": 0.018},
+        ],
+        llm_target="getInvoiceInfo",
+    )
+
+    assert result["selected_target"] == "getInvoiceDetail"
+    assert result["overrode_llm"] is True
+    selected = next(row for row in result["rank_signals"] if row["selected"])
+    assert selected["result_shape"] == "single"
+    assert selected["declared_result_shape"] is None
+    assert any(row["source"] == "inferred_result_shape" for row in selected["evidence"])
+    assert any(row["source"] == "identifier_detail_contract" for row in selected["evidence"])
+
+
+def test_select_target_candidate_preserves_general_target_for_non_detail_query():
+    tools = {
+        "getGeneralGoodsInfo": {
+            "description": "일반 상품 정보 조회",
+            "metadata": {
+                "ai_metadata": {"canonical_action": "read", "primary_resource": "goods"},
+                "openapi": {
+                    "operation_id": "getGeneralGoodsInfo",
+                    "summary": "일반 상품 정보 조회",
+                    "path": "/api/v1/goods/general-info",
+                    "path_module": "goods",
+                },
+            },
+        },
+        "getGoodsDetailInfo": {
+            "description": "상품번호 기준 상품 상세 정보 조회",
+            "metadata": {
+                "ai_metadata": {"canonical_action": "read", "primary_resource": "goods"},
+                "openapi": {
+                    "operation_id": "getGoodsDetailInfo",
+                    "summary": "상품 상세 정보 조회",
+                    "path": "/api/v1/goods/detail",
+                    "path_module": "goods",
+                },
+                "api_contract": {
+                    "consumes": [
+                        {
+                            "field_name": "goodsNo",
+                            "semantic_tag": "goods_no",
+                            "description": "상품번호",
+                            "required": True,
+                            "kind": "data",
+                        }
+                    ]
+                },
+            },
+        },
+    }
+
+    result = select_target_candidate(
+        "일반 상품 정보 조회",
+        ["getGoodsDetailInfo", "getGeneralGoodsInfo"],
+        tools,
+        retrieval_results=[
+            {"name": "getGoodsDetailInfo", "score": 0.02},
+            {"name": "getGeneralGoodsInfo", "score": 0.019},
+        ],
+        llm_target="getGeneralGoodsInfo",
+    )
+
+    assert result["selected_target"] == "getGeneralGoodsInfo"
+    assert result["overrode_llm"] is False
+    assert "llm_target_overridden" not in result["reason_codes"]
 
 
 def test_select_target_candidate_preserves_llm_target_when_margin_is_weak():

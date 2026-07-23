@@ -29,6 +29,60 @@ _DETAIL_READ_TERMS = frozenset({"detail", "details", "view", "show", "상세", "
 _SINGLE_TERMS = frozenset({"detail", "details", "info", "view", "single", "상세", "정보", "단건"})
 _LIST_TERMS = frozenset({"list", "lists", "search", "find", "query", "목록", "리스트", "검색"})
 _COUNT_TERMS = frozenset({"count", "total", "cnt", "건수", "개수", "카운트"})
+_IDENTIFIER_TERMS = frozenset(
+    {
+        "code",
+        "codes",
+        "id",
+        "ids",
+        "identifier",
+        "identifiers",
+        "key",
+        "keys",
+        "no",
+        "num",
+        "number",
+        "numbers",
+        "seq",
+        "sequence",
+        "uuid",
+        "번호",
+        "식별",
+        "식별자",
+        "아이디",
+        "일련",
+        "일련번호",
+        "코드",
+        "키",
+    }
+)
+_KOREAN_QUERY_SUFFIXES = (
+    "해주세요",
+    "해줘",
+    "합니다",
+    "한다",
+    "하려고",
+    "으로",
+    "에서",
+    "에게",
+    "까지",
+    "부터",
+    "처럼",
+    "하고",
+    "하고요",
+    "하는",
+    "하면",
+    "해서",
+    "해",
+    "의",
+    "를",
+    "을",
+    "로",
+    "이",
+    "가",
+    "은",
+    "는",
+)
 _GENERAL_SURFACE_TERMS = frozenset(
     {"general", "common", "base", "basic", "default", "일반", "공통", "기본"}
 )
@@ -644,20 +698,25 @@ def _score_target_candidate(
             }
         )
 
+    surface = " ".join([name, operation_id, summary, path, resource, module]).strip()
+    surface_terms = _selector_terms(surface)
+    effective_result_shape = result_shape or _infer_result_shape_from_surface(surface_terms, action)
+
     action_score = _normalized_priority(action_priority, action)
     if action_score:
         value = 0.2 * action_score
         score += value
         evidence.append({"source": "canonical_action", "value": action, "score": round(value, 6)})
 
-    shape_score = _normalized_priority(shape_priority, result_shape)
+    shape_score = _normalized_priority(shape_priority, effective_result_shape)
     if shape_score:
+        source = "result_shape" if result_shape else "inferred_result_shape"
         value = 0.18 * shape_score
         score += value
-        evidence.append({"source": "result_shape", "value": result_shape, "score": round(value, 6)})
+        evidence.append(
+            {"source": source, "value": effective_result_shape, "score": round(value, 6)}
+        )
 
-    surface = " ".join([name, operation_id, summary, path, resource, module]).strip()
-    surface_terms = _selector_terms(surface)
     overlap = query_terms & surface_terms
     if overlap:
         value = min(0.18, 0.04 * len(overlap))
@@ -678,6 +737,24 @@ def _score_target_candidate(
         score -= 0.06
         evidence.append({"source": "general_surface_penalty", "value": "general", "score": -0.06})
 
+    if strict_detail_query and _query_has_identifier(query_terms):
+        contract_identifier_overlap = _contract_identifier_overlap(query_terms, metadata)
+        if contract_identifier_overlap:
+            value = min(0.16, 0.08 + 0.02 * len(contract_identifier_overlap))
+            score += value
+            evidence.append(
+                {
+                    "source": "identifier_detail_contract",
+                    "matched_terms": sorted(contract_identifier_overlap)[:12],
+                    "score": round(value, 6),
+                }
+            )
+        elif _surface_has_identifier(surface_terms) and _surface_has_detail(surface_terms):
+            score += 0.08
+            evidence.append(
+                {"source": "identifier_detail_surface", "value": "identifier", "score": 0.08}
+            )
+
     contract_overlap = _contract_term_overlap(query_terms, metadata)
     if contract_overlap:
         value = min(0.12, 0.035 * len(contract_overlap))
@@ -692,7 +769,16 @@ def _score_target_candidate(
 
     score = max(0.0, min(1.0, score))
     strong = score >= _SELECTOR_STRONG_SCORE and any(
-        row["source"] in {"surface_terms", "detail_surface", "api_contract", "result_shape"}
+        row["source"]
+        in {
+            "surface_terms",
+            "detail_surface",
+            "api_contract",
+            "result_shape",
+            "inferred_result_shape",
+            "identifier_detail_contract",
+            "identifier_detail_surface",
+        }
         for row in evidence
     )
     return {
@@ -703,7 +789,8 @@ def _score_target_candidate(
         "canonical_action": action,
         "primary_resource": resource,
         "path_module": module,
-        "result_shape": result_shape,
+        "result_shape": effective_result_shape,
+        "declared_result_shape": result_shape or None,
         "strong_evidence": strong,
         "evidence": evidence,
     }
@@ -733,7 +820,13 @@ def _normalized_priority(priority: dict[str, int], key: str) -> float:
 
 def _selector_terms(text: str) -> set[str]:
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(text or ""))
-    return {term for term in re.split(r"[\s_\-/.,;:!?()[\]{}$#]+", spaced.lower()) if len(term) > 1}
+    raw_terms = [
+        term for term in re.split(r"[\s_\-/.,;:!?()[\]{}$#]+", spaced.lower()) if len(term) > 1
+    ]
+    terms: set[str] = set()
+    for term in raw_terms:
+        terms.update(_normalize_selector_term(term))
+    return terms
 
 
 def _query_has_detail(terms: set[str]) -> bool:
@@ -752,7 +845,46 @@ def _surface_has_general(terms: set[str]) -> bool:
     return bool(terms & _GENERAL_SURFACE_TERMS)
 
 
+def _surface_has_identifier(terms: set[str]) -> bool:
+    return _has_action_term(terms, _IDENTIFIER_TERMS)
+
+
+def _query_has_identifier(terms: set[str]) -> bool:
+    return _has_action_term(terms, _IDENTIFIER_TERMS) or any(
+        any(ch.isdigit() for ch in term) for term in terms
+    )
+
+
+def _infer_result_shape_from_surface(terms: set[str], action: str) -> str:
+    if _has_action_term(terms, _COUNT_TERMS):
+        return "count"
+    if _has_action_term(terms, _LIST_TERMS):
+        return "list"
+    if action in {"create", "update", "delete", "action"}:
+        return "mutation"
+    if _has_action_term(terms, _DETAIL_READ_TERMS | _SINGLE_TERMS):
+        return "single"
+    if action == "read":
+        return "single"
+    if action == "search":
+        return "list"
+    return ""
+
+
 def _contract_term_overlap(query_terms: set[str], metadata: dict[str, Any]) -> set[str]:
+    terms = _contract_terms(metadata)
+    return query_terms & terms
+
+
+def _contract_identifier_overlap(query_terms: set[str], metadata: dict[str, Any]) -> set[str]:
+    contract_terms = _contract_terms(metadata)
+    identifier_terms = {
+        term for term in contract_terms if _has_action_term({term}, _IDENTIFIER_TERMS)
+    }
+    return (query_terms & contract_terms) | identifier_terms
+
+
+def _contract_terms(metadata: dict[str, Any]) -> set[str]:
     rows = [
         row
         for key in ("produces", "consumes")
@@ -780,7 +912,7 @@ def _contract_term_overlap(query_terms: set[str], metadata: dict[str, Any]) -> s
         )
         for term in _selector_terms(str(value or ""))
     }
-    return query_terms & terms
+    return terms
 
 
 def _query_terms(query: str) -> set[str]:
@@ -788,8 +920,36 @@ def _query_terms(query: str) -> set[str]:
     if not text:
         return set()
     terms = {text}
-    terms.update(t for t in re.split(r"[\s_\-/.,;:!?()]+", text) if t)
+    for term in re.split(r"[\s_\-/.,;:!?()]+", text):
+        if term:
+            terms.update(_normalize_selector_term(term))
     return terms
+
+
+def _normalize_selector_term(term: str) -> set[str]:
+    token = str(term or "").strip().lower()
+    if not token:
+        return set()
+    terms = {token}
+    stripped = _strip_korean_suffix(token)
+    if stripped and stripped != token:
+        terms.add(stripped)
+    if "번호" in token:
+        terms.add("번호")
+    if "아이디" in token:
+        terms.add("아이디")
+    if "코드" in token:
+        terms.add("코드")
+    if re.search(r"\d", token):
+        terms.add("__numeric__")
+    return {value for value in terms if len(value) > 1}
+
+
+def _strip_korean_suffix(token: str) -> str:
+    for suffix in _KOREAN_QUERY_SUFFIXES:
+        if token.endswith(suffix) and len(token) > len(suffix) + 1:
+            return token[: -len(suffix)]
+    return token
 
 
 def _has_action_term(query_terms: set[str], action_terms: frozenset[str]) -> bool:
