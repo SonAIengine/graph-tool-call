@@ -28,6 +28,7 @@ from typing import Any
 
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema
+from graph_tool_call.learning import learning_signal_map
 from graph_tool_call.ontology.schema import (
     DEFAULT_RELATION_WEIGHTS,
     INTENT_RELATION_WEIGHTS,
@@ -379,6 +380,7 @@ def retrieve_graphify(
     token_budget: int = _DEFAULT_BUDGET,
     history: list[str] | None = None,
     include_evidence: bool = False,
+    learning_suggestions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Retrieve tools for a natural-language query using graph traversal only.
 
@@ -458,12 +460,24 @@ def retrieve_graphify(
             if h in scores:
                 scores[h] *= _HISTORY_DEMOTE
 
-    # 5) Filter to TOOL nodes only and rank
+    # 5) Apply collection-local promoted learning as a low-weight rank signal.
     tool_scores: dict[str, float] = {n: s for n, s in scores.items() if n in tg.tools}
+    learning_by_name = learning_signal_map(
+        query,
+        learning_suggestions or [],
+        mode="promoted",
+    )
+    for name, signal in learning_by_name.items():
+        if name in tg.tools:
+            tool_scores[name] = float(tool_scores.get(name) or 0.0) + float(
+                signal.get("score") or 0.0
+            )
+
+    # 6) Filter to TOOL nodes only and rank
     ranked = sorted(tool_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
     chosen_names: set[str] = {n for n, _ in ranked}
 
-    # 6) Render
+    # 7) Render
     subgraph_text = render_subgraph_text(
         tg,
         chosen_names,
@@ -482,11 +496,14 @@ def retrieve_graphify(
         if include_evidence:
             prov = provenance.get(name) or {}
             seed_score = float(prov.get("seed_score") or 0.0) if prov.get("seed") else 0.0
-            graph_score = 0.0 if prov.get("seed") else round(score, 6)
+            learning_score = float((learning_by_name.get(name) or {}).get("score") or 0.0)
+            base_score = max(0.0, float(score) - learning_score)
+            graph_score = 0.0 if prov.get("seed") else round(base_score, 6)
             semantic = _semantic_match_evidence(tg.tools[name], query)
             row["score_breakdown"] = {
                 "seed": round(seed_score, 6),
                 "graph": graph_score,
+                "learning": learning_score,
                 "history_demoted": bool(history and name in history),
                 "action_match": 1.0 if semantic["action_match"] else 0.0,
                 "resource_match": 1.0 if semantic["resource_match"] else 0.0,
@@ -496,6 +513,8 @@ def retrieve_graphify(
                 "graph_expansion": 0.0 if prov.get("seed") else 1.0,
             }
             row["semantic_evidence"] = semantic
+            if learning_by_name.get(name):
+                row["learning_evidence"] = learning_by_name[name]
             if prov.get("expanded_from"):
                 row["expanded_from"] = prov["expanded_from"]
             edge = prov.get("edge")
@@ -517,6 +536,7 @@ def retrieve_graphify(
             len(edges_visited),
             subgraph_text,
             include_evidence=include_evidence,
+            learning_applied=bool(learning_by_name),
         ),
     }
 
@@ -614,6 +634,7 @@ def _stats(
     subgraph_text: str,
     *,
     include_evidence: bool,
+    learning_applied: bool = False,
 ) -> dict[str, Any]:
     stats: dict[str, Any] = {
         "seeds": seeds,
@@ -622,4 +643,5 @@ def _stats(
     }
     if include_evidence:
         stats["token_budget_used"] = len(subgraph_text) // 3
+        stats["learning_applied"] = learning_applied
     return stats

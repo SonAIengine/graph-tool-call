@@ -10,8 +10,11 @@ __all__ = [
     "DuplicatePair",
     "GraphAnalysisReport",
     "GraphToolkit",
+    "apply_learning_suggestions",
+    "build_trace_learning_record",
     "compress_tool_result",
     "create_gateway_tools",
+    "derive_learning_suggestions",
     "MCPAnnotations",
     "MergeStrategy",
     "NodeType",
@@ -26,9 +29,10 @@ __all__ = [
     "ToolSchema",
     "filter_tools",
     "parse_tool",
+    "scrub_trace_payload",
 ]
 
-__version__ = "0.30.0"
+__version__ = "0.31.0"
 
 # Lazy imports for analyze/assist symbols — avoid loading heavy submodules at import time
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
@@ -46,6 +50,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "GraphToolkit": ("graph_tool_call.toolkit", "GraphToolkit"),
     "compress_tool_result": ("graph_tool_call.compressor", "compress_tool_result"),
     "CompressConfig": ("graph_tool_call.compressor", "CompressConfig"),
+    "apply_learning_suggestions": ("graph_tool_call.learning", "apply_learning_suggestions"),
+    "build_trace_learning_record": ("graph_tool_call.learning", "build_trace_learning_record"),
+    "derive_learning_suggestions": ("graph_tool_call.learning", "derive_learning_suggestions"),
+    "scrub_trace_payload": ("graph_tool_call.learning", "scrub_trace_payload"),
 }
 
 
