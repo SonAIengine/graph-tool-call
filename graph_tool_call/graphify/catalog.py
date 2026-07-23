@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from graph_tool_call.learning import learning_signal_map
 from graph_tool_call.retrieval.intent import classify_intent
 
 _DEFAULT_ACTION_PRIORITY = {"search": 3, "read": 2, "action": 1}
@@ -262,6 +263,7 @@ def select_target_candidate(
     *,
     retrieval_results: list[dict[str, Any]] | None = None,
     llm_target: str | None = None,
+    learning_suggestions: list[dict[str, Any]] | None = None,
     policy: str = "strong_evidence",
 ) -> dict[str, Any]:
     """Select the final target from retrieval candidates with stable evidence.
@@ -293,6 +295,7 @@ def select_target_candidate(
         }
 
     retrieval_by_name = _retrieval_signal_map(candidates, retrieval_results)
+    learning_by_name = learning_signal_map(query, learning_suggestions or [], mode="promoted")
     action_priority = target_action_priority_for_query(query)
     shape_priority = _result_shape_priority_for_query(query)
     query_terms = _selector_terms(query)
@@ -302,6 +305,7 @@ def select_target_candidate(
             tools_by_name[name],
             query_terms=query_terms,
             retrieval_signal=retrieval_by_name.get(name) or {},
+            learning_signal=learning_by_name.get(name) or {},
             action_priority=action_priority,
             shape_priority=shape_priority,
         )
@@ -373,6 +377,7 @@ def select_target_candidate(
         ],
         "target_action_priority": action_priority,
         "result_shape_priority": shape_priority,
+        "learning_applied": bool(learning_by_name),
     }
 
 
@@ -594,6 +599,7 @@ def _score_target_candidate(
     *,
     query_terms: set[str],
     retrieval_signal: dict[str, Any],
+    learning_signal: dict[str, Any],
     action_priority: dict[str, int],
     shape_priority: dict[str, int],
 ) -> dict[str, Any]:
@@ -621,6 +627,21 @@ def _score_target_candidate(
         score += value
         evidence.append(
             {"source": "retrieval_score", "value": retrieval_score, "score": round(value, 6)}
+        )
+
+    learning_score = float(learning_signal.get("score") or 0.0)
+    if learning_score > 0:
+        value = min(0.06, learning_score)
+        score += value
+        evidence.append(
+            {
+                "source": "learning",
+                "suggestion_id": learning_signal.get("suggestion_id"),
+                "suggestion_type": learning_signal.get("suggestion_type"),
+                "status": learning_signal.get("status"),
+                "observations": learning_signal.get("observations"),
+                "score": round(value, 6),
+            }
         )
 
     action_score = _normalized_priority(action_priority, action)

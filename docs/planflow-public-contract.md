@@ -1,6 +1,6 @@
 # Planflow Public Contract
 
-Version: graph-tool-call 0.25.0
+Version: graph-tool-call 0.31.0
 
 ## graphify Contract
 
@@ -57,6 +57,31 @@ The graphify package owns product-neutral collection graph logic.
 - `expand_candidates_with_producers(...)` expands retrieval candidates with deterministic producers for required `kind=data` inputs; `max_hops` defaults to `1` for backward compatibility and can be raised for target-specific producer chains.
 - `normalize_graph_edge(...)`, `merge_graph_edges(...)`, and `derive_plan_trace_edges(...)` normalize structural, LLM-curated, manual, and run-observed signals into graph version 2 edge metadata.
 - `retrieve_graphify(..., include_evidence=True)` keeps the legacy response keys and adds score/evidence details for logs and UI.
+- `retrieve_graphify(..., learning_suggestions=...)` accepts promoted collection-local learning suggestions as additive, traceable rank evidence.
+- `select_target_candidate(..., learning_suggestions=...)` accepts promoted target preference evidence and records the signal in selector diagnostics.
+
+## Trace Learning Contract
+
+The `graph_tool_call.learning` package owns product-neutral execution feedback
+logic. It stores compact evidence, not raw API payloads, and does not train or
+change an LLM.
+
+- `scrub_trace_payload(...)` redacts credential-like keys, user identifiers,
+  emails, phone-like strings, and raw body/payload/result fields.
+- `build_trace_learning_record(...)` creates a stable attempt record with query
+  family, selected target, LLM target, plan tools, failure reason, latency,
+  selector evidence, and trace-edge evidence.
+- `derive_learning_suggestions(...)` creates `target_preference`, `plan_path`,
+  and `data_flow_edge` suggestions from successful runs.
+- `merge_learning_suggestions(...)` deduplicates suggestions and moves repeated
+  successful evidence from `suggested` to `promotable`.
+- `apply_learning_suggestions(...)` computes shadow/promoted candidate boosts
+  without mutating collection state.
+
+Adapters should keep `suggested` and `promotable` evidence in shadow mode until
+Quality Lab validation or operator review promotes it. Only `promoted`
+suggestions should influence production retrieval, target selection, or graph
+expansion.
 
 ## Plan Synthesis Contract
 

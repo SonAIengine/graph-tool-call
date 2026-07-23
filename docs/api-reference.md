@@ -561,6 +561,70 @@ groups = build_tool_equivalence_groups(target_candidates, graph_payload["tools"]
 
 ---
 
+## Trace learning helpers
+
+Trace learning turns execution outcomes into collection-local evidence. It does
+not fine-tune an LLM, store raw request/response bodies, or automatically
+rewrite a graph after a single successful run. The intended adapter policy is
+`observe -> shadow -> promote`: collect compact attempts, derive suggestions,
+inspect or validate them, then apply only `promoted` suggestions as low-weight
+retrieval/selector signals.
+
+```python
+from graph_tool_call.learning import (
+    build_trace_learning_record,
+    derive_learning_suggestions,
+    merge_learning_suggestions,
+    scrub_trace_payload,
+)
+
+record = build_trace_learning_record(
+    query="상품 상세 조회",
+    collection_id="bo-dev",
+    session_id="runtime-session-id",
+    selected_target="getGoodsDetail",
+    llm_target="getGeneralGoodsInfo",
+    plan={"steps": [{"tool": "getGoodsList"}, {"tool": "getGoodsDetail"}]},
+    success=True,
+    latency_ms=840,
+    target_selector={"overrode_llm": True},
+    trace_edges=[],
+)
+
+suggestions = derive_learning_suggestions(record, history=previous_attempts)
+learning["suggestions"] = merge_learning_suggestions(
+    learning.get("suggestions", []),
+    suggestions,
+    history=[*previous_attempts, record],
+)
+```
+
+The stable public helpers are:
+
+| Function | Description |
+|---|---|
+| `scrub_trace_payload(value)` | Redacts auth/cookie/token/API-key-like keys, user IDs, emails, phone-like values, and raw body/payload/result fields before persistence |
+| `build_trace_learning_record(...)` | Builds a compact attempt record with query family, selected/LLM targets, plan tools, failure reason, latency, selector evidence, and trace-edge evidence |
+| `derive_learning_suggestions(record, history=...)` | Creates `target_preference`, `plan_path`, and `data_flow_edge` suggestions from successful attempts |
+| `merge_learning_suggestions(existing, incoming, history=...)` | Deduplicates suggestions, updates observation counts, and marks repeated successful evidence as `promotable` |
+| `apply_learning_suggestions(query, candidates, suggestions, mode=...)` | Computes shadow/promoted candidate boosts without mutating the graph |
+
+Suggestion statuses are deliberately conservative:
+
+- `suggested`: observed once or not yet repeatedly validated
+- `promotable`: repeated success in the same normalized query family
+- `promoted`: operator or adapter-approved; eligible for low-weight rank boosts
+- `rejected`: ignored by retrieval/selector while retaining audit evidence
+
+`retrieve_graphify(..., learning_suggestions=promoted)` and
+`select_target_candidate(..., learning_suggestions=promoted)` accept promoted
+suggestions additively. Evidence appears in `score_breakdown.learning`,
+`learning_evidence`, `target_selector.rank_signals[*].evidence`, and
+`candidate_evidence`; suggested or promotable rows should be evaluated in
+shadow mode by the adapter before promotion.
+
+---
+
 ## Top-level helpers
 
 | Function | Description |
