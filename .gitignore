@@ -21,6 +21,9 @@ build/
 coverage.xml
 htmlcov/
 
+# Documentation build output
+site/
+
 # Environment
 .env
 .env.local

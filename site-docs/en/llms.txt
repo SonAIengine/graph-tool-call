@@ -1,0 +1,25 @@
+# graph-tool-call
+
+> Graph-structured tool retrieval for LLM agents.
+
+## Documentation
+
+- Home: https://sonaiengine.github.io/graph-tool-call/
+- Quickstart: https://sonaiengine.github.io/graph-tool-call/getting-started/quickstart/
+- OpenAPI Collections: https://sonaiengine.github.io/graph-tool-call/guides/openapi-collections/
+- XGEN Integration: https://sonaiengine.github.io/graph-tool-call/guides/xgen-integration/
+- Public API: https://sonaiengine.github.io/graph-tool-call/reference/public-api/
+- Benchmarks: https://sonaiengine.github.io/graph-tool-call/validation/benchmarks/
+
+## Package
+
+- PyPI: https://pypi.org/project/graph-tool-call/
+- Source: https://github.com/SonAIengine/graph-tool-call
+
+## Summary
+
+graph-tool-call builds tool graphs from OpenAPI, MCP, and Python function
+sources. It uses keyword retrieval, graph expansion, semantic metadata, contract
+evidence, target selection, plan diagnostics, and scrubbed trace learning to
+help LLM agents choose and use tools from large catalogs.
+

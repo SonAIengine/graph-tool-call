@@ -48,6 +48,17 @@ make pypi-smoke
 - `make release-check`: 릴리즈 직전 전체 lint/test/build/twine check를 실행한다.
 - `make pypi-smoke`: PyPI 배포 후 깨끗한 venv에서 public import를 검증한다.
 
+### 공식 문서 사이트
+```bash
+poetry install --with docs
+poetry run mkdocs serve
+poetry run mkdocs build --strict
+```
+
+- 사이트 소스는 `site-docs/`에 둔다. 기존 `docs/`는 연구/설계/운영 기록으로 유지한다.
+- 영어는 기본 URL(`/`), 한국어는 `/ko/`로 빌드한다.
+- GitHub Pages 배포는 `.github/workflows/docs.yml`이 담당한다.
+
 ## CI 기준
 - 워크플로우: `.github/workflows/ci.yml`
 - lint는 Poetry 환경에서 `ruff check`, `ruff format --check` 기준으로 돈다.
