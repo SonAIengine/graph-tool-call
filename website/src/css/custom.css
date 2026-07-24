@@ -1,0 +1,46 @@
+:root {
+  --ifm-color-primary: #0f766e;
+  --ifm-color-primary-dark: #0d6a63;
+  --ifm-color-primary-darker: #0c655e;
+  --ifm-color-primary-darkest: #0a534e;
+  --ifm-color-primary-light: #118278;
+  --ifm-color-primary-lighter: #12877e;
+  --ifm-color-primary-lightest: #15988e;
+  --ifm-heading-font-weight: 750;
+  --ifm-navbar-shadow: none;
+  --ifm-code-font-size: 95%;
+  --gtc-muted: #667085;
+  --gtc-border: #e5e7eb;
+  --gtc-surface: #ffffff;
+  --docusaurus-highlighted-code-line-bg: rgba(15, 118, 110, 0.11);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #2dd4bf;
+  --ifm-color-primary-dark: #21c2ae;
+  --ifm-color-primary-darker: #1fb8a5;
+  --ifm-color-primary-darkest: #1a9888;
+  --ifm-color-primary-light: #45d8c6;
+  --ifm-color-primary-lighter: #55dccb;
+  --ifm-color-primary-lightest: #7ae3d6;
+  --gtc-muted: #a3adc2;
+  --gtc-border: rgba(148, 163, 184, 0.28);
+  --gtc-surface: rgba(15, 23, 42, 0.5);
+  --docusaurus-highlighted-code-line-bg: rgba(45, 212, 191, 0.16);
+}
+
+.navbar {
+  border-bottom: 1px solid var(--gtc-border);
+}
+
+.navbar__brand {
+  font-weight: 800;
+}
+
+.button {
+  border-radius: 8px;
+}
+
+.footer {
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+}
