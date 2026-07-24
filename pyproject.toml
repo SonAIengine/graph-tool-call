@@ -75,6 +75,12 @@ ruff = ">=0.11"
 pre-commit = "^4.0"
 langgraph-bigtool = "^0.0.3"
 
+[tool.poetry.group.docs.dependencies]
+mkdocs = "^1.6"
+mkdocs-material = "^9.6"
+mkdocs-static-i18n = "^1.3"
+mkdocstrings = {extras = ["python"], version = "^0.29"}
+
 [tool.ruff]
 target-version = "py310"
 line-length = 100

@@ -1,0 +1,126 @@
+site_name: graph-tool-call
+site_description: Graph-structured tool retrieval for LLM agents
+site_url: https://sonaiengine.github.io/graph-tool-call/
+repo_url: https://github.com/SonAIengine/graph-tool-call
+repo_name: SonAIengine/graph-tool-call
+edit_uri: edit/main/site-docs/
+docs_dir: site-docs
+
+theme:
+  name: material
+  language: en
+  logo: assets/social_preview.png
+  favicon: assets/social_preview.png
+  features:
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.tabs.link
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Quickstart: getting-started/quickstart.md
+      - Installation: getting-started/installation.md
+  - Core Concepts:
+      - Tool Graph: concepts/tool-graph.md
+      - OpenAPI Semantic Build: concepts/openapi-semantic-build.md
+      - Trace Learning Loop: concepts/trace-learning.md
+  - Guides:
+      - OpenAPI Collections: guides/openapi-collections.md
+      - XGEN Integration: guides/xgen-integration.md
+      - Quality Gates: guides/quality-gates.md
+  - Reference:
+      - Public API: reference/public-api.md
+      - CLI: reference/cli.md
+  - Validation:
+      - Benchmarks: validation/benchmarks.md
+      - XGEN Scale Gates: validation/xgen-scale-gates.md
+
+plugins:
+  - search:
+      lang:
+        - en
+        - ko
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - .
+          options:
+            docstring_style: google
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+            show_source: false
+  - i18n:
+      docs_structure: folder
+      fallback_to_default: true
+      reconfigure_material: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+          site_name: graph-tool-call
+        - locale: ko
+          name: 한국어
+          build: true
+          site_name: graph-tool-call
+          nav_translations:
+            Home: 홈
+            Getting Started: 시작하기
+            Quickstart: 빠른 시작
+            Installation: 설치
+            Core Concepts: 핵심 개념
+            Tool Graph: 도구 그래프
+            OpenAPI Semantic Build: OpenAPI 의미 빌드
+            Trace Learning Loop: Trace 학습 루프
+            Guides: 가이드
+            OpenAPI Collections: OpenAPI 컬렉션
+            XGEN Integration: XGEN 통합
+            Quality Gates: 품질 게이트
+            Reference: 레퍼런스
+            Public API: Public API
+            CLI: CLI
+            Validation: 검증
+            Benchmarks: 벤치마크
+            XGEN Scale Gates: XGEN Scale Gates
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/SonAIengine/graph-tool-call

@@ -1,0 +1,25 @@
+# graph-tool-call
+
+> LLM 에이전트를 위한 그래프 기반 도구 검색 엔진.
+
+## 문서
+
+- 홈: https://sonaiengine.github.io/graph-tool-call/ko/
+- 빠른 시작: https://sonaiengine.github.io/graph-tool-call/ko/getting-started/quickstart/
+- OpenAPI 컬렉션: https://sonaiengine.github.io/graph-tool-call/ko/guides/openapi-collections/
+- XGEN 통합: https://sonaiengine.github.io/graph-tool-call/ko/guides/xgen-integration/
+- Public API: https://sonaiengine.github.io/graph-tool-call/ko/reference/public-api/
+- 벤치마크: https://sonaiengine.github.io/graph-tool-call/ko/validation/benchmarks/
+
+## 패키지
+
+- PyPI: https://pypi.org/project/graph-tool-call/
+- Source: https://github.com/SonAIengine/graph-tool-call
+
+## 요약
+
+graph-tool-call은 OpenAPI, MCP, Python function source에서 tool graph를 만듭니다.
+keyword retrieval, graph expansion, semantic metadata, contract evidence, target
+selection, plan diagnostics, scrubbed trace learning을 사용해 LLM agent가 대형 tool
+catalog에서 필요한 tool을 더 잘 고르고 사용할 수 있게 돕습니다.
+
