@@ -50,12 +50,13 @@ make pypi-smoke
 
 ### 공식 문서 사이트
 ```bash
-poetry install --with docs
-poetry run mkdocs serve
-poetry run mkdocs build --strict
+cd website
+npm ci
+npm start
+npm run build
 ```
 
-- 사이트 소스는 `site-docs/`에 둔다. 기존 `docs/`는 연구/설계/운영 기록으로 유지한다.
+- 사이트 소스는 Docusaurus template 기반 `website/`에 둔다. 기존 `docs/`는 연구/설계/운영 기록으로 유지한다.
 - 영어는 기본 URL(`/`), 한국어는 `/ko/`로 빌드한다.
 - GitHub Pages 배포는 `.github/workflows/docs.yml`이 담당한다.
 
