@@ -1,94 +1,181 @@
 ---
 title: Mental Model
-description: Understand how graph-tool-call prepares a small, evidence-backed tool surface before an LLM acts.
+description: Understand how graph-tool-call prepares a compact, evidence-backed tool surface before an LLM acts.
 ---
 
 # Mental Model
 
-`graph-tool-call` is a retrieval and planning engine for large tool catalogs. It
-does not replace the LLM. It prepares the tool surface so the LLM sees a smaller,
-better ranked, and better explained set of choices.
+`graph-tool-call` is a retrieval and planning engine for large tool catalogs.
+
+It does not replace the LLM. It prepares the tool surface so the LLM sees a
+smaller, better ranked, and better explained set of choices.
+
+## The Core Problem
+
+Large tool catalogs fail for predictable reasons:
+
+- the LLM receives too many loosely described tools
+- similar operations have weak action and resource metadata
+- request and response schemas are not converted into usable contracts
+- the correct tool is in Top-K but the final target selection drifts
+- missing fields are discovered only after execution starts
+- auth, request, API, and cleanup failures are mixed together
+- successful retries are not fed back into future search
+
+graph-tool-call turns the catalog into inspectable evidence before the LLM acts.
 
 ## Pipeline
 
-1. **Ingest** raw sources such as OpenAPI, MCP, or Python functions.
-2. **Normalize** each operation into a stable `ToolSchema`.
-3. **Analyze** request fields, response fields, auth requirements, semantic
-   action, resource, and module signals.
-4. **Build** graph edges from structure, contracts, manual evidence, and
-   validated trace evidence.
-5. **Retrieve** a compact candidate set for the current user query.
-6. **Select** a final target with strong evidence guardrails around the LLM
-   target.
-7. **Plan** required producers, inputs, user slots, and execution order.
-8. **Run** tools through the product adapter and stream structured events.
-9. **Learn** from scrubbed success and failure traces after validation.
+```text
+source
+  -> ingest
+  -> contract extraction
+  -> semantic build
+  -> graph build
+  -> retrieval
+  -> target selection
+  -> plan synthesis
+  -> runner events
+  -> trace learning
+```
+
+Each stage creates an artifact that can be stored, inspected, tested, and passed
+to a product adapter.
+
+## Stage Overview
+
+| Stage | What Happens | Main Artifact |
+| --- | --- | --- |
+| ingest | OpenAPI, MCP, and Python sources become tools | `ToolSchema` |
+| contract extraction | request/response/auth/context fields are extracted | `metadata.api_contract` |
+| semantic build | action, resource, module, and result shape are inferred | `metadata.ai_metadata` |
+| graph build | structural, contract, manual, and trace edges are merged | graph artifact |
+| retrieval | a compact candidate set is ranked for the query | retrieval results |
+| target selection | LLM target is guarded by deterministic evidence | `target_selector` |
+| plan synthesis | producers, bindings, and user input slots are ordered | `Plan` |
+| run | adapter executes tools and streams structured events | runner events |
+| learn | scrubbed traces become suggestions after validation | learning state |
 
 ## Artifact Flow
 
-| Stage | Main Artifact | Stored By |
+| Artifact | Why It Exists | Where It Usually Lives |
 | --- | --- | --- |
-| ingest | `ToolSchema` | engine or adapter |
-| contract | `metadata.api_contract` | collection artifact |
-| semantic build | `metadata.ai_metadata` | collection artifact |
-| graph build | edges and summaries | collection artifact |
-| retrieval | candidate rows and evidence | request trace or Quality Lab |
-| selection | `target_selector` diagnostics | plan metadata |
-| execution | runner events | product trace/log |
-| learning | scrubbed suggestions | collection-scoped learning state |
+| `ToolSchema` | stable tool description and parameters | engine memory or adapter storage |
+| `metadata.openapi` | original OpenAPI operation evidence | collection artifact |
+| `metadata.api_contract` | consumes, produces, links, auth fields | collection artifact |
+| `metadata.ai_metadata` | action/resource/module/search summary | collection artifact |
+| `readiness_report` | build-time issue codes and readiness score | collection artifact and UI |
+| retrieval evidence | score breakdown and matched signals | request trace or Quality Lab |
+| `target_selector` | final target decision and override reason | plan metadata |
+| `Plan` | executable ordered steps and bindings | request runtime |
+| runner events | streamable execution state and failures | SSE/log/Quality Lab |
+| learning suggestions | safe feedback from repeated execution traces | collection-scoped learning block |
+
+The same artifact should be useful to a human, a test, and an adapter. If an
+important decision exists only inside a prompt, it is hard to debug.
 
 ## Engine vs Adapter
 
-The engine owns product-neutral logic:
+graph-tool-call owns product-neutral logic.
 
-- schema normalization
-- semantic metadata
-- IO contracts
-- graph edges
-- retrieval evidence
-- target selection
-- plan synthesis diagnostics
-- learning suggestions
+| Engine Owns | Adapter Owns |
+| --- | --- |
+| schema normalization | database rows |
+| semantic metadata | user sessions |
+| IO contracts | auth profiles |
+| graph edges | HTTP execution |
+| retrieval evidence | cookies and runtime headers |
+| target selection | SSE transport |
+| plan synthesis diagnostics | UI workflows |
+| learning suggestions | collection persistence and promotion policy |
 
-The adapter owns product-specific runtime concerns:
+This boundary keeps the library reusable. XGEN can pass auth profiles and store
+collection artifacts without putting XGEN-specific DB, cookie, or UI logic into
+the engine.
 
-- database rows
-- auth profiles
-- user sessions
-- HTTP execution
-- SSE transport
-- UI workflows
-- collection storage
+## Why A Graph
 
-## Why Graphs
+A list of tools hides relationships. A graph makes them explicit:
 
-LLM tool catalogs often fail when the model receives too many loosely described
-tools. The graph keeps relationships explicit: which tool produces a field,
-which tool consumes it, which operations share a resource, and which paths have
-been observed in successful runs.
+- tool A produces a field that tool B consumes
+- several operations share the same primary resource
+- a search operation can produce identifiers for a detail operation
+- a manually curated edge is stronger than a weak name-based edge
+- a repeated successful run can become trace evidence
 
-The result is a catalog that can be searched, inspected, validated, and improved
-without hiding the evidence in prompts.
+This matters for planning. The engine can synthesize producer steps because the
+catalog contains field and edge evidence, not just descriptions.
 
-## What The LLM Does
+## What The LLM Still Does
 
-The LLM still matters. It interprets the user request, chooses among a compact
-catalog, fills natural-language gaps, and writes the final response. The engine
-keeps the LLM away from avoidable catalog noise and records why a target or plan
-was accepted.
+The LLM still matters. It can:
 
-The first optimization target is not fine-tuning the model. It is improving the
-evidence the model receives: better contracts, better semantic metadata, better
-candidate ordering, and validated trace suggestions.
+- interpret natural-language intent
+- choose among a compact, ranked candidate set
+- fill natural-language gaps
+- produce a user-facing final response
+- reason over evidence that the engine provides
+
+The engine keeps the LLM away from avoidable catalog noise. The first
+optimization target is better evidence, not model fine-tuning.
+
+## Search To Plan Example
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.plan import PathSynthesizer
+
+graph = ToolGraph.from_url(openapi_url)
+
+results = graph.retrieve_with_scores(
+    "show refund-ready orders",
+    top_k=8,
+)
+
+target = results[0].name
+plan = PathSynthesizer(graph.to_dict()).synthesize(
+    target_tool=target,
+    user_query="show refund-ready orders",
+    entities={"siteNo": "1001"},
+)
+```
+
+The retrieval result explains why a tool was ranked. The plan explains which
+fields are already satisfied, which producers are needed, and which values must
+come from user input or context defaults.
 
 ## Failure Handling
 
-When a run fails, classify the failure before changing prompts:
+When a run fails, classify the stage before changing prompts.
 
-- missing expected tool means retrieval evidence is weak
-- wrong final target means selector or semantic metadata needs attention
-- missing required field means contract/default/user-slot mapping is incomplete
-- auth failure means the adapter must repair runtime context
-- downstream 4xx/5xx means request construction or API behavior must be checked
+| Symptom | Likely Stage | First Document To Read |
+| --- | --- | --- |
+| expected tool not in Top-K | retrieval | [Retrieval Signals](../search/retrieval-signals.md) |
+| expected tool in Top-K but final target is wrong | target selection | [Target Selection](../search/target-selection.md) |
+| plan asks for an obvious field | plan synthesis | [User Input Slots](../plan/user-input-slots.md) |
+| execute stops before API call | auth preflight | [Auth Readiness](../build/auth-readiness.md) |
+| API returns 400, 401, or 500 | execute | [Failure Taxonomy](../plan/failure-taxonomy.md) |
+| retry succeeds but future search does not improve | learning | [Trace Learning Loop](../concepts/trace-learning.md) |
 
-See [Failure Taxonomy](../plan/failure-taxonomy.md) for the full list.
+## Quality Loop
+
+Quality should be measured as a loop:
+
+1. build the catalog
+2. inspect readiness and graph evidence
+3. run search cases
+4. run target-selection cases
+5. run plan and execute cases when auth is available
+6. store scrubbed traces
+7. compare learning in shadow mode
+8. promote only validated suggestions
+
+This gives you repeatable evidence instead of relying on a single demo.
+
+## Next Steps
+
+- Start with [Quickstart](./quickstart.md) if you want a minimal retrieval flow.
+- Read [OpenAPI Ingestion](../build/openapi-ingestion.md) when building a catalog.
+- Read [Target Selection](../search/target-selection.md) when LLM choices drift.
+- Read [Plan Synthesis](../plan/plan-synthesis.md) when chaining tools.
+- Read [Quality Lab](../validation/quality-lab.md) before making quality claims.
