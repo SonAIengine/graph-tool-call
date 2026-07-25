@@ -50,6 +50,10 @@ questions quickly:
 
 ## Follow-up Criteria
 
+- Treat `docs/design/developer-documentation-manual.md` as the next source of
+  truth for the Qdrant-style developer manual structure. This document explains
+  the homepage redesign; the manual design explains the full documentation
+  information architecture and page template.
 - Add search when the content grows beyond the current small docs set.
 - Add release-versioned docs before the first widely announced stable release.
 - Promote benchmark result pages only when they are reproducible from committed
