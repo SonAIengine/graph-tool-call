@@ -245,6 +245,36 @@ class OpenAPIIngestAdapter:
         )
 
 
+class GraphQLIntrospectionIngestAdapter:
+    name = "graphql-introspection"
+    capabilities = IngestCapabilities(
+        source_type="graphql-introspection",
+        features=frozenset(
+            {
+                "input_schema",
+                "operation_documents",
+                "output_schema",
+                "server_provenance",
+            }
+        ),
+        transports=frozenset({"graphql-http", "graphql-subscription"}),
+        limitations=(
+            "authentication_schemes_are_not_declared_by_graphql_introspection",
+            "subscription_execution_requires_an_application_transport_adapter",
+        ),
+    )
+
+    def detect(self, source: Any) -> float:
+        from graph_tool_call.ingest.graphql import is_graphql_introspection
+
+        return 1.0 if is_graphql_introspection(source) else 0.0
+
+    def ingest(self, source: Any, **options: Any) -> IngestResult:
+        from graph_tool_call.ingest.graphql import ingest_graphql_introspection
+
+        return ingest_graphql_introspection(source, **options)
+
+
 class MCPToolsIngestAdapter:
     name = "mcp-tools"
     capabilities = IngestCapabilities(
@@ -460,6 +490,7 @@ def _finalize_result(
 def _build_default_registry() -> IngestAdapterRegistry:
     registry = IngestAdapterRegistry()
     registry.register(OpenAPIIngestAdapter())
+    registry.register(GraphQLIntrospectionIngestAdapter())
     registry.register(MCPToolsIngestAdapter())
     registry.register(PythonFunctionIngestAdapter())
     registry.register(ToolCatalogIngestAdapter())
@@ -513,6 +544,7 @@ __all__ = [
     "IngestConformanceError",
     "IngestIssue",
     "IngestResult",
+    "GraphQLIntrospectionIngestAdapter",
     "UnknownIngestAdapterError",
     "detect_ingest_adapter",
     "get_default_ingest_registry",

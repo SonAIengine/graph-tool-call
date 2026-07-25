@@ -39,6 +39,7 @@ const sidebars: SidebarsConfig = {
       },
       items: [
         'build/openapi-ingestion',
+        'build/graphql-introspection',
         'build/mcp-ingestion',
         'build/python-functions',
         'build/collection-artifacts',
