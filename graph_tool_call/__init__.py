@@ -46,7 +46,7 @@ __all__ = [
     "unregister_ingest_adapter",
 ]
 
-__version__ = "0.32.1"
+__version__ = "0.33.0"
 
 # Lazy imports for analyze/assist symbols — avoid loading heavy submodules at import time
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
