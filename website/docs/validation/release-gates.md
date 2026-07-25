@@ -20,6 +20,9 @@ bug you are likely to have introduced, then widen the gate before release.
 | Release candidate | Before PyPI publishing | `make release-check` |
 | Public claim | Before updating README/docs benchmark numbers | deterministic benchmark plus stored artifact, LLM run if claimed |
 
+The goal is not to run every expensive check all the time. The goal is to match
+the check to the claim being made.
+
 ## Fast Loop
 
 ```bash
@@ -51,6 +54,10 @@ Release candidates should also verify public imports and package build output.
 make pypi-smoke
 ```
 
+Before publishing, record the exact version, git commit, and release artifact
+location. If the docs mention a feature as released, the package version should
+already expose the referenced public import or CLI command.
+
 ## Public Benchmark Gate
 
 Run the full benchmark configuration only when updating public quality claims.
@@ -67,6 +74,16 @@ The result must include:
 If a claim cannot be reproduced from committed fixtures or stored artifacts, do
 not put it in public docs.
 
+Use this distinction when choosing how much to run:
+
+| Claim Type | Minimum Evidence |
+| --- | --- |
+| deterministic retrieval improvement | fixture id, command, before/after metrics, result artifact |
+| LLM target-selection behavior | model/provider, prompt/config, seed or run id, raw result artifact |
+| execute success rate | auth readiness state, host allowlist, mutation safety, cleanup result |
+| public benchmark number | dataset version, package version, model/provider, timestamp, reproducible script |
+| UI/docs behavior | built static site, locale route check, screenshot or preview URL |
+
 ## Documentation Gate
 
 For the official docs site:
@@ -79,6 +96,31 @@ npm run build
 
 Also verify both locale routes and search indexes when changing navigation,
 i18n, or search configuration.
+
+For docs that claim a public API, CLI flag, event field, or result schema, check
+the implementation or tests that define that contract. A docs page should not be
+the source of truth for an API that the package does not expose.
+
+Recommended evidence for docs PRs:
+
+- `npm run typecheck`
+- `npm run build`
+- search index contains new important terms in English and Korean
+- desktop and mobile screenshots for homepage/layout changes
+- referenced test files, commands, and public imports exist
+
+## PR And Pages Gate
+
+Before merging docs or release changes:
+
+1. Push the branch and wait for GitHub CI.
+2. Confirm Documentation build is green.
+3. Confirm library CI is green when code-adjacent docs mention tests or public APIs.
+4. Confirm the PR merge state is clean.
+5. After merge, wait for GitHub Pages deployment before sharing the public URL.
+
+GitHub Actions warnings about runner Node versions are not release blockers by
+themselves, but failed build/test jobs are.
 
 ## What Not To Do
 

@@ -1,41 +1,102 @@
-# graph-tool-call
+---
+title: 문서
+description: 대형 LLM tool catalog를 searchable tool graph로 만드는 방법을 시작합니다.
+---
 
-`graph-tool-call`은 LLM 에이전트를 위한 그래프 기반 도구 검색 엔진입니다.
-OpenAPI spec, MCP tool, Python 함수를 searchable tool graph로 만들고, 에이전트가
-필요로 하는 작은 후보 집합과 workflow 근거를 반환합니다.
+# graph-tool-call 문서
 
-## 왜 필요한가
+`graph-tool-call`은 LLM agent를 위한 graph-structured tool retrieval engine입니다.
+OpenAPI spec, MCP tool, Python 함수를 searchable tool graph로 만들고, compact
+candidate, execution contract, target-selection evidence, quality diagnostic을
+반환합니다.
 
-대형 tool catalog에서는 두 가지 문제가 생깁니다.
+agent가 모델 context에 안전하게 넣기 어려울 만큼 많은 tool을 갖고 있거나, 올바른
+tool 선택이 request field, response field, workflow order, auth readiness, 과거 실행
+근거에 달려 있다면 이 매뉴얼을 사용하세요.
 
-- tool 정의가 너무 많아 모델 context를 넘칩니다.
-- 유사도 검색은 tool 하나는 찾지만, 그 tool이 속한 workflow를 놓칩니다.
+## 경로 선택
 
-`graph-tool-call`은 keyword search, graph expansion, OpenAPI contract,
-semantic metadata, target selection, trace evidence를 함께 사용해 이 문제를 줄입니다.
+| 목표 | 시작 문서 | 완료되면 얻는 것 |
+| --- | --- | --- |
+| 로컬에서 먼저 실행 | [빠른 시작](getting-started/quickstart.md) | 첫 OpenAPI 검색, graph build, readiness check |
+| 아키텍처 이해 | [Mental Model](getting-started/mental-model.md) | ingest -> contract -> retrieve -> select -> plan -> learn 모델 |
+| Swagger/OpenAPI 빌드 | [OpenAPI Ingestion](build/openapi-ingestion.md) | contract와 semantic metadata가 들어간 collection artifact |
+| 대형 catalog 검색 | [Tool Graph Search](search/tool-graph-search.mdx) | score/evidence가 포함된 ranked candidate |
+| LLM target 선택 guard | [Target Selection](search/target-selection.md) | `llm_target` 주변 deterministic selector diagnostic |
+| multi-tool workflow 실행 | [Plan Synthesis](plan/plan-synthesis.md) | plan, user input slot, runner event, failure reason |
+| 품질 검증 | [Quality Lab](validation/quality-lab.md) | search, plan, execute, benchmark gate |
+| application 연결 | [XGEN Integration](guides/xgen-integration.md) | DB, auth, UI, SSE, execution을 소유하는 product adapter |
 
-## 만들 수 있는 것
+## 최소 retrieval
 
-- 수천 개 tool을 LLM에 모두 넣지 않고 검색합니다.
-- OpenAPI collection을 실행 가능한 tool graph로 변환합니다.
-- LLM 호출 전에 deterministic evidence로 target 후보를 정렬합니다.
-- 검색, plan, 실행 품질을 재현 가능한 gate로 검증합니다.
-- 성공/실패 실행 trace를 다음 ranking의 evidence로 축적합니다.
+```python
+from graph_tool_call import ToolGraph
 
-## 먼저 볼 문서
+graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
+results = graph.retrieve_with_scores("find pets by status", top_k=3)
 
-- 첫 retrieval 흐름: [빠른 시작](getting-started/quickstart.md)
-- 엔진 동작 방식: [Mental Model](getting-started/mental-model.md)
-- 핵심 매뉴얼 페이지: [Tool Graph Search](search/tool-graph-search.mdx)
-- Swagger/OpenAPI 빌드: [OpenAPI Ingestion](build/openapi-ingestion.md)
-- 최종 tool 선택: [Target Selection](search/target-selection.md)
-- 품질 확인: [Quality Lab](validation/quality-lab.md)
-- API 확인: [Public API](reference/public-api.md)
+for row in results:
+    print(row.tool.name, row.score)
+```
+
+디버깅할 때는 모든 tool schema를 LLM에 보내기보다 evidence object를 요청합니다.
+
+```python
+from graph_tool_call.graphify import retrieve_graphify
+
+rows = retrieve_graphify(
+    graph,
+    "find pets by status",
+    top_k=3,
+    include_evidence=True,
+)
+
+print(rows[0]["score_breakdown"])
+```
+
+## 핵심 workflow
+
+| Workflow | Manual | 주요 artifact |
+| --- | --- | --- |
+| Catalog build | [Build Tool Catalogs](build/openapi-ingestion.md) | `ToolSchema`, `api_contract`, `semantic_summary`, readiness report |
+| Search and select | [Search And Selection](search/tool-graph-search.mdx) | retrieval row, score breakdown, `target_selector` |
+| Plan and execute | [Plan And Execute](plan/plan-synthesis.md) | `Plan`, `PlanStep`, `user_input_slots`, runner event |
+| Trace learning | [Learning Loop](concepts/trace-learning.md) | scrubbed attempt, suggestion, shadow/promotion state |
+| Claim validation | [Validation](validation/benchmarks.md) | benchmark artifact, Quality Lab result, release gate |
+| Client integration | [Integrations](guides/xgen-integration.md) | XGEN adapter, MCP gateway, LangChain tool, middleware patch |
+| Contract lookup | [Reference](reference/public-api.md) | public import, CLI, event schema, report schema |
+
+## Engine이 책임지는 것
+
+라이브러리는 product-neutral이어야 합니다. deterministic graph/search/plan logic과
+inspect/test 가능한 artifact를 책임집니다.
+
+| Engine 책임 | Product adapter 책임 |
+| --- | --- |
+| OpenAPI/MCP/Python ingest | source 저장과 tenant policy |
+| request/response contract extraction | user/session auth resolution |
+| retrieval과 score evidence | model/provider routing |
+| target selector diagnostic | UI 결정과 사용자 confirmation |
+| plan synthesis와 runner event schema | 실제 HTTP 실행과 audit logging |
+| trace-learning suggestion | 승인, 거절, rollout policy |
+
+## 품질 기준
+
+좋은 tool retrieval 작업은 재현 가능해야 합니다. public quality claim을 내거나 큰
+collection을 운영에 붙이기 전에는 아래가 있어야 합니다.
+
+- committed fixture 또는 named live collection
+- deterministic search/selector metric
+- execute를 claim한다면 plan/execute gate
+- LLM 기반 결과라면 model/provider 정보
+- raw result artifact 또는 Quality Lab record
+- synthetic, shadow-mode, read-only benchmark 여부 명시
 
 ## Manual Map
 
 | Section | Use It For |
 | --- | --- |
+| [Getting Started](getting-started/quickstart.md) | installation, quickstart, mental model |
 | [Build Tool Catalogs](build/openapi-ingestion.md) | OpenAPI, MCP, Python ingestion, semantic build, IO contract, readiness |
 | [Search And Selection](search/tool-graph-search.mdx) | retrieval, evidence, candidate expansion, target selector, Korean search |
 | [Plan And Execute](plan/plan-synthesis.md) | plan synthesis, user slot, runner event, failure taxonomy |
@@ -43,27 +104,3 @@ semantic metadata, target selection, trace evidence를 함께 사용해 이 문�
 | [Validation](validation/benchmarks.md) | benchmark gate, Quality Lab, release gate |
 | [Integrations](guides/xgen-integration.md) | XGEN, MCP, LangChain, middleware, direct API adapter |
 | [Reference](reference/public-api.md) | public import, CLI, event, report, artifact, compatibility |
-
-## 최소 예제
-
-```python
-from graph_tool_call import ToolGraph
-
-graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
-
-for tool in graph.retrieve("find pets by status", top_k=5):
-    print(tool.name, tool.description)
-```
-
-## 현재 중점
-
-현재 roadmap은 대형 enterprise API collection에 맞춰져 있습니다.
-
-- deterministic OpenAPI contract 추출
-- semantic action/resource/module 분류
-- LLM target 선택을 보정하는 selector guard
-- auth readiness 진단
-- 성공/실패 실행 trace 기반 learning loop
-
-public quality claim은 committed fixture, reproducible command, stored result
-artifact 중 하나와 연결되어야 합니다.
