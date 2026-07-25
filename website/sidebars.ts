@@ -106,6 +106,7 @@ const sidebars: SidebarsConfig = {
         description: 'Run repeatable quality gates before making public claims or releasing engine changes.',
       },
       items: [
+        'guides/quality-gates',
         'validation/benchmarks',
         'validation/bfcl-style-evaluation',
         'validation/xgen-scale-gates',
@@ -140,6 +141,7 @@ const sidebars: SidebarsConfig = {
         description: 'Stable public APIs, CLI commands, event schemas, artifact schemas, and compatibility notes.',
       },
       items: [
+        'reference/api-cheat-sheet',
         'reference/public-api',
         'reference/cli',
         'reference/event-schemas',

@@ -262,6 +262,7 @@ Keep these responsibilities outside graph-tool-call:
 
 ## Related Pages
 
+- [API Cheat Sheet](./api-cheat-sheet.md)
 - [CLI](./cli.md)
 - [Artifact Schemas](./artifact-schemas.md)
 - [Event Schemas](./event-schemas.md)

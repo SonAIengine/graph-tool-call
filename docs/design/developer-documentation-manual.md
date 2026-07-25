@@ -207,6 +207,7 @@ Learning Loop
   Shadow And Promotion
 
 Validation
+  Quality Gates
   Benchmarks
   BFCL-Style Evaluation
   XGEN Scale Gates
@@ -223,6 +224,7 @@ Integrations
   Direct API
 
 Reference
+  API Cheat Sheet
   Public API
   CLI
   Event Schemas

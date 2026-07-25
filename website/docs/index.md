@@ -26,6 +26,7 @@ workflow order, auth readiness, and past run evidence.
 | Execute multi-tool workflows | [Plan Synthesis](plan/plan-synthesis.md) | a plan, user input slots, runner events, and failure reasons |
 | Validate quality | [Quality Lab](validation/quality-lab.md) | repeatable search, plan, execute, and benchmark gates |
 | Connect an application | [XGEN Integration](guides/xgen-integration.md) | a product adapter that owns DB, auth, UI, SSE, and execution |
+| Pick a public API | [API Cheat Sheet](reference/api-cheat-sheet.md) | the stable function or CLI command for each workflow |
 
 ## Minimal Retrieval
 
@@ -66,7 +67,7 @@ print(first["score_breakdown"])
 | Learn from traces | [Learning Loop](concepts/trace-learning.md) | scrubbed attempts, suggestions, shadow/promotion state |
 | Validate claims | [Validation](validation/benchmarks.md) | benchmark artifacts, Quality Lab results, release gates |
 | Integrate clients | [Integrations](guides/xgen-integration.md) | XGEN adapter, MCP gateway, LangChain tools, middleware patches |
-| Look up contracts | [Reference](reference/public-api.md) | public imports, CLI, event schemas, report schemas |
+| Look up contracts | [Reference](reference/api-cheat-sheet.md) | public imports, CLI, event schemas, report schemas |
 
 ## What The Engine Owns
 
@@ -105,4 +106,4 @@ claim or wiring a large collection into production, make sure you have:
 | [Learning Loop](concepts/trace-learning.md) | scrubbed traces, suggestions, shadow mode, promotion policy |
 | [Validation](validation/benchmarks.md) | benchmark gates, Quality Lab, release gates |
 | [Integrations](guides/xgen-integration.md) | XGEN, MCP, LangChain, middleware, direct API adapters |
-| [Reference](reference/public-api.md) | public imports, CLI, events, reports, artifacts, compatibility |
+| [Reference](reference/api-cheat-sheet.md) | public imports, CLI, events, reports, artifacts, compatibility |

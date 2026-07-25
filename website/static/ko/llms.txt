@@ -9,6 +9,7 @@
 - 빠른 시작: https://sonaiengine.github.io/graph-tool-call/ko/docs/getting-started/quickstart/
 - Mental Model: https://sonaiengine.github.io/graph-tool-call/ko/docs/getting-started/mental-model/
 - OpenAPI Search-To-Plan 튜토리얼: https://sonaiengine.github.io/graph-tool-call/ko/docs/tutorials/openapi-search-to-plan/
+- API Cheat Sheet: https://sonaiengine.github.io/graph-tool-call/ko/docs/reference/api-cheat-sheet/
 - Tool Graph Search: https://sonaiengine.github.io/graph-tool-call/ko/docs/search/tool-graph-search/
 - OpenAPI Ingestion: https://sonaiengine.github.io/graph-tool-call/ko/docs/build/openapi-ingestion/
 - IO Contracts: https://sonaiengine.github.io/graph-tool-call/ko/docs/build/io-contracts/

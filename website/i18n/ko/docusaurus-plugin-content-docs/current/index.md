@@ -26,6 +26,7 @@ tool 선택이 request field, response field, workflow order, auth readiness, �
 | multi-tool workflow 실행 | [Plan Synthesis](plan/plan-synthesis.md) | plan, user input slot, runner event, failure reason |
 | 품질 검증 | [Quality Lab](validation/quality-lab.md) | search, plan, execute, benchmark gate |
 | application 연결 | [XGEN Integration](guides/xgen-integration.md) | DB, auth, UI, SSE, execution을 소유하는 product adapter |
+| public API 선택 | [API Cheat Sheet](reference/api-cheat-sheet.md) | workflow별 stable function 또는 CLI command |
 
 ## 최소 retrieval
 
@@ -65,7 +66,7 @@ print(first["score_breakdown"])
 | Trace learning | [Learning Loop](concepts/trace-learning.md) | scrubbed attempt, suggestion, shadow/promotion state |
 | Claim validation | [Validation](validation/benchmarks.md) | benchmark artifact, Quality Lab result, release gate |
 | Client integration | [Integrations](guides/xgen-integration.md) | XGEN adapter, MCP gateway, LangChain tool, middleware patch |
-| Contract lookup | [Reference](reference/public-api.md) | public import, CLI, event schema, report schema |
+| Contract lookup | [Reference](reference/api-cheat-sheet.md) | public import, CLI, event schema, report schema |
 
 ## Engine이 책임지는 것
 
@@ -104,4 +105,4 @@ collection을 운영에 붙이기 전에는 아래가 있어야 합니다.
 | [Learning Loop](concepts/trace-learning.md) | scrubbed trace, suggestion, shadow mode, promotion policy |
 | [Validation](validation/benchmarks.md) | benchmark gate, Quality Lab, release gate |
 | [Integrations](guides/xgen-integration.md) | XGEN, MCP, LangChain, middleware, direct API adapter |
-| [Reference](reference/public-api.md) | public import, CLI, event, report, artifact, compatibility |
+| [Reference](reference/api-cheat-sheet.md) | public import, CLI, event, report, artifact, compatibility |

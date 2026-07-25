@@ -226,6 +226,7 @@ from graph_tool_call.learning import (
 
 ## 관련 문서
 
+- [API Cheat Sheet](./api-cheat-sheet.md)
 - [CLI](./cli.md)
 - [Artifact Schema](./artifact-schemas.md)
 - [Event Schema](./event-schemas.md)

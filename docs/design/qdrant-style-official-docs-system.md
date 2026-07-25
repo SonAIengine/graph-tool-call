@@ -117,6 +117,7 @@ guess which subsystem owns the answer.
 | Stop wrong LLM target choices | Search And Selection -> Target Selection | When deterministic selection can override, when it only reports ambiguity. |
 | Execute and debug a plan | Plan And Execute -> Plan Synthesis | What inputs are required, what failure reason means, how runner events are shaped. |
 | Make the system improve over time | Learning Loop -> Trace Learning | What trace data is saved, how suggestions are scrubbed, when promotion happens. |
+| Pick the right public API quickly | Reference -> API Cheat Sheet | Which stable function or CLI command belongs to the current workflow. |
 
 Secondary jobs:
 
@@ -193,6 +194,8 @@ Preferred implementation:
 - Exclude build artifacts and generated static files.
 - Include `llms.txt` as a compact navigation aid, but do not treat it as a
   replacement for human-facing search.
+- Include an API cheat sheet for users who know the workflow but need the exact
+  stable entry point.
 
 Search acceptance:
 

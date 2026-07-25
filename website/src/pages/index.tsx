@@ -254,6 +254,12 @@ print(results[0].to_dict(include_score=True, max_desc=80))`,
     refsTitle: 'Reference paths',
     refs: [
       {
+        title: 'API Cheat Sheet',
+        body: 'Pick the right API or CLI command for each workflow.',
+        href: '/docs/reference/api-cheat-sheet/',
+        label: 'Cheat sheet',
+      },
+      {
         title: 'Public API',
         body: 'Stable imports and engine-level contracts.',
         href: '/docs/reference/public-api/',
@@ -466,6 +472,12 @@ print(results[0].to_dict(include_score=True, max_desc=80))`,
     ],
     refsTitle: 'Reference 경로',
     refs: [
+      {
+        title: 'API Cheat Sheet',
+        body: 'workflow별로 어떤 API 또는 CLI command를 써야 하는지 고릅니다.',
+        href: '/docs/reference/api-cheat-sheet/',
+        label: 'Cheat sheet',
+      },
       {
         title: 'Public API',
         body: '안정 public import와 engine-level contract를 확인합니다.',
