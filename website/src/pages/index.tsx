@@ -12,6 +12,16 @@ type LinkItem = {
   label: string;
 };
 
+type ManualGroup = {
+  title: string;
+  body: string;
+  links: {
+    label: string;
+    href: string;
+    note: string;
+  }[];
+};
+
 type Stage = {
   title: string;
   artifact: string;
@@ -42,6 +52,9 @@ type Copy = {
   startsTitle: string;
   startsBody: string;
   starts: LinkItem[];
+  manualTitle: string;
+  manualBody: string;
+  manualGroups: ManualGroup[];
   modelTitle: string;
   modelBody: string;
   stages: Stage[];
@@ -55,9 +68,9 @@ type Copy = {
 const copy: Record<string, Copy> = {
   en: {
     eyebrow: 'Official documentation',
-    title: 'Build searchable tool graphs for LLM agents.',
+    title: 'graph-tool-call documentation.',
     subtitle:
-      'A practical manual for turning OpenAPI, MCP, and Python tools into contracts, retrieval evidence, target selection, execution plans, quality gates, and trace learning loops.',
+      'A technical manual for turning OpenAPI, MCP, and Python tools into contracts, retrieval evidence, target selection, execution plans, quality gates, and trace learning loops.',
     primary: 'Start quickstart',
     secondary: 'Search manual',
     routesLabel: 'Manual routes',
@@ -119,6 +132,47 @@ print(results[0].to_dict(include_score=True, max_desc=80))`,
         body: 'Promote scrubbed success evidence into low-weight ranking and planning suggestions.',
         href: '/docs/concepts/trace-learning/',
         label: 'Learn',
+      },
+    ],
+    manualTitle: 'Manual index',
+    manualBody:
+      'The documentation is organized around the same lifecycle the engine runs in production: build a catalog, search with evidence, select a target, synthesize a plan, validate the result, and learn from traces.',
+    manualGroups: [
+      {
+        title: 'Build tool catalogs',
+        body: 'Create stable tool graph artifacts from OpenAPI, MCP, and Python sources.',
+        links: [
+          {label: 'OpenAPI ingestion', href: '/docs/build/openapi-ingestion/', note: 'Swagger UI, JSON, YAML, private host policy'},
+          {label: 'IO contracts', href: '/docs/build/io-contracts/', note: 'Consumes, produces, links, schema coverage'},
+          {label: 'Readiness diagnostics', href: '/docs/build/readiness-diagnostics/', note: 'Score, issue codes, repair actions'},
+        ],
+      },
+      {
+        title: 'Search and selection',
+        body: 'Retrieve compact candidate sets and explain why the final target was selected.',
+        links: [
+          {label: 'Tool graph search', href: '/docs/search/tool-graph-search/', note: 'Query flow and retrieval API'},
+          {label: 'Retrieval signals', href: '/docs/search/retrieval-signals/', note: 'Action, resource, shape, contract, learning'},
+          {label: 'Target selection', href: '/docs/search/target-selection/', note: 'LLM guardrails and override policy'},
+        ],
+      },
+      {
+        title: 'Plan and execute',
+        body: 'Turn a selected target into executable steps with structured runtime events.',
+        links: [
+          {label: 'Plan synthesis', href: '/docs/plan/plan-synthesis/', note: 'Producer paths, bindings, user slots'},
+          {label: 'Runner events', href: '/docs/plan/runner-events/', note: 'Streaming events, metadata, failures'},
+          {label: 'Failure taxonomy', href: '/docs/plan/failure-taxonomy/', note: 'Stable reason codes for adapters'},
+        ],
+      },
+      {
+        title: 'Validate and learn',
+        body: 'Use repeatable gates and scrubbed traces instead of anecdotal quality claims.',
+        links: [
+          {label: 'Quality Lab', href: '/docs/validation/quality-lab/', note: 'Search, plan, execute cases'},
+          {label: 'Benchmarks', href: '/docs/validation/benchmarks/', note: 'Recall, MRR, NDCG, claim policy'},
+          {label: 'Trace learning', href: '/docs/concepts/trace-learning/', note: 'Observe, shadow, promote'},
+        ],
       },
     ],
     modelTitle: 'Execution model',
@@ -227,9 +281,9 @@ print(results[0].to_dict(include_score=True, max_desc=80))`,
   },
   ko: {
     eyebrow: '공식 문서',
-    title: 'LLM agent를 위한 searchable tool graph.',
+    title: 'graph-tool-call 공식 문서.',
     subtitle:
-      'OpenAPI, MCP, Python tool을 contract, retrieval evidence, target selection, execution plan, quality gate, trace learning loop로 연결하는 실전 매뉴얼입니다.',
+      'OpenAPI, MCP, Python tool을 contract, retrieval evidence, target selection, execution plan, quality gate, trace learning loop로 연결하는 기술 매뉴얼입니다.',
     primary: 'Quickstart 시작',
     secondary: 'Search 매뉴얼',
     routesLabel: '매뉴얼 경로',
@@ -291,6 +345,47 @@ print(results[0].to_dict(include_score=True, max_desc=80))`,
         body: 'scrub된 성공 evidence를 낮은 가중치의 ranking/plan suggestion으로 승격합니다.',
         href: '/docs/concepts/trace-learning/',
         label: 'Learn',
+      },
+    ],
+    manualTitle: '매뉴얼 인덱스',
+    manualBody:
+      '문서는 production에서 엔진이 실제로 도는 lifecycle 기준으로 구성되어 있습니다. catalog를 build하고, evidence로 search하고, target을 선택하고, plan을 합성하고, 검증하고, trace에서 학습합니다.',
+    manualGroups: [
+      {
+        title: 'Tool catalog build',
+        body: 'OpenAPI, MCP, Python source에서 안정적인 tool graph artifact를 만듭니다.',
+        links: [
+          {label: 'OpenAPI ingestion', href: '/docs/build/openapi-ingestion/', note: 'Swagger UI, JSON, YAML, private host policy'},
+          {label: 'IO contracts', href: '/docs/build/io-contracts/', note: 'Consumes, produces, links, schema coverage'},
+          {label: 'Readiness diagnostics', href: '/docs/build/readiness-diagnostics/', note: 'Score, issue code, repair action'},
+        ],
+      },
+      {
+        title: 'Search and selection',
+        body: '작은 candidate set을 검색하고 최종 target 선택 근거를 설명합니다.',
+        links: [
+          {label: 'Tool graph search', href: '/docs/search/tool-graph-search/', note: 'Query flow and retrieval API'},
+          {label: 'Retrieval signals', href: '/docs/search/retrieval-signals/', note: 'Action, resource, shape, contract, learning'},
+          {label: 'Target selection', href: '/docs/search/target-selection/', note: 'LLM guardrail and override policy'},
+        ],
+      },
+      {
+        title: 'Plan and execute',
+        body: '선택된 target을 실행 가능한 step과 structured runtime event로 바꿉니다.',
+        links: [
+          {label: 'Plan synthesis', href: '/docs/plan/plan-synthesis/', note: 'Producer path, binding, user slot'},
+          {label: 'Runner events', href: '/docs/plan/runner-events/', note: 'Streaming event, metadata, failure'},
+          {label: 'Failure taxonomy', href: '/docs/plan/failure-taxonomy/', note: 'Adapter용 stable reason code'},
+        ],
+      },
+      {
+        title: 'Validate and learn',
+        body: '감이 아니라 반복 가능한 gate와 scrub된 trace로 품질을 증명합니다.',
+        links: [
+          {label: 'Quality Lab', href: '/docs/validation/quality-lab/', note: 'Search, plan, execute case'},
+          {label: 'Benchmarks', href: '/docs/validation/benchmarks/', note: 'Recall, MRR, NDCG, claim policy'},
+          {label: 'Trace learning', href: '/docs/concepts/trace-learning/', note: 'Observe, shadow, promote'},
+        ],
       },
     ],
     modelTitle: '실행 모델',
@@ -445,6 +540,31 @@ function Home(): ReactNode {
             </div>
             <pre>{text.output}</pre>
           </aside>
+        </section>
+
+        <section className={styles.manualIndex}>
+          <div className={styles.sectionHeader}>
+            <h2>{text.manualTitle}</h2>
+            <p>{text.manualBody}</p>
+          </div>
+          <div className={styles.manualGrid}>
+            {text.manualGroups.map((group) => (
+              <article className={styles.manualGroup} key={group.title}>
+                <h3>{group.title}</h3>
+                <p>{group.body}</p>
+                <ul>
+                  {group.links.map((link) => (
+                    <li key={link.href}>
+                      <Link to={link.href}>
+                        <strong>{link.label}</strong>
+                        <span>{link.note}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section className={styles.section}>

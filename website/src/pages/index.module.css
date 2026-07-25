@@ -5,6 +5,7 @@
 }
 
 .hero,
+.manualIndex,
 .section,
 .modelSection,
 .refs {
@@ -183,13 +184,14 @@
 }
 
 .section,
+.manualIndex,
 .modelSection {
   padding-bottom: 2.7rem;
   padding-top: 2.7rem;
 }
 
 .sectionHeader {
-  align-items: end;
+  align-items: start;
   display: grid;
   gap: 1.25rem;
   grid-template-columns: minmax(0, 0.65fr) minmax(0, 0.35fr);
@@ -216,6 +218,80 @@
   display: grid;
   gap: 0.9rem;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.manualIndex {
+  border-top: 1px solid var(--gtc-border-subtle);
+}
+
+.manualGrid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.manualGroup {
+  background: var(--gtc-surface);
+  border: 1px solid var(--gtc-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.manualGroup h3 {
+  color: var(--gtc-heading);
+  font-size: 1rem;
+  line-height: 1.3;
+  margin: 0;
+  padding: 1rem 1rem 0.45rem;
+}
+
+.manualGroup > p {
+  color: var(--gtc-muted);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  margin: 0;
+  padding: 0 1rem 0.9rem;
+}
+
+.manualGroup ul {
+  border-top: 1px solid var(--gtc-border-subtle);
+  list-style: none;
+  margin: auto 0 0;
+  padding: 0;
+}
+
+.manualGroup li + li {
+  border-top: 1px solid var(--gtc-border-subtle);
+}
+
+.manualGroup a {
+  color: inherit;
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.78rem 1rem;
+  text-decoration: none;
+}
+
+.manualGroup a:hover {
+  background: var(--gtc-hover);
+  color: inherit;
+  text-decoration: none;
+}
+
+.manualGroup strong {
+  color: var(--gtc-link);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.manualGroup span {
+  color: var(--gtc-muted);
+  font-size: 0.76rem;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
 }
 
 .startCard,
@@ -409,6 +485,7 @@
 
 @media screen and (max-width: 1100px) {
   .startGrid,
+  .manualGrid,
   .pipeline {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -431,6 +508,10 @@
   .sectionHeader,
   .refLinks {
     grid-template-columns: 1fr;
+  }
+
+  .manualGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .hero {
@@ -471,6 +552,7 @@
   }
 
   .hero,
+  .manualIndex,
   .section,
   .modelSection,
   .refs {
@@ -489,6 +571,7 @@
   }
 
   .startGrid,
+  .manualGrid,
   .pipeline {
     grid-template-columns: 1fr;
   }
@@ -557,16 +640,16 @@
   }
 
   .routeRail {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .routeRail a,
-  .routeRail a:nth-child(n + 3) {
-    border-left: 0;
-    border-top: 1px solid var(--gtc-border);
+  .routeRail a {
+    min-height: 64px;
+    padding: 0.68rem;
   }
 
-  .routeRail a:first-child {
-    border-top: 0;
+  .quickPanel .panelHeader:nth-of-type(n + 2),
+  .quickPanel pre:not(.command) {
+    display: none;
   }
 }
