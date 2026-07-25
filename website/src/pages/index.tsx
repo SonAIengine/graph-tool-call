@@ -14,12 +14,15 @@ type LinkItem = {
 
 type Stage = {
   title: string;
+  artifact: string;
   body: string;
+  href: string;
 };
 
 type Gate = {
   area: string;
   signal: string;
+  proof: string;
   link: string;
 };
 
@@ -34,6 +37,8 @@ type Copy = {
   installCommand: string;
   codeTitle: string;
   code: string;
+  outputTitle: string;
+  output: string;
   startsTitle: string;
   startsBody: string;
   starts: LinkItem[];
@@ -49,103 +54,152 @@ type Copy = {
 
 const copy: Record<string, Copy> = {
   en: {
-    eyebrow: 'Official documentation',
-    title: 'Developer manual for searchable tool graphs.',
+    eyebrow: 'Developer documentation',
+    title: 'Graph-based tool retrieval for large LLM tool catalogs.',
     subtitle:
-      'Build OpenAPI, MCP, and Python tool catalogs into evidence-backed graphs for retrieval, target selection, planning, validation, and trace learning.',
-    primary: 'Start with search',
-    secondary: 'Build OpenAPI catalogs',
+      'Build catalogs from OpenAPI, MCP, and Python functions, retrieve compact candidates, select targets, synthesize plans, validate quality, and learn from scrubbed traces.',
+    primary: 'Quickstart',
+    secondary: 'Tool Graph Search',
     routesLabel: 'Manual routes',
     installLabel: 'Install',
     installCommand: 'pip install "graph-tool-call[openapi]"',
-    codeTitle: 'Minimal retrieval flow',
-    code: `from graph_tool_call import ToolGraph
+    codeTitle: 'First retrieval call',
+    code: `import json
+from graph_tool_call import ToolGraph
 
 graph = ToolGraph.from_url(openapi_url)
-results = graph.retrieve(
+results = graph.retrieve_with_scores(
     "find refund-ready orders",
-    top_k=8,
-    include_evidence=True,
+    top_k=5,
 )
 
-for item in results:
-    print(item.tool.name, item.score_breakdown)`,
-    startsTitle: 'Start here',
-    startsBody: 'Choose the entry point that matches the job in front of you.',
+print(json.dumps(
+    [r.to_dict(include_score=True, max_desc=80) for r in results[:3]],
+    indent=2,
+))`,
+    outputTitle: 'Output shape',
+    output: `[
+  {
+    "name": "getRefundableOrders",
+    "description": "Search refund-ready orders...",
+    "score": 0.0312,
+    "confidence": "high"
+  }
+]`,
+    startsTitle: 'Choose a manual route',
+    startsBody: 'Each route follows the same pattern: minimal example, output shape, diagnostics, failure modes, and validation.',
     starts: [
       {
-        title: 'Tool Graph Search',
-        body: 'Retrieve compact candidate sets and inspect the evidence behind each ranked tool.',
-        href: '/docs/search/tool-graph-search/',
-        label: 'Core manual',
-      },
-      {
-        title: 'OpenAPI ingestion',
-        body: 'Convert Swagger/OpenAPI sources into tool schemas, IO contracts, and semantic metadata.',
+        title: 'Build catalog',
+        body: 'Convert Swagger/OpenAPI sources into tool schemas, contracts, semantic metadata, and collection artifacts.',
         href: '/docs/build/openapi-ingestion/',
-        label: 'Build catalogs',
+        label: 'Build',
       },
       {
-        title: 'Target selection',
+        title: 'Search tools',
+        body: 'Retrieve compact candidate sets and inspect the score signals behind each ranked tool.',
+        href: '/docs/search/tool-graph-search/',
+        label: 'Search',
+      },
+      {
+        title: 'Select target',
         body: 'Guard LLM target choices with deterministic action, resource, shape, and contract evidence.',
         href: '/docs/search/target-selection/',
-        label: 'Selection',
+        label: 'Select',
       },
       {
-        title: 'Quality Lab',
-        body: 'Validate search, plan, and execution behavior with repeatable collection-level cases.',
+        title: 'Plan execution',
+        body: 'Synthesize executable tool paths, user input slots, runner events, and failure reason codes.',
+        href: '/docs/plan/plan-synthesis/',
+        label: 'Plan',
+      },
+      {
+        title: 'Validate quality',
+        body: 'Run repeatable search, plan, execute, benchmark, and release gates before making claims.',
         href: '/docs/validation/quality-lab/',
         label: 'Validation',
       },
+      {
+        title: 'Learn from traces',
+        body: 'Promote scrubbed success evidence into low-weight ranking and planning suggestions.',
+        href: '/docs/concepts/trace-learning/',
+        label: 'Learn',
+      },
     ],
-    modelTitle: 'How the engine is meant to be used',
+    modelTitle: 'Engine artifacts',
     modelBody:
-      'The library is not another prompt wrapper. It prepares a compact, evidence-backed tool surface before an LLM chooses or executes anything.',
+      'The library is not another prompt wrapper. Each stage produces an artifact that can be inspected, stored, validated, and passed to an adapter.',
     stages: [
       {
         title: 'Ingest',
+        artifact: 'ToolSchema',
         body: 'Normalize OpenAPI, MCP, and Python sources into stable tool schemas.',
+        href: '/docs/build/openapi-ingestion/',
       },
       {
-        title: 'Analyze',
-        body: 'Extract request/response contracts, auth requirements, semantic action, resource, and module signals.',
+        title: 'Contract',
+        artifact: 'api_contract',
+        body: 'Extract request/response fields, auth requirements, enums, and context fields.',
+        href: '/docs/build/io-contracts/',
       },
       {
         title: 'Retrieve',
-        body: 'Rank a small candidate set with keyword, semantic metadata, graph expansion, and selector evidence.',
+        artifact: 'RetrievalResult',
+        body: 'Rank a small candidate set with keyword, graph, embedding, and annotation signals.',
+        href: '/docs/search/retrieval-signals/',
       },
       {
-        title: 'Plan and run',
+        title: 'Select',
+        artifact: 'target_selector',
+        body: 'Compare LLM target output with deterministic action, resource, shape, and contract evidence.',
+        href: '/docs/search/target-selection/',
+      },
+      {
+        title: 'Plan/run',
+        artifact: 'runner events',
         body: 'Synthesize executable tool paths, stream structured events, and classify auth/request/API failures.',
+        href: '/docs/plan/runner-events/',
       },
       {
         title: 'Learn',
+        artifact: 'suggestions',
         body: 'Promote scrubbed, validated trace evidence so repeated usage improves future ranking.',
+        href: '/docs/learning/suggestions/',
       },
     ],
     gatesTitle: 'Validation surface',
     gatesBody:
-      'Quality work should land with repeatable checks, not intuition. These are the gates this documentation points users toward.',
+      'Quality work should land with repeatable checks, not intuition. Public claims should link to commands, fixtures, or explicit limitations.',
     gates: [
       {
         area: 'Search',
         signal: 'Recall@K, MRR, NDCG, candidate count, Korean/English mixed queries',
+        proof: 'Benchmark fixtures and `benchmarks/run_benchmark.py` output',
         link: '/docs/validation/benchmarks/',
       },
       {
         area: 'OpenAPI build',
         signal: 'contract coverage, semantic coverage, readiness score, stable issue codes',
+        proof: 'OpenAPI readiness report and collection artifact metadata',
         link: '/docs/guides/openapi-collections/',
       },
       {
-        area: 'XGEN scale',
-        signal: 'selector hit rate, schema context reduction, uncaught error count',
-        link: '/docs/validation/xgen-scale-gates/',
+        area: 'Plan and execute',
+        signal: 'plan hit, runner stages, auth readiness, structured failure reasons',
+        proof: 'Quality Lab cases with search, plan, and execute modes',
+        link: '/docs/guides/quality-gates/',
       },
       {
-        area: 'Execution',
-        signal: 'plan hit, runner stages, auth readiness, structured failure reasons',
-        link: '/docs/guides/quality-gates/',
+        area: 'Trace learning',
+        signal: 'scrubbed payloads, shadow improvement, promotion/rejection status',
+        proof: 'Learning suggestions and shadow/promotion records',
+        link: '/docs/learning/shadow-promotion/',
+      },
+      {
+        area: 'Release',
+        signal: 'docs build, API imports, package version, benchmark claim policy',
+        proof: 'Release gates before publishing a public claim',
+        link: '/docs/validation/release-gates/',
       },
     ],
     refsTitle: 'Reference paths',
@@ -158,9 +212,15 @@ for item in results:
       },
       {
         title: 'CLI',
-        body: 'Search, inspect, and graph commands for local validation.',
+        body: 'Local search, inspect, graph, and diagnostics commands.',
         href: '/docs/reference/cli/',
         label: 'CLI',
+      },
+      {
+        title: 'Schemas',
+        body: 'Artifact, event, and report shapes used by integrations.',
+        href: '/docs/reference/artifact-schemas/',
+        label: 'Schemas',
       },
       {
         title: 'llms.txt',
@@ -171,103 +231,152 @@ for item in results:
     ],
   },
   ko: {
-    eyebrow: '공식 문서',
-    title: 'Tool graph 검색 엔진 개발자 매뉴얼.',
+    eyebrow: '개발자 문서',
+    title: 'Tool catalog 검색 엔진.',
     subtitle:
-      'OpenAPI, MCP, Python tool catalog를 retrieval, target selection, planning, validation, trace learning이 가능한 evidence-backed graph로 만듭니다.',
-    primary: 'Search부터 보기',
-    secondary: 'OpenAPI catalog 만들기',
+      'OpenAPI, MCP, Python 함수에서 catalog를 만들고, 검색, target 선택, plan 합성, 검증, trace learning까지 이어지는 evidence-backed graph를 제공합니다.',
+    primary: 'Quickstart',
+    secondary: 'Tool Graph Search',
     routesLabel: '매뉴얼 경로',
     installLabel: '설치',
     installCommand: 'pip install "graph-tool-call[openapi]"',
-    codeTitle: '최소 retrieval 흐름',
-    code: `from graph_tool_call import ToolGraph
+    codeTitle: '첫 retrieval 호출',
+    code: `import json
+from graph_tool_call import ToolGraph
 
 graph = ToolGraph.from_url(openapi_url)
-results = graph.retrieve(
+results = graph.retrieve_with_scores(
     "환불 가능한 주문을 찾아줘",
-    top_k=8,
-    include_evidence=True,
+    top_k=5,
 )
 
-for item in results:
-    print(item.tool.name, item.score_breakdown)`,
-    startsTitle: '어디서 시작할까',
-    startsBody: '지금 하려는 작업에 맞는 진입점을 먼저 선택하세요.',
+print(json.dumps(
+    [r.to_dict(include_score=True, max_desc=80) for r in results[:3]],
+    indent=2,
+))`,
+    outputTitle: '출력 형태',
+    output: `[
+  {
+    "name": "getRefundableOrders",
+    "description": "Search refund-ready orders...",
+    "score": 0.0312,
+    "confidence": "high"
+  }
+]`,
+    startsTitle: '작업 경로 선택',
+    startsBody: '각 경로는 최소 예제, 출력 형태, 진단 정보, 실패 모드, 검증 기준 순서로 읽을 수 있게 구성합니다.',
     starts: [
       {
-        title: 'Tool Graph Search',
-        body: 'compact candidate set을 검색하고 각 ranked tool의 evidence를 확인합니다.',
-        href: '/docs/search/tool-graph-search/',
-        label: '핵심 매뉴얼',
-      },
-      {
-        title: 'OpenAPI ingestion',
-        body: 'Swagger/OpenAPI source를 tool schema, IO contract, semantic metadata로 변환합니다.',
+        title: 'Catalog build',
+        body: 'Swagger/OpenAPI source를 tool schema, contract, semantic metadata, collection artifact로 변환합니다.',
         href: '/docs/build/openapi-ingestion/',
-        label: 'Catalog build',
+        label: 'Build',
       },
       {
-        title: 'Target selection',
+        title: 'Tool search',
+        body: '작은 후보군을 검색하고 ranked tool의 score signal을 확인합니다.',
+        href: '/docs/search/tool-graph-search/',
+        label: 'Search',
+      },
+      {
+        title: 'Target select',
         body: 'action, resource, shape, contract evidence로 LLM target 선택을 guard합니다.',
         href: '/docs/search/target-selection/',
-        label: 'Selection',
+        label: 'Select',
       },
       {
-        title: 'Quality Lab',
-        body: 'collection 단위 search, plan, execution behavior를 반복 가능한 case로 검증합니다.',
+        title: 'Plan execution',
+        body: '실행 가능한 tool path, 사용자 입력 슬롯, runner event, 실패 reason code를 만듭니다.',
+        href: '/docs/plan/plan-synthesis/',
+        label: 'Plan',
+      },
+      {
+        title: 'Quality validate',
+        body: 'search, plan, execute, benchmark, release gate를 반복 가능한 방식으로 검증합니다.',
         href: '/docs/validation/quality-lab/',
         label: 'Validation',
       },
+      {
+        title: 'Trace learning',
+        body: 'scrub된 성공 evidence를 낮은 가중치의 ranking/plan suggestion으로 승격합니다.',
+        href: '/docs/concepts/trace-learning/',
+        label: 'Learn',
+      },
     ],
-    modelTitle: '엔진 사용 모델',
+    modelTitle: '엔진 artifact',
     modelBody:
-      '이 라이브러리는 prompt wrapper가 아닙니다. LLM이 tool을 선택하거나 실행하기 전에 작고 근거가 있는 tool surface를 만들어줍니다.',
+      '이 라이브러리는 prompt wrapper가 아닙니다. 각 단계는 inspect, 저장, 검증, adapter 전달이 가능한 artifact를 만듭니다.',
     stages: [
       {
         title: 'Ingest',
+        artifact: 'ToolSchema',
         body: 'OpenAPI, MCP, Python source를 안정적인 tool schema로 정규화합니다.',
+        href: '/docs/build/openapi-ingestion/',
       },
       {
-        title: 'Analyze',
-        body: 'Request/response contract, auth requirement, semantic action/resource/module signal을 추출합니다.',
+        title: 'Contract',
+        artifact: 'api_contract',
+        body: 'request/response field, auth requirement, enum, context field를 추출합니다.',
+        href: '/docs/build/io-contracts/',
       },
       {
         title: 'Retrieve',
-        body: 'Keyword, semantic metadata, graph expansion, selector evidence로 작은 후보군을 정렬합니다.',
+        artifact: 'RetrievalResult',
+        body: 'keyword, graph, embedding, annotation signal로 작은 후보군을 정렬합니다.',
+        href: '/docs/search/retrieval-signals/',
       },
       {
-        title: 'Plan and run',
+        title: 'Select',
+        artifact: 'target_selector',
+        body: 'LLM target과 deterministic action/resource/shape/contract evidence를 비교합니다.',
+        href: '/docs/search/target-selection/',
+      },
+      {
+        title: 'Plan/run',
+        artifact: 'runner events',
         body: '실행 가능한 tool path를 합성하고, structured event와 auth/request/API 실패 원인을 남깁니다.',
+        href: '/docs/plan/runner-events/',
       },
       {
         title: 'Learn',
+        artifact: 'suggestions',
         body: 'Scrub된 검증 trace evidence를 승격해 반복 사용 시 ranking 품질을 개선합니다.',
+        href: '/docs/learning/suggestions/',
       },
     ],
     gatesTitle: '검증 표면',
     gatesBody:
-      '품질 개선은 감이 아니라 재현 가능한 체크로 확인해야 합니다. 이 문서는 아래 gate로 이어지게 설계했습니다.',
+      '품질 개선은 감이 아니라 재현 가능한 체크로 확인해야 합니다. 공개 claim은 command, fixture, 명시적 한계와 함께 남깁니다.',
     gates: [
       {
         area: 'Search',
         signal: 'Recall@K, MRR, NDCG, candidate count, 한영 혼합 query',
+        proof: 'benchmark fixture와 `benchmarks/run_benchmark.py` 결과',
         link: '/docs/validation/benchmarks/',
       },
       {
         area: 'OpenAPI build',
         signal: 'contract coverage, semantic coverage, readiness score, stable issue code',
+        proof: 'OpenAPI readiness report와 collection artifact metadata',
         link: '/docs/guides/openapi-collections/',
       },
       {
-        area: 'XGEN scale',
-        signal: 'selector hit rate, schema context reduction, uncaught error count',
-        link: '/docs/validation/xgen-scale-gates/',
+        area: 'Plan and execute',
+        signal: 'plan hit, runner stage, auth readiness, structured failure reason',
+        proof: 'search, plan, execute mode의 Quality Lab case',
+        link: '/docs/guides/quality-gates/',
       },
       {
-        area: 'Execution',
-        signal: 'plan hit, runner stage, auth readiness, structured failure reason',
-        link: '/docs/guides/quality-gates/',
+        area: 'Trace learning',
+        signal: 'scrubbed payload, shadow improvement, promotion/rejection status',
+        proof: 'learning suggestion과 shadow/promotion record',
+        link: '/docs/learning/shadow-promotion/',
+      },
+      {
+        area: 'Release',
+        signal: 'docs build, API import, package version, benchmark claim policy',
+        proof: 'public claim 전에 실행하는 release gate',
+        link: '/docs/validation/release-gates/',
       },
     ],
     refsTitle: 'Reference 경로',
@@ -280,9 +389,15 @@ for item in results:
       },
       {
         title: 'CLI',
-        body: '로컬 검색, inspect, graph command를 확인합니다.',
+        body: '로컬 search, inspect, graph, diagnostics command를 확인합니다.',
         href: '/docs/reference/cli/',
         label: 'CLI',
+      },
+      {
+        title: 'Schemas',
+        body: 'integration에서 사용하는 artifact, event, report shape를 확인합니다.',
+        href: '/docs/reference/artifact-schemas/',
+        label: 'Schemas',
       },
       {
         title: 'llms.txt',
@@ -307,10 +422,10 @@ function Home(): ReactNode {
             <h1>{text.title}</h1>
             <p className={styles.subtitle}>{text.subtitle}</p>
             <div className={styles.actions}>
-              <Link className="button button--primary button--lg" to="/docs/search/tool-graph-search/">
+              <Link className="button button--primary button--lg" to="/docs/getting-started/quickstart/">
                 {text.primary}
               </Link>
-              <Link className="button button--secondary button--lg" to="/docs/build/openapi-ingestion/">
+              <Link className="button button--secondary button--lg" to="/docs/search/tool-graph-search/">
                 {text.secondary}
               </Link>
             </div>
@@ -334,6 +449,11 @@ function Home(): ReactNode {
               <code>OpenAPI</code>
             </div>
             <pre>{text.code}</pre>
+            <div className={styles.panelHeader}>
+              <span>{text.outputTitle}</span>
+              <code>JSON</code>
+            </div>
+            <pre>{text.output}</pre>
           </aside>
         </section>
 
@@ -360,11 +480,12 @@ function Home(): ReactNode {
           </div>
           <div className={styles.pipeline} aria-label={text.modelTitle}>
             {text.stages.map((stage, index) => (
-              <article className={styles.stage} key={stage.title}>
+              <Link className={styles.stage} key={stage.title} to={stage.href}>
                 <span>{String(index + 1).padStart(2, '0')}</span>
+                <code>{stage.artifact}</code>
                 <h3>{stage.title}</h3>
                 <p>{stage.body}</p>
-              </article>
+              </Link>
             ))}
           </div>
         </section>
@@ -379,6 +500,7 @@ function Home(): ReactNode {
               <Link className={styles.gateRow} key={gate.area} to={gate.link}>
                 <strong>{gate.area}</strong>
                 <span>{gate.signal}</span>
+                <em>{gate.proof}</em>
               </Link>
             ))}
           </div>
