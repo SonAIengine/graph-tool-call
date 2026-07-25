@@ -68,7 +68,7 @@ type Copy = {
 const copy: Record<string, Copy> = {
   en: {
     eyebrow: 'Official documentation',
-    title: 'graph-tool-call documentation.',
+    title: 'graph-tool-call Documentation',
     subtitle:
       'A technical manual for turning OpenAPI, MCP, and Python tools into contracts, retrieval evidence, target selection, execution plans, quality gates, and trace learning loops.',
     primary: 'Start quickstart',
@@ -281,7 +281,7 @@ print(results[0].to_dict(include_score=True, max_desc=80))`,
   },
   ko: {
     eyebrow: '공식 문서',
-    title: 'graph-tool-call 공식 문서.',
+    title: 'graph-tool-call 문서',
     subtitle:
       'OpenAPI, MCP, Python tool을 contract, retrieval evidence, target selection, execution plan, quality gate, trace learning loop로 연결하는 기술 매뉴얼입니다.',
     primary: 'Quickstart 시작',
@@ -563,22 +563,6 @@ function Home(): ReactNode {
                   ))}
                 </ul>
               </article>
-            ))}
-          </div>
-        </section>
-
-        <section className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <h2>{text.startsTitle}</h2>
-            <p>{text.startsBody}</p>
-          </div>
-          <div className={styles.startGrid}>
-            {text.starts.map((item) => (
-              <Link className={styles.startCard} key={item.href} to={item.href}>
-                <span>{item.label}</span>
-                <strong>{item.title}</strong>
-                <p>{item.body}</p>
-              </Link>
             ))}
           </div>
         </section>
