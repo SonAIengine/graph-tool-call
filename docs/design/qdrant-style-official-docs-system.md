@@ -222,6 +222,8 @@ Required checks:
   `target`, `goal`, and `entities` arguments.
 - persisted collection examples load through `ToolGraph.load()` before calling
   retrieval APIs.
+- Core task pages include an early API contract section with the function
+  signature, parameter table, response shape, and a minimal example.
 
 Do not publish a docs design MR unless `npm run typecheck`, `npm run build`,
 and a small mobile overflow check pass.

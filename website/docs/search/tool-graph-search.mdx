@@ -39,6 +39,56 @@ policy checks, or API execution safety. Those belong in the adapter.
 5. Return evidence and score breakdowns when requested.
 6. Hand the ranked catalog to the LLM or to `select_target_candidate()`.
 
+## Search API
+
+Use `retrieve_graphify()` when the graph has already been built or loaded from a
+collection artifact. This is the API product adapters normally call before LLM
+target selection.
+
+```python
+from graph_tool_call.graphify import retrieve_graphify
+
+response = retrieve_graphify(
+    tg,
+    query,
+    top_k=10,
+    depth=2,
+    token_budget=2000,
+    history=None,
+    include_evidence=True,
+    learning_suggestions=None,
+)
+```
+
+| Parameter | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `tg` | `ToolGraph` | required | Built or loaded tool graph |
+| `query` | `str` | required | Natural-language user request |
+| `top_k` | `int` | `10` | Maximum candidate rows returned |
+| `depth` | `int` | `2` | Graph expansion depth from seed candidates |
+| `token_budget` | `int` | `2000` | Approximate character budget for `subgraph_text` |
+| `history` | `list[str]` | `None` | Tools already used in the session; these are demoted |
+| `include_evidence` | `bool` | `False` | Add score breakdown, edge evidence, and semantic evidence |
+| `learning_suggestions` | `list[dict]` | `None` | Optional promoted trace-learning suggestions |
+
+Response contract:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `results` | `list[dict]` | Ranked candidate rows |
+| `subgraph_text` | `str` | Compact LLM context for the selected subgraph |
+| `intent` | `dict` | Read/write/delete/neutral intent scores |
+| `stats` | `dict` | Seeds, visited graph size, and optional token budget diagnostics |
+
+Candidate rows contain `name`, `score`, and `tool`. With
+`include_evidence=True`, they also contain `score_breakdown`,
+`expanded_from`, `edge_evidence`, `semantic_evidence`, and optional
+`learning_evidence`.
+
+For one-shot local experiments, `ToolGraph.retrieve_with_scores()` and
+`graph-tool-call search` are shorter. For production adapters, prefer the
+evidence-rich `retrieve_graphify()` response.
+
 ## Minimal Example
 
 <Tabs>

@@ -38,6 +38,55 @@ runtime authorization, business policy, API execution safety를 대체하지는
 5. 요청 시 evidence와 score breakdown을 반환합니다.
 6. ranked catalog를 LLM 또는 `select_target_candidate()`에 전달합니다.
 
+## Search API
+
+이미 graph를 build했거나 collection artifact에서 로드한 경우
+`retrieve_graphify()`를 사용합니다. Product adapter가 LLM target selection 전에
+일반적으로 호출하는 API입니다.
+
+```python
+from graph_tool_call.graphify import retrieve_graphify
+
+response = retrieve_graphify(
+    tg,
+    query,
+    top_k=10,
+    depth=2,
+    token_budget=2000,
+    history=None,
+    include_evidence=True,
+    learning_suggestions=None,
+)
+```
+
+| Parameter | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `tg` | `ToolGraph` | required | build되었거나 로드된 tool graph |
+| `query` | `str` | required | natural-language user request |
+| `top_k` | `int` | `10` | 반환할 최대 candidate row 수 |
+| `depth` | `int` | `2` | seed candidate에서 graph expansion할 depth |
+| `token_budget` | `int` | `2000` | `subgraph_text`의 대략적인 character budget |
+| `history` | `list[str]` | `None` | session에서 이미 사용한 tool. 검색 시 demote됩니다 |
+| `include_evidence` | `bool` | `False` | score breakdown, edge evidence, semantic evidence를 추가 |
+| `learning_suggestions` | `list[dict]` | `None` | optional promoted trace-learning suggestion |
+
+Response contract:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `results` | `list[dict]` | ranked candidate row |
+| `subgraph_text` | `str` | 선택된 subgraph를 위한 compact LLM context |
+| `intent` | `dict` | read/write/delete/neutral intent score |
+| `stats` | `dict` | seed, visited graph size, optional token budget diagnostic |
+
+Candidate row는 `name`, `score`, `tool`을 포함합니다.
+`include_evidence=True`이면 `score_breakdown`, `expanded_from`,
+`edge_evidence`, `semantic_evidence`, optional `learning_evidence`도 포함합니다.
+
+일회성 local 실험은 `ToolGraph.retrieve_with_scores()`와
+`graph-tool-call search`가 더 짧습니다. Production adapter는 evidence가 풍부한
+`retrieve_graphify()` response를 우선 사용하세요.
+
 ## 최소 예제
 
 <Tabs>
