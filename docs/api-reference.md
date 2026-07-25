@@ -35,6 +35,68 @@ tools = tg.retrieve("create a pet", top_k=5)
 | `ingest_arazzo(source)` | Ingest Arazzo 1.0.0 workflow spec |
 | `add_relation(src, tgt, type)` | Add a manual relation between two tools |
 
+### Source-agnostic ingest adapters
+
+Use `ingest_source()` when the source format is selected at runtime:
+
+```python
+from graph_tool_call import ingest_source
+
+result = ingest_source(openapi_document, required_capabilities={"output_schema"})
+print(result.adapter, result.ready, result.issues)
+tools = result.tools
+```
+
+Built-in adapters recognize OpenAPI/Swagger dictionaries, MCP tool lists,
+Python functions, and OpenAI/Anthropic/MCP-shaped generic tool catalogs.
+Ambiguous paths and URLs should use an explicit `format_hint`:
+
+```python
+result = ingest_source(
+    "https://example.test/openapi.json",
+    format_hint="openapi",
+)
+```
+
+Applications can register GraphQL, gRPC, AsyncAPI, Postman, proprietary RPC, or
+other adapters without changing retrieval or graph code:
+
+```python
+from graph_tool_call import (
+    IngestCapabilities,
+    IngestResult,
+    register_ingest_adapter,
+)
+
+class GraphQLAdapter:
+    name = "graphql"
+    capabilities = IngestCapabilities(
+        source_type="graphql",
+        features=frozenset({"input_schema", "output_schema"}),
+        transports=frozenset({"http"}),
+    )
+
+    def detect(self, source):
+        return 1.0 if looks_like_graphql(source) else 0.0
+
+    def ingest(self, source, **options):
+        return IngestResult(
+            tools=convert_graphql_operations(source),
+            adapter=self.name,
+            capabilities=self.capabilities,
+        )
+
+register_ingest_adapter(GraphQLAdapter())
+```
+
+`required_capabilities` turns unsupported behavior into stable
+`unsupported_capability` issues. Set `strict=True` to raise
+`IngestConformanceError` when blockers such as duplicate names, an empty
+catalog, or missing required capabilities are present. See
+[Universal Ingest Adapters](design/universal-ingest-adapters.md).
+Unknown hints raise `UnknownIngestAdapterError`; equivalent strong detector
+matches raise `AmbiguousIngestAdapterError` and require an explicit hint.
+
 ### Retrieval
 
 | Method | Description |
