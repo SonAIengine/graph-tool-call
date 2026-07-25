@@ -54,6 +54,9 @@ questions quickly:
   truth for the Qdrant-style developer manual structure. This document explains
   the homepage redesign; the manual design explains the full documentation
   information architecture and page template.
+- Treat `docs/design/qdrant-style-official-docs-system.md` as the implementation
+  design for the official-docs visual shell, search behavior, page templates,
+  bilingual rules, and acceptance checklist.
 - Add search when the content grows beyond the current small docs set.
 - Add release-versioned docs before the first widely announced stable release.
 - Promote benchmark result pages only when they are reproducible from committed

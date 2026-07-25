@@ -335,6 +335,10 @@ graph-tool-call search openapi.json "find refund-ready orders" --top-k 8
 
 ## Visual Design Principles
 
+Detailed visual shell rules, search behavior, bilingual sidebar requirements,
+and implementation phases are now defined in
+[`qdrant-style-official-docs-system.md`](qdrant-style-official-docs-system.md).
+
 The visual language should feel like infrastructure documentation:
 
 - Use light mode as the default.
