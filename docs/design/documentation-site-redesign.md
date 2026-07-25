@@ -42,6 +42,11 @@ questions quickly:
 - Keep cards for repeated navigation items only.
 - Use a neutral technical palette with limited blue accent.
 - Keep the design usable in Korean and English without text overflow.
+- Default the public site to light mode. Users can still switch themes, but the
+  first visit should not inherit a mobile/browser dark theme that was never
+  visually reviewed.
+- Define primary and secondary button foreground/background tokens separately
+  for light and dark mode. Do not reuse heading text colors for filled buttons.
 
 ## Follow-up Criteria
 
@@ -50,3 +55,5 @@ questions quickly:
 - Promote benchmark result pages only when they are reproducible from committed
   fixtures or published artifacts.
 - Add API examples only when they are verified against public package imports.
+- Recheck mobile screenshots in both light and dark mode before publishing
+  visual changes.

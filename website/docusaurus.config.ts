@@ -52,7 +52,8 @@ const config: Config = {
   themeConfig: {
     image: 'img/social_preview.png',
     colorMode: {
-      respectPrefersColorScheme: true,
+      defaultMode: 'light',
+      respectPrefersColorScheme: false,
     },
     navbar: {
       title: 'graph-tool-call',
