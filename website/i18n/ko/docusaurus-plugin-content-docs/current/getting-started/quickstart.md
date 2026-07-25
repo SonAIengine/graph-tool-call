@@ -75,7 +75,7 @@ response = retrieve_graphify(
 )
 
 first = response["results"][0]
-print(first["tool_name"])
+print(first["name"])
 print(first["score_breakdown"])
 ```
 

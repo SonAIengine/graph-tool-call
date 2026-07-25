@@ -57,7 +57,7 @@ from graph_tool_call.graphify import select_target_candidate
 
 selection = select_target_candidate(
     query=user_query,
-    candidates=[row["tool_name"] for row in response["results"]],
+    candidates=[row["name"] for row in response["results"]],
     tools=artifact["tools"],
     retrieval_results=response["results"],
     llm_target=llm_target,

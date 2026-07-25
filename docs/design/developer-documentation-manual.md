@@ -65,6 +65,14 @@ optimizing for repeated developer usage.
 Purpose: help a new developer run retrieval against a small OpenAPI source in
 the first 10 minutes.
 
+### Tutorials
+
+- OpenAPI search-to-plan
+
+Purpose: give developers a copyable end-to-end path after the quickstart. A
+tutorial should connect multiple manual sections into one working workflow
+without becoming the reference page for any single API.
+
 ### Build Tool Catalogs
 
 - OpenAPI ingestion
@@ -162,6 +170,9 @@ Getting Started
   Installation
   Quickstart
   Mental Model
+
+Tutorials
+  OpenAPI Search-To-Plan
 
 Build Tool Catalogs
   OpenAPI Ingestion

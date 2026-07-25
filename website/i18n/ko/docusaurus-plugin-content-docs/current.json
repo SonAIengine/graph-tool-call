@@ -15,6 +15,18 @@
     "message": "graph-tool-call을 설치하고 첫 retrieval 흐름과 mental model을 익힙니다.",
     "description": "The generated-index page description for category 'Getting Started' in sidebar 'docsSidebar'"
   },
+  "sidebar.docsSidebar.category.Tutorials": {
+    "message": "튜토리얼",
+    "description": "The label for category 'Tutorials' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Tutorials.link.generated-index.title": {
+    "message": "튜토리얼",
+    "description": "The generated-index page title for category 'Tutorials' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Tutorials.link.generated-index.description": {
+    "message": "source ingestion부터 evidence 기반 planning까지 end-to-end workflow를 따라갑니다.",
+    "description": "The generated-index page description for category 'Tutorials' in sidebar 'docsSidebar'"
+  },
   "sidebar.docsSidebar.category.Build Tool Catalogs": {
     "message": "Tool Catalog 구축",
     "description": "The label for category 'Build Tool Catalogs' in sidebar 'docsSidebar'"

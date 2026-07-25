@@ -19,6 +19,18 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Tutorials',
+      link: {
+        type: 'generated-index',
+        title: 'Tutorials',
+        description: 'Follow end-to-end workflows from source ingestion to evidence-backed planning.',
+      },
+      items: [
+        'tutorials/openapi-search-to-plan',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Build Tool Catalogs',
       link: {
         type: 'generated-index',

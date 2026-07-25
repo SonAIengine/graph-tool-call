@@ -25,9 +25,9 @@ payload를 저장하지 않고도 각 단계를 compact evidence로 남길 수 �
 | --- | --- | --- | --- |
 | Query normalization | user query | token, alias, inferred shape | `seeds` |
 | Candidate retrieval | indexed tool text와 metadata | ranked tool | `score_breakdown` |
-| Contract matching | request/response field | consumes/produces match | `candidate_evidence.contract_match` |
+| Contract matching | request/response field | consumes/produces match | `semantic_evidence.contract_match` |
 | Graph expansion | deterministic/promoted edge | producer/neighbor tool | `expanded_from`, `edge_evidence` |
-| Selector handoff | Top-K candidate | selector-ready ranking row | `candidate_evidence` |
+| Selector handoff | Top-K candidate | selector-ready ranking row | `semantic_evidence` |
 
 즉 retrieval은 prompt heuristic이 아니라 query engine에 가깝습니다. 각 candidate가 어떤
 artifact 때문에 보였는지 설명할 수 있어야 합니다.
@@ -36,7 +36,7 @@ artifact 때문에 보였는지 설명할 수 있어야 합니다.
 
 | Signal | Source | 중요한 이유 |
 | --- | --- | --- |
-| `keyword_match` | tool name, operation id, summary, description | 직접적인 textual intent를 잡음 |
+| `seed` | tool name, operation id, summary, description | 직접 retrieval seed contribution을 기록 |
 | `action_match` | `metadata.ai_metadata.canonical_action` | search/read/create/update/delete intent 분리 |
 | `resource_match` | `metadata.ai_metadata.primary_resource` | business object를 맞춤 |
 | `module_match` | `metadata.openapi.path_module` 또는 operation group | 대형 enterprise API 범위를 좁힘 |
@@ -53,17 +53,19 @@ signal detail은 `include_evidence=True`로 확인합니다.
   <TabItem value="graphify" label="Graphify" default>
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 response = retrieve_graphify(
-    graph_json,
+    graph,
     "환불 가능한 주문을 찾아줘",
     top_k=5,
     include_evidence=True,
 )
 
 for row in response["results"]:
-    print(row["tool_name"], row["score_breakdown"])
+    print(row["name"], row["score_breakdown"])
 ```
 
   </TabItem>
@@ -99,10 +101,12 @@ graph-tool-call search "환불 가능한 주문을 찾아줘" \
 
 ```json
 {
-  "tool_name": "getRefundableOrderList",
+  "name": "getRefundableOrderList",
   "score_breakdown": {
-    "base_retrieval": 0.42,
+    "seed": 0.0314,
+    "graph": 0.0057,
     "learning": 0.02,
+    "history_demoted": false,
     "action_match": 1.0,
     "resource_match": 1.0,
     "module_match": 0.0,
@@ -110,9 +114,15 @@ graph-tool-call search "환불 가능한 주문을 찾아줘" \
     "contract_match": 1.0,
     "graph_expansion": 0.1
   },
-  "candidate_evidence": {
-    "semantic_match": ["action", "resource", "shape"],
-    "contract_match": ["orderNo", "claimStatus"]
+  "semantic_evidence": {
+    "canonical_action": "search",
+    "primary_resource": "order",
+    "result_shape": "list",
+    "action_match": true,
+    "resource_match": true,
+    "shape_match": true,
+    "contract_match": true,
+    "matched_terms": ["order", "refund"]
   }
 }
 ```
@@ -127,15 +137,15 @@ weight를 바꾸기 전에 result row부터 읽습니다. 대부분의 search �
 
 | Field | 확인할 질문 |
 | --- | --- |
-| `tool_name` | 기대 tool이 Top-K에 들어왔는가? |
-| `rank` | tool이 너무 낮은가, 아예 없는가? |
-| `score_breakdown.keyword_match` | name, summary, operation id가 query와 맞았는가? |
+| `name` | 기대 tool이 Top-K에 들어왔는가? |
+| list position | tool이 너무 낮은가, 아예 없는가? |
+| `score_breakdown.seed` | name, summary, operation id가 candidate를 seed했는가? |
 | `score_breakdown.action_match` | query 동사가 `canonical_action`과 맞았는가? |
 | `score_breakdown.resource_match` | business object가 `primary_resource`와 맞았는가? |
 | `score_breakdown.shape_match` | list/detail/count/mutation intent가 `result_shape`와 맞았는가? |
-| `candidate_evidence.contract_match` | request/response field가 query와 맞았는가? |
+| `semantic_evidence.contract_match` | request/response field가 query와 맞았는가? |
 | `edge_evidence` | graph relation 때문에 candidate가 추가됐는가? |
-| `token_budget_used` | retrieval context가 LLM에 너무 많이 넘어가는가? |
+| `stats.token_budget_used` | retrieval context가 LLM에 너무 많이 넘어가는가? |
 
 기대 tool이 없으면 ingest, semantic metadata, alias, contract extraction을 고칩니다. 기대
 tool은 있는데 LLM이 sibling을 고르면 [Target Selection](./target-selection.md)을
@@ -157,8 +167,11 @@ tool은 있는데 LLM이 sibling을 고르면 [Target Selection](./target-select
 도움을 주려면 retrieval이 두 candidate의 evidence를 보존해야 합니다.
 
 ```python
+from graph_tool_call import ToolGraph
+
+graph = ToolGraph.load("collection.json")
 response = retrieve_graphify(
-    graph_json,
+    graph,
     "회원 배송지 상세 정보를 조회해줘",
     top_k=8,
     include_evidence=True,
@@ -166,9 +179,9 @@ response = retrieve_graphify(
 
 for row in response["results"]:
     print(
-        row["tool_name"],
+        row["name"],
         row["score_breakdown"].get("shape_match"),
-        row["candidate_evidence"].get("semantic_match"),
+        row["semantic_evidence"].get("matched_terms"),
     )
 ```
 
@@ -188,7 +201,7 @@ response contract coverage를 먼저 보강합니다.
 weight를 바꾸기 전에 metadata와 contract를 먼저 개선합니다.
 
 1. expected tool이 Top-K에 있는지 확인합니다.
-2. `score_breakdown`과 `candidate_evidence`를 봅니다.
+2. `score_breakdown`과 `semantic_evidence`를 봅니다.
 3. text가 약하면 summary 또는 alias를 개선합니다.
 4. list/detail이 헷갈리면 `result_shape`를 개선합니다.
 5. upstream value가 필요하면 contract producer를 확인합니다.
@@ -241,9 +254,9 @@ comparison으로 보여줍니다.
 | UI Field | Source |
 | --- | --- |
 | rank와 tool name | result row |
-| action/resource/shape badge | `candidate_evidence.semantic_match` |
-| matched field | `candidate_evidence.contract_match` |
-| Top-K에 들어온 이유 | `seeds`, `expanded_from` |
+| action/resource/shape badge | `semantic_evidence.action_match`, `resource_match`, `shape_match` |
+| matched term | `semantic_evidence.matched_terms` |
+| Top-K에 들어온 이유 | `stats.seeds`, `expanded_from` |
 | selection outcome | `target_selector.selected_target` |
 | uncertainty | `ambiguous`, `reason_codes` |
 

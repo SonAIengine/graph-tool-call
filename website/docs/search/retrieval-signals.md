@@ -26,9 +26,9 @@ payloads.
 | --- | --- | --- | --- |
 | Query normalization | user query | tokens, aliases, inferred shape | `seeds` |
 | Candidate retrieval | indexed tool text and metadata | ranked tools | `score_breakdown` |
-| Contract matching | request/response fields | consumes/produces matches | `candidate_evidence.contract_match` |
+| Contract matching | request/response fields | consumes/produces matches | `semantic_evidence.contract_match` |
 | Graph expansion | deterministic and promoted edges | producer/neighbor tools | `expanded_from`, `edge_evidence` |
-| Selector handoff | Top-K candidates | selector-ready ranking rows | `candidate_evidence` |
+| Selector handoff | Top-K candidates | selector-ready ranking rows | `semantic_evidence` |
 
 This makes retrieval closer to a query engine than to a prompt heuristic: each
 candidate can explain which artifact made it visible.
@@ -37,7 +37,7 @@ candidate can explain which artifact made it visible.
 
 | Signal | Source | Why It Matters |
 | --- | --- | --- |
-| `keyword_match` | tool name, operation id, summary, description | catches direct textual intent |
+| `seed` | tool name, operation id, summary, description | records the direct retrieval seed contribution |
 | `action_match` | `metadata.ai_metadata.canonical_action` | separates search/read/create/update/delete intent |
 | `resource_match` | `metadata.ai_metadata.primary_resource` | keeps the business object aligned |
 | `module_match` | `metadata.openapi.path_module` or operation group | scopes large enterprise APIs |
@@ -54,17 +54,19 @@ Use `include_evidence=True` to expose signal details:
   <TabItem value="graphify" label="Graphify" default>
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 response = retrieve_graphify(
-    graph_json,
+    graph,
     "find refund-ready orders",
     top_k=5,
     include_evidence=True,
 )
 
 for row in response["results"]:
-    print(row["tool_name"], row["score_breakdown"])
+    print(row["name"], row["score_breakdown"])
 ```
 
   </TabItem>
@@ -100,10 +102,12 @@ Typical output contains:
 
 ```json
 {
-  "tool_name": "getRefundableOrderList",
+  "name": "getRefundableOrderList",
   "score_breakdown": {
-    "base_retrieval": 0.42,
+    "seed": 0.0314,
+    "graph": 0.0057,
     "learning": 0.02,
+    "history_demoted": false,
     "action_match": 1.0,
     "resource_match": 1.0,
     "module_match": 0.0,
@@ -111,9 +115,15 @@ Typical output contains:
     "contract_match": 1.0,
     "graph_expansion": 0.1
   },
-  "candidate_evidence": {
-    "semantic_match": ["action", "resource", "shape"],
-    "contract_match": ["orderNo", "claimStatus"]
+  "semantic_evidence": {
+    "canonical_action": "search",
+    "primary_resource": "order",
+    "result_shape": "list",
+    "action_match": true,
+    "resource_match": true,
+    "shape_match": true,
+    "contract_match": true,
+    "matched_terms": ["order", "refund"]
   }
 }
 ```
@@ -129,15 +139,15 @@ caused by missing metadata or missing contracts, not by one bad score constant.
 
 | Field | What To Ask |
 | --- | --- |
-| `tool_name` | Is the expected tool present in Top-K? |
-| `rank` | Is the tool too low, or absent entirely? |
-| `score_breakdown.keyword_match` | Did names, summaries, and operation ids match the query? |
+| `name` | Is the expected tool present in Top-K? |
+| list position | Is the tool too low, or absent entirely? |
+| `score_breakdown.seed` | Did names, summaries, and operation ids seed the candidate? |
 | `score_breakdown.action_match` | Did the query verb match `canonical_action`? |
 | `score_breakdown.resource_match` | Did the business object match `primary_resource`? |
 | `score_breakdown.shape_match` | Did list/detail/count/mutation intent match `result_shape`? |
-| `candidate_evidence.contract_match` | Did request/response fields fit the query? |
+| `semantic_evidence.contract_match` | Did request/response fields fit the query? |
 | `edge_evidence` | Was the candidate added because of a graph relation? |
-| `token_budget_used` | Is retrieval returning too much context to the LLM? |
+| `stats.token_budget_used` | Is retrieval returning too much context to the LLM? |
 
 If the expected tool is absent, fix ingest, semantic metadata, aliases, or
 contract extraction. If it is present but the LLM chooses a sibling, inspect
@@ -160,8 +170,11 @@ one word. The selector can only help if retrieval preserves evidence for both
 candidates.
 
 ```python
+from graph_tool_call import ToolGraph
+
+graph = ToolGraph.load("collection.json")
 response = retrieve_graphify(
-    graph_json,
+    graph,
     "show member delivery detail",
     top_k=8,
     include_evidence=True,
@@ -169,9 +182,9 @@ response = retrieve_graphify(
 
 for row in response["results"]:
     print(
-        row["tool_name"],
+        row["name"],
         row["score_breakdown"].get("shape_match"),
-        row["candidate_evidence"].get("semantic_match"),
+        row["semantic_evidence"].get("matched_terms"),
     )
 ```
 
@@ -191,7 +204,7 @@ or response contract coverage before adjusting search weights.
 Prefer improving metadata and contracts before changing weights:
 
 1. Verify the expected tool appears in Top-K.
-2. Inspect `score_breakdown` and `candidate_evidence`.
+2. Inspect `score_breakdown` and `semantic_evidence`.
 3. If text is weak, improve summary or aliases.
 4. If list/detail is confused, improve `result_shape`.
 5. If the tool needs upstream values, inspect contract producers.
@@ -246,9 +259,9 @@ instead of dumping raw metadata:
 | UI Field | Source |
 | --- | --- |
 | rank and tool name | result row |
-| action/resource/shape badges | `candidate_evidence.semantic_match` |
-| matched fields | `candidate_evidence.contract_match` |
-| why it entered Top-K | `seeds` and `expanded_from` |
+| action/resource/shape badges | `semantic_evidence.action_match`, `resource_match`, `shape_match` |
+| matched terms | `semantic_evidence.matched_terms` |
+| why it entered Top-K | `stats.seeds` and `expanded_from` |
 | selection outcome | `target_selector.selected_target` |
 | uncertainty | `ambiguous`, `reason_codes` |
 

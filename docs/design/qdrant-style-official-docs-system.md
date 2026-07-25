@@ -112,6 +112,7 @@ guess which subsystem owns the answer.
 | Journey | Entry page | Must answer |
 | --- | --- | --- |
 | Build a catalog from Swagger/OpenAPI | Build Tool Catalogs -> OpenAPI Ingestion | What source formats work, what artifact is produced, what diagnostics appear. |
+| Follow the full build/search/plan workflow | Tutorials -> OpenAPI Search-To-Plan | How inspection, artifact build, retrieval evidence, target selection, and plan synthesis connect. |
 | Improve tool search quality | Search And Selection -> Tool Graph Search | Which signals rank tools, how evidence is returned, how to tune Top-K. |
 | Stop wrong LLM target choices | Search And Selection -> Target Selection | When deterministic selection can override, when it only reports ambiguity. |
 | Execute and debug a plan | Plan And Execute -> Plan Synthesis | What inputs are required, what failure reason means, how runner events are shaped. |
@@ -160,6 +161,7 @@ Category order:
 ```text
 Overview
 Getting Started
+Tutorials
 Build Tool Catalogs
 Search And Selection
 Plan And Execute
@@ -198,6 +200,28 @@ Search acceptance:
 - Query `target selection` finds the target selection page.
 - Query `auth readiness` finds Quality Lab and auth readiness pages.
 - Query `한글 검색` finds Korean search docs.
+
+## Content Contract
+
+Official documentation quality depends on API correctness as much as visual
+polish. Any page that includes executable code must use the public contract that
+is currently supported by the library.
+
+Required checks:
+
+- `retrieve_graphify()` examples treat the return value as a response object
+  with `results`, `subgraph_text`, `intent`, and `stats`.
+- retrieval rows use `name`, `tool`, `score`, `score_breakdown`,
+  `edge_evidence`, and `semantic_evidence`.
+- selector examples use `candidate_evidence` only for
+  `select_target_candidate()` output.
+- `PathSynthesizer.synthesize()` examples use the keyword-only
+  `target`, `goal`, and `entities` arguments.
+- persisted collection examples load through `ToolGraph.load()` before calling
+  retrieval APIs.
+
+Do not publish a docs design MR unless `npm run typecheck`, `npm run build`,
+and a small mobile overflow check pass.
 
 ## Visual System
 
@@ -586,6 +610,8 @@ Exit criteria:
 
 ### MR 3: Core Manual Depth
 
+- Add a tutorial layer for end-to-end workflows that should not live entirely
+  in Quickstart or Reference.
 - Expand Semantic Build.
 - Expand Readiness Diagnostics.
 - Expand Plan Synthesis.

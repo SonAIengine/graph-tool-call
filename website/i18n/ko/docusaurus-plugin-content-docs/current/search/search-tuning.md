@@ -89,19 +89,21 @@ Search를 튜닝할 때는 `include_evidence=True`를 사용합니다. evidence 
 target selection, planning, product UI 사이의 debug 가능한 contract입니다.
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 baseline = retrieve_graphify(
-    artifact["graph"],
+    graph,
     query="환불 가능한 주문을 찾아줘",
     top_k=8,
     include_evidence=True,
 )
 
 for row in baseline["results"]:
-    print(row["tool_name"])
+    print(row["name"])
     print(row["score_breakdown"])
-    print(row.get("candidate_evidence", {}))
+    print(row.get("semantic_evidence", {}))
 ```
 
 캡처할 항목:
@@ -123,7 +125,7 @@ Evidence quality부터 봅니다. weight 변경은 마지막 단계입니다.
 
 | Signal | 언제 확인하나 | 가능한 조치 |
 | --- | --- | --- |
-| `keyword_match` | expected tool이 Top-K 밖 | name, summary, alias |
+| `seed` | expected tool이 Top-K 밖 | name, summary, alias |
 | `action_match` | search/read/create/update/delete intent가 틀림 | `canonical_action` derivation |
 | `resource_match` | action은 맞지만 object가 틀림 | `primary_resource` 또는 resource alias |
 | `module_match` | 대형 catalog에서 다른 domain이 올라옴 | `path_module`, operation group, module alias |
@@ -204,7 +206,7 @@ from graph_tool_call.graphify import select_target_candidate
 selection = select_target_candidate(
     query=case["query"],
     candidates=[
-        row["tool_name"]
+        row["name"]
         for row in retrieval["results"]
     ],
     tools=artifact["tools"],

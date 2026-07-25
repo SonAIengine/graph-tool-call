@@ -57,8 +57,8 @@ synthesizer = PathSynthesizer(graph_artifact)
 
 try:
     plan = synthesizer.synthesize(
-        target_tool="getOrderDetail",
-        user_query="show me the order detail",
+        target="getOrderDetail",
+        goal="show me the order detail",
         entities={},
     )
 except PlanSynthesisError as exc:

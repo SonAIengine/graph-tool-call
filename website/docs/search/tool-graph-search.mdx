@@ -59,20 +59,22 @@ for result in results:
 ```
 
   </TabItem>
-  <TabItem value="graphify" label="Graphify artifact">
+  <TabItem value="graphify" label="Loaded artifact">
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 results = retrieve_graphify(
-    graph_json,
+    graph,
     query="find refund-ready orders",
     top_k=8,
     include_evidence=True,
 )
 
 for result in results["results"]:
-    print(result["tool_name"], result["score_breakdown"])
+    print(result["name"], result["score_breakdown"])
 ```
 
   </TabItem>
@@ -110,19 +112,21 @@ Use `include_evidence=True` when building a product UI, debugging search
 quality, or writing regression tests.
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 response = retrieve_graphify(
-    graph_json,
+    graph,
     "회원 상세 정보를 조회해줘",
     top_k=8,
     include_evidence=True,
 )
 
 first = response["results"][0]
-print(first["tool_name"])
+print(first["name"])
 print(first["score_breakdown"])
-print(first["candidate_evidence"])
+print(first["semantic_evidence"])
 ```
 
 Important fields:
@@ -130,11 +134,11 @@ Important fields:
 | Field | Meaning |
 | --- | --- |
 | `score_breakdown` | Additive ranking signals used for this candidate |
-| `seeds` | Initial matches before graph expansion |
+| `stats.seeds` | Initial matches before graph expansion |
 | `expanded_from` | Candidate that caused this tool to be added |
 | `edge_evidence` | Graph edge evidence used during expansion |
-| `token_budget_used` | Approximate retrieval context budget |
-| `candidate_evidence` | Selector-ready semantic and contract evidence |
+| `stats.token_budget_used` | Approximate retrieval context budget |
+| `semantic_evidence` | Selector-ready semantic and contract evidence |
 
 ## Target Selector Handoff
 
@@ -145,7 +149,7 @@ from graph_tool_call.graphify import select_target_candidate
 
 selection = select_target_candidate(
     query="회원 상세 정보를 조회해줘",
-    candidates=[item["tool_name"] for item in response["results"]],
+    candidates=[item["name"] for item in response["results"]],
     tools=tools,
     retrieval_results=response["results"],
     llm_target=llm_intent.target,

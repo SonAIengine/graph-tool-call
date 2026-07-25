@@ -91,10 +91,10 @@ from graph_tool_call.graphify import (
 from graph_tool_call.graphify import (
     build_io_contract,
     derive_plan_trace_edges,
+    extract_openapi_contract_index,
     merge_graph_edges,
     normalize_graph_edge,
 )
-from graph_tool_call.graphify.contract_index import extract_openapi_contract_index
 ```
 
 ### Collection artifact build
@@ -117,17 +117,19 @@ print(artifact["readiness_report"]["summary"])
 ### 저장된 artifact 검색
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 response = retrieve_graphify(
-    artifact,
+    graph,
     query="환불 가능한 주문 목록",
     top_k=8,
     include_evidence=True,
 )
 
 for result in response["results"]:
-    print(result["tool_name"], result["score_breakdown"])
+    print(result["name"], result["score_breakdown"])
 ```
 
 ### LLM target guard
@@ -137,8 +139,8 @@ from graph_tool_call.graphify import select_target_candidate
 
 selection = select_target_candidate(
     query="환불 가능한 주문 목록",
-    candidates=[row["tool_name"] for row in response["results"]],
-    tools=artifact["tools"],
+    candidates=[row["name"] for row in response["results"]],
+    tools=graph.tools,
     retrieval_results=response["results"],
     llm_target="getOrderDetail",
 )

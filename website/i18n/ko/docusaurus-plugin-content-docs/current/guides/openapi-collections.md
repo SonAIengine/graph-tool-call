@@ -198,13 +198,15 @@ Artifact가 만들어지면 graph retrieval로 작은 candidate set을 만들고
 LLM의 최종 target 선택을 guard합니다.
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import (
     retrieve_graphify,
     select_target_candidate,
 )
 
+graph = ToolGraph.load("collection.json")
 retrieval = retrieve_graphify(
-    artifact["graph"],
+    graph,
     "환불 가능한 주문을 찾아줘",
     top_k=8,
     include_evidence=True,
@@ -212,8 +214,8 @@ retrieval = retrieve_graphify(
 
 selection = select_target_candidate(
     query="환불 가능한 주문을 찾아줘",
-    candidates=[row["tool_name"] for row in retrieval["results"]],
-    tools=artifact["tools"],
+    candidates=[row["name"] for row in retrieval["results"]],
+    tools=graph.tools,
     retrieval_results=retrieval["results"],
     llm_target=llm_intent.target,
 )

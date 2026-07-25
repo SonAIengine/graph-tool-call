@@ -1,0 +1,354 @@
+---
+title: OpenAPI Search-To-Plan Tutorial
+description: Build an OpenAPI collection artifact, retrieve candidates with evidence, select a target, and synthesize a plan.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# OpenAPI Search-To-Plan Tutorial
+
+This tutorial walks through the first production-grade workflow for a large
+OpenAPI catalog:
+
+1. inspect the source
+2. build a collection artifact
+3. check readiness
+4. retrieve candidates with evidence
+5. select the final target
+6. synthesize a plan
+
+The flow is deterministic until the optional LLM intent step. It does not call
+the downstream API, store credentials, write to a database, or depend on an
+XGEN-specific adapter.
+
+## What You Build
+
+The tutorial creates a `collection.json` artifact that contains:
+
+| Artifact Section | Why It Matters |
+| --- | --- |
+| `tools` | normalized OpenAPI operations as `ToolSchema` records |
+| `graph` | structural, contract, semantic, manual, and trace-ready edges |
+| `semantic_summary` | action/resource/module/result-shape coverage |
+| `edge_quality_summary` | edge evidence distribution |
+| `readiness_report` | deterministic issue codes and recommendations |
+| `source_snapshot_manifest` | source hashes and operation counts |
+
+After the artifact is saved, you load it as a `ToolGraph` and run retrieval,
+selection, and plan synthesis against the loaded graph.
+
+## Before You Start
+
+Install the OpenAPI extra:
+
+```bash
+pip install "graph-tool-call[openapi]"
+```
+
+Use a local file while developing:
+
+```bash
+export OPENAPI_SOURCE=./openapi.json
+```
+
+For private Swagger UI URLs, enable private host access only inside a trusted
+environment:
+
+```bash
+export OPENAPI_SOURCE=https://internal.example.com/swagger-ui/index.html
+```
+
+Private source access is a build-time concern. Runtime auth tokens for executing
+API calls should stay in your adapter.
+
+## 1. Inspect The Source
+
+Start with deterministic readiness diagnostics. This catches missing schemas,
+generic request bodies, response envelopes, auth requirements, duplicate
+operation ids, and weak graph connectivity before you tune retrieval.
+
+<Tabs>
+  <TabItem value="cli" label="CLI" default>
+
+```bash
+graph-tool-call inspect-openapi "$OPENAPI_SOURCE" --json
+```
+
+  </TabItem>
+  <TabItem value="python" label="Python">
+
+```python
+from graph_tool_call.analyze import analyze_openapi_collection
+
+report = analyze_openapi_collection(
+    "./openapi.json",
+    context_field_names={"tenantId", "siteNo"},
+    paging_field_names={"page", "size"},
+    search_filter_field_names={"keyword", "searchText"},
+)
+
+payload = report.to_dict()
+print(payload["summary"])
+print(payload["issues"][:5])
+```
+
+  </TabItem>
+  <TabItem value="output" label="Output Shape">
+
+```json
+{
+  "summary": {
+    "operation_count": 624,
+    "readiness_score": 86,
+    "status": "warning"
+  },
+  "coverage": {
+    "request_schema_coverage": 0.74,
+    "response_schema_coverage": 0.68
+  },
+  "issues": [
+    {
+      "severity": "warning",
+      "code": "response_envelope_detected",
+      "recommendation": "Pick the useful body view before planning."
+    }
+  ]
+}
+```
+
+  </TabItem>
+</Tabs>
+
+Treat `blocked` as a stop sign for execute. A `warning` status can still be
+usable for search and plan cases when the issue evidence is understood.
+
+## 2. Build The Collection Artifact
+
+Build a storage-ready artifact when the catalog will be used by a product UI,
+Quality Lab, Planflow adapter, or repeated regression tests.
+
+<Tabs>
+  <TabItem value="cli" label="CLI" default>
+
+```bash
+graph-tool-call build-openapi-collection "$OPENAPI_SOURCE" \
+  -o collection.json \
+  --context-field tenantId,siteNo \
+  --paging-field page,size \
+  --search-filter-field keyword,searchText
+```
+
+  </TabItem>
+  <TabItem value="python" label="Python">
+
+```python
+import json
+from pathlib import Path
+
+from graph_tool_call.graphify import build_openapi_collection_artifact
+
+artifact = build_openapi_collection_artifact(
+    "./openapi.json",
+    derive_semantic_metadata=True,
+    promote_contract_signals=True,
+    context_field_names={"tenantId", "siteNo"},
+    paging_field_names={"page", "size"},
+    search_filter_field_names={"keyword", "searchText"},
+    metadata={"collection_id": "commerce-readonly"},
+)
+
+Path("collection.json").write_text(
+    json.dumps(artifact, ensure_ascii=False, indent=2),
+    encoding="utf-8",
+)
+```
+
+  </TabItem>
+</Tabs>
+
+The field-name options are generic hints. Pass product or customer naming
+conventions from the adapter. Do not hardcode them into graph-tool-call.
+
+## 3. Check The Build Summary
+
+Read the artifact before sending anything to the LLM.
+
+```python
+import json
+from pathlib import Path
+
+artifact = json.loads(Path("collection.json").read_text(encoding="utf-8"))
+
+print(artifact["metadata"]["tool_count"])
+print(artifact["semantic_summary"])
+print(artifact["edge_quality_summary"])
+print(artifact["readiness_report"]["summary"])
+```
+
+Healthy large catalogs should show high action/resource/module coverage, useful
+contract coverage, and a small number of strong edge types. A catalog can be
+searchable before every response schema is perfect, but plan and execute gates
+should stay stricter.
+
+## 4. Retrieve With Evidence
+
+Load the saved artifact as a `ToolGraph`. This keeps the public retrieval API
+working against the same persisted shape your adapter stores.
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.graphify import retrieve_graphify
+
+graph = ToolGraph.load("collection.json")
+
+query = "find refund-ready orders"
+retrieval = retrieve_graphify(
+    graph,
+    query,
+    top_k=8,
+    include_evidence=True,
+)
+
+for row in retrieval["results"]:
+    print(row["name"], row["score"])
+    print(row["score_breakdown"])
+```
+
+Inspect these fields first:
+
+| Field | Use It For |
+| --- | --- |
+| `score_breakdown.seed` | whether the tool was a direct text/semantic hit |
+| `score_breakdown.graph_expansion` | whether graph traversal pulled it in |
+| `score_breakdown.action_match` | whether query action matched `canonical_action` |
+| `score_breakdown.resource_match` | whether query resource matched `primary_resource` |
+| `semantic_evidence` | selector-ready semantic matches |
+| `edge_evidence` | graph edge that expanded or supported the row |
+| `stats.token_budget_used` | rough context budget for downstream prompts |
+
+Do not tune from rank alone. A high rank with weak evidence should be treated
+differently from a high rank with action, resource, shape, and contract support.
+
+## 5. Select The Final Target
+
+Retrieval returns candidates. Target selection decides which tool should become
+the final goal. If an LLM has already proposed a target, pass it as
+`llm_target`; otherwise the selector can still rank the candidate set.
+
+```python
+from graph_tool_call.graphify import select_target_candidate
+
+selection = select_target_candidate(
+    query=query,
+    candidates=[row["name"] for row in retrieval["results"]],
+    tools=graph.tools,
+    retrieval_results=retrieval["results"],
+    llm_target=None,
+)
+
+print(selection["selected_target"])
+print(selection["confidence"])
+print(selection["reason_codes"])
+print(selection["candidate_evidence"][:3])
+```
+
+The default policy is conservative. It overrides an LLM target only when strong
+deterministic evidence has enough margin. Otherwise it records ambiguity and
+keeps the uncertainty visible.
+
+## 6. Synthesize A Plan
+
+Plan synthesis consumes a plain graph payload with `graph` and `tools` keys.
+Build that payload from the loaded `ToolGraph`.
+
+```python
+from graph_tool_call.plan import PathSynthesizer, PlanSynthesisError
+
+graph_payload = {
+    "graph": graph.graph.to_dict(),
+    "tools": {
+        name: tool.to_dict()
+        for name, tool in graph.tools.items()
+    },
+}
+
+try:
+    plan = PathSynthesizer(
+        graph_payload,
+        context_defaults={"siteNo": "1001"},
+    ).synthesize(
+        target=selection["selected_target"],
+        goal=query,
+        entities={"keyword": "refund-ready"},
+    )
+except PlanSynthesisError as exc:
+    print(exc.to_dict())
+else:
+    print(plan.id)
+    print([step.tool for step in plan.steps])
+    print(plan.metadata["synthesis"])
+```
+
+If the plan needs a user-provided field, inspect
+`plan.metadata["user_input_slots"]`. If synthesis fails, use `exc.to_dict()`
+instead of parsing the exception message.
+
+## 7. Add A Quality Case
+
+Once the flow works manually, turn it into a regression case.
+
+```json
+{
+  "id": "orders-refund-ready-search-001",
+  "mode": "plan",
+  "query": "find refund-ready orders",
+  "expected_target": "getRefundableOrders",
+  "expected_top_k": 8,
+  "provided_entities": {
+    "keyword": "refund-ready",
+    "siteNo": "1001"
+  },
+  "assertions": [
+    {"type": "top_k_contains", "tool": "getRefundableOrders", "k": 8},
+    {"type": "selected_target", "equals": "getRefundableOrders"},
+    {"type": "plan_contains_tool", "tool": "getRefundableOrders"}
+  ]
+}
+```
+
+Use `execute` mode only after auth readiness and mutation safety are configured
+by the adapter.
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Next Check |
+| --- | --- | --- |
+| Correct tool missing from Top-K | weak semantic metadata or missing operation text | `semantic_summary`, indexed action/resource fields |
+| Correct tool in Top-K but not selected | weak selector margin or sibling ambiguity | `target_selector.rank_signals` |
+| Plan asks for too many user inputs | contract fields were not produced by prior tools | `api_contract.produces`, `selected_producers` |
+| `unknown_target` | selector target is not in the loaded graph | use `graph.tools.keys()` to verify names |
+| `auth_required` appears in readiness | collection needs adapter auth | configure product auth profile before execute |
+| Search looks good but execute fails | runtime adapter issue, not retrieval | inspect `auth_readiness` and runner events |
+
+## Validation Commands
+
+Run these before turning the tutorial into a product workflow:
+
+```bash
+graph-tool-call inspect-openapi "$OPENAPI_SOURCE" --json
+graph-tool-call build-openapi-collection "$OPENAPI_SOURCE" -o collection.json
+poetry run pytest tests/test_graphify_contract_025.py tests/test_plan_synthesizer.py -q
+```
+
+Before publishing a quality claim, use the validation and benchmark gates rather
+than a single manual query.
+
+## Related Pages
+
+- [OpenAPI Ingestion](../build/openapi-ingestion.md)
+- [OpenAPI Collections](../guides/openapi-collections.md)
+- [Tool Graph Search](../search/tool-graph-search.mdx)
+- [Target Selection](../search/target-selection.md)
+- [Plan Synthesis](../plan/plan-synthesis.md)
+- [Quality Lab](../validation/quality-lab.md)

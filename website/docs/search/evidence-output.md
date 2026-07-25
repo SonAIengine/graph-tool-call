@@ -26,19 +26,21 @@ Use evidence output when a product needs to answer:
   <TabItem value="graphify" label="Graphify" default>
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 response = retrieve_graphify(
-    graph_json,
+    graph,
     query="find refund-ready orders",
     top_k=8,
     include_evidence=True,
 )
 
 first = response["results"][0]
-print(first["tool_name"])
+print(first["name"])
 print(first["score_breakdown"])
-print(first["candidate_evidence"])
+print(first["semantic_evidence"])
 ```
 
   </TabItem>
@@ -49,7 +51,7 @@ from graph_tool_call.graphify import select_target_candidate
 
 selection = select_target_candidate(
     query="find refund-ready orders",
-    candidates=[row["tool_name"] for row in response["results"]],
+    candidates=[row["name"] for row in response["results"]],
     tools=tools_by_name,
     retrieval_results=response["results"],
     llm_target=llm_target,
@@ -87,26 +89,23 @@ older product code.
 
 | Field | Meaning |
 | --- | --- |
-| `query` | Normalized or original query, depending on caller path |
 | `results` | Ranked candidate rows |
-| `seeds` | Initial keyword or semantic matches before expansion |
-| `token_budget_used` | Approximate retrieval context size |
-| `graph_tool_call_version` | Engine version that produced the evidence |
-| `trace_metadata` | Optional caller-provided execution/debug context |
+| `subgraph_text` | LLM-ready node/edge rendering for the selected subgraph |
+| `intent` | Dominant read/write/delete/neutral intent scores |
+| `stats` | Seeds, visited node/edge counts, and optional budget diagnostics |
 
 ## Candidate Row
 
 | Field | Meaning |
 | --- | --- |
-| `tool_name` | Candidate tool name |
-| `rank` | Candidate position in the returned list |
+| `name` | Candidate tool name |
 | `score` | Final retrieval score |
+| `tool` | Serialized `ToolSchema` for the candidate |
 | `score_breakdown` | Named additive signals used for ranking |
-| `seeds` | Matches that made the candidate visible before graph traversal |
 | `expanded_from` | Candidate that caused this tool to be added |
 | `edge_evidence` | Graph edge evidence used during expansion |
-| `candidate_evidence` | Selector-ready action/resource/shape/contract evidence |
-| `token_budget_used` | Approximate budget for this rendered candidate context |
+| `semantic_evidence` | Selector-ready action/resource/module/shape/contract evidence |
+| `learning_evidence` | Promoted trace-learning signal, when one was applied |
 
 The stable contract is the presence of named evidence fields, not a fixed
 absolute score scale.
@@ -115,22 +114,31 @@ absolute score scale.
 
 ```json
 {
-  "tool_name": "getRefundableOrderList",
-  "rank": 1,
-  "score": 0.83,
+  "name": "getRefundableOrderList",
+  "score": 0.0371,
   "score_breakdown": {
-    "keyword_match": 0.31,
-    "action_match": 0.16,
-    "resource_match": 0.18,
-    "shape_match": 0.08,
-    "contract_match": 0.07,
-    "graph_expansion": 0.03,
-    "learning": 0.0
+    "seed": 0.0314,
+    "graph": 0.0057,
+    "learning": 0.0,
+    "history_demoted": false,
+    "action_match": 1.0,
+    "resource_match": 1.0,
+    "module_match": 0.0,
+    "shape_match": 1.0,
+    "contract_match": 1.0,
+    "graph_expansion": 0.0
   },
-  "candidate_evidence": {
-    "semantic_match": ["search", "order", "list"],
-    "contract_match": ["orderStatus", "refundStatus"],
-    "result_shape": "list"
+  "semantic_evidence": {
+    "canonical_action": "search",
+    "primary_resource": "order",
+    "result_shape": "list",
+    "path_module": "/orders",
+    "action_match": true,
+    "resource_match": true,
+    "module_match": false,
+    "shape_match": true,
+    "contract_match": true,
+    "matched_terms": ["order", "refund"]
   },
   "edge_evidence": []
 }
@@ -146,7 +154,7 @@ Use the evidence object in this order:
 1. Confirm the expected target is present in `results`.
 2. Check whether its rank is acceptable for the caller's Top-K.
 3. Compare `score_breakdown` against the wrong higher-ranked tools.
-4. Inspect `candidate_evidence` for missing action, resource, shape, or
+4. Inspect `semantic_evidence` for missing action, resource, shape, or
    contract fields.
 5. Inspect `expanded_from` and `edge_evidence` when producer tools appear or
    disappear.
@@ -159,11 +167,11 @@ For each candidate, show compact evidence rather than raw metadata dumps.
 
 | UI Field | Source |
 | --- | --- |
-| rank and tool name | `rank`, `tool_name` |
+| rank and tool name | list position, `name` |
 | score chips | `score_breakdown` |
-| action/resource/shape badges | `candidate_evidence.semantic_match` |
-| matched fields | `candidate_evidence.contract_match` |
-| why it entered Top-K | `seeds`, `expanded_from` |
+| action/resource/shape badges | `semantic_evidence.action_match`, `resource_match`, `shape_match` |
+| matched terms | `semantic_evidence.matched_terms` |
+| why it entered Top-K | `stats.seeds`, `expanded_from` |
 | graph reason | `edge_evidence.kind`, `edge_evidence.evidence` |
 
 For a selected target, add:
@@ -207,7 +215,7 @@ Do not store:
 
 | Symptom | Likely Cause | What To Inspect |
 | --- | --- | --- |
-| High score but wrong target | noisy text or sibling tie | `score_breakdown`, `candidate_evidence.shape_match` |
+| High score but wrong target | noisy text or sibling tie | `score_breakdown`, `semantic_evidence.shape_match` |
 | Correct target missing | weak metadata or missing aliases | indexed action/resource/module fields |
 | Producer missing from catalog | contract extraction gap | `api_contract.consumes`, `api_contract.produces` |
 | Too many producers | broad data-flow edge or context field explosion | `edge_evidence`, contract field kind |
@@ -227,7 +235,7 @@ instead of relying on memory.
   "expected_target": "getMemberDeliveryDetail",
   "actual_top_3": [
     {
-      "tool_name": "getMemberDeliveryDetail",
+      "name": "getMemberDeliveryDetail",
       "rank": 1,
       "score_breakdown": {
         "resource_match": 0.18,

@@ -58,20 +58,22 @@ for result in results:
 ```
 
   </TabItem>
-  <TabItem value="graphify" label="Graphify artifact">
+  <TabItem value="graphify" label="Loaded artifact">
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 results = retrieve_graphify(
-    graph_json,
+    graph,
     query="환불 가능한 주문 목록",
     top_k=8,
     include_evidence=True,
 )
 
 for result in results["results"]:
-    print(result["tool_name"], result["score_breakdown"])
+    print(result["name"], result["score_breakdown"])
 ```
 
   </TabItem>
@@ -109,19 +111,21 @@ product UI, search 품질 디버깅, regression test를 만들 때는
 `include_evidence=True`를 사용합니다.
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 response = retrieve_graphify(
-    graph_json,
+    graph,
     "회원 상세 정보를 조회해줘",
     top_k=8,
     include_evidence=True,
 )
 
 first = response["results"][0]
-print(first["tool_name"])
+print(first["name"])
 print(first["score_breakdown"])
-print(first["candidate_evidence"])
+print(first["semantic_evidence"])
 ```
 
 중요 field:
@@ -129,11 +133,11 @@ print(first["candidate_evidence"])
 | Field | Meaning |
 | --- | --- |
 | `score_breakdown` | candidate ranking에 사용된 additive signal |
-| `seeds` | graph expansion 이전 initial match |
+| `stats.seeds` | graph expansion 이전 initial match |
 | `expanded_from` | 이 tool을 추가하게 만든 candidate |
 | `edge_evidence` | expansion에 사용된 graph edge evidence |
-| `token_budget_used` | retrieval context budget 추정치 |
-| `candidate_evidence` | selector가 사용할 semantic/contract evidence |
+| `stats.token_budget_used` | retrieval context budget 추정치 |
+| `semantic_evidence` | selector가 사용할 semantic/contract evidence |
 
 ## Target Selector Handoff
 
@@ -144,7 +148,7 @@ from graph_tool_call.graphify import select_target_candidate
 
 selection = select_target_candidate(
     query="회원 상세 정보를 조회해줘",
-    candidates=[item["tool_name"] for item in response["results"]],
+    candidates=[item["name"] for item in response["results"]],
     tools=tools,
     retrieval_results=response["results"],
     llm_target=llm_intent.target,

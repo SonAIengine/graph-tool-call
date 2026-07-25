@@ -78,10 +78,12 @@ print(selection["reason_codes"])
   <TabItem value="with-llm" label="With LLM target">
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify, select_target_candidate
 
+graph = ToolGraph.load("collection.json")
 retrieval = retrieve_graphify(
-    graph_json,
+    graph,
     "회원 배송지 상세 조회",
     top_k=8,
     include_evidence=True,
@@ -90,7 +92,7 @@ retrieval = retrieve_graphify(
 selection = select_target_candidate(
     query="회원 배송지 상세 조회",
     candidates=retrieval["results"],
-    tools=graph_json["tools"],
+    tools=graph.tools,
     retrieval_results=retrieval["results"],
     llm_target="getMemberDeliveryList",
     policy="strong_evidence",
@@ -304,13 +306,41 @@ suites.
 Recommended flow:
 
 ```python
-retrieval = retrieve_graphify(graph_json, query, top_k=8, include_evidence=True)
-intent = parse_intent(query, catalog=retrieval["results"], llm=llm)
+from graph_tool_call import ToolGraph
+from graph_tool_call.graphify import retrieve_graphify, select_target_candidate
+from graph_tool_call.plan import ToolCatalogEntry, parse_intent
+
+graph = ToolGraph.load("collection.json")
+retrieval = retrieve_graphify(graph, query, top_k=8, include_evidence=True)
+
+catalog = []
+for row in retrieval["results"]:
+    tool = row.get("tool") or {}
+    metadata = tool.get("metadata") or {}
+    ai = metadata.get("ai_metadata") or {}
+    contract = metadata.get("api_contract") or {}
+    consumes = contract.get("consumes") or metadata.get("consumes") or []
+    catalog.append(
+        ToolCatalogEntry(
+            name=row["name"],
+            summary=ai.get("one_line_summary") or tool.get("description", "")[:180],
+            when_to_use=ai.get("when_to_use") or "",
+            canonical_action=ai.get("canonical_action") or "",
+            primary_resource=ai.get("primary_resource") or "",
+            consumes_tags=[
+                item.get("semantic_tag") or item.get("field_name")
+                for item in consumes
+                if isinstance(item, dict)
+            ],
+        )
+    )
+
+intent = parse_intent(query, catalog=catalog, llm=llm)
 
 selection = select_target_candidate(
     query=query,
     candidates=retrieval["results"],
-    tools=graph_json["tools"],
+    tools=graph.tools,
     retrieval_results=retrieval["results"],
     llm_target=intent.target,
     learning_suggestions=promoted_suggestions,

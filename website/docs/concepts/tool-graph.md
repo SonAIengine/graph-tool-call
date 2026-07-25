@@ -213,19 +213,21 @@ query
   <TabItem value="retrieve" label="Retrieve" default>
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 response = retrieve_graphify(
-    artifact["graph"],
+    graph,
     query="find refund-ready orders",
     top_k=8,
     include_evidence=True,
 )
 
 first = response["results"][0]
-print(first["tool_name"])
+print(first["name"])
 print(first["score_breakdown"])
-print(first["candidate_evidence"])
+print(first["semantic_evidence"])
 ```
 
   </TabItem>
@@ -239,10 +241,10 @@ from graph_tool_call.graphify import (
 selection = select_target_candidate(
     query="find refund-ready orders",
     candidates=[
-        item["tool_name"]
+        item["name"]
         for item in response["results"]
     ],
-    tools=artifact["tools"],
+    tools=graph.tools,
     retrieval_results=response["results"],
     llm_target=llm_intent.target,
 )

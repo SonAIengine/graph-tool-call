@@ -45,14 +45,15 @@ to the LLM:
 ```python
 from graph_tool_call.graphify import retrieve_graphify
 
-rows = retrieve_graphify(
+response = retrieve_graphify(
     graph,
     "find pets by status",
     top_k=3,
     include_evidence=True,
 )
 
-print(rows[0]["score_breakdown"])
+first = response["results"][0]
+print(first["score_breakdown"])
 ```
 
 ## Core Workflows

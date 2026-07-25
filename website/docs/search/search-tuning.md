@@ -92,19 +92,21 @@ debuggable contract between retrieval, target selection, planning, and product
 UI.
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 baseline = retrieve_graphify(
-    artifact["graph"],
+    graph,
     query="find refund-ready orders",
     top_k=8,
     include_evidence=True,
 )
 
 for row in baseline["results"]:
-    print(row["tool_name"])
+    print(row["name"])
     print(row["score_breakdown"])
-    print(row.get("candidate_evidence", {}))
+    print(row.get("semantic_evidence", {}))
 ```
 
 Capture:
@@ -126,7 +128,7 @@ Start with evidence quality. Weight changes should be the last step.
 
 | Signal | Inspect When | Likely Fix |
 | --- | --- | --- |
-| `keyword_match` | expected tool is outside Top-K | names, summaries, aliases |
+| `seed` | expected tool is outside Top-K | names, summaries, aliases |
 | `action_match` | search/read/create/update/delete intent is wrong | `canonical_action` derivation |
 | `resource_match` | right action but wrong object | `primary_resource` or resource aliases |
 | `module_match` | large catalog returns another domain | `path_module`, operation group, module aliases |
@@ -209,7 +211,7 @@ from graph_tool_call.graphify import select_target_candidate
 selection = select_target_candidate(
     query=case["query"],
     candidates=[
-        row["tool_name"]
+        row["name"]
         for row in retrieval["results"]
     ],
     tools=artifact["tools"],

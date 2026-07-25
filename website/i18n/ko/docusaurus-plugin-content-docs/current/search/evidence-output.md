@@ -26,19 +26,21 @@ tool이 왜 보였고, ranking 되었고, 확장되었고, 선택 또는 거절�
   <TabItem value="graphify" label="Graphify" default>
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import retrieve_graphify
 
+graph = ToolGraph.load("collection.json")
 response = retrieve_graphify(
-    graph_json,
+    graph,
     query="환불 가능한 주문을 찾아줘",
     top_k=8,
     include_evidence=True,
 )
 
 first = response["results"][0]
-print(first["tool_name"])
+print(first["name"])
 print(first["score_breakdown"])
-print(first["candidate_evidence"])
+print(first["semantic_evidence"])
 ```
 
   </TabItem>
@@ -49,7 +51,7 @@ from graph_tool_call.graphify import select_target_candidate
 
 selection = select_target_candidate(
     query="환불 가능한 주문을 찾아줘",
-    candidates=[row["tool_name"] for row in response["results"]],
+    candidates=[row["name"] for row in response["results"]],
     tools=tools_by_name,
     retrieval_results=response["results"],
     llm_target=llm_target,
@@ -85,26 +87,23 @@ engine version이 evidence를 추가해도 기존 product code가 깨지지 않�
 
 | Field | 의미 |
 | --- | --- |
-| `query` | caller path에 따라 normalized 또는 original query |
 | `results` | ranked candidate row |
-| `seeds` | expansion 전 initial keyword 또는 semantic match |
-| `token_budget_used` | 대략적인 retrieval context size |
-| `graph_tool_call_version` | evidence를 만든 engine version |
-| `trace_metadata` | optional caller-provided execution/debug context |
+| `subgraph_text` | LLM에 넘길 수 있는 selected subgraph node/edge rendering |
+| `intent` | dominant/read/write/delete/neutral intent score |
+| `stats` | seed, visited node/edge count, optional budget diagnostic |
 
 ## Candidate Row
 
 | Field | 의미 |
 | --- | --- |
-| `tool_name` | candidate tool name |
-| `rank` | 반환 list에서 candidate 위치 |
+| `name` | candidate tool name |
 | `score` | 최종 retrieval score |
+| `tool` | candidate의 serialized `ToolSchema` |
 | `score_breakdown` | ranking에 사용된 named additive signal |
-| `seeds` | graph traversal 전에 candidate를 보이게 만든 match |
 | `expanded_from` | 이 tool을 추가하게 만든 candidate |
 | `edge_evidence` | expansion 중 사용된 graph edge evidence |
-| `candidate_evidence` | selector가 사용할 action/resource/shape/contract evidence |
-| `token_budget_used` | 이 rendered candidate context의 대략적인 budget |
+| `semantic_evidence` | selector가 사용할 action/resource/module/shape/contract evidence |
+| `learning_evidence` | promoted trace-learning signal이 적용된 경우 |
 
 안정 contract는 고정된 절대 score scale이 아니라 이름 붙은 evidence field가 존재한다는
 점입니다.
@@ -113,22 +112,31 @@ engine version이 evidence를 추가해도 기존 product code가 깨지지 않�
 
 ```json
 {
-  "tool_name": "getRefundableOrderList",
-  "rank": 1,
-  "score": 0.83,
+  "name": "getRefundableOrderList",
+  "score": 0.0371,
   "score_breakdown": {
-    "keyword_match": 0.31,
-    "action_match": 0.16,
-    "resource_match": 0.18,
-    "shape_match": 0.08,
-    "contract_match": 0.07,
-    "graph_expansion": 0.03,
-    "learning": 0.0
+    "seed": 0.0314,
+    "graph": 0.0057,
+    "learning": 0.0,
+    "history_demoted": false,
+    "action_match": 1.0,
+    "resource_match": 1.0,
+    "module_match": 0.0,
+    "shape_match": 1.0,
+    "contract_match": 1.0,
+    "graph_expansion": 0.0
   },
-  "candidate_evidence": {
-    "semantic_match": ["search", "order", "list"],
-    "contract_match": ["orderStatus", "refundStatus"],
-    "result_shape": "list"
+  "semantic_evidence": {
+    "canonical_action": "search",
+    "primary_resource": "order",
+    "result_shape": "list",
+    "path_module": "/orders",
+    "action_match": true,
+    "resource_match": true,
+    "module_match": false,
+    "shape_match": true,
+    "contract_match": true,
+    "matched_terms": ["order", "refund"]
   },
   "edge_evidence": []
 }
@@ -144,7 +152,7 @@ evidence object는 아래 순서로 읽습니다.
 1. expected target이 `results`에 있는지 확인합니다.
 2. rank가 caller의 Top-K 기준에 맞는지 확인합니다.
 3. 잘못된 상위 tool과 `score_breakdown`을 비교합니다.
-4. `candidate_evidence`에서 action, resource, shape, contract field 누락을 봅니다.
+4. `semantic_evidence`에서 action, resource, shape, contract field 누락을 봅니다.
 5. producer tool이 생기거나 사라졌다면 `expanded_from`과 `edge_evidence`를 봅니다.
 6. LLM 탓으로 넘기기 전에 같은 result row를 `select_target_candidate()`에 넘겨봅니다.
 
@@ -154,11 +162,11 @@ candidate별로 raw metadata dump가 아니라 compact evidence를 보여줍니�
 
 | UI Field | Source |
 | --- | --- |
-| rank와 tool name | `rank`, `tool_name` |
+| rank와 tool name | list position, `name` |
 | score chip | `score_breakdown` |
-| action/resource/shape badge | `candidate_evidence.semantic_match` |
-| matched field | `candidate_evidence.contract_match` |
-| Top-K에 들어온 이유 | `seeds`, `expanded_from` |
+| action/resource/shape badge | `semantic_evidence.action_match`, `resource_match`, `shape_match` |
+| matched term | `semantic_evidence.matched_terms` |
+| Top-K에 들어온 이유 | `stats.seeds`, `expanded_from` |
 | graph reason | `edge_evidence.kind`, `edge_evidence.evidence` |
 
 selected target에는 아래를 추가합니다.
@@ -202,7 +210,7 @@ response body, token, cookie, user identifier는 저장하지 않습니다.
 
 | 증상 | 가능한 원인 | 확인할 것 |
 | --- | --- | --- |
-| score는 높은데 target이 틀림 | noisy text 또는 sibling tie | `score_breakdown`, `candidate_evidence.shape_match` |
+| score는 높은데 target이 틀림 | noisy text 또는 sibling tie | `score_breakdown`, `semantic_evidence.shape_match` |
 | 정답 target이 없음 | metadata 또는 alias 부족 | indexed action/resource/module field |
 | producer가 없음 | contract extraction gap | `api_contract.consumes`, `api_contract.produces` |
 | producer가 너무 많음 | broad data-flow edge 또는 context field 폭발 | `edge_evidence`, contract field kind |
@@ -222,7 +230,7 @@ response body, token, cookie, user identifier는 저장하지 않습니다.
   "expected_target": "getMemberDeliveryDetail",
   "actual_top_3": [
     {
-      "tool_name": "getMemberDeliveryDetail",
+      "name": "getMemberDeliveryDetail",
       "rank": 1,
       "score_breakdown": {
         "resource_match": 0.18,

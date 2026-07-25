@@ -201,13 +201,15 @@ After the artifact exists, use graph retrieval to create a small candidate set.
 Use target selection to guard the LLM's final target choice.
 
 ```python
+from graph_tool_call import ToolGraph
 from graph_tool_call.graphify import (
     retrieve_graphify,
     select_target_candidate,
 )
 
+graph = ToolGraph.load("collection.json")
 retrieval = retrieve_graphify(
-    artifact["graph"],
+    graph,
     "find refund-ready orders",
     top_k=8,
     include_evidence=True,
@@ -215,8 +217,8 @@ retrieval = retrieve_graphify(
 
 selection = select_target_candidate(
     query="find refund-ready orders",
-    candidates=[row["tool_name"] for row in retrieval["results"]],
-    tools=artifact["tools"],
+    candidates=[row["name"] for row in retrieval["results"]],
+    tools=graph.tools,
     retrieval_results=retrieval["results"],
     llm_target=llm_intent.target,
 )

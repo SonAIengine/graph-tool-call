@@ -67,13 +67,13 @@ from graph_tool_call.plan import PathSynthesizer
 selection = select_target_candidate(
     query=query,
     candidates=retrieval_rows,
-    tools=graph_json["tools"],
+    tools=graph_payload["tools"],
     retrieval_results=retrieval_rows,
     llm_target=intent.target,
 )
 
 synthesizer = PathSynthesizer(
-    graph_json,
+    graph_payload,
     context_defaults=collection_context_defaults,
     enum_field_names=collection_enum_field_names,
 )

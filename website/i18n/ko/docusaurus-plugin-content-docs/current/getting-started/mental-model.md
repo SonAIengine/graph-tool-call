@@ -130,10 +130,15 @@ results = graph.retrieve_with_scores(
     top_k=8,
 )
 
-target = results[0].name
-plan = PathSynthesizer(graph.to_dict()).synthesize(
-    target_tool=target,
-    user_query="환불 가능한 주문을 보여줘",
+target = results[0].tool.name
+graph_payload = {
+    "graph": graph.graph.to_dict(),
+    "tools": {name: tool.to_dict() for name, tool in graph.tools.items()},
+}
+
+plan = PathSynthesizer(graph_payload).synthesize(
+    target=target,
+    goal="환불 가능한 주문을 보여줘",
     entities={"siteNo": "1001"},
 )
 ```
