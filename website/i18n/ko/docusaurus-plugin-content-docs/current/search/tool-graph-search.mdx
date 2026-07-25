@@ -1,0 +1,212 @@
+---
+title: Tool Graph Search
+description: 대형 tool graph에서 작고 근거 있는 tool 후보군을 검색합니다.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Tool Graph Search
+
+Tool graph search는 대형 tool catalog에서 작고 근거 있는 candidate set을
+검색합니다. target selection, plan synthesis, execution 전에 실행되는 첫 단계입니다.
+
+수백, 수천 개 tool을 LLM에 그대로 보내는 대신 graph-tool-call은 keyword matching,
+semantic metadata, IO contract, graph edge, 선택적 learning evidence를 사용해
+compact한 ranked set을 만듭니다.
+
+## 언제 사용하나
+
+다음 상황에서 사용합니다.
+
+- catalog가 LLM에 직접 노출하기엔 너무 큼
+- tool name이 일관되지 않거나 한국어/영어가 섞여 있음
+- OpenAPI description이 길거나 중복되고 noise가 많음
+- 어떤 tool이 선택됐는지 evidence가 필요함
+- execution 전에 deterministic target selection guard가 필요함
+
+runtime authorization, business policy, API execution safety를 대체하지는
+않습니다. 그 부분은 adapter 책임입니다.
+
+## Query Flow
+
+1. user query를 정규화합니다.
+2. operation id, summary, action, resource, module, contract field 같은 indexed
+   text를 검색합니다.
+3. score signal을 조합해 ranked candidate set을 만듭니다.
+4. contract evidence가 data flow를 보여주면 producer tool을 확장합니다.
+5. 요청 시 evidence와 score breakdown을 반환합니다.
+6. ranked catalog를 LLM 또는 `select_target_candidate()`에 전달합니다.
+
+## 최소 예제
+
+<Tabs>
+  <TabItem value="toolgraph" label="ToolGraph" default>
+
+```python
+from graph_tool_call import ToolGraph
+
+graph = ToolGraph.from_url("openapi.json")
+
+results = graph.retrieve_with_scores(
+    "환불 가능한 주문 목록",
+    top_k=8,
+)
+
+for result in results:
+    print(result.tool.name, result.score)
+```
+
+  </TabItem>
+  <TabItem value="graphify" label="Graphify artifact">
+
+```python
+from graph_tool_call.graphify import retrieve_graphify
+
+results = retrieve_graphify(
+    graph_json,
+    query="환불 가능한 주문 목록",
+    top_k=8,
+    include_evidence=True,
+)
+
+for result in results["results"]:
+    print(result["tool_name"], result["score_breakdown"])
+```
+
+  </TabItem>
+  <TabItem value="cli" label="CLI">
+
+```bash
+graph-tool-call search openapi.json "환불 가능한 주문 목록" --top-k 8
+```
+
+  </TabItem>
+</Tabs>
+
+## Ranking Signals
+
+검색 품질은 여러 additive signal에 의해 결정됩니다. 단일 fuzzy match가 strong
+semantic 또는 contract evidence보다 우선하면 안 됩니다.
+
+| Signal | What It Checks | Typical Evidence |
+| --- | --- | --- |
+| Keyword match | Operation id, name, summary, description | `operationId`, normalized tokens |
+| Action match | query intent와 `canonical_action` 일치 | `search`, `read`, `create`, `update`, `delete` |
+| Resource match | query resource와 `primary_resource` 일치 | `order`, `customer`, `claim`, `payment` |
+| Module match | query가 path/module group을 가리키는지 | `path_module`, `operation_group` |
+| Shape match | list/detail/count/mutation 요청인지 | `result_shape` |
+| Contract match | request/response field compatibility | consumes/produces leaves |
+| Graph expansion | 관련 producer 또는 curated link | data-flow and trace edges |
+| Learning boost | 검증 후 promoted된 trace evidence | target preference or plan path |
+
+## Evidence Output
+
+product UI, search 품질 디버깅, regression test를 만들 때는
+`include_evidence=True`를 사용합니다.
+
+```python
+from graph_tool_call.graphify import retrieve_graphify
+
+response = retrieve_graphify(
+    graph_json,
+    "회원 상세 정보를 조회해줘",
+    top_k=8,
+    include_evidence=True,
+)
+
+first = response["results"][0]
+print(first["tool_name"])
+print(first["score_breakdown"])
+print(first["candidate_evidence"])
+```
+
+중요 field:
+
+| Field | Meaning |
+| --- | --- |
+| `score_breakdown` | candidate ranking에 사용된 additive signal |
+| `seeds` | graph expansion 이전 initial match |
+| `expanded_from` | 이 tool을 추가하게 만든 candidate |
+| `edge_evidence` | expansion에 사용된 graph edge evidence |
+| `token_budget_used` | retrieval context budget 추정치 |
+| `candidate_evidence` | selector가 사용할 semantic/contract evidence |
+
+## Target Selector Handoff
+
+Retrieval은 candidate를 반환하고, target selection은 최종 tool을 고릅니다.
+
+```python
+from graph_tool_call.graphify import select_target_candidate
+
+selection = select_target_candidate(
+    query="회원 상세 정보를 조회해줘",
+    candidates=[item["tool_name"] for item in response["results"]],
+    tools=tools,
+    retrieval_results=response["results"],
+    llm_target=llm_intent.target,
+)
+
+print(selection["selected_target"])
+print(selection["reason_codes"])
+```
+
+selector는 evidence가 강하고 margin이 충분할 때만 LLM target을 override해야
+합니다. 애매한 경우는 조용히 고치지 말고 diagnostics에 남깁니다.
+
+## 한국어와 혼합 Query
+
+Enterprise OpenAPI catalog는 한국어 summary와 영어 `operationId`가 섞이는 경우가
+많습니다.
+
+좋은 retrieval index는 아래를 함께 봅니다.
+
+- 한국어 summary와 description
+- 영어 operation name
+- path segment
+- deterministic action/resource/module metadata
+- consumes/produces field name
+
+```python
+graph.retrieve_with_scores("환불 가능한 주문 목록", top_k=8)
+graph.retrieve_with_scores("refund order list", top_k=8)
+```
+
+catalog에 충분한 semantic/contract evidence가 있으면 두 query가 같은 target
+family를 찾아야 합니다.
+
+## Troubleshooting
+
+| Symptom | Likely Cause | What To Inspect |
+| --- | --- | --- |
+| 정답 tool이 Top-K에 없음 | semantic metadata 부족 또는 indexed text 약함 | `semantic_summary`, indexed fields |
+| 정답 tool은 Top-K에 있지만 선택되지 않음 | LLM target mismatch 또는 selector margin 약함 | `target_selector.rank_signals` |
+| sibling tool이 너무 많이 동률 | result shape 또는 resource evidence 부족 | `result_shape`, `primary_resource` |
+| producer tool이 빠짐 | contract field가 추출되지 않음 | `api_contract.produces`, `api_contract.consumes` |
+| noisy description에 결과가 흔들림 | raw OpenAPI leaf가 과하게 반영됨 | score breakdown과 indexed text policy |
+
+## Quality Checks
+
+개발 중 빠른 search test:
+
+```bash
+poetry run pytest tests/test_graphify_retrieval.py tests/test_graphify_contract_025.py -q
+```
+
+품질 주장을 공개하기 전 broader gate:
+
+```bash
+make quick
+make xgen-scale-snapshot
+```
+
+public benchmark claim은 committed fixture 또는 저장된 result artifact와 연결되어야
+합니다.
+
+## Related APIs
+
+- `ToolGraph.retrieve()`
+- `ToolGraph.retrieve_with_scores()`
+- `graph_tool_call.graphify.retrieve_graphify()`
+- `graph_tool_call.graphify.expand_candidates_with_producers()`
+- `graph_tool_call.graphify.select_target_candidate()`

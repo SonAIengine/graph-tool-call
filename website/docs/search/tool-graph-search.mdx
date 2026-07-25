@@ -1,0 +1,216 @@
+---
+title: Tool Graph Search
+description: Retrieve a compact, evidence-backed set of tools from a large tool graph.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Tool Graph Search
+
+Tool graph search retrieves a small, evidence-backed candidate set from a large
+tool catalog. It is the first stage before target selection, plan synthesis, and
+execution.
+
+Instead of sending hundreds or thousands of tools to an LLM, graph-tool-call
+uses keyword matching, semantic metadata, IO contracts, graph edges, and optional
+learning evidence to produce a compact ranked set.
+
+## When To Use This
+
+Use graph search when:
+
+- a catalog contains more tools than you want to expose to the LLM directly
+- tool names are inconsistent or mixed across Korean and English
+- OpenAPI descriptions are long, duplicated, or noisy
+- the caller needs evidence for why a tool was selected
+- execution should be guarded by deterministic target selection
+
+Do not use graph search as a substitute for runtime authorization, business
+policy checks, or API execution safety. Those belong in the adapter.
+
+## Query Flow
+
+1. Normalize the user query.
+2. Search indexed tool text such as operation id, summary, action, resource,
+   module, and contract fields.
+3. Combine score signals into a ranked candidate set.
+4. Expand candidates with producer tools when contract evidence shows data flow.
+5. Return evidence and score breakdowns when requested.
+6. Hand the ranked catalog to the LLM or to `select_target_candidate()`.
+
+## Minimal Example
+
+<Tabs>
+  <TabItem value="toolgraph" label="ToolGraph" default>
+
+```python
+from graph_tool_call import ToolGraph
+
+graph = ToolGraph.from_url("openapi.json")
+
+results = graph.retrieve_with_scores(
+    "find refund-ready orders",
+    top_k=8,
+)
+
+for result in results:
+    print(result.tool.name, result.score)
+```
+
+  </TabItem>
+  <TabItem value="graphify" label="Graphify artifact">
+
+```python
+from graph_tool_call.graphify import retrieve_graphify
+
+results = retrieve_graphify(
+    graph_json,
+    query="find refund-ready orders",
+    top_k=8,
+    include_evidence=True,
+)
+
+for result in results["results"]:
+    print(result["tool_name"], result["score_breakdown"])
+```
+
+  </TabItem>
+  <TabItem value="cli" label="CLI">
+
+```bash
+graph-tool-call search openapi.json "find refund-ready orders" --top-k 8
+```
+
+  </TabItem>
+</Tabs>
+
+## Ranking Signals
+
+Search quality depends on multiple additive signals. A single fuzzy match should
+not dominate the result when stronger semantic or contract evidence exists.
+
+| Signal | What It Checks | Typical Evidence |
+| --- | --- | --- |
+| Keyword match | Operation id, name, summary, description | `operationId`, normalized tokens |
+| Action match | Whether query intent matches `canonical_action` | `search`, `read`, `create`, `update`, `delete` |
+| Resource match | Whether query resource matches `primary_resource` | `order`, `customer`, `claim`, `payment` |
+| Module match | Whether the query points at a path/module group | `path_module`, `operation_group` |
+| Shape match | Whether the query asks for a list, detail, count, or mutation | `result_shape` |
+| Contract match | Request/response field compatibility | consumes/produces leaves |
+| Graph expansion | Related producer or manually linked tools | data-flow and trace edges |
+| Learning boost | Validated promoted trace evidence | target preference or plan path |
+
+## Evidence Output
+
+Use `include_evidence=True` when building a product UI, debugging search
+quality, or writing regression tests.
+
+```python
+from graph_tool_call.graphify import retrieve_graphify
+
+response = retrieve_graphify(
+    graph_json,
+    "회원 상세 정보를 조회해줘",
+    top_k=8,
+    include_evidence=True,
+)
+
+first = response["results"][0]
+print(first["tool_name"])
+print(first["score_breakdown"])
+print(first["candidate_evidence"])
+```
+
+Important fields:
+
+| Field | Meaning |
+| --- | --- |
+| `score_breakdown` | Additive ranking signals used for this candidate |
+| `seeds` | Initial matches before graph expansion |
+| `expanded_from` | Candidate that caused this tool to be added |
+| `edge_evidence` | Graph edge evidence used during expansion |
+| `token_budget_used` | Approximate retrieval context budget |
+| `candidate_evidence` | Selector-ready semantic and contract evidence |
+
+## Target Selector Handoff
+
+Retrieval returns candidates. Target selection chooses the final tool.
+
+```python
+from graph_tool_call.graphify import select_target_candidate
+
+selection = select_target_candidate(
+    query="회원 상세 정보를 조회해줘",
+    candidates=[item["tool_name"] for item in response["results"]],
+    tools=tools,
+    retrieval_results=response["results"],
+    llm_target=llm_intent.target,
+)
+
+print(selection["selected_target"])
+print(selection["reason_codes"])
+```
+
+The selector should only override the LLM when evidence is strong and the margin
+is sufficient. Ambiguous cases should stay visible in diagnostics instead of
+being silently corrected.
+
+## Korean And Mixed-Language Queries
+
+Enterprise OpenAPI catalogs often mix Korean summaries with English
+`operationId` values.
+
+Good retrieval indexes both:
+
+- Korean summary and description text
+- English operation names
+- path segments
+- deterministic action/resource/module metadata
+- consumes and produces field names
+
+Example:
+
+```python
+graph.retrieve_with_scores("환불 가능한 주문 목록", top_k=8)
+graph.retrieve_with_scores("refund order list", top_k=8)
+```
+
+Both queries should surface the same target family when the underlying catalog
+contains matching semantic and contract evidence.
+
+## Troubleshooting
+
+| Symptom | Likely Cause | What To Inspect |
+| --- | --- | --- |
+| Correct tool is not in Top-K | Missing semantic metadata or weak text | `semantic_summary`, indexed fields |
+| Correct tool is in Top-K but not selected | LLM target mismatch or weak selector margin | `target_selector.rank_signals` |
+| Too many sibling tools tie | Missing result shape or resource evidence | `result_shape`, `primary_resource` |
+| Producer tools are missing | Contract fields were not extracted | `api_contract.produces`, `api_contract.consumes` |
+| Results depend on noisy descriptions | Raw OpenAPI leaves are overrepresented | score breakdown and indexed text policy |
+
+## Quality Checks
+
+Run fast search tests during development:
+
+```bash
+poetry run pytest tests/test_graphify_retrieval.py tests/test_graphify_contract_025.py -q
+```
+
+Run broader gates before publishing a quality claim:
+
+```bash
+make quick
+make xgen-scale-snapshot
+```
+
+Public benchmark claims should point to committed fixtures or stored result
+artifacts.
+
+## Related APIs
+
+- `ToolGraph.retrieve()`
+- `ToolGraph.retrieve_with_scores()`
+- `graph_tool_call.graphify.retrieve_graphify()`
+- `graph_tool_call.graphify.expand_candidates_with_producers()`
+- `graph_tool_call.graphify.select_target_candidate()`

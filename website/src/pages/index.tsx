@@ -49,11 +49,11 @@ type Copy = {
 const copy: Record<string, Copy> = {
   en: {
     eyebrow: 'Official documentation',
-    title: 'Tool retrieval for large LLM catalogs.',
+    title: 'Developer manual for searchable tool graphs.',
     subtitle:
-      'graph-tool-call turns OpenAPI, MCP, and Python tools into a searchable graph with contracts, evidence, target selection, readiness diagnostics, and trace learning.',
-    primary: 'Read the quickstart',
-    secondary: 'Inspect OpenAPI collections',
+      'Build OpenAPI, MCP, and Python tool catalogs into evidence-backed graphs for retrieval, target selection, planning, validation, and trace learning.',
+    primary: 'Start with search',
+    secondary: 'Build OpenAPI catalogs',
     installLabel: 'Install',
     installCommand: 'pip install "graph-tool-call[openapi]"',
     codeTitle: 'Minimal retrieval flow',
@@ -72,28 +72,28 @@ for item in results:
     startsBody: 'Choose the entry point that matches the job in front of you.',
     starts: [
       {
-        title: 'Quickstart',
-        body: 'Install the package, search an OpenAPI spec, and inspect the first ranked tools.',
-        href: '/docs/getting-started/quickstart/',
-        label: 'First 10 minutes',
+        title: 'Tool Graph Search',
+        body: 'Retrieve compact candidate sets and inspect the evidence behind each ranked tool.',
+        href: '/docs/search/tool-graph-search/',
+        label: 'Core manual',
       },
       {
-        title: 'OpenAPI collections',
-        body: 'Build semantic metadata, IO contracts, readiness reports, and collection artifacts.',
-        href: '/docs/guides/openapi-collections/',
-        label: 'Large API catalogs',
+        title: 'OpenAPI ingestion',
+        body: 'Convert Swagger/OpenAPI sources into tool schemas, IO contracts, and semantic metadata.',
+        href: '/docs/build/openapi-ingestion/',
+        label: 'Build catalogs',
       },
       {
-        title: 'XGEN integration',
-        body: 'Use graph-tool-call as the engine while XGEN keeps DB, auth, SSE, and execution adapters.',
-        href: '/docs/guides/xgen-integration/',
-        label: 'Product adapter',
+        title: 'Target selection',
+        body: 'Guard LLM target choices with deterministic action, resource, shape, and contract evidence.',
+        href: '/docs/search/target-selection/',
+        label: 'Selection',
       },
       {
-        title: 'Benchmarks',
-        body: 'Run deterministic gates before changing retrieval, selector, plan, or OpenAPI ingest logic.',
-        href: '/docs/validation/benchmarks/',
-        label: 'Quality claims',
+        title: 'Quality Lab',
+        body: 'Validate search, plan, and execution behavior with repeatable collection-level cases.',
+        href: '/docs/validation/quality-lab/',
+        label: 'Validation',
       },
     ],
     modelTitle: 'How the engine is meant to be used',
@@ -170,11 +170,11 @@ for item in results:
   },
   ko: {
     eyebrow: '공식 문서',
-    title: '대형 LLM tool catalog를 위한 retrieval engine.',
+    title: '검색 가능한 tool graph를 위한 개발자 매뉴얼.',
     subtitle:
-      'graph-tool-call은 OpenAPI, MCP, Python tool을 contract, evidence, target selection, readiness diagnostics, trace learning이 있는 검색 가능한 graph로 만듭니다.',
-    primary: 'Quickstart 보기',
-    secondary: 'OpenAPI 컬렉션 보기',
+      'OpenAPI, MCP, Python tool catalog를 retrieval, target selection, planning, validation, trace learning이 가능한 evidence-backed graph로 만듭니다.',
+    primary: 'Search부터 보기',
+    secondary: 'OpenAPI catalog 만들기',
     installLabel: '설치',
     installCommand: 'pip install "graph-tool-call[openapi]"',
     codeTitle: '최소 retrieval 흐름',
@@ -193,28 +193,28 @@ for item in results:
     startsBody: '지금 하려는 작업에 맞는 진입점을 먼저 선택하세요.',
     starts: [
       {
-        title: 'Quickstart',
-        body: '설치, OpenAPI 검색, ranked tool 확인까지 가장 짧게 실행합니다.',
-        href: '/docs/getting-started/quickstart/',
-        label: '처음 10분',
+        title: 'Tool Graph Search',
+        body: 'compact candidate set을 검색하고 각 ranked tool의 evidence를 확인합니다.',
+        href: '/docs/search/tool-graph-search/',
+        label: '핵심 매뉴얼',
       },
       {
-        title: 'OpenAPI 컬렉션',
-        body: 'Semantic metadata, IO contract, readiness report, collection artifact를 만듭니다.',
-        href: '/docs/guides/openapi-collections/',
-        label: '대형 API',
+        title: 'OpenAPI ingestion',
+        body: 'Swagger/OpenAPI source를 tool schema, IO contract, semantic metadata로 변환합니다.',
+        href: '/docs/build/openapi-ingestion/',
+        label: 'Catalog build',
       },
       {
-        title: 'XGEN 연동',
-        body: 'graph-tool-call은 engine을 맡고 XGEN은 DB, auth, SSE, 실행 adapter를 유지합니다.',
-        href: '/docs/guides/xgen-integration/',
-        label: '제품 적용',
+        title: 'Target selection',
+        body: 'action, resource, shape, contract evidence로 LLM target 선택을 guard합니다.',
+        href: '/docs/search/target-selection/',
+        label: 'Selection',
       },
       {
-        title: '벤치마크',
-        body: 'Retrieval, selector, plan, OpenAPI ingest 변경 전에 deterministic gate를 돌립니다.',
-        href: '/docs/validation/benchmarks/',
-        label: '품질 주장',
+        title: 'Quality Lab',
+        body: 'collection 단위 search, plan, execution behavior를 반복 가능한 case로 검증합니다.',
+        href: '/docs/validation/quality-lab/',
+        label: 'Validation',
       },
     ],
     modelTitle: '엔진 사용 모델',
@@ -304,10 +304,10 @@ function Home(): ReactNode {
             <h1>{text.title}</h1>
             <p className={styles.subtitle}>{text.subtitle}</p>
             <div className={styles.actions}>
-              <Link className="button button--primary button--lg" to="/docs/getting-started/quickstart/">
+              <Link className="button button--primary button--lg" to="/docs/search/tool-graph-search/">
                 {text.primary}
               </Link>
-              <Link className="button button--secondary button--lg" to="/docs/guides/openapi-collections/">
+              <Link className="button button--secondary button--lg" to="/docs/build/openapi-ingestion/">
                 {text.secondary}
               </Link>
             </div>

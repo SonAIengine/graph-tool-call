@@ -24,11 +24,25 @@ OpenAPI contracts, semantic metadata, target selection, and trace evidence.
 
 ## Start Here
 
-- New to the library: [Quickstart](getting-started/quickstart.md)
-- Building from Swagger/OpenAPI: [OpenAPI Collections](guides/openapi-collections.md)
-- Integrating with XGEN: [XGEN Integration](guides/xgen-integration.md)
-- Checking quality: [Benchmarks](validation/benchmarks.md)
+- First retrieval flow: [Quickstart](getting-started/quickstart.md)
+- How the engine works: [Mental Model](getting-started/mental-model.md)
+- Core manual page: [Tool Graph Search](search/tool-graph-search.mdx)
+- Building from Swagger/OpenAPI: [OpenAPI Ingestion](build/openapi-ingestion.md)
+- Choosing the final tool: [Target Selection](search/target-selection.md)
+- Checking quality: [Quality Lab](validation/quality-lab.md)
 - Looking for APIs: [Public API](reference/public-api.md)
+
+## Manual Map
+
+| Section | Use It For |
+| --- | --- |
+| [Build Tool Catalogs](build/openapi-ingestion.md) | OpenAPI, MCP, Python ingestion, semantic build, IO contracts, readiness |
+| [Search And Selection](search/tool-graph-search.mdx) | retrieval, evidence, candidate expansion, target selector, Korean search |
+| [Plan And Execute](plan/plan-synthesis.md) | plan synthesis, user slots, runner events, failure taxonomy |
+| [Learning Loop](concepts/trace-learning.md) | scrubbed traces, suggestions, shadow mode, promotion policy |
+| [Validation](validation/benchmarks.md) | benchmark gates, Quality Lab, release gates |
+| [Integrations](guides/xgen-integration.md) | XGEN, MCP, LangChain, middleware, direct API adapters |
+| [Reference](reference/public-api.md) | public imports, CLI, events, reports, artifacts, compatibility |
 
 ## Minimal Example
 
@@ -51,3 +65,5 @@ The current roadmap focuses on large enterprise API collections:
 - auth readiness diagnostics
 - trace learning from successful and failed execution attempts
 
+Public quality claims should be backed by a committed fixture, reproducible
+command, or stored result artifact.

@@ -6,7 +6,7 @@
   --ifm-color-primary-light: #3b82f6;
   --ifm-color-primary-lighter: #60a5fa;
   --ifm-color-primary-lightest: #93c5fd;
-  --ifm-heading-font-weight: 760;
+  --ifm-heading-font-weight: 720;
   --ifm-navbar-shadow: none;
   --ifm-code-font-size: 95%;
   --ifm-global-radius: 8px;
@@ -106,4 +106,60 @@
 
 .footer {
   border-top: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.theme-doc-markdown {
+  color: #18202f;
+}
+
+.theme-doc-markdown h1 {
+  font-size: clamp(2.15rem, 3.2vw, 2.85rem);
+  letter-spacing: 0;
+  line-height: 1.12;
+}
+
+.theme-doc-markdown h2 {
+  font-size: clamp(1.45rem, 2vw, 1.85rem);
+  letter-spacing: 0;
+  line-height: 1.2;
+  margin-top: 2.35rem;
+}
+
+.theme-doc-markdown h3 {
+  font-size: 1.18rem;
+  letter-spacing: 0;
+  margin-top: 1.65rem;
+}
+
+.theme-doc-markdown p,
+.theme-doc-markdown li {
+  line-height: 1.72;
+}
+
+.theme-doc-markdown table {
+  font-size: 0.92rem;
+}
+
+.menu__link {
+  border-radius: 6px;
+  font-size: 0.94rem;
+}
+
+.theme-doc-sidebar-item-link-level-2 .menu__link {
+  font-size: 0.91rem;
+}
+
+.table-of-contents__link {
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 996px) {
+  .theme-doc-markdown h1 {
+    font-size: 2rem;
+  }
+
+  .theme-doc-markdown h2 {
+    font-size: 1.45rem;
+  }
 }

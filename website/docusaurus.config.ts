@@ -65,8 +65,18 @@ const config: Config = {
           label: 'Docs',
         },
         {
-          to: '/docs/validation/benchmarks/',
-          label: 'Benchmarks',
+          to: '/docs/search/tool-graph-search/',
+          label: 'Search',
+          position: 'left',
+        },
+        {
+          to: '/docs/build/openapi-ingestion/',
+          label: 'OpenAPI',
+          position: 'left',
+        },
+        {
+          to: '/docs/validation/quality-lab/',
+          label: 'Quality',
           position: 'left',
         },
         {
@@ -87,7 +97,8 @@ const config: Config = {
           title: 'Docs',
           items: [
             {label: 'Quickstart', to: '/docs/getting-started/quickstart/'},
-            {label: 'OpenAPI Collections', to: '/docs/guides/openapi-collections/'},
+            {label: 'Tool Graph Search', to: '/docs/search/tool-graph-search/'},
+            {label: 'OpenAPI Ingestion', to: '/docs/build/openapi-ingestion/'},
             {label: 'Public API', to: '/docs/reference/public-api/'},
           ],
         },

@@ -24,11 +24,25 @@ semantic metadata, target selection, trace evidence를 함께 사용해 이 문�
 
 ## 먼저 볼 문서
 
-- 처음 시작: [빠른 시작](getting-started/quickstart.md)
-- Swagger/OpenAPI 빌드: [OpenAPI 컬렉션](guides/openapi-collections.md)
-- XGEN에 붙이기: [XGEN 통합](guides/xgen-integration.md)
-- 품질 확인: [벤치마크](validation/benchmarks.md)
+- 첫 retrieval 흐름: [빠른 시작](getting-started/quickstart.md)
+- 엔진 동작 방식: [Mental Model](getting-started/mental-model.md)
+- 핵심 매뉴얼 페이지: [Tool Graph Search](search/tool-graph-search.mdx)
+- Swagger/OpenAPI 빌드: [OpenAPI Ingestion](build/openapi-ingestion.md)
+- 최종 tool 선택: [Target Selection](search/target-selection.md)
+- 품질 확인: [Quality Lab](validation/quality-lab.md)
 - API 확인: [Public API](reference/public-api.md)
+
+## Manual Map
+
+| Section | Use It For |
+| --- | --- |
+| [Build Tool Catalogs](build/openapi-ingestion.md) | OpenAPI, MCP, Python ingestion, semantic build, IO contract, readiness |
+| [Search And Selection](search/tool-graph-search.mdx) | retrieval, evidence, candidate expansion, target selector, Korean search |
+| [Plan And Execute](plan/plan-synthesis.md) | plan synthesis, user slot, runner event, failure taxonomy |
+| [Learning Loop](concepts/trace-learning.md) | scrubbed trace, suggestion, shadow mode, promotion policy |
+| [Validation](validation/benchmarks.md) | benchmark gate, Quality Lab, release gate |
+| [Integrations](guides/xgen-integration.md) | XGEN, MCP, LangChain, middleware, direct API adapter |
+| [Reference](reference/public-api.md) | public import, CLI, event, report, artifact, compatibility |
 
 ## 최소 예제
 
@@ -51,3 +65,5 @@ for tool in graph.retrieve("find pets by status", top_k=5):
 - auth readiness 진단
 - 성공/실패 실행 trace 기반 learning loop
 
+public quality claim은 committed fixture, reproducible command, stored result
+artifact 중 하나와 연결되어야 합니다.
