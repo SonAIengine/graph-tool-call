@@ -25,6 +25,12 @@
   --gtc-muted: #5d6678;
   --gtc-page: #ffffff;
   --gtc-surface: #ffffff;
+  --gtc-primary-button-bg: #1d4ed8;
+  --gtc-primary-button-border: #1d4ed8;
+  --gtc-primary-button-text: #ffffff;
+  --gtc-secondary-button-bg: #f8fafc;
+  --gtc-secondary-button-border: #cbd5e1;
+  --gtc-secondary-button-text: #111827;
   --docusaurus-highlighted-code-line-bg: rgba(37, 99, 235, 0.11);
 }
 
@@ -49,8 +55,14 @@
   --gtc-code-text: #d8e3f4;
   --gtc-heading: #f8fafc;
   --gtc-muted: #a7b0c3;
-  --gtc-page: #0b1020;
-  --gtc-surface: rgba(15, 23, 42, 0.72);
+  --gtc-page: #111827;
+  --gtc-surface: #182235;
+  --gtc-primary-button-bg: #2563eb;
+  --gtc-primary-button-border: #3b82f6;
+  --gtc-primary-button-text: #ffffff;
+  --gtc-secondary-button-bg: #1f2937;
+  --gtc-secondary-button-border: #4b5563;
+  --gtc-secondary-button-text: #f8fafc;
   --docusaurus-highlighted-code-line-bg: rgba(96, 165, 250, 0.16);
 }
 
@@ -68,9 +80,28 @@
   font-weight: 750;
 }
 
+.button--primary {
+  background: var(--gtc-primary-button-bg);
+  border-color: var(--gtc-primary-button-border);
+  color: var(--gtc-primary-button-text);
+}
+
+.button--primary:hover {
+  background: var(--ifm-color-primary-darker);
+  border-color: var(--ifm-color-primary-darker);
+  color: var(--gtc-primary-button-text);
+}
+
 .button--secondary {
-  border-color: var(--gtc-border);
-  color: var(--gtc-heading);
+  background: var(--gtc-secondary-button-bg);
+  border-color: var(--gtc-secondary-button-border);
+  color: var(--gtc-secondary-button-text);
+}
+
+.button--secondary:hover {
+  background: var(--gtc-band);
+  border-color: var(--gtc-accent);
+  color: var(--gtc-secondary-button-text);
 }
 
 .footer {
