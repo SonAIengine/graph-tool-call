@@ -24,6 +24,19 @@ better ranked, and better explained set of choices.
 8. **Run** tools through the product adapter and stream structured events.
 9. **Learn** from scrubbed success and failure traces after validation.
 
+## Artifact Flow
+
+| Stage | Main Artifact | Stored By |
+| --- | --- | --- |
+| ingest | `ToolSchema` | engine or adapter |
+| contract | `metadata.api_contract` | collection artifact |
+| semantic build | `metadata.ai_metadata` | collection artifact |
+| graph build | edges and summaries | collection artifact |
+| retrieval | candidate rows and evidence | request trace or Quality Lab |
+| selection | `target_selector` diagnostics | plan metadata |
+| execution | runner events | product trace/log |
+| learning | scrubbed suggestions | collection-scoped learning state |
+
 ## Engine vs Adapter
 
 The engine owns product-neutral logic:
@@ -56,3 +69,26 @@ been observed in successful runs.
 
 The result is a catalog that can be searched, inspected, validated, and improved
 without hiding the evidence in prompts.
+
+## What The LLM Does
+
+The LLM still matters. It interprets the user request, chooses among a compact
+catalog, fills natural-language gaps, and writes the final response. The engine
+keeps the LLM away from avoidable catalog noise and records why a target or plan
+was accepted.
+
+The first optimization target is not fine-tuning the model. It is improving the
+evidence the model receives: better contracts, better semantic metadata, better
+candidate ordering, and validated trace suggestions.
+
+## Failure Handling
+
+When a run fails, classify the failure before changing prompts:
+
+- missing expected tool means retrieval evidence is weak
+- wrong final target means selector or semantic metadata needs attention
+- missing required field means contract/default/user-slot mapping is incomplete
+- auth failure means the adapter must repair runtime context
+- downstream 4xx/5xx means request construction or API behavior must be checked
+
+See [Failure Taxonomy](../plan/failure-taxonomy.md) for the full list.

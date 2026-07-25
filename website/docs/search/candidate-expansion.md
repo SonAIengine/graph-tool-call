@@ -9,6 +9,25 @@ Candidate expansion adds related tools after the initial search stage. The most
 important expansion is producer discovery: if a target consumes a required field,
 the graph can include tools that produce that field.
 
+This keeps the LLM catalog compact while still giving plan synthesis enough
+tools to fill required inputs.
+
+## Minimal Example
+
+```python
+from graph_tool_call.graphify import expand_candidates_with_producers
+
+expanded = expand_candidates_with_producers(
+    candidate_names=["cancelOrder"],
+    tools_by_name=tools_by_name,
+    max_producers_per_field=2,
+    max_hops=1,
+)
+```
+
+If `cancelOrder` requires `orderNo` and another tool produces `orderNo`, the
+producer can be added to the candidate list before target selection or planning.
+
 ## Expansion Sources
 
 - deterministic IO contract edges
@@ -17,13 +36,73 @@ the graph can include tools that produce that field.
 - promoted run-observed trace edges
 - high-confidence semantic links
 
+## Inputs
+
+| Parameter | Purpose |
+| --- | --- |
+| `candidate_names` | Initial retrieved targets |
+| `tools_by_name` | Tool metadata keyed by name |
+| `max_producers_per_field` | Upper bound for each missing required field |
+| `max_hops` | How far to follow producer chains |
+| `action_priority` | Optional generic ordering for producer-like actions |
+
+The helper only expands required `kind=data` consume fields. Context, auth,
+paging, and search filters should not explode the execution catalog.
+
+## Output
+
+The function returns an ordered list of tool names. Original candidates remain
+first, followed by producer candidates. The output intentionally stays simple so
+adapters can pass it to LLM catalog construction or `select_target_candidate()`.
+
+```python
+[
+    "cancelOrder",
+    "searchOrders",
+    "getOrderDetail",
+]
+```
+
 ## Safety Policy
 
 Expansion should improve planning without flooding the LLM catalog. Keep
 low-confidence structural edges available for graph inspection, but prefer
 strong evidence for execution-oriented candidates.
 
+Recommended defaults:
+
+| Setting | Default Guidance |
+| --- | --- |
+| `max_hops` | `1` for general retrieval, higher only for target-specific planning |
+| `max_producers_per_field` | `1` to `3` |
+| Manual edges | Use when deterministic contract evidence cannot express the relation |
+| Trace edges | Use only after promotion, not from a single observed run |
+
+## Failure Modes
+
+| Symptom | Likely Cause | Fix |
+| --- | --- | --- |
+| Too many expanded tools | broad required fields or high `max_hops` | lower hop/producer limits |
+| No producers added | missing `produces` metadata | inspect IO contracts |
+| Wrong producer added | weak semantic tags | improve OpenAPI semantic build or aliases |
+| LLM sees implementation helpers | source catalog includes non-user tools | filter at collection build time |
+
+## Validation
+
+Candidate expansion should be tested through plan outcomes, not only list size.
+A good expansion reduces `unsatisfied_field` failures without raising average
+candidate count too much.
+
+Track:
+
+- average candidate count
+- max candidate count
+- plan hit rate
+- `unsatisfied_field` count
+- selector ambiguity count
+
 ## Related Pages
 
 - [IO Contracts](../build/io-contracts.md)
 - [Plan Synthesis](../plan/plan-synthesis.md)
+- [Target Selection](./target-selection.md)
