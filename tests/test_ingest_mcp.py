@@ -5,8 +5,19 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+from graph_tool_call import (
+    MCPToolCatalog,
+    MCPToolsIngestAdapter,
+)
+from graph_tool_call import (
+    extract_mcp_tool_catalog as public_extract_mcp_tool_catalog,
+)
 from graph_tool_call.core.tool import ToolSchema, parse_mcp_tool, parse_tool
-from graph_tool_call.ingest.mcp import fetch_mcp_tools, ingest_mcp_tools
+from graph_tool_call.ingest.mcp import (
+    extract_mcp_tool_catalog,
+    fetch_mcp_tools,
+    ingest_mcp_tools,
+)
 
 
 def _make_mcp_tool(name="read_file", desc="Read a file", annotations=None):
@@ -38,9 +49,16 @@ def test_parse_mcp_tool_basic():
 
 
 def test_parse_mcp_tool_with_annotations():
-    tool_dict = _make_mcp_tool(annotations={"readOnlyHint": True, "destructiveHint": False})
+    tool_dict = _make_mcp_tool(
+        annotations={
+            "title": "Read workspace file",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+        }
+    )
     schema = parse_mcp_tool(tool_dict)
     assert schema.annotations is not None
+    assert schema.annotations.title == "Read workspace file"
     assert schema.annotations.read_only_hint is True
     assert schema.annotations.destructive_hint is False
     assert schema.annotations.idempotent_hint is None
@@ -91,6 +109,111 @@ def test_ingest_mcp_tools_preserves_annotations():
     result = ingest_mcp_tools(tools)
     assert result[0].annotations is not None
     assert result[0].annotations.destructive_hint is True
+
+
+def test_parse_mcp_tool_preserves_latest_contract_and_builds_io_evidence():
+    tool_dict = {
+        "name": "lookup_customer",
+        "title": "Customer lookup",
+        "description": "Look up one customer.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "customerId": {"type": "string", "description": "Customer identifier"},
+                "includeOrders": {"type": "boolean"},
+            },
+            "required": ["customerId"],
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "customer": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "displayName": {"type": "string"},
+                    },
+                    "required": ["id"],
+                }
+            },
+            "required": ["customer"],
+        },
+        "annotations": {
+            "title": "Lookup customer",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+        },
+        "execution": {"taskSupport": "optional"},
+        "icons": [{"src": "data:image/png;base64,not-persisted"}],
+        "_meta": {"authorization": "not-persisted"},
+    }
+
+    schema = parse_mcp_tool(tool_dict)
+
+    assert schema.name == "lookup_customer"
+    assert schema.metadata["mcp"]["title"] == "Customer lookup"
+    assert schema.metadata["mcp"]["display_title"] == "Customer lookup"
+    assert schema.metadata["mcp"]["execution"] == {"taskSupport": "optional"}
+    assert "icons" not in schema.metadata["mcp"]
+    assert "_meta" not in schema.metadata["mcp"]
+    assert schema.metadata["request_body_schema"] == tool_dict["inputSchema"]
+    assert schema.metadata["response_schema"] == tool_dict["outputSchema"]
+    assert {row["field_name"] for row in schema.metadata["api_contract"]["consumes"]} == {
+        "customerId",
+        "includeOrders",
+    }
+    assert {row["field_name"] for row in schema.metadata["api_contract"]["produces"]} >= {
+        "id",
+        "displayName",
+    }
+
+
+def test_parse_mcp_tool_detaches_canonical_schemas_from_source():
+    tool_dict = {
+        "name": "lookup_customer",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"customerId": {"type": "string", "enum": ["one"]}},
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {"displayName": {"type": "string"}},
+        },
+    }
+
+    schema = parse_mcp_tool(tool_dict)
+    tool_dict["inputSchema"]["properties"]["customerId"]["enum"].append("two")
+    tool_dict["outputSchema"]["properties"]["displayName"]["type"] = "integer"
+
+    assert schema.parameters[0].enum == ["one"]
+    assert schema.metadata["request_body_schema"]["properties"]["customerId"]["enum"] == ["one"]
+    assert schema.metadata["response_schema"]["properties"]["displayName"]["type"] == "string"
+
+
+def test_extract_mcp_tool_catalog_accepts_jsonrpc_tools_list_page():
+    catalog = extract_mcp_tool_catalog(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "tools": [_make_mcp_tool("read_file")],
+                "nextCursor": "page-2",
+                "serverInfo": {"name": "filesystem", "version": "2.0.0"},
+            },
+        }
+    )
+
+    assert [tool["name"] for tool in catalog.tools] == ["read_file"]
+    assert catalog.server_name == "filesystem"
+    assert catalog.server_version == "2.0.0"
+    assert catalog.next_cursor == "page-2"
+
+
+def test_mcp_catalog_contract_is_public():
+    catalog = public_extract_mcp_tool_catalog({"tools": [_make_mcp_tool()]})
+
+    assert isinstance(catalog, MCPToolCatalog)
+    assert MCPToolsIngestAdapter.name == "mcp-tools"
 
 
 def test_tool_graph_ingest_mcp_tools():
@@ -178,6 +301,56 @@ def test_fetch_mcp_tools_falls_back_to_hostname():
     assert server_name == "mcp.example.com"
 
 
+def test_fetch_mcp_tools_rejects_paginated_catalog_by_default():
+    response = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "tools": [_make_mcp_tool("read_file")],
+            "nextCursor": "page-2",
+        },
+    }
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = json.dumps(response).encode()
+    mock_resp.headers = {"Content-Type": "application/json"}
+    mock_resp.geturl.return_value = "https://mcp.example.com/mcp"
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("graph_tool_call.net._open_url", return_value=mock_resp):
+        try:
+            fetch_mcp_tools("https://mcp.example.com/mcp")
+        except ValueError as exc:
+            assert "paginated" in str(exc)
+        else:
+            raise AssertionError("expected ValueError")
+
+
+def test_fetch_mcp_tools_allows_explicit_partial_preview():
+    response = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "tools": [_make_mcp_tool("read_file")],
+            "nextCursor": "page-2",
+        },
+    }
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = json.dumps(response).encode()
+    mock_resp.headers = {"Content-Type": "application/json"}
+    mock_resp.geturl.return_value = "https://mcp.example.com/mcp"
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("graph_tool_call.net._open_url", return_value=mock_resp):
+        tools, _ = fetch_mcp_tools(
+            "https://mcp.example.com/mcp",
+            allow_partial_catalog=True,
+        )
+
+    assert [tool["name"] for tool in tools] == ["read_file"]
+
+
 def test_fetch_mcp_tools_error_response():
     response = {"jsonrpc": "2.0", "id": 1, "error": {"message": "unauthorized"}}
     mock_resp = MagicMock()
@@ -258,3 +431,31 @@ def test_tool_graph_ingest_mcp_server_allows_private_host_with_opt_in():
 
     assert len(result) == 1
     assert "read_file" in tg.tools
+
+
+def test_tool_graph_ingest_mcp_server_requires_explicit_partial_preview():
+    from graph_tool_call import ToolGraph
+
+    response = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "tools": [_make_mcp_tool("read_file")],
+            "nextCursor": "page-2",
+        },
+    }
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = json.dumps(response).encode()
+    mock_resp.headers = {"Content-Type": "application/json"}
+    mock_resp.geturl.return_value = "https://mcp.example.com/mcp"
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("graph_tool_call.net._open_url", return_value=mock_resp):
+        graph = ToolGraph()
+        result = graph.ingest_mcp_server(
+            "https://mcp.example.com/mcp",
+            allow_partial_catalog=True,
+        )
+
+    assert [tool.name for tool in result] == ["read_file"]

@@ -57,6 +57,26 @@ def test_roundtrip():
     assert result == original
 
 
+def test_title_roundtrip_and_non_boolean_hints_are_ignored():
+    ann = MCPAnnotations.from_mcp_dict(
+        {
+            "title": "  Read customer  ",
+            "readOnlyHint": "false",
+            "destructiveHint": 1,
+            "idempotentHint": False,
+        }
+    )
+
+    assert ann.title == "Read customer"
+    assert ann.read_only_hint is None
+    assert ann.destructive_hint is None
+    assert ann.idempotent_hint is False
+    assert ann.to_mcp_dict() == {
+        "title": "Read customer",
+        "idempotentHint": False,
+    }
+
+
 def test_annotations_in_tool_schema():
     from graph_tool_call.core.tool import ToolSchema
 

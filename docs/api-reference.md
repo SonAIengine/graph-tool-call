@@ -48,8 +48,8 @@ tools = result.tools
 ```
 
 Built-in adapters recognize OpenAPI/Swagger dictionaries, GraphQL introspection
-responses, MCP tool lists, Python functions, and OpenAI/Anthropic/MCP-shaped
-generic tool catalogs.
+responses, bare or JSON-RPC-wrapped MCP tool lists, Python functions, and
+OpenAI/Anthropic/MCP-shaped generic tool catalogs.
 Ambiguous paths and URLs should use an explicit `format_hint`:
 
 ```python
@@ -58,6 +58,25 @@ result = ingest_source(
     format_hint="openapi",
 )
 ```
+
+MCP catalog ingest accepts an official `tools/list` response and reports
+pagination and per-source output schema coverage:
+
+```python
+from graph_tool_call import extract_mcp_tool_catalog, ingest_source
+
+catalog = extract_mcp_tool_catalog(tools_list_response)
+result = ingest_source(
+    tools_list_response,
+    format_hint="mcp-tools",
+    required_capabilities={"input_schema"},
+)
+print(catalog.next_cursor, result.metadata["output_schema_coverage"])
+```
+
+`nextCursor` blocks readiness unless `allow_partial_catalog=True`. Catalog
+ingest preserves `outputSchema` and task-support metadata, but it does not bind
+credentials or create a live `tools/call` transport.
 
 GraphQL introspection is built in. The endpoint is explicit because it is not
 part of the introspection response:

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
 # camelCase → snake_case mapping for MCP annotations
 _MCP_ANNOTATION_MAP = {
+    "title": "title",
     "readOnlyHint": "read_only_hint",
     "destructiveHint": "destructive_hint",
     "idempotentHint": "idempotent_hint",
@@ -20,9 +22,10 @@ _MCP_ANNOTATION_REVERSE = {v: k for k, v in _MCP_ANNOTATION_MAP.items()}
 class MCPAnnotations:
     """MCP tool annotations (behavioral semantics).
 
-    See: https://spec.modelcontextprotocol.io/2025-03-26/server/tools/
+    See: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
     """
 
+    title: str | None = None
     read_only_hint: bool | None = None
     destructive_hint: bool | None = None
     idempotent_hint: bool | None = None
@@ -33,8 +36,12 @@ class MCPAnnotations:
         """Parse from MCP camelCase dict."""
         kwargs = {}
         for camel, snake in _MCP_ANNOTATION_MAP.items():
-            if camel in data:
-                kwargs[snake] = data[camel]
+            value = data.get(camel)
+            if camel == "title":
+                if isinstance(value, str) and value.strip():
+                    kwargs[snake] = value.strip()
+            elif isinstance(value, bool):
+                kwargs[snake] = value
         return cls(**kwargs)
 
     def to_mcp_dict(self) -> dict[str, Any]:
@@ -238,20 +245,38 @@ def parse_mcp_tool(tool: dict[str, Any]) -> ToolSchema:
 
     Expected shape::
 
-        {"name": ..., "description": ..., "inputSchema": {"type": "object", "properties": ...},
-         "annotations": {"readOnlyHint": true, ...}}
+        {"name": ..., "title": ..., "description": ...,
+         "inputSchema": {"type": "object", "properties": ...},
+         "outputSchema": {"type": "object", "properties": ...},
+         "annotations": {"readOnlyHint": true, ...},
+         "execution": {"taskSupport": "optional"}}
     """
     params: list[ToolParameter] = []
-    raw_schema = tool.get("inputSchema", {})
-    required_names = set(raw_schema.get("required", []))
-    for pname, pschema in raw_schema.get("properties", {}).items():
+    raw_schema = tool.get("inputSchema")
+    input_schema = (
+        copy.deepcopy(raw_schema)
+        if isinstance(raw_schema, dict) and raw_schema.get("type", "object") == "object"
+        else {"type": "object", "properties": {}}
+    )
+    properties = (
+        input_schema.get("properties") if isinstance(input_schema.get("properties"), dict) else {}
+    )
+    required_names = {
+        str(name) for name in input_schema.get("required", []) if isinstance(name, str)
+    }
+    for pname, raw_parameter_schema in properties.items():
+        pschema = raw_parameter_schema if isinstance(raw_parameter_schema, dict) else {}
         params.append(
             ToolParameter(
-                name=pname,
-                type=pschema.get("type", "string"),
-                description=pschema.get("description", ""),
-                required=pname in required_names,
-                enum=pschema.get("enum"),
+                name=str(pname),
+                type=str(pschema.get("type") or "string"),
+                description=str(pschema.get("description") or ""),
+                required=str(pname) in required_names,
+                enum=(
+                    copy.deepcopy(pschema.get("enum"))
+                    if isinstance(pschema.get("enum"), list)
+                    else None
+                ),
             )
         )
 
@@ -260,10 +285,63 @@ def parse_mcp_tool(tool: dict[str, Any]) -> ToolSchema:
     if isinstance(raw_annotations, dict):
         annotations = MCPAnnotations.from_mcp_dict(raw_annotations)
 
+    raw_output_schema = tool.get("outputSchema")
+    output_schema = (
+        copy.deepcopy(raw_output_schema)
+        if isinstance(raw_output_schema, dict)
+        and raw_output_schema.get("type", "object") == "object"
+        else None
+    )
+    from graph_tool_call.graphify.io_contract import build_io_contract
+
+    produces, consumes = build_io_contract(
+        request_body_schema=input_schema,
+        response_schema=output_schema,
+    )
+    title = str(tool.get("title") or "").strip()
+    annotation_title = annotations.title.strip() if annotations and annotations.title else ""
+    execution = tool.get("execution") if isinstance(tool.get("execution"), dict) else {}
+    task_support = str(execution.get("taskSupport") or "")
+    safe_execution = (
+        {"taskSupport": task_support}
+        if task_support in {"forbidden", "optional", "required"}
+        else {}
+    )
+    mcp_metadata: dict[str, Any] = {
+        "display_title": title or annotation_title or str(tool.get("name") or ""),
+        "annotations_trusted": False,
+        "input_schema": copy.deepcopy(input_schema),
+    }
+    if title:
+        mcp_metadata["title"] = title
+    if output_schema is not None:
+        mcp_metadata["output_schema"] = copy.deepcopy(output_schema)
+    if safe_execution:
+        mcp_metadata["execution"] = safe_execution
+
+    metadata: dict[str, Any] = {
+        "source": "mcp",
+        "request_body_schema": copy.deepcopy(input_schema),
+        "api_contract": {
+            "produces": produces,
+            "consumes": consumes,
+            "links": [],
+        },
+        "mcp": mcp_metadata,
+        "execution": {
+            "transport": "mcp",
+            "executable": False,
+            **safe_execution,
+        },
+    }
+    if output_schema is not None:
+        metadata["response_schema"] = copy.deepcopy(output_schema)
+
     return ToolSchema(
-        name=tool["name"],
-        description=tool.get("description", ""),
+        name=str(tool["name"]),
+        description=str(tool.get("description") or ""),
         parameters=params,
+        metadata=metadata,
         annotations=annotations,
     )
 

@@ -237,17 +237,21 @@ Edit, parameterize, and visualize workflows — see [Direct API guide](docs/inte
 ### Other tool sources
 
 ```python
-# From an MCP server (HTTP JSON-RPC tools/list)
+# From a stateless, single-page MCP endpoint (HTTP JSON-RPC tools/list)
 tg.ingest_mcp_server("https://mcp.example.com/mcp")
 
-# From an MCP tool list (annotations preserved)
+# From an MCP tool list (annotations and input/output schemas preserved)
 tg.ingest_mcp_tools(mcp_tools, server_name="filesystem")
 
 # From Python callables (type hints + docstrings)
 tg.ingest_functions([read_file, write_file])
 ```
 
-MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are used as retrieval signals — query intent is automatically classified, and read queries prioritize read-only tools while delete queries prioritize destructive tools.
+MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are used as retrieval signals — query intent is automatically classified, and read queries prioritize read-only tools while delete queries prioritize destructive tools. `outputSchema`, when present, is converted into producer evidence for graph planning; catalog ingest does not create a live execution transport.
+
+For stateful or paginated MCP servers, fetch every `tools/list` page with an
+application MCP client and pass the validated rows to `ingest_mcp_tools()`.
+The endpoint convenience method fails closed when it sees `nextCursor`.
 
 ---
 

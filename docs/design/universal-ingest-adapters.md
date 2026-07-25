@@ -72,6 +72,7 @@ The registry adds deterministic issues after conversion:
 | `invalid_tool_name` | blocker | Canonical tool name is empty |
 | `duplicate_tool_name` | blocker | Canonical names are not unique |
 | `unsupported_capability` | blocker | A caller-required feature cannot be guaranteed |
+| `incomplete_required_capability` | blocker | A required feature is present for only part of the catalog |
 | `missing_tool_description` | warning | Semantic retrieval evidence is weak |
 
 `strict=False` returns diagnostics for UI/readiness workflows.
@@ -157,6 +158,25 @@ application auth layer.
 Subscription fields are retained for discovery, but a warning records that an
 application-provided WebSocket/SSE transport is required. See
 [GraphQL Introspection Ingest](graphql-introspection-ingest.md).
+
+## Built-in MCP catalog adapter
+
+`mcp-tools` accepts bare rows, `{tools: [...]}`, and JSON-RPC
+`{result: {tools: [...]}}` pages. It preserves:
+
+- display `title` and annotation title precedence
+- complete `inputSchema` and optional `outputSchema`
+- behavioral annotations with an explicit untrusted provenance flag
+- `execution.taskSupport` as metadata
+- server name/version and protocol version when supplied
+- input/output-derived `api_contract` evidence
+
+Duplicate names and invalid input schemas are diagnosed deterministically.
+An unconsumed `nextCursor` blocks readiness by default, and catalog/tool limits
+prevent silent unbounded ingestion.
+
+This adapter describes tools; it does not execute them. Products must bind the
+catalog to an authenticated MCP session and provide the protocol transport.
 
 ## Follow-up adapters
 

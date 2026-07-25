@@ -330,6 +330,7 @@ class ToolGraph:
         skip_deprecated: bool = True,
         detect_dependencies: bool = True,
         min_confidence: float = 0.7,
+        allow_partial_catalog: bool = False,
         allow_private_hosts: bool = False,
         max_response_bytes: int = 5_000_000,
         source_label: str | None = None,
@@ -437,18 +438,22 @@ class ToolGraph:
         server_name: str | None = None,
         detect_dependencies: bool = True,
         min_confidence: float = 0.7,
+        allow_partial_catalog: bool = False,
         allow_private_hosts: bool = False,
         max_response_bytes: int = 5_000_000,
         timeout: int = 30,
     ) -> list[ToolSchema]:
-        """Fetch tools from an MCP server endpoint and ingest them.
+        """Fetch a single-page MCP catalog from an HTTP endpoint and ingest it.
 
-        The endpoint is expected to support HTTP JSON-RPC ``tools/list``.
+        The endpoint is expected to support stateless HTTP JSON-RPC
+        ``tools/list``. Stateful or paginated servers require an application
+        MCP client; partial pages fail closed unless explicitly allowed.
         """
         from graph_tool_call.ingest.mcp import fetch_mcp_tools
 
         remote_tools, discovered_name = fetch_mcp_tools(
             server_url,
+            allow_partial_catalog=allow_partial_catalog,
             allow_private_hosts=allow_private_hosts,
             max_response_bytes=max_response_bytes,
             timeout=timeout,

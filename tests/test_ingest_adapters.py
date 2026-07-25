@@ -78,6 +78,121 @@ def test_ingest_source_detects_mcp_before_generic_tool_catalog() -> None:
     assert "annotations" in result.capabilities.features
 
 
+def test_mcp_adapter_preserves_output_contract_and_catalog_summary() -> None:
+    tool = _mcp_tool("lookup_customer")
+    tool["title"] = "Customer lookup"
+    tool["outputSchema"] = {
+        "type": "object",
+        "properties": {"customerId": {"type": "string"}},
+        "required": ["customerId"],
+    }
+    tool["execution"] = {"taskSupport": "required"}
+
+    result = ingest_source(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "tools": [tool],
+                "serverInfo": {"name": "crm", "version": "1.2.3"},
+            },
+        }
+    )
+
+    assert result.adapter == "mcp-tools"
+    assert result.ready is True
+    assert result.metadata["server_name"] == "crm"
+    assert result.metadata["server_version"] == "1.2.3"
+    assert result.metadata["output_schema_coverage"] == 1.0
+    assert result.tools[0].metadata["response_schema"] == tool["outputSchema"]
+    assert "output_schema" in result.capabilities.features
+
+
+def test_mcp_adapter_blocks_incomplete_paginated_catalog_by_default() -> None:
+    result = ingest_source(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "tools": [_mcp_tool()],
+                "nextCursor": "page-2",
+            },
+        }
+    )
+
+    assert result.ready is False
+    issue = next(issue for issue in result.issues if issue.code == "mcp_catalog_incomplete")
+    assert issue.evidence["next_cursor_present"] is True
+
+    partial = ingest_source(
+        {
+            "tools": [_mcp_tool()],
+            "nextCursor": "page-2",
+        },
+        allow_partial_catalog=True,
+    )
+    assert partial.ready is True
+    assert any(issue.code == "mcp_catalog_partial" for issue in partial.issues)
+
+
+def test_mcp_adapter_deduplicates_names_and_reports_invalid_schemas() -> None:
+    duplicate = _mcp_tool("read_file")
+    invalid = _mcp_tool("broken")
+    invalid["inputSchema"] = {"type": "string"}
+
+    result = ingest_source([_mcp_tool("read_file"), duplicate, invalid])
+
+    assert [tool.name for tool in result.tools] == ["read_file"]
+    assert result.ready is False
+    assert any(issue.code == "duplicate_mcp_tool_name" for issue in result.issues)
+    assert any(issue.code == "invalid_mcp_input_schema" for issue in result.issues)
+
+
+def test_mcp_adapter_ignores_invalid_optional_output_schema() -> None:
+    tool = _mcp_tool("read_file")
+    tool["outputSchema"] = {
+        "type": "object",
+        "properties": "not-an-object",
+    }
+
+    result = ingest_source([tool])
+
+    assert result.ready is True
+    assert result.metadata["output_schema_coverage"] == 0.0
+    assert "response_schema" not in result.tools[0].metadata
+    assert any(issue.code == "invalid_mcp_output_schema" for issue in result.issues)
+
+
+def test_mcp_adapter_enforces_catalog_tool_limit() -> None:
+    result = ingest_source(
+        [_mcp_tool(f"tool_{index}") for index in range(3)],
+        max_tools=2,
+    )
+
+    assert [tool.name for tool in result.tools] == ["tool_0", "tool_1"]
+    assert result.ready is False
+    issue = next(issue for issue in result.issues if issue.code == "mcp_tool_limit_exceeded")
+    assert issue.evidence == {"actual": 3, "limit": 2}
+
+
+def test_mcp_adapter_blocks_oversized_schema_shape() -> None:
+    schema: dict[str, Any] = {"type": "object"}
+    current = schema
+    for index in range(8):
+        child = {"type": "object"}
+        current["properties"] = {f"level_{index}": child}
+        current = child
+    tool = _mcp_tool("deep_tool")
+    tool["inputSchema"] = schema
+
+    result = ingest_source([tool], max_schema_depth=5)
+
+    assert result.ready is False
+    issue = next(issue for issue in result.issues if issue.code == "mcp_schema_limit_exceeded")
+    assert issue.tool == "deep_tool"
+    assert issue.evidence["schema"] == "inputSchema"
+
+
 def test_ingest_source_accepts_python_functions() -> None:
     def add(left: int, right: int) -> int:
         """Add two integers."""
@@ -134,7 +249,7 @@ def test_required_capability_is_reported_instead_of_silently_dropped() -> None:
     )
 
     assert result.ready is False
-    issue = next(issue for issue in result.issues if issue.code == "unsupported_capability")
+    issue = next(issue for issue in result.issues if issue.code == "incomplete_required_capability")
     assert issue.evidence["capability"] == "output_schema"
 
     with pytest.raises(IngestConformanceError) as exc_info:

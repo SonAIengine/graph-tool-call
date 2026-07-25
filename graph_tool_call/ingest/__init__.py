@@ -10,6 +10,7 @@ from graph_tool_call.ingest.adapters import (
     IngestConformanceError,
     IngestIssue,
     IngestResult,
+    MCPToolsIngestAdapter,
     UnknownIngestAdapterError,
     detect_ingest_adapter,
     get_default_ingest_registry,
@@ -23,6 +24,7 @@ from graph_tool_call.ingest.graphql import (
     ingest_graphql_introspection,
     is_graphql_introspection,
 )
+from graph_tool_call.ingest.mcp import MCPToolCatalog, extract_mcp_tool_catalog
 from graph_tool_call.ingest.normalizer import NormalizedSpec, SpecVersion, normalize
 from graph_tool_call.ingest.openapi import ingest_openapi
 
@@ -37,6 +39,8 @@ __all__ = [
     "GraphQLIntrospectionIngestAdapter",
     "IngestIssue",
     "IngestResult",
+    "MCPToolCatalog",
+    "MCPToolsIngestAdapter",
     "NormalizedSpec",
     "SpecVersion",
     "UnknownIngestAdapterError",
@@ -46,6 +50,7 @@ __all__ = [
     "ingest_function",
     "ingest_functions",
     "ingest_graphql_introspection",
+    "extract_mcp_tool_catalog",
     "ingest_openapi",
     "ingest_source",
     "normalize",
