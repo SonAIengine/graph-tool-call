@@ -177,9 +177,10 @@
   border-radius: 8px;
   display: block;
   font-size: 0.92rem;
+  min-width: 100%;
   max-width: 100%;
   overflow-x: auto;
-  width: 100%;
+  width: max-content;
 }
 
 .theme-doc-markdown th {
@@ -195,6 +196,12 @@
   white-space: normal;
 }
 
+.theme-doc-markdown th,
+.theme-doc-markdown td:first-child,
+.theme-doc-markdown code {
+  white-space: nowrap;
+}
+
 .theme-doc-markdown code {
   border-radius: 5px;
 }
@@ -208,6 +215,18 @@
 .theme-code-block pre {
   font-size: 0.88rem;
   line-height: 1.62;
+}
+
+.tabs {
+  flex-wrap: nowrap;
+  gap: 0.55rem;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.tabs__item {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .menu__link {

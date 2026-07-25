@@ -3,6 +3,9 @@ title: OpenAPI Ingestion
 description: Swagger 또는 OpenAPI source를 graph-tool-call tool schema로 정규화합니다.
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # OpenAPI Ingestion
 
 OpenAPI ingestion은 Swagger 2.0과 OpenAPI 3.x source를 정규화된 `ToolSchema`로
@@ -41,6 +44,11 @@ private/internal URL은 기본적으로 차단됩니다. 신뢰된 infrastructur
 
 ## Minimal Flow
 
+artifact를 어떻게 사용할지에 따라 entry point를 고릅니다.
+
+<Tabs>
+  <TabItem value="python" label="Python graph" default>
+
 ```python
 from graph_tool_call import ToolGraph
 
@@ -49,6 +57,41 @@ graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
 for tool in graph.retrieve("find pets by status", top_k=5):
     print(tool.name, tool.description)
 ```
+
+  </TabItem>
+  <TabItem value="cli" label="CLI search">
+
+```bash
+graph-tool-call search "find pets by status" \
+  --source https://petstore3.swagger.io/api/v3/openapi.json \
+  --top-k 5 \
+  --scores
+```
+
+  </TabItem>
+  <TabItem value="artifact" label="Collection artifact">
+
+```bash
+graph-tool-call build-openapi-collection ./openapi.json \
+  -o collection.json \
+  --context-field siteNo \
+  --paging-field page,size \
+  --search-filter-field keyword,searchType
+```
+
+  </TabItem>
+  <TabItem value="readiness" label="Readiness">
+
+```bash
+graph-tool-call inspect-openapi ./openapi.json --json
+```
+
+  </TabItem>
+</Tabs>
+
+빠른 source smoke test에는 `search`, 코드 연결에는 `ToolGraph.from_url()`,
+product가 graph와 readiness/semantic/edge-quality metadata를 저장해야 할 때는
+`build-openapi-collection`을 사용합니다.
 
 ## Collection Artifact 만들기
 

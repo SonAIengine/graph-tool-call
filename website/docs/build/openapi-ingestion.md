@@ -3,6 +3,9 @@ title: OpenAPI Ingestion
 description: Convert Swagger or OpenAPI sources into normalized graph-tool-call tool schemas.
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # OpenAPI Ingestion
 
 OpenAPI ingestion converts Swagger 2.0 and OpenAPI 3.x sources into normalized
@@ -42,6 +45,11 @@ only from trusted infrastructure.
 
 ## Minimal Flow
 
+Pick the entry point that matches how the artifact will be used.
+
+<Tabs>
+  <TabItem value="python" label="Python graph" default>
+
 ```python
 from graph_tool_call import ToolGraph
 
@@ -50,6 +58,41 @@ graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
 for tool in graph.retrieve("find pets by status", top_k=5):
     print(tool.name, tool.description)
 ```
+
+  </TabItem>
+  <TabItem value="cli" label="CLI search">
+
+```bash
+graph-tool-call search "find pets by status" \
+  --source https://petstore3.swagger.io/api/v3/openapi.json \
+  --top-k 5 \
+  --scores
+```
+
+  </TabItem>
+  <TabItem value="artifact" label="Collection artifact">
+
+```bash
+graph-tool-call build-openapi-collection ./openapi.json \
+  -o collection.json \
+  --context-field siteNo \
+  --paging-field page,size \
+  --search-filter-field keyword,searchType
+```
+
+  </TabItem>
+  <TabItem value="readiness" label="Readiness">
+
+```bash
+graph-tool-call inspect-openapi ./openapi.json --json
+```
+
+  </TabItem>
+</Tabs>
+
+Use `search` for a quick source smoke test, `ToolGraph.from_url()` for code, and
+`build-openapi-collection` when a product needs to store the graph plus
+readiness, semantic, and edge-quality metadata.
 
 ## Build A Collection Artifact
 

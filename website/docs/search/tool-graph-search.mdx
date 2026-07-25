@@ -79,7 +79,10 @@ for result in results["results"]:
   <TabItem value="cli" label="CLI">
 
 ```bash
-graph-tool-call search openapi.json "find refund-ready orders" --top-k 8
+graph-tool-call search "find refund-ready orders" \
+  --source openapi.json \
+  --top-k 8 \
+  --scores
 ```
 
   </TabItem>

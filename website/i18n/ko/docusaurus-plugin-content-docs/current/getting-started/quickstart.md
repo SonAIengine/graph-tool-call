@@ -3,6 +3,9 @@ title: 빠른 시작
 description: graph-tool-call을 설치하고 OpenAPI 검색, readiness 점검, 간단한 실행까지 확인합니다.
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # 빠른 시작
 
 이 quickstart는 가장 작은 유용한 loop를 보여줍니다.
@@ -30,15 +33,64 @@ pip install "graph-tool-call[all]"
 
 ## OpenAPI Spec 검색
 
+빠른 smoke test에는 CLI를 사용하고, application이나 test suite에 연결할 때는
+Python API를 사용합니다.
+
+<Tabs>
+  <TabItem value="cli" label="CLI" default>
+
 ```bash
 uvx graph-tool-call search "user authentication" \
-  --source https://petstore.swagger.io/v2/swagger.json
+  --source https://petstore.swagger.io/v2/swagger.json \
+  --top-k 5 \
+  --scores
 ```
+
+  </TabItem>
+  <TabItem value="python" label="Python">
+
+```python
+from graph_tool_call import ToolGraph
+
+graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
+results = graph.retrieve_with_scores("user authentication", top_k=5)
+
+for result in results:
+    print(result.tool.name, result.score, result.confidence)
+```
+
+  </TabItem>
+  <TabItem value="evidence" label="Evidence">
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.graphify import retrieve_graphify
+
+graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
+response = retrieve_graphify(
+    graph,
+    "user authentication",
+    top_k=5,
+    include_evidence=True,
+)
+
+first = response["results"][0]
+print(first["tool_name"])
+print(first["score_breakdown"])
+```
+
+  </TabItem>
+</Tabs>
 
 CLI는 source를 로드하고 임시 graph를 만든 뒤 candidate를 검색해 가장 강한 match를
 출력합니다. 코드를 작성하기 전에 spec을 빠르게 점검할 때 사용합니다.
 
 ## Tool Graph 빌드
+
+반복 검색에서 매번 source를 ingest하지 않으려면 reusable graph를 만듭니다.
+
+<Tabs>
+  <TabItem value="python-cache" label="Python cache" default>
 
 ```python
 from graph_tool_call import ToolGraph
@@ -53,21 +105,29 @@ for tool in results:
     print(tool.name)
 ```
 
-더 깊게 디버깅하려면 evidence를 요청합니다.
+  </TabItem>
+  <TabItem value="cli-ingest" label="CLI graph">
 
-```python
-from graph_tool_call.graphify import retrieve_graphify
-
-rows = retrieve_graphify(
-    graph,
-    "create a new pet",
-    top_k=5,
-    include_evidence=True,
-)
-
-for row in rows:
-    print(row["tool_name"], row["score_breakdown"])
+```bash
+graph-tool-call ingest ./openapi.json -o graph.json
+graph-tool-call retrieve "create a new pet" --graph graph.json --top-k 5
 ```
+
+  </TabItem>
+  <TabItem value="collection" label="Collection artifact">
+
+```bash
+graph-tool-call build-openapi-collection ./openapi.json \
+  -o collection.json \
+  --context-field siteNo \
+  --paging-field page,size
+```
+
+  </TabItem>
+</Tabs>
+
+local agent 실험에는 saved graph를 사용합니다. product adapter나 UI가 readiness,
+semantic, edge-quality metadata를 저장해야 한다면 collection artifact를 사용합니다.
 
 ## API Collection 점검
 

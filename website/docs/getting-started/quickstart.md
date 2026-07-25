@@ -3,6 +3,9 @@ title: Quickstart
 description: Install graph-tool-call, search an OpenAPI spec, inspect readiness, and execute a simple operation.
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # Quickstart
 
 This quickstart shows the smallest useful loop:
@@ -30,15 +33,65 @@ pip install "graph-tool-call[all]"
 
 ## Search an OpenAPI Spec
 
+Use the CLI when you want a fast smoke test. Use Python when you are wiring the
+engine into an application or test suite.
+
+<Tabs>
+  <TabItem value="cli" label="CLI" default>
+
 ```bash
 uvx graph-tool-call search "user authentication" \
-  --source https://petstore.swagger.io/v2/swagger.json
+  --source https://petstore.swagger.io/v2/swagger.json \
+  --top-k 5 \
+  --scores
 ```
+
+  </TabItem>
+  <TabItem value="python" label="Python">
+
+```python
+from graph_tool_call import ToolGraph
+
+graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
+results = graph.retrieve_with_scores("user authentication", top_k=5)
+
+for result in results:
+    print(result.tool.name, result.score, result.confidence)
+```
+
+  </TabItem>
+  <TabItem value="evidence" label="Evidence">
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.graphify import retrieve_graphify
+
+graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
+response = retrieve_graphify(
+    graph,
+    "user authentication",
+    top_k=5,
+    include_evidence=True,
+)
+
+first = response["results"][0]
+print(first["tool_name"])
+print(first["score_breakdown"])
+```
+
+  </TabItem>
+</Tabs>
 
 The CLI loads the source, creates a temporary graph, retrieves candidates, and
 prints the strongest matches. Use this path to test a spec before writing code.
 
 ## Build a Tool Graph
+
+Build a reusable graph when repeated searches should avoid re-ingesting the
+source.
+
+<Tabs>
+  <TabItem value="python-cache" label="Python cache" default>
 
 ```python
 from graph_tool_call import ToolGraph
@@ -53,21 +106,30 @@ for tool in results:
     print(tool.name)
 ```
 
-For deeper debugging, request evidence:
+  </TabItem>
+  <TabItem value="cli-ingest" label="CLI graph">
 
-```python
-from graph_tool_call.graphify import retrieve_graphify
-
-rows = retrieve_graphify(
-    graph,
-    "create a new pet",
-    top_k=5,
-    include_evidence=True,
-)
-
-for row in rows:
-    print(row["tool_name"], row["score_breakdown"])
+```bash
+graph-tool-call ingest ./openapi.json -o graph.json
+graph-tool-call retrieve "create a new pet" --graph graph.json --top-k 5
 ```
+
+  </TabItem>
+  <TabItem value="collection" label="Collection artifact">
+
+```bash
+graph-tool-call build-openapi-collection ./openapi.json \
+  -o collection.json \
+  --context-field siteNo \
+  --paging-field page,size
+```
+
+  </TabItem>
+</Tabs>
+
+Use the saved graph for local agent experiments. Use the collection artifact
+when a product adapter or UI needs readiness, semantic, and edge-quality
+metadata.
 
 ## Inspect an API Collection
 
