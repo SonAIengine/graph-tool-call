@@ -1,9 +1,9 @@
 ---
-title: Suggestions
+title: 학습 제안
 description: scrub된 execution trace를 collection-scoped learning suggestion으로 변환합니다.
 ---
 
-# Suggestions
+# 학습 제안
 
 Learning suggestion은 검증된 trace에서 도출한 graph/search 개선 후보입니다.
 

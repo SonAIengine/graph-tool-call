@@ -1,9 +1,9 @@
 ---
-title: Failure Taxonomy
+title: 실패 분류
 description: search, target, plan, auth, request, API, cleanup failure를 분류합니다.
 ---
 
-# Failure Taxonomy
+# 실패 분류
 
 실패는 구조화되어야 합니다. product는 모든 실패를 "agent 실패" 하나로 뭉개면
 안 됩니다.

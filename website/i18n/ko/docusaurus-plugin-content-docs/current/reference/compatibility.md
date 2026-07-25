@@ -1,9 +1,9 @@
 ---
-title: Compatibility
+title: 호환성
 description: public contract, additive change, adapter-safe import path를 설명합니다.
 ---
 
-# Compatibility
+# 호환성
 
 Adapter는 문서화된 public API와 additive artifact field에 의존해야 합니다.
 

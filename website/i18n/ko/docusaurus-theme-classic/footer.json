@@ -1,0 +1,54 @@
+{
+  "link.title.Docs": {
+    "message": "문서",
+    "description": "The title of the footer links column with title=Docs in the footer"
+  },
+  "link.title.Validation": {
+    "message": "검증",
+    "description": "The title of the footer links column with title=Validation in the footer"
+  },
+  "link.title.Project": {
+    "message": "프로젝트",
+    "description": "The title of the footer links column with title=Project in the footer"
+  },
+  "link.item.label.Quickstart": {
+    "message": "Quickstart",
+    "description": "The label of footer link with label=Quickstart linking to /docs/getting-started/quickstart/"
+  },
+  "link.item.label.Tool Graph Search": {
+    "message": "Tool Graph Search",
+    "description": "The label of footer link with label=Tool Graph Search linking to /docs/search/tool-graph-search/"
+  },
+  "link.item.label.OpenAPI Ingestion": {
+    "message": "OpenAPI Ingestion",
+    "description": "The label of footer link with label=OpenAPI Ingestion linking to /docs/build/openapi-ingestion/"
+  },
+  "link.item.label.Public API": {
+    "message": "Public API",
+    "description": "The label of footer link with label=Public API linking to /docs/reference/public-api/"
+  },
+  "link.item.label.Benchmarks": {
+    "message": "Benchmarks",
+    "description": "The label of footer link with label=Benchmarks linking to /docs/validation/benchmarks/"
+  },
+  "link.item.label.XGEN Scale Gates": {
+    "message": "XGEN Scale Gates",
+    "description": "The label of footer link with label=XGEN Scale Gates linking to /docs/validation/xgen-scale-gates/"
+  },
+  "link.item.label.GitHub": {
+    "message": "GitHub",
+    "description": "The label of footer link with label=GitHub linking to https://github.com/SonAIengine/graph-tool-call"
+  },
+  "link.item.label.PyPI": {
+    "message": "PyPI",
+    "description": "The label of footer link with label=PyPI linking to https://pypi.org/project/graph-tool-call/"
+  },
+  "link.item.label.llms.txt": {
+    "message": "llms.txt",
+    "description": "The label of footer link with label=llms.txt linking to https://sonaiengine.github.io/graph-tool-call/llms.txt"
+  },
+  "copyright": {
+    "message": "Copyright © 2026 SonAIengine. Built with Docusaurus.",
+    "description": "The footer copyright"
+  }
+}

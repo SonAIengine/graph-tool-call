@@ -1,9 +1,9 @@
 ---
-title: BFCL-Style Evaluation
+title: BFCL 스타일 평가
 description: tool-call benchmark 방법론으로 graph-tool-call을 검증하는 방식을 설명합니다.
 ---
 
-# BFCL-Style Evaluation
+# BFCL 스타일 평가
 
 BFCL-style evaluation은 tool-call 품질에 대한 public claim을 만들 때 사용합니다.
 빠른 개발 loop보다 무겁기 때문에 release candidate나 benchmark claim 업데이트

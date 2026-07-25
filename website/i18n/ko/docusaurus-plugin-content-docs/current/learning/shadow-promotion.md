@@ -1,9 +1,9 @@
 ---
-title: Shadow And Promotion
+title: Shadow와 Promotion
 description: observe, shadow, promote 단계로 trace learning을 안전하게 적용합니다.
 ---
 
-# Shadow And Promotion
+# Shadow와 Promotion
 
 기본 learning policy는 observe, shadow, promote입니다.
 

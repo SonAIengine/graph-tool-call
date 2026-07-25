@@ -49,6 +49,25 @@ const config: Config = {
     ],
   ],
 
+  themes: [
+    [
+      '@easyops-cn/docusaurus-search-local',
+      {
+        hashed: true,
+        indexDocs: true,
+        indexPages: true,
+        indexBlog: false,
+        docsRouteBasePath: '/docs',
+        language: ['en', 'ko'],
+        searchBarPosition: 'right',
+        searchResultLimits: 8,
+        searchResultContextMaxLength: 72,
+        explicitSearchResultPath: true,
+        highlightSearchTermsOnTargetPage: true,
+      },
+    ],
+  ],
+
   themeConfig: {
     image: 'img/social_preview.png',
     colorMode: {
@@ -80,7 +99,17 @@ const config: Config = {
           position: 'left',
         },
         {
+          to: '/docs/reference/public-api/',
+          label: 'Reference',
+          position: 'left',
+        },
+        {
           type: 'localeDropdown',
+          position: 'right',
+        },
+        {
+          href: 'https://pypi.org/project/graph-tool-call/',
+          label: 'PyPI',
           position: 'right',
         },
         {

@@ -1,9 +1,9 @@
 ---
-title: Artifact Schemas
+title: Artifact Schema
 description: adapter와 UI tool이 사용하는 stable collection artifact section입니다.
 ---
 
-# Artifact Schemas
+# Artifact Schema
 
 Collection artifact는 graph와 재사용에 필요한 evidence를 저장합니다.
 

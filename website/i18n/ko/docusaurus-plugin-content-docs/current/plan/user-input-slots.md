@@ -1,9 +1,9 @@
 ---
-title: User Input Slots
+title: 사용자 입력 슬롯
 description: default, context, producer tool로 채울 수 없는 field를 구조화합니다.
 ---
 
-# User Input Slots
+# 사용자 입력 슬롯
 
 User input slot은 누락된 값을 구조화해서 요청하는 방식입니다. product UI는 실행을
 멈추고 사용자에게 field를 물은 뒤 추측 없이 resume할 수 있습니다.

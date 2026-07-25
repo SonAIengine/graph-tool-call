@@ -1,9 +1,9 @@
 ---
-title: Candidate Expansion
+title: 후보 확장
 description: evidence가 있는 경우 retrieved target에 producer tool과 graph neighbor를 확장합니다.
 ---
 
-# Candidate Expansion
+# 후보 확장
 
 Candidate expansion은 initial search 이후 관련 tool을 추가합니다. 가장 중요한
 확장은 producer discovery입니다. target이 required field를 소비한다면, graph는

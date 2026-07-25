@@ -1,9 +1,9 @@
 ---
-title: Retrieval Signals
+title: Retrieval 신호
 description: graph-tool-call 검색 결과에 영향을 주는 ranking evidence를 설명합니다.
 ---
 
-# Retrieval Signals
+# Retrieval 신호
 
 Retrieval은 설명 가능해야 합니다. candidate는 prompt가 우연히 선호해서가 아니라,
 이름 붙은 signal 때문에 이겨야 합니다.

@@ -1,9 +1,9 @@
 ---
-title: Evidence Output
+title: Evidence 출력
 description: tool이 왜 검색, 확장, 선택됐는지 확인합니다.
 ---
 
-# Evidence Output
+# Evidence 출력
 
 Evidence output은 debuggable retrieval engine과 black-box prompt를 나누는 핵심입니다.
 

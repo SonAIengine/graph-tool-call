@@ -1,9 +1,9 @@
 ---
-title: Target Selection
+title: Target 선택
 description: retrieved candidate에서 최종 tool을 선택하고 약한 LLM 선택을 guard합니다.
 ---
 
-# Target Selection
+# Target 선택
 
 Target selection은 retrieval 이후 최종 tool을 선택합니다. ranked candidate evidence와
 선택적으로 전달된 LLM-selected target을 비교하고 structured decision을 반환합니다.

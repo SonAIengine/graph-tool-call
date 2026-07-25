@@ -29,6 +29,7 @@ type Copy = {
   subtitle: string;
   primary: string;
   secondary: string;
+  routesLabel: string;
   installLabel: string;
   installCommand: string;
   codeTitle: string;
@@ -54,6 +55,7 @@ const copy: Record<string, Copy> = {
       'Build OpenAPI, MCP, and Python tool catalogs into evidence-backed graphs for retrieval, target selection, planning, validation, and trace learning.',
     primary: 'Start with search',
     secondary: 'Build OpenAPI catalogs',
+    routesLabel: 'Manual routes',
     installLabel: 'Install',
     installCommand: 'pip install "graph-tool-call[openapi]"',
     codeTitle: 'Minimal retrieval flow',
@@ -170,11 +172,12 @@ for item in results:
   },
   ko: {
     eyebrow: '공식 문서',
-    title: '검색 가능한 tool graph를 위한 개발자 매뉴얼.',
+    title: 'Tool graph 검색 엔진 개발자 매뉴얼.',
     subtitle:
       'OpenAPI, MCP, Python tool catalog를 retrieval, target selection, planning, validation, trace learning이 가능한 evidence-backed graph로 만듭니다.',
     primary: 'Search부터 보기',
     secondary: 'OpenAPI catalog 만들기',
+    routesLabel: '매뉴얼 경로',
     installLabel: '설치',
     installCommand: 'pip install "graph-tool-call[openapi]"',
     codeTitle: '최소 retrieval 흐름',
@@ -311,6 +314,14 @@ function Home(): ReactNode {
                 {text.secondary}
               </Link>
             </div>
+            <nav className={styles.routeRail} aria-label={text.routesLabel}>
+              {text.starts.map((item) => (
+                <Link key={item.href} to={item.href}>
+                  <span>{item.label}</span>
+                  <strong>{item.title}</strong>
+                </Link>
+              ))}
+            </nav>
           </div>
           <aside className={styles.quickPanel} aria-label={text.installLabel}>
             <div className={styles.panelHeader}>

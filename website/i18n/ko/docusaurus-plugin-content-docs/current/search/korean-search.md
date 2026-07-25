@@ -1,9 +1,9 @@
 ---
-title: Korean Search
+title: 한글 검색
 description: product-specific term을 하드코딩하지 않고 한국어/영어가 섞인 tool catalog를 검색합니다.
 ---
 
-# Korean Search
+# 한글 검색
 
 많은 enterprise catalog는 한국어 summary와 영어 operation id, field name이 섞여
 있습니다. graph-tool-call은 human description과 stable technical metadata를 함께

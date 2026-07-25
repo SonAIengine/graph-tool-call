@@ -1,9 +1,9 @@
 ---
-title: Event Schemas
+title: Event Schema
 description: plan과 runner flow에서 emit되는 stable event field입니다.
 ---
 
-# Event Schemas
+# Event Schema
 
 Event schema는 adapter가 engine progress를 log, SSE, UI panel, learning record로
 전달할 수 있게 합니다.

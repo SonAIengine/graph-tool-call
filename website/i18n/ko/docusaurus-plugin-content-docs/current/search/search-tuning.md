@@ -1,9 +1,9 @@
 ---
-title: Search Tuning
+title: 검색 튜닝
 description: alias, semantic metadata, contract, validation gate로 retrieval 품질을 개선합니다.
 ---
 
-# Search Tuning
+# 검색 튜닝
 
 Prompt를 바꾸기 전에 catalog evidence를 개선하는 순서로 search를 튜닝합니다.
 

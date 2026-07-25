@@ -1,9 +1,9 @@
 ---
-title: Scrubbing
+title: Payload Scrubbing
 description: trace learning evidence를 저장하기 전에 secret과 sensitive value를 제거합니다.
 ---
 
-# Scrubbing
+# Payload Scrubbing
 
 Trace learning은 payload scrubbing에서 시작합니다. 엔진은 raw request/response
 payload가 아니라 compact evidence를 저장해야 합니다.

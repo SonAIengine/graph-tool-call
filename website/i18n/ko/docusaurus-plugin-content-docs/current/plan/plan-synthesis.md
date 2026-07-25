@@ -1,9 +1,9 @@
 ---
-title: Plan Synthesis
+title: Plan 합성
 description: 선택된 target과 contract evidence로 실행 가능한 tool path를 만듭니다.
 ---
 
-# Plan Synthesis
+# Plan 합성
 
 Plan synthesis는 선택된 target을 실행 가능한 path로 바꿉니다. 어떤 input이
 context에서 올 수 있는지, 어떤 field를 사용자에게 물어야 하는지, 어떤 producer

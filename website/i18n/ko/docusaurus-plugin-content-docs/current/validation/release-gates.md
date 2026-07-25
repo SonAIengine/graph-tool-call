@@ -1,9 +1,9 @@
 ---
-title: Release Gates
+title: Release Gate
 description: local development, release candidate, public claim에 맞는 validation depth를 선택합니다.
 ---
 
-# Release Gates
+# Release Gate
 
 Release gate는 개발 속도를 지키면서 public quality claim을 보호합니다.
 

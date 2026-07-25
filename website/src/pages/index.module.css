@@ -15,10 +15,10 @@
 .hero {
   align-items: start;
   display: grid;
-  gap: 2.2rem;
-  grid-template-columns: minmax(0, 1.02fr) minmax(360px, 0.98fr);
-  padding-bottom: 2.4rem;
-  padding-top: 3.6rem;
+  gap: 2rem;
+  grid-template-columns: minmax(0, 1.06fr) minmax(340px, 0.94fr);
+  padding-bottom: 2.2rem;
+  padding-top: 3rem;
 }
 
 .heroCopy {
@@ -27,20 +27,21 @@
 
 .eyebrow {
   color: var(--gtc-accent);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.08em;
-  margin-bottom: 0.9rem;
+  margin-bottom: 0.8rem;
   text-transform: uppercase;
 }
 
 .hero h1 {
   color: var(--gtc-heading);
-  font-size: clamp(2.2rem, 3.5vw, 3.35rem);
+  font-size: clamp(2.05rem, 3vw, 3rem);
   letter-spacing: 0;
-  line-height: 1.05;
+  line-height: 1.08;
   margin: 0;
   text-wrap: balance;
+  word-break: keep-all;
 }
 
 .subtitle {
@@ -57,11 +58,53 @@
   margin-top: 1.8rem;
 }
 
+.routeRail {
+  border: 1px solid var(--gtc-border);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 1.45rem;
+  overflow: hidden;
+}
+
+.routeRail a {
+  color: inherit;
+  display: grid;
+  gap: 0.3rem;
+  min-height: 86px;
+  padding: 0.85rem;
+  text-decoration: none;
+}
+
+.routeRail a + a {
+  border-left: 1px solid var(--gtc-border);
+}
+
+.routeRail a:hover {
+  background: var(--gtc-band);
+  color: inherit;
+  text-decoration: none;
+}
+
+.routeRail span {
+  color: var(--gtc-accent);
+  font-size: 0.68rem;
+  font-weight: 820;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.routeRail strong {
+  color: var(--gtc-heading);
+  font-size: 0.88rem;
+  line-height: 1.25;
+}
+
 .quickPanel {
   background: var(--gtc-code-bg);
   border: 1px solid var(--gtc-code-border);
   border-radius: 8px;
-  box-shadow: 0 18px 52px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.1);
   color: var(--gtc-code-text);
   overflow: hidden;
 }
@@ -156,7 +199,7 @@
   color: inherit;
   display: grid;
   gap: 0.55rem;
-  min-height: 184px;
+  min-height: 172px;
   padding: 1rem;
   text-decoration: none;
   transition:
@@ -202,6 +245,7 @@
 .modelSection {
   border-bottom: 1px solid var(--gtc-border);
   border-top: 1px solid var(--gtc-border);
+  background: var(--gtc-band);
   max-width: none;
 }
 
@@ -218,11 +262,11 @@
 }
 
 .stage {
-  background: var(--gtc-band);
+  background: var(--gtc-surface);
   border-bottom: 1px solid var(--gtc-border);
   border-left: 1px solid var(--gtc-border);
   border-top: 1px solid var(--gtc-border);
-  min-height: 210px;
+  min-height: 188px;
   padding: 1rem;
 }
 
@@ -334,7 +378,19 @@
   }
 
   .hero {
-    padding-top: 2.8rem;
+    padding-top: 2.3rem;
+  }
+
+  .routeRail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .routeRail a:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .routeRail a:nth-child(n + 3) {
+    border-top: 1px solid var(--gtc-border);
   }
 }
 
@@ -376,6 +432,24 @@
   }
 
   .hero h1 {
-    font-size: 2.2rem;
+    font-size: 1.92rem;
+  }
+
+  .subtitle {
+    font-size: 0.98rem;
+  }
+
+  .routeRail {
+    grid-template-columns: 1fr;
+  }
+
+  .routeRail a,
+  .routeRail a:nth-child(n + 3) {
+    border-left: 0;
+    border-top: 1px solid var(--gtc-border);
+  }
+
+  .routeRail a:first-child {
+    border-top: 0;
   }
 }

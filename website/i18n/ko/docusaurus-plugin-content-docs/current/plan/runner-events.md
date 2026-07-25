@@ -1,9 +1,9 @@
 ---
-title: Runner Events
+title: Runner 이벤트
 description: PlanRunner에서 product adapter로 structured execution event를 stream합니다.
 ---
 
-# Runner Events
+# Runner 이벤트
 
 `PlanRunner.run_stream()`은 adapter가 log, SSE, UI에 progress를 전달할 수 있도록
 structured event를 emit합니다.

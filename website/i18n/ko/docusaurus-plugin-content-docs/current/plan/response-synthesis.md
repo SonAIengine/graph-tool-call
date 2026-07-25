@@ -1,9 +1,9 @@
 ---
-title: Response Synthesis
+title: 응답 합성
 description: tool execution 이후 structured success/failure response를 생성합니다.
 ---
 
-# Response Synthesis
+# 응답 합성
 
 Response synthesis는 plan과 runner output을 최종 assistant-facing answer로
 변환합니다. failure reason과 evidence를 숨기지 않고 보존해야 합니다.
