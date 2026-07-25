@@ -39,6 +39,10 @@ Slot은 UI가 field를 렌더링하고 adapter가 resume할 수 있을 만큼의
 }
 ```
 
+가능하면 retry 사이에서도 slot 식별자를 안정적으로 유지합니다. 그러면 product UI가
+`message` 문구에 의존하지 않고 `field_name`, `tool`, `reason` 기준으로 사용자
+선택값을 저장할 수 있습니다.
+
 ## Resume Flow
 
 1. Plan synthesis가 user input slot을 emit합니다.
@@ -47,6 +51,24 @@ Slot은 UI가 field를 렌더링하고 adapter가 resume할 수 있을 만큼의
 4. Adapter가 새 `entities`로 synthesis를 다시 호출합니다.
 5. Runner가 완성된 plan을 실행합니다.
 
+resume payload는 값의 출처를 명시하는 편이 좋습니다.
+
+```json
+{
+  "entities": {
+    "statusCode": "READY"
+  },
+  "resume_metadata": {
+    "source": "user_input_slot",
+    "slot_reason": "enum_required",
+    "confirmed_by_user": true
+  }
+}
+```
+
+slot metadata에는 raw session token, cookie, 개인 식별값을 저장하지 않습니다.
+민감한 값이라면 adapter가 실행 시점에 resolve할 수 있다는 사실만 남깁니다.
+
 ## Dynamic Options
 
 어떤 field는 text에서 추측하면 안 됩니다. 예를 들어 product id나 item code는 query별
@@ -54,6 +76,19 @@ option list가 필요할 수 있습니다. 이때 synthesizer는 producer tool�
 hint가 포함된 `dynamic_option_required`를 낼 수 있습니다.
 
 Adapter는 producer를 호출하고 option을 보여준 뒤, 선택된 값으로 resume합니다.
+
+option list가 크면 UI는 필터링된 subset을 보여주고 producer evidence를 보존해야
+합니다. plan에는 선택된 identifier를 기억하고, UI는 사람이 읽을 label을 표시할 수
+있습니다.
+
+## Reason code
+
+| Reason | 의미 | 일반적인 UI |
+| --- | --- | --- |
+| `unsatisfied_field` | default, entity, producer로 채울 수 없음 | text input 또는 context mapping |
+| `enum_required` | 알려진 enum 중 하나여야 함 | select box |
+| `dynamic_option_required` | 다른 API call로 option을 받아야 함 | popup 또는 searchable picker |
+| `user_input_fallback` | engine이 안전하게 추론할 수 없음 | 명시적 확인 |
 
 ## UI Guidance
 

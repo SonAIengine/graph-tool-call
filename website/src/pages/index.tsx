@@ -54,40 +54,35 @@ type Copy = {
 
 const copy: Record<string, Copy> = {
   en: {
-    eyebrow: 'Developer documentation',
-    title: 'Graph-based tool retrieval for large LLM tool catalogs.',
+    eyebrow: 'Official documentation',
+    title: 'Build searchable tool graphs for LLM agents.',
     subtitle:
-      'Build catalogs from OpenAPI, MCP, and Python functions, retrieve compact candidates, select targets, synthesize plans, validate quality, and learn from scrubbed traces.',
-    primary: 'Quickstart',
-    secondary: 'Tool Graph Search',
+      'A practical manual for turning OpenAPI, MCP, and Python tools into contracts, retrieval evidence, target selection, execution plans, quality gates, and trace learning loops.',
+    primary: 'Start quickstart',
+    secondary: 'Search manual',
     routesLabel: 'Manual routes',
     installLabel: 'Install',
     installCommand: 'pip install "graph-tool-call[openapi]"',
     codeTitle: 'First retrieval call',
-    code: `import json
-from graph_tool_call import ToolGraph
+    code: `from graph_tool_call import ToolGraph
 
 graph = ToolGraph.from_url(openapi_url)
 results = graph.retrieve_with_scores(
     "find refund-ready orders",
-    top_k=5,
+    top_k=3,
 )
 
-print(json.dumps(
-    [r.to_dict(include_score=True, max_desc=80) for r in results[:3]],
-    indent=2,
-))`,
+print(results[0].to_dict(include_score=True, max_desc=80))`,
     outputTitle: 'Output shape',
-    output: `[
-  {
-    "name": "getRefundableOrders",
-    "description": "Search refund-ready orders...",
-    "score": 0.0312,
-    "confidence": "high"
-  }
-]`,
-    startsTitle: 'Choose a manual route',
-    startsBody: 'Each route follows the same pattern: minimal example, output shape, diagnostics, failure modes, and validation.',
+    output: `{
+  "name": "getRefundableOrders",
+  "description": "Search refund-ready orders...",
+  "score": 0.0312,
+  "confidence": "high"
+}`,
+    startsTitle: 'Manual paths',
+    startsBody:
+      'Start from the workflow you are implementing. Each page is written as a working manual with examples, output shapes, diagnostics, failure modes, and validation commands.',
     starts: [
       {
         title: 'Build catalog',
@@ -126,7 +121,7 @@ print(json.dumps(
         label: 'Learn',
       },
     ],
-    modelTitle: 'Engine artifacts',
+    modelTitle: 'Execution model',
     modelBody:
       'The library is not another prompt wrapper. Each stage produces an artifact that can be inspected, stored, validated, and passed to an adapter.',
     stages: [
@@ -167,7 +162,7 @@ print(json.dumps(
         href: '/docs/learning/suggestions/',
       },
     ],
-    gatesTitle: 'Validation surface',
+    gatesTitle: 'Quality gates',
     gatesBody:
       'Quality work should land with repeatable checks, not intuition. Public claims should link to commands, fixtures, or explicit limitations.',
     gates: [
@@ -231,40 +226,35 @@ print(json.dumps(
     ],
   },
   ko: {
-    eyebrow: '개발자 문서',
-    title: 'Tool catalog 검색 엔진.',
+    eyebrow: '공식 문서',
+    title: 'LLM agent를 위한 searchable tool graph.',
     subtitle:
-      'OpenAPI, MCP, Python 함수에서 catalog를 만들고, 검색, target 선택, plan 합성, 검증, trace learning까지 이어지는 evidence-backed graph를 제공합니다.',
-    primary: 'Quickstart',
-    secondary: 'Tool Graph Search',
+      'OpenAPI, MCP, Python tool을 contract, retrieval evidence, target selection, execution plan, quality gate, trace learning loop로 연결하는 실전 매뉴얼입니다.',
+    primary: 'Quickstart 시작',
+    secondary: 'Search 매뉴얼',
     routesLabel: '매뉴얼 경로',
     installLabel: '설치',
     installCommand: 'pip install "graph-tool-call[openapi]"',
     codeTitle: '첫 retrieval 호출',
-    code: `import json
-from graph_tool_call import ToolGraph
+    code: `from graph_tool_call import ToolGraph
 
 graph = ToolGraph.from_url(openapi_url)
 results = graph.retrieve_with_scores(
     "환불 가능한 주문을 찾아줘",
-    top_k=5,
+    top_k=3,
 )
 
-print(json.dumps(
-    [r.to_dict(include_score=True, max_desc=80) for r in results[:3]],
-    indent=2,
-))`,
+print(results[0].to_dict(include_score=True, max_desc=80))`,
     outputTitle: '출력 형태',
-    output: `[
-  {
-    "name": "getRefundableOrders",
-    "description": "Search refund-ready orders...",
-    "score": 0.0312,
-    "confidence": "high"
-  }
-]`,
-    startsTitle: '작업 경로 선택',
-    startsBody: '각 경로는 최소 예제, 출력 형태, 진단 정보, 실패 모드, 검증 기준 순서로 읽을 수 있게 구성합니다.',
+    output: `{
+  "name": "getRefundableOrders",
+  "description": "Search refund-ready orders...",
+  "score": 0.0312,
+  "confidence": "high"
+}`,
+    startsTitle: '매뉴얼 경로',
+    startsBody:
+      '지금 구현하려는 workflow에서 출발하세요. 각 페이지는 예제, 출력 형태, 진단 정보, 실패 모드, 검증 명령까지 같은 문법으로 읽을 수 있게 구성합니다.',
     starts: [
       {
         title: 'Catalog build',
@@ -303,7 +293,7 @@ print(json.dumps(
         label: 'Learn',
       },
     ],
-    modelTitle: '엔진 artifact',
+    modelTitle: '실행 모델',
     modelBody:
       '이 라이브러리는 prompt wrapper가 아닙니다. 각 단계는 inspect, 저장, 검증, adapter 전달이 가능한 artifact를 만듭니다.',
     stages: [
@@ -344,7 +334,7 @@ print(json.dumps(
         href: '/docs/learning/suggestions/',
       },
     ],
-    gatesTitle: '검증 표면',
+    gatesTitle: '품질 게이트',
     gatesBody:
       '품질 개선은 감이 아니라 재현 가능한 체크로 확인해야 합니다. 공개 claim은 command, fixture, 명시적 한계와 함께 남깁니다.',
     gates: [

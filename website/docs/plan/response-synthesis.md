@@ -12,6 +12,19 @@ reason-code evidence.
 The helpers use an `OntologyLLM` interface. The adapter decides which provider
 and model to use.
 
+## Output Contract
+
+Response synthesis is deliberately the last mile. It should never be the only
+place where execution state is preserved.
+
+| Input | Kept For | Notes |
+| --- | --- | --- |
+| `requirement` | user-facing context | use the original request, not a rewritten guess |
+| `result` | success summary | project or compress large payloads first |
+| `failed_step` | failure localization | prefer stable step ids when available |
+| `error.reason_code` | product diagnostics | keep the structured code alongside the final answer |
+| `partial_results` | useful progress | include only scrubbed, non-sensitive summaries |
+
 ## Public Helpers
 
 ```python
@@ -64,6 +77,34 @@ Before calling response synthesis:
 - scrub sensitive values
 - preserve `plan_id`, `failed_step`, and reason code
 - keep raw audit payloads outside the engine
+- pass the same trace metadata to logs/SSE so the final answer can be audited
+
+## Deterministic Fallback
+
+Use a template instead of LLM synthesis when the answer must be strict JSON,
+when compliance requires approved language, or when the failure reason is
+already actionable. A common adapter pattern is:
+
+```python
+if response_format == "json" or error.reason_code in {"auth_failed", "auth_context_required"}:
+    return deterministic_response(trace)
+
+return synthesize_failure_response(..., llm=llm)
+```
+
+The key rule is that synthesis can make the answer easier to read, but it should
+not invent missing totals, hide failed stages, or rewrite a structured reason
+into a vague apology.
+
+## Quality Checks
+
+For real integrations, verify that success and failure answers preserve:
+
+- the selected target tool
+- `plan_id` and failed step, when present
+- the reason code for structured failures
+- truncation limits for large payloads
+- absence of raw tokens, cookies, phone numbers, or internal ids
 
 ## When Not To Use It
 

@@ -40,6 +40,10 @@ adapter to resume execution.
 }
 ```
 
+Keep slot identifiers stable across retries when possible. A product UI can then
+store user choices against `field_name`, `tool`, and `reason` without relying on
+the wording of `message`.
+
 ## Resume Flow
 
 1. Plan synthesis emits user input slots.
@@ -47,6 +51,25 @@ adapter to resume execution.
 3. User selection is stored as resume input.
 4. Adapter calls synthesis again with the new `entities`.
 5. Runner executes the completed plan.
+
+The resume payload should be explicit about where the value came from.
+
+```json
+{
+  "entities": {
+    "statusCode": "READY"
+  },
+  "resume_metadata": {
+    "source": "user_input_slot",
+    "slot_reason": "enum_required",
+    "confirmed_by_user": true
+  }
+}
+```
+
+Do not store raw session tokens, cookies, or personally identifying values in
+slot metadata. If a value is sensitive, store only the fact that the adapter can
+resolve it at execution time.
 
 ## Dynamic Options
 
@@ -56,6 +79,19 @@ raise `dynamic_option_required` with a producer tool and response path hint.
 
 The adapter can call the producer, show options, then resume with the selected
 value.
+
+For large option lists, the UI should show a filtered subset and keep the
+producer evidence. The plan should remember the chosen identifier, while the UI
+can display the human-readable label.
+
+## Reason Codes
+
+| Reason | Meaning | Typical UI |
+| --- | --- | --- |
+| `unsatisfied_field` | no default, entity, or producer can fill the field | text input or context mapping |
+| `enum_required` | the field must be one of known enum values | select box |
+| `dynamic_option_required` | options must come from another API call | popup or searchable picker |
+| `user_input_fallback` | the engine cannot safely infer the value | explicit confirmation |
 
 ## UI Guidance
 

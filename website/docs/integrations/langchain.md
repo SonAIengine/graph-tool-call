@@ -9,19 +9,53 @@ Use graph-tool-call as a retrieval and filtering layer before constructing the
 LangChain tool set sent to a model. The goal is to keep the LLM's visible tool
 catalog small while preserving evidence about why each candidate was included.
 
+Use this integration when you already have LangChain tools and want per-query
+tool filtering without changing downstream tool implementations.
+
 ## Basic Pattern
 
 ```python
-from graph_tool_call import ToolGraph
+from graph_tool_call.langchain import filter_tools
 
-graph = ToolGraph()
-graph.ingest_functions(langchain_tools)
-
-def tools_for_query(query: str):
-    candidates = graph.retrieve(query, top_k=8)
-    names = {candidate.name for candidate in candidates}
-    return [tool for tool in langchain_tools if tool.name in names]
+filtered = filter_tools(langchain_tools, "cancel an order", top_k=8)
 ```
+
+`filter_tools()` preserves the original tool objects. The returned objects are
+the same LangChain tools your agent already knows how to call.
+
+## Reusable Toolkit
+
+Build the graph once and filter many times:
+
+```python
+from graph_tool_call.langchain import GraphToolkit
+
+toolkit = GraphToolkit(langchain_tools, top_k=8)
+
+def tools_for_turn(user_query: str):
+    return toolkit.get_tools(user_query)
+```
+
+The underlying `toolkit.graph` can be inspected, saved, or reused in tests.
+
+## LangGraph Agent
+
+For LangGraph ReAct agents:
+
+```python
+from graph_tool_call.langchain import create_agent
+
+agent = create_agent(
+    model,
+    tools=langchain_tools,
+    top_k=5,
+    query_mode="message",
+)
+```
+
+`query_mode="message"` uses the latest user message as the retrieval query. Use
+`query_mode="llm"` only when multi-turn references need a generated search
+query; it adds one LLM call per turn.
 
 ## Gateway Tools
 
@@ -40,6 +74,15 @@ gateway_tools = create_gateway_tools(
 The model asks the gateway to search; the application can then present or
 execute the selected downstream tool according to its own policy.
 
+## Choosing A Pattern
+
+| Pattern | Use When | Tradeoff |
+| --- | --- | --- |
+| `filter_tools()` | one-shot filtering before an agent call | rebuilds unless a graph is provided |
+| `GraphToolkit` | same catalog reused across many turns | simple and explicit |
+| `create_agent()` | LangGraph ReAct flow should filter per turn | framework-specific |
+| gateway tools | model should call search explicitly | requires extra tool-call step |
+
 ## Recommended Controls
 
 | Control | Why |
@@ -56,6 +99,12 @@ execute the selected downstream tool according to its own policy.
 - Dropping score/evidence metadata, making failures hard to debug.
 - Letting the engine own runtime credentials.
 - Treating a search hit as proof that plan and execute are ready.
+
+## Validation
+
+```bash
+poetry run pytest tests/test_langchain_toolkit.py tests/test_langchain_agent.py -q
+```
 
 ## Related Pages
 

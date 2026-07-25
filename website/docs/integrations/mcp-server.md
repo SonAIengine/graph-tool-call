@@ -35,6 +35,26 @@ graph-tool-call serve --graph graph.json --transport stdio
 
 Serving from a saved graph avoids rebuilding on every process start.
 
+## Client Configuration
+
+Most MCP clients can start the server with a local command. Keep the catalog
+pre-built for large OpenAPI collections so the client does not wait for ingest.
+
+```json
+{
+  "mcpServers": {
+    "tool-search": {
+      "command": "uvx",
+      "args": ["graph-tool-call[mcp]", "serve", "--graph", "graph.json"]
+    }
+  }
+}
+```
+
+Use `--source` during development and `--graph` in repeatable environments.
+When a spec lives on an internal URL, pair it with your network policy and only
+enable `--allow-private-hosts` for trusted infrastructure.
+
 ## HTTP Transports
 
 ```bash
@@ -47,6 +67,40 @@ graph-tool-call serve \
 
 Bind to a private interface by default. Put external exposure behind your own
 network and auth controls.
+
+| Transport | Use When | Notes |
+| --- | --- | --- |
+| `stdio` | A desktop or agent client starts the process directly | simplest local setup |
+| `sse` | A client expects server-sent events | useful for older MCP deployments |
+| `streamable-http` | A remote client connects over HTTP | bind privately and add your own auth layer |
+
+## Tool Surface
+
+The server intentionally exposes a small gateway surface. The LLM should search
+first, inspect the selected schema, then call only when the execution adapter is
+appropriate for the environment.
+
+| MCP tool | Purpose | Typical Next Step |
+| --- | --- | --- |
+| `search_tools` | Rank tools for a natural-language query and return compact candidates | call `get_tool_schema` for the best target |
+| `get_tool_schema` | Return exact parameters, method, path, category, and tags | prepare arguments or hand off to a product runner |
+| `list_categories` | Show category counts for catalog orientation | refine the query or browse a domain |
+| `graph_info` | Show graph size, node types, edge types, and source metadata | diagnose build quality |
+| `execute_tool` | Execute an OpenAPI tool through the built-in HTTP executor | use mostly for demos or controlled internal tooling |
+| `load_source` | Add another OpenAPI source at runtime | refresh small catalogs without restarting |
+
+## Recommended Workflow
+
+```text
+search_tools("find refund-ready orders", top_k=5)
+  -> get_tool_schema("getRefundableOrders")
+  -> execute through your application adapter
+```
+
+For production systems, keep authentication, tenant policy, audit logging, and
+side-effect controls in the product adapter. `execute_tool` is useful for local
+testing, but it should not become the place where product-specific auth rules
+live.
 
 ## What The Server Should Own
 
@@ -70,6 +124,26 @@ The server should not own:
 - Keep `--allow-private-hosts` limited to trusted infrastructure.
 - Use `--top-k` style limits in clients or wrappers to keep tool context small.
 - Log query, selected tool, and evidence, not secret values.
+
+## Failure Modes
+
+| Symptom | Likely Cause | Check |
+| --- | --- | --- |
+| `No tools loaded` | the server started without a valid source or graph | run `graph-tool-call ingest SOURCE -o graph.json` first |
+| candidate list is too broad | weak tool descriptions or missing semantic metadata | inspect `graph_info` and rebuild the artifact |
+| schema lacks parameters | OpenAPI request schema was missing or generic | run the OpenAPI readiness report |
+| private URL fails to load | URL safety policy blocked internal hosts | use a saved graph or explicitly allow trusted private hosts |
+| API call fails at execution | auth/base URL belongs in the product adapter | inspect runner/auth readiness outside the MCP server |
+
+## Validate The Integration
+
+```bash
+poetry run pytest tests/test_mcp_server.py -q
+```
+
+For a real client smoke test, start the server from a saved graph, run
+`search_tools`, confirm that `get_tool_schema` returns parameters for the
+selected tool, and keep raw secrets out of the transcript.
 
 ## Related Pages
 

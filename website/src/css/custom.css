@@ -12,7 +12,7 @@
   --ifm-global-radius: 8px;
   --gtc-accent: #0f766e;
   --gtc-accent-hover: #115e59;
-  --gtc-band: #f6f8fb;
+  --gtc-band: #f7f9fc;
   --gtc-border: #d8dee8;
   --gtc-border-subtle: #edf1f5;
   --gtc-code-bg: #0b1220;
@@ -24,6 +24,7 @@
   --gtc-code-strong: #7dd3fc;
   --gtc-code-text: #d8e3f4;
   --gtc-heading: #101828;
+  --gtc-hover: #f0fdfa;
   --gtc-muted: #5d6678;
   --gtc-page: #ffffff;
   --gtc-surface: #ffffff;
@@ -48,7 +49,7 @@
   --ifm-color-primary-lightest: #f0fdfa;
   --gtc-accent: #5eead4;
   --gtc-accent-hover: #99f6e4;
-  --gtc-band: rgba(15, 23, 42, 0.46);
+  --gtc-band: #111827;
   --gtc-border: rgba(148, 163, 184, 0.28);
   --gtc-border-subtle: rgba(148, 163, 184, 0.16);
   --gtc-code-bg: #050816;
@@ -60,9 +61,10 @@
   --gtc-code-strong: #bfdbfe;
   --gtc-code-text: #d8e3f4;
   --gtc-heading: #f8fafc;
+  --gtc-hover: rgba(20, 184, 166, 0.1);
   --gtc-muted: #a7b0c3;
-  --gtc-page: #111827;
-  --gtc-surface: #182235;
+  --gtc-page: #0f172a;
+  --gtc-surface: #111827;
   --gtc-link: #93c5fd;
   --gtc-primary-button-bg: #0f766e;
   --gtc-primary-button-border: #2dd4bf;
