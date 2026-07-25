@@ -1,0 +1,350 @@
+---
+title: OpenAPI Search-To-Plan 튜토리얼
+description: OpenAPI collection artifact를 만들고 evidence 검색, target 선택, plan synthesis까지 실행합니다.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# OpenAPI Search-To-Plan 튜토리얼
+
+이 튜토리얼은 대형 OpenAPI catalog를 처음 받았을 때의 production-grade
+workflow를 끝까지 연결합니다.
+
+1. source 점검
+2. collection artifact build
+3. readiness 확인
+4. evidence 기반 candidate 검색
+5. 최종 target 선택
+6. plan synthesis
+
+선택적인 LLM intent 단계 전까지는 deterministic하게 동작합니다. downstream API를
+직접 호출하지 않고, credential을 저장하지 않으며, DB나 XGEN 전용 adapter에도
+의존하지 않습니다.
+
+## 만드는 것
+
+이 튜토리얼은 `collection.json` artifact를 만듭니다.
+
+| Artifact Section | 의미 |
+| --- | --- |
+| `tools` | OpenAPI operation을 정규화한 `ToolSchema` record |
+| `graph` | structural, contract, semantic, manual, trace-ready edge |
+| `semantic_summary` | action/resource/module/result-shape coverage |
+| `edge_quality_summary` | edge evidence 분포 |
+| `readiness_report` | deterministic issue code와 recommendation |
+| `source_snapshot_manifest` | source hash와 operation count |
+
+artifact를 저장한 뒤에는 `ToolGraph`로 로드해서 retrieval, selection, plan
+synthesis를 실행합니다.
+
+## 시작 전 준비
+
+OpenAPI extra를 설치합니다.
+
+```bash
+pip install "graph-tool-call[openapi]"
+```
+
+개발 중에는 local file을 사용하는 편이 좋습니다.
+
+```bash
+export OPENAPI_SOURCE=./openapi.json
+```
+
+private Swagger UI URL은 신뢰할 수 있는 환경에서만 private host 접근을 켭니다.
+
+```bash
+export OPENAPI_SOURCE=https://internal.example.com/swagger-ui/index.html
+```
+
+Private source 접근은 build-time concern입니다. API 실행에 필요한 runtime auth
+token은 adapter에 남겨야 합니다.
+
+## 1. Source 점검
+
+먼저 deterministic readiness diagnostics를 실행합니다. 이 단계에서 missing
+schema, generic request body, response envelope, auth requirement, duplicate
+operation id, 약한 graph connectivity를 찾습니다.
+
+<Tabs>
+  <TabItem value="cli" label="CLI" default>
+
+```bash
+graph-tool-call inspect-openapi "$OPENAPI_SOURCE" --json
+```
+
+  </TabItem>
+  <TabItem value="python" label="Python">
+
+```python
+from graph_tool_call.analyze import analyze_openapi_collection
+
+report = analyze_openapi_collection(
+    "./openapi.json",
+    context_field_names={"tenantId", "siteNo"},
+    paging_field_names={"page", "size"},
+    search_filter_field_names={"keyword", "searchText"},
+)
+
+payload = report.to_dict()
+print(payload["summary"])
+print(payload["issues"][:5])
+```
+
+  </TabItem>
+  <TabItem value="output" label="Output Shape">
+
+```json
+{
+  "summary": {
+    "operation_count": 624,
+    "readiness_score": 86,
+    "status": "warning"
+  },
+  "coverage": {
+    "request_schema_coverage": 0.74,
+    "response_schema_coverage": 0.68
+  },
+  "issues": [
+    {
+      "severity": "warning",
+      "code": "response_envelope_detected",
+      "recommendation": "Pick the useful body view before planning."
+    }
+  ]
+}
+```
+
+  </TabItem>
+</Tabs>
+
+`blocked`는 execute 중단 신호로 봅니다. `warning`은 issue evidence를 이해한
+상태라면 search와 plan case에는 사용할 수 있습니다.
+
+## 2. Collection Artifact Build
+
+Product UI, Quality Lab, Planflow adapter, 반복 regression test가 사용할 catalog는
+storage-ready artifact로 build합니다.
+
+<Tabs>
+  <TabItem value="cli" label="CLI" default>
+
+```bash
+graph-tool-call build-openapi-collection "$OPENAPI_SOURCE" \
+  -o collection.json \
+  --context-field tenantId,siteNo \
+  --paging-field page,size \
+  --search-filter-field keyword,searchText
+```
+
+  </TabItem>
+  <TabItem value="python" label="Python">
+
+```python
+import json
+from pathlib import Path
+
+from graph_tool_call.graphify import build_openapi_collection_artifact
+
+artifact = build_openapi_collection_artifact(
+    "./openapi.json",
+    derive_semantic_metadata=True,
+    promote_contract_signals=True,
+    context_field_names={"tenantId", "siteNo"},
+    paging_field_names={"page", "size"},
+    search_filter_field_names={"keyword", "searchText"},
+    metadata={"collection_id": "commerce-readonly"},
+)
+
+Path("collection.json").write_text(
+    json.dumps(artifact, ensure_ascii=False, indent=2),
+    encoding="utf-8",
+)
+```
+
+  </TabItem>
+</Tabs>
+
+field-name option은 generic hint입니다. product나 고객사 naming convention은
+adapter에서 전달하고, graph-tool-call에 하드코딩하지 않습니다.
+
+## 3. Build Summary 확인
+
+LLM에 어떤 catalog도 넘기기 전에 artifact를 먼저 읽습니다.
+
+```python
+import json
+from pathlib import Path
+
+artifact = json.loads(Path("collection.json").read_text(encoding="utf-8"))
+
+print(artifact["metadata"]["tool_count"])
+print(artifact["semantic_summary"])
+print(artifact["edge_quality_summary"])
+print(artifact["readiness_report"]["summary"])
+```
+
+건강한 대형 catalog라면 action/resource/module coverage가 높고, contract coverage가
+유용하며, strong evidence edge가 일정 수준 있어야 합니다. 모든 response schema가
+완벽하지 않아도 search는 가능하지만, plan과 execute gate는 더 엄격해야 합니다.
+
+## 4. Evidence 기반 검색
+
+저장한 artifact를 `ToolGraph`로 로드합니다. 이렇게 하면 adapter가 저장하는
+persisted shape와 같은 형태로 public retrieval API를 사용할 수 있습니다.
+
+```python
+from graph_tool_call import ToolGraph
+from graph_tool_call.graphify import retrieve_graphify
+
+graph = ToolGraph.load("collection.json")
+
+query = "환불 가능한 주문을 찾아줘"
+retrieval = retrieve_graphify(
+    graph,
+    query,
+    top_k=8,
+    include_evidence=True,
+)
+
+for row in retrieval["results"]:
+    print(row["name"], row["score"])
+    print(row["score_breakdown"])
+```
+
+먼저 확인할 필드는 다음과 같습니다.
+
+| Field | 용도 |
+| --- | --- |
+| `score_breakdown.seed` | 직접 text/semantic hit였는지 |
+| `score_breakdown.graph_expansion` | graph traversal로 확장된 후보인지 |
+| `score_breakdown.action_match` | query action과 `canonical_action`이 맞는지 |
+| `score_breakdown.resource_match` | query resource와 `primary_resource`가 맞는지 |
+| `semantic_evidence` | selector가 쓸 수 있는 semantic match |
+| `edge_evidence` | 확장 또는 support에 사용된 graph edge |
+| `stats.token_budget_used` | downstream prompt에 들어갈 대략적인 context budget |
+
+rank만 보고 튜닝하지 마세요. evidence가 약한 높은 순위와 action/resource/shape/
+contract가 함께 맞는 높은 순위는 다르게 봐야 합니다.
+
+## 5. 최종 Target 선택
+
+Retrieval은 candidate를 반환하고, target selection은 최종 goal tool을 결정합니다.
+LLM이 target을 이미 제안했다면 `llm_target`으로 넘기고, 아니면 selector가 candidate
+set 안에서 ranking을 계산할 수 있습니다.
+
+```python
+from graph_tool_call.graphify import select_target_candidate
+
+selection = select_target_candidate(
+    query=query,
+    candidates=[row["name"] for row in retrieval["results"]],
+    tools=graph.tools,
+    retrieval_results=retrieval["results"],
+    llm_target=None,
+)
+
+print(selection["selected_target"])
+print(selection["confidence"])
+print(selection["reason_codes"])
+print(selection["candidate_evidence"][:3])
+```
+
+기본 정책은 보수적입니다. deterministic evidence가 강하고 margin이 충분할 때만 LLM
+target을 override합니다. 애매한 경우에는 조용히 고치지 않고 ambiguity를 기록합니다.
+
+## 6. Plan Synthesis
+
+Plan synthesis는 `graph`와 `tools` key가 있는 plain graph payload를 받습니다.
+로드한 `ToolGraph`에서 그 payload를 만듭니다.
+
+```python
+from graph_tool_call.plan import PathSynthesizer, PlanSynthesisError
+
+graph_payload = {
+    "graph": graph.graph.to_dict(),
+    "tools": {
+        name: tool.to_dict()
+        for name, tool in graph.tools.items()
+    },
+}
+
+try:
+    plan = PathSynthesizer(
+        graph_payload,
+        context_defaults={"siteNo": "1001"},
+    ).synthesize(
+        target=selection["selected_target"],
+        goal=query,
+        entities={"keyword": "refund-ready"},
+    )
+except PlanSynthesisError as exc:
+    print(exc.to_dict())
+else:
+    print(plan.id)
+    print([step.tool for step in plan.steps])
+    print(plan.metadata["synthesis"])
+```
+
+plan이 사용자 입력 필드를 필요로 하면 `plan.metadata["user_input_slots"]`를 확인합니다.
+synthesis가 실패하면 exception message를 파싱하지 말고 `exc.to_dict()`를 사용합니다.
+
+## 7. Quality Case로 고정
+
+수동 흐름이 동작하면 regression case로 고정합니다.
+
+```json
+{
+  "id": "orders-refund-ready-search-001",
+  "mode": "plan",
+  "query": "환불 가능한 주문을 찾아줘",
+  "expected_target": "getRefundableOrders",
+  "expected_top_k": 8,
+  "provided_entities": {
+    "keyword": "refund-ready",
+    "siteNo": "1001"
+  },
+  "assertions": [
+    {"type": "top_k_contains", "tool": "getRefundableOrders", "k": 8},
+    {"type": "selected_target", "equals": "getRefundableOrders"},
+    {"type": "plan_contains_tool", "tool": "getRefundableOrders"}
+  ]
+}
+```
+
+`execute` mode는 auth readiness와 mutation safety가 adapter에서 설정된 뒤에만
+사용합니다.
+
+## Troubleshooting
+
+| 증상 | 가능성 높은 원인 | 다음 확인 |
+| --- | --- | --- |
+| 정답 tool이 Top-K에 없음 | semantic metadata가 약하거나 operation text가 부족함 | `semantic_summary`, indexed action/resource field |
+| 정답 tool은 Top-K에 있지만 선택 안 됨 | selector margin이 약하거나 sibling ambiguity가 있음 | `target_selector.rank_signals` |
+| plan이 사용자 입력을 너무 많이 요구함 | 필요한 contract field를 producing하는 tool이 없음 | `api_contract.produces`, `selected_producers` |
+| `unknown_target` | selector target이 로드된 graph에 없음 | `graph.tools.keys()`로 이름 확인 |
+| readiness에 `auth_required`가 있음 | collection이 adapter auth를 필요로 함 | execute 전 product auth profile 설정 |
+| search는 좋은데 execute가 실패함 | retrieval 문제가 아니라 runtime adapter 문제 | `auth_readiness`와 runner event 확인 |
+
+## 검증 명령
+
+튜토리얼 흐름을 product workflow로 만들기 전에 아래를 실행합니다.
+
+```bash
+graph-tool-call inspect-openapi "$OPENAPI_SOURCE" --json
+graph-tool-call build-openapi-collection "$OPENAPI_SOURCE" -o collection.json
+poetry run pytest tests/test_graphify_contract_025.py tests/test_plan_synthesizer.py -q
+```
+
+품질 claim을 공개하기 전에는 단일 수동 query가 아니라 validation/benchmark gate를
+사용합니다.
+
+## 관련 문서
+
+- [OpenAPI Ingestion](../build/openapi-ingestion.md)
+- [OpenAPI Collections](../guides/openapi-collections.md)
+- [Tool Graph Search](../search/tool-graph-search.mdx)
+- [Target Selection](../search/target-selection.md)
+- [Plan Synthesis](../plan/plan-synthesis.md)
+- [Quality Lab](../validation/quality-lab.md)

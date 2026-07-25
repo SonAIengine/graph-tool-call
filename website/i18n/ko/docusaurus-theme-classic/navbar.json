@@ -1,0 +1,34 @@
+{
+  "title": {
+    "message": "graph-tool-call",
+    "description": "The title in the navbar"
+  },
+  "item.label.Docs": {
+    "message": "문서",
+    "description": "Navbar item with label Docs"
+  },
+  "item.label.Search": {
+    "message": "검색",
+    "description": "Navbar item with label Search"
+  },
+  "item.label.OpenAPI": {
+    "message": "OpenAPI",
+    "description": "Navbar item with label OpenAPI"
+  },
+  "item.label.Quality": {
+    "message": "품질",
+    "description": "Navbar item with label Quality"
+  },
+  "item.label.Reference": {
+    "message": "Reference",
+    "description": "Navbar item with label Reference"
+  },
+  "item.label.PyPI": {
+    "message": "PyPI",
+    "description": "Navbar item with label PyPI"
+  },
+  "item.label.GitHub": {
+    "message": "GitHub",
+    "description": "Navbar item with label GitHub"
+  }
+}

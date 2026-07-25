@@ -1,0 +1,114 @@
+{
+  "version.label": {
+    "message": "현재",
+    "description": "The label for version current"
+  },
+  "sidebar.docsSidebar.category.Getting Started": {
+    "message": "시작하기",
+    "description": "The label for category 'Getting Started' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Getting Started.link.generated-index.title": {
+    "message": "시작하기",
+    "description": "The generated-index page title for category 'Getting Started' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Getting Started.link.generated-index.description": {
+    "message": "graph-tool-call을 설치하고 첫 retrieval 흐름과 mental model을 익힙니다.",
+    "description": "The generated-index page description for category 'Getting Started' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Tutorials": {
+    "message": "튜토리얼",
+    "description": "The label for category 'Tutorials' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Tutorials.link.generated-index.title": {
+    "message": "튜토리얼",
+    "description": "The generated-index page title for category 'Tutorials' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Tutorials.link.generated-index.description": {
+    "message": "source ingestion부터 evidence 기반 planning까지 end-to-end workflow를 따라갑니다.",
+    "description": "The generated-index page description for category 'Tutorials' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Build Tool Catalogs": {
+    "message": "Tool Catalog 구축",
+    "description": "The label for category 'Build Tool Catalogs' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Build Tool Catalogs.link.generated-index.title": {
+    "message": "Tool Catalog 구축",
+    "description": "The generated-index page title for category 'Build Tool Catalogs' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Build Tool Catalogs.link.generated-index.description": {
+    "message": "OpenAPI, MCP, Python source를 contract가 풍부한 tool graph artifact로 변환합니다.",
+    "description": "The generated-index page description for category 'Build Tool Catalogs' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Search And Selection": {
+    "message": "검색과 선택",
+    "description": "The label for category 'Search And Selection' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Search And Selection.link.generated-index.title": {
+    "message": "검색과 선택",
+    "description": "The generated-index page title for category 'Search And Selection' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Search And Selection.link.generated-index.description": {
+    "message": "올바른 tool을 검색하고 evidence, 후보 확장, LLM target guard를 확인합니다.",
+    "description": "The generated-index page description for category 'Search And Selection' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Plan And Execute": {
+    "message": "Plan과 실행",
+    "description": "The label for category 'Plan And Execute' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Plan And Execute.link.generated-index.title": {
+    "message": "Plan과 실행",
+    "description": "The generated-index page title for category 'Plan And Execute' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Plan And Execute.link.generated-index.description": {
+    "message": "실행 가능한 plan을 합성하고 runner event와 실패 원인을 구조화합니다.",
+    "description": "The generated-index page description for category 'Plan And Execute' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Learning Loop": {
+    "message": "Learning Loop",
+    "description": "The label for category 'Learning Loop' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Learning Loop.link.generated-index.title": {
+    "message": "Learning Loop",
+    "description": "The generated-index page title for category 'Learning Loop' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Learning Loop.link.generated-index.description": {
+    "message": "LLM을 학습시키지 않고 scrub된 trace evidence로 graph search를 개선합니다.",
+    "description": "The generated-index page description for category 'Learning Loop' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Validation": {
+    "message": "검증",
+    "description": "The label for category 'Validation' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Validation.link.generated-index.title": {
+    "message": "검증",
+    "description": "The generated-index page title for category 'Validation' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Validation.link.generated-index.description": {
+    "message": "품질 주장이나 엔진 릴리즈 전에 반복 가능한 quality gate를 실행합니다.",
+    "description": "The generated-index page description for category 'Validation' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Integrations": {
+    "message": "연동",
+    "description": "The label for category 'Integrations' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Integrations.link.generated-index.title": {
+    "message": "연동",
+    "description": "The generated-index page title for category 'Integrations' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Integrations.link.generated-index.description": {
+    "message": "graph-tool-call을 XGEN, MCP, LangChain, middleware, direct API adapter와 연결합니다.",
+    "description": "The generated-index page description for category 'Integrations' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Reference": {
+    "message": "Reference",
+    "description": "The label for category 'Reference' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Reference.link.generated-index.title": {
+    "message": "Reference",
+    "description": "The generated-index page title for category 'Reference' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Reference.link.generated-index.description": {
+    "message": "안정 public API, CLI command, event schema, artifact schema, compatibility note를 확인합니다.",
+    "description": "The generated-index page description for category 'Reference' in sidebar 'docsSidebar'"
+  }
+}

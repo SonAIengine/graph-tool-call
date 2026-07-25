@@ -65,6 +65,14 @@ optimizing for repeated developer usage.
 Purpose: help a new developer run retrieval against a small OpenAPI source in
 the first 10 minutes.
 
+### Tutorials
+
+- OpenAPI search-to-plan
+
+Purpose: give developers a copyable end-to-end path after the quickstart. A
+tutorial should connect multiple manual sections into one working workflow
+without becoming the reference page for any single API.
+
 ### Build Tool Catalogs
 
 - OpenAPI ingestion
@@ -163,6 +171,9 @@ Getting Started
   Quickstart
   Mental Model
 
+Tutorials
+  OpenAPI Search-To-Plan
+
 Build Tool Catalogs
   OpenAPI Ingestion
   MCP Ingestion
@@ -196,6 +207,7 @@ Learning Loop
   Shadow And Promotion
 
 Validation
+  Quality Gates
   Benchmarks
   BFCL-Style Evaluation
   XGEN Scale Gates
@@ -212,6 +224,7 @@ Integrations
   Direct API
 
 Reference
+  API Cheat Sheet
   Public API
   CLI
   Event Schemas
@@ -334,6 +347,10 @@ graph-tool-call search openapi.json "find refund-ready orders" --top-k 8
 ```
 
 ## Visual Design Principles
+
+Detailed visual shell rules, search behavior, bilingual sidebar requirements,
+and implementation phases are now defined in
+[`qdrant-style-official-docs-system.md`](qdrant-style-official-docs-system.md).
 
 The visual language should feel like infrastructure documentation:
 

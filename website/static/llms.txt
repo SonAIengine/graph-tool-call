@@ -5,11 +5,21 @@
 ## Documentation
 
 - Home: https://sonaiengine.github.io/graph-tool-call/
-- Quickstart: https://sonaiengine.github.io/graph-tool-call/getting-started/quickstart/
-- OpenAPI Collections: https://sonaiengine.github.io/graph-tool-call/guides/openapi-collections/
-- XGEN Integration: https://sonaiengine.github.io/graph-tool-call/guides/xgen-integration/
-- Public API: https://sonaiengine.github.io/graph-tool-call/reference/public-api/
-- Benchmarks: https://sonaiengine.github.io/graph-tool-call/validation/benchmarks/
+- Overview: https://sonaiengine.github.io/graph-tool-call/docs/
+- Quickstart: https://sonaiengine.github.io/graph-tool-call/docs/getting-started/quickstart/
+- Mental Model: https://sonaiengine.github.io/graph-tool-call/docs/getting-started/mental-model/
+- OpenAPI Search-To-Plan Tutorial: https://sonaiengine.github.io/graph-tool-call/docs/tutorials/openapi-search-to-plan/
+- API Cheat Sheet: https://sonaiengine.github.io/graph-tool-call/docs/reference/api-cheat-sheet/
+- Tool Graph Search: https://sonaiengine.github.io/graph-tool-call/docs/search/tool-graph-search/
+- OpenAPI Ingestion: https://sonaiengine.github.io/graph-tool-call/docs/build/openapi-ingestion/
+- IO Contracts: https://sonaiengine.github.io/graph-tool-call/docs/build/io-contracts/
+- Target Selection: https://sonaiengine.github.io/graph-tool-call/docs/search/target-selection/
+- Plan Synthesis: https://sonaiengine.github.io/graph-tool-call/docs/plan/plan-synthesis/
+- Trace Learning: https://sonaiengine.github.io/graph-tool-call/docs/concepts/trace-learning/
+- Quality Lab: https://sonaiengine.github.io/graph-tool-call/docs/validation/quality-lab/
+- XGEN Integration: https://sonaiengine.github.io/graph-tool-call/docs/guides/xgen-integration/
+- Public API: https://sonaiengine.github.io/graph-tool-call/docs/reference/public-api/
+- Benchmarks: https://sonaiengine.github.io/graph-tool-call/docs/validation/benchmarks/
 
 ## Package
 
@@ -22,4 +32,3 @@ graph-tool-call builds tool graphs from OpenAPI, MCP, and Python function
 sources. It uses keyword retrieval, graph expansion, semantic metadata, contract
 evidence, target selection, plan diagnostics, and scrubbed trace learning to
 help LLM agents choose and use tools from large catalogs.
-

@@ -49,6 +49,25 @@ const config: Config = {
     ],
   ],
 
+  themes: [
+    [
+      '@easyops-cn/docusaurus-search-local',
+      {
+        hashed: true,
+        indexDocs: true,
+        indexPages: true,
+        indexBlog: false,
+        docsRouteBasePath: '/docs',
+        language: ['en', 'ko'],
+        searchBarPosition: 'right',
+        searchResultLimits: 8,
+        searchResultContextMaxLength: 72,
+        explicitSearchResultPath: true,
+        highlightSearchTermsOnTargetPage: true,
+      },
+    ],
+  ],
+
   themeConfig: {
     image: 'img/social_preview.png',
     colorMode: {
@@ -65,12 +84,32 @@ const config: Config = {
           label: 'Docs',
         },
         {
-          to: '/docs/validation/benchmarks/',
-          label: 'Benchmarks',
+          to: '/docs/search/tool-graph-search/',
+          label: 'Search',
+          position: 'left',
+        },
+        {
+          to: '/docs/build/openapi-ingestion/',
+          label: 'OpenAPI',
+          position: 'left',
+        },
+        {
+          to: '/docs/validation/quality-lab/',
+          label: 'Quality',
+          position: 'left',
+        },
+        {
+          to: '/docs/reference/public-api/',
+          label: 'Reference',
           position: 'left',
         },
         {
           type: 'localeDropdown',
+          position: 'right',
+        },
+        {
+          href: 'https://pypi.org/project/graph-tool-call/',
+          label: 'PyPI',
           position: 'right',
         },
         {
@@ -87,7 +126,8 @@ const config: Config = {
           title: 'Docs',
           items: [
             {label: 'Quickstart', to: '/docs/getting-started/quickstart/'},
-            {label: 'OpenAPI Collections', to: '/docs/guides/openapi-collections/'},
+            {label: 'Tool Graph Search', to: '/docs/search/tool-graph-search/'},
+            {label: 'OpenAPI Ingestion', to: '/docs/build/openapi-ingestion/'},
             {label: 'Public API', to: '/docs/reference/public-api/'},
           ],
         },
