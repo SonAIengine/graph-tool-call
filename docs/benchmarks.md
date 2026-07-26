@@ -3,6 +3,8 @@
 Detailed benchmark data for graph-tool-call. The README contains a 3-row summary; this document contains the full pipeline, retrieval-only, competitive, large-scale, and LangChain agent results.
 For XGEN tool graph search goals, see
 [`docs/research/xgen-tool-graph-goals.md`](research/xgen-tool-graph-goals.md).
+For paper claims and the frozen experiment protocol, see
+[`docs/research/paper-readiness-design.md`](research/paper-readiness-design.md).
 For day-to-day research iteration, follow the tiered loop in
 [`docs/research/validation-loop.md`](research/validation-loop.md) before running
 expensive full model benchmarks.
