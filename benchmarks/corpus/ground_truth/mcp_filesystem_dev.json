@@ -1,18 +1,30 @@
 {
   "schema_version": 1,
-  "dataset_id": "mcp-filesystem-test-seed-v1",
+  "dataset_id": "mcp-filesystem-dev-seed-v1",
   "family_id": "mcp-reference-filesystem",
   "source_ids": [
     "mcp-filesystem-project-fixture"
   ],
-  "split": "test",
+  "split": "dev",
   "languages": [
     "en",
     "ko"
   ],
+  "annotation_audit": {
+    "reviewers": [
+      "SonAIengine"
+    ],
+    "reviewed_at": "2026-07-27",
+    "protocol": "target-producer-v1",
+    "checks": [
+      "query_clarity",
+      "target_exists",
+      "producer_role"
+    ]
+  },
   "cases": [
     {
-      "case_id": "mcp-filesystem-test-read-file-en",
+      "case_id": "mcp-filesystem-dev-read-file-en",
       "query": "Read the complete contents of the configuration file.",
       "expected_targets": [
         "read_file"
@@ -25,7 +37,7 @@
       }
     },
     {
-      "case_id": "mcp-filesystem-test-list-directory-en",
+      "case_id": "mcp-filesystem-dev-list-directory-en",
       "query": "List every file in the project directory.",
       "expected_targets": [
         "list_directory"
@@ -38,7 +50,7 @@
       }
     },
     {
-      "case_id": "mcp-filesystem-test-search-files-en",
+      "case_id": "mcp-filesystem-dev-search-files-en",
       "query": "Find Python files recursively under the source directory.",
       "expected_targets": [
         "search_files"
@@ -51,7 +63,7 @@
       }
     },
     {
-      "case_id": "mcp-filesystem-test-directory-tree-en",
+      "case_id": "mcp-filesystem-dev-directory-tree-en",
       "query": "Show the recursive directory tree as structured data.",
       "expected_targets": [
         "directory_tree"
@@ -64,7 +76,7 @@
       }
     },
     {
-      "case_id": "mcp-filesystem-test-edit-file-en",
+      "case_id": "mcp-filesystem-dev-edit-file-en",
       "query": "Replace an old line with new text in a file.",
       "expected_targets": [
         "edit_file"
@@ -77,7 +89,7 @@
       }
     },
     {
-      "case_id": "mcp-filesystem-test-file-info-ko",
+      "case_id": "mcp-filesystem-dev-file-info-ko",
       "query": "파일의 크기와 권한, 수정 시간을 확인해줘.",
       "expected_targets": [
         "get_file_info"

@@ -831,8 +831,8 @@ This order prevents five-hour model runs from becoming the development loop.
 - [ ] Audit licenses and reproducibility of BFCL V4, MCP-Atlas, and Toolathlon.
 - [x] Define and hash the first public OpenAPI/GraphQL/MCP seed corpus manifest.
       See [`public-heterogeneous-corpus.md`](public-heterogeneous-corpus.md).
-- [ ] Upgrade ground truth from a flat tool list to target/producer/equivalence
-      annotations.
+- [x] Upgrade public-corpus ground truth from a flat tool list to
+      target/producer/alternative annotations.
 - [ ] Add adapter conformance metrics for request, response, auth, and
       execution templates.
 - [ ] Implement B2 dense and B3 fixed hybrid baselines in the unified harness.
@@ -840,7 +840,8 @@ This order prevents five-hour model runs from becoming the development loop.
 - [ ] Add actual tokenizer accounting with frozen tokenizer revisions.
 - [ ] Define one artifact schema for deterministic, model, execution, and XGEN
       runs.
-- [ ] Freeze train/dev/test family splits before tuning new retrieval rules.
+- [x] Freeze public-corpus train/dev/test family splits before tuning new
+      retrieval rules.
 - [ ] Complete contamination-sensitivity and prospective power analyses.
 - [ ] Run the full ablation matrix on train/dev.
 - [ ] Review the protocol with one independent researcher before opening the

@@ -10,22 +10,32 @@ from typing import Any
 from benchmarks.corpus import manifest as corpus_manifest
 
 
-def test_seed_corpus_is_reproducible_but_not_claim_ready() -> None:
+def test_family_complete_corpus_waits_for_independent_annotation_review() -> None:
     report = corpus_manifest.validate_corpus_manifest(verify_ingest=True)
 
     assert report.integrity_ready is True
     assert report.paper_ready is False
-    assert report.source_count == 3
-    assert report.family_count == 3
-    assert report.query_count == 17
+    assert report.source_count == 6
+    assert report.paper_core_source_count == 6
+    assert report.held_out_source_count == 1
+    assert report.family_count == 6
+    assert report.query_count == 35
+    assert report.annotation_reviewer_count == 1
     assert report.source_type_counts == {
-        "graphql-introspection": 1,
-        "mcp": 1,
-        "openapi": 1,
+        "graphql-introspection": 2,
+        "mcp": 2,
+        "openapi": 2,
     }
-    assert report.split_query_counts == {"dev": 5, "test": 6, "train": 6}
-    assert {profile["tool_count"] for profile in report.source_profiles} == {4, 11, 19}
-    assert _issue_codes(report) == {"paper_source_family_coverage_insufficient"}
+    assert report.split_query_counts == {"dev": 17, "test": 6, "train": 12}
+    assert {profile["tool_count"] for profile in report.source_profiles} == {
+        4,
+        6,
+        9,
+        11,
+        19,
+        248,
+    }
+    assert _issue_codes(report) == {"paper_annotation_review_coverage_insufficient"}
 
 
 def test_corpus_manifest_detects_snapshot_tampering(tmp_path: Path) -> None:
@@ -131,6 +141,16 @@ def test_hash_skip_cannot_establish_paper_readiness(tmp_path: Path) -> None:
     assert "hash_verification_disabled" in _issue_codes(report)
 
 
+def test_ingest_skip_cannot_establish_paper_readiness(tmp_path: Path) -> None:
+    manifest_path, _source_path = _write_minimal_corpus(tmp_path)
+
+    report = corpus_manifest.validate_corpus_manifest(manifest_path)
+
+    assert report.integrity_ready is True
+    assert report.paper_ready is False
+    assert "ingest_verification_disabled" in _issue_codes(report)
+
+
 def test_non_core_sources_cannot_satisfy_paper_policy(tmp_path: Path) -> None:
     manifest_path, _source_path = _write_minimal_corpus(tmp_path)
     document = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -165,6 +185,86 @@ def test_paper_core_source_requires_audit_trail(tmp_path: Path) -> None:
     assert "source_audit_missing" in _issue_codes(report)
 
 
+def test_test_source_must_be_marked_held_out(tmp_path: Path) -> None:
+    manifest_path, _source_path = _write_minimal_corpus(tmp_path)
+    document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    document["sources"][0]["split"] = "test"
+    ground_truth_path = tmp_path / "ground-truth.json"
+    ground_truth = json.loads(ground_truth_path.read_text(encoding="utf-8"))
+    ground_truth["split"] = "test"
+    _write_json(ground_truth_path, ground_truth)
+    document["sources"][0]["ground_truth_sha256"] = _sha256(ground_truth_path)
+    _write_json(manifest_path, document)
+
+    report = corpus_manifest.validate_corpus_manifest(manifest_path)
+
+    assert report.integrity_ready is False
+    assert "source_evaluation_role_mismatch" in _issue_codes(report)
+
+
+def test_manifest_requires_frozen_family_split_policy(tmp_path: Path) -> None:
+    manifest_path, _source_path = _write_minimal_corpus(tmp_path)
+    document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del document["split_policy"]["frozen_at"]
+    _write_json(manifest_path, document)
+
+    report = corpus_manifest.validate_corpus_manifest(manifest_path)
+
+    assert report.integrity_ready is False
+    assert "split_policy_frozen_at_missing" in _issue_codes(report)
+
+
+def test_paper_ground_truth_requires_annotation_audit(tmp_path: Path) -> None:
+    manifest_path, _source_path = _write_minimal_corpus(tmp_path)
+    document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    ground_truth_path = tmp_path / "ground-truth.json"
+    ground_truth = json.loads(ground_truth_path.read_text(encoding="utf-8"))
+    del ground_truth["annotation_audit"]
+    _write_json(ground_truth_path, ground_truth)
+    document["sources"][0]["ground_truth_sha256"] = _sha256(ground_truth_path)
+    _write_json(manifest_path, document)
+
+    report = corpus_manifest.validate_corpus_manifest(manifest_path)
+
+    assert report.integrity_ready is False
+    assert "ground_truth_annotation_audit_missing" in _issue_codes(report)
+
+
+def test_annotation_reviewer_count_is_case_insensitive(tmp_path: Path) -> None:
+    manifest_path, _source_path = _write_minimal_corpus(tmp_path)
+    document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    document["paper_readiness_policy"]["min_annotation_reviewers"] = 2
+    ground_truth_path = tmp_path / "ground-truth.json"
+    ground_truth = json.loads(ground_truth_path.read_text(encoding="utf-8"))
+    ground_truth["annotation_audit"]["reviewers"] = [
+        "Test-Reviewer",
+        " test-reviewer ",
+    ]
+    _write_json(ground_truth_path, ground_truth)
+    document["sources"][0]["ground_truth_sha256"] = _sha256(ground_truth_path)
+    _write_json(manifest_path, document)
+
+    report = corpus_manifest.validate_corpus_manifest(manifest_path, verify_ingest=True)
+
+    assert report.integrity_ready is True
+    assert report.paper_ready is False
+    assert report.annotation_reviewer_count == 1
+    assert "paper_annotation_review_coverage_insufficient" in _issue_codes(report)
+
+
+def test_ingest_rejects_declared_type_content_mismatch(tmp_path: Path) -> None:
+    manifest_path, _source_path = _write_minimal_corpus(tmp_path)
+    document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    document["sources"][0]["source_type"] = "openapi"
+    document["sources"][0]["adapter"] = "openapi"
+    _write_json(manifest_path, document)
+
+    report = corpus_manifest.validate_corpus_manifest(manifest_path, verify_ingest=True)
+
+    assert report.integrity_ready is False
+    assert "source_ingest_failed" in _issue_codes(report)
+
+
 def test_minimal_audited_corpus_can_satisfy_an_explicit_policy(tmp_path: Path) -> None:
     manifest_path, _source_path = _write_minimal_corpus(tmp_path)
 
@@ -177,8 +277,8 @@ def test_minimal_audited_corpus_can_satisfy_an_explicit_policy(tmp_path: Path) -
 
 
 def test_cli_distinguishes_integrity_from_paper_readiness(capsys: Any) -> None:
-    integrity_exit = corpus_manifest.main(["--verify-ingest"])
-    claim_exit = corpus_manifest.main(["--verify-ingest", "--require-paper-ready"])
+    integrity_exit = corpus_manifest.main([])
+    claim_exit = corpus_manifest.main(["--require-paper-ready"])
 
     assert integrity_exit == 0
     assert claim_exit == 2
@@ -216,6 +316,12 @@ def _write_minimal_corpus(tmp_path: Path) -> tuple[Path, Path]:
             "source_ids": ["mcp-seed-train"],
             "split": "train",
             "languages": ["en"],
+            "annotation_audit": {
+                "reviewers": ["test-reviewer"],
+                "reviewed_at": "2026-07-27",
+                "protocol": "target-producer-v1",
+                "checks": ["query_clarity", "target_exists", "producer_role"],
+            },
             "cases": [
                 {
                     "case_id": "mcp-seed-train-read",
@@ -237,11 +343,17 @@ def _write_minimal_corpus(tmp_path: Path) -> tuple[Path, Path]:
             "schema_version": 1,
             "corpus_id": "minimal-test-corpus",
             "repository_root": ".",
+            "split_policy": {
+                "unit": "api_family",
+                "frozen_at": "2026-07-27T00:00:00Z",
+                "test_access_policy": "held-out-no-tuning",
+            },
             "paper_readiness_policy": {
                 "required_source_types": ["mcp"],
                 "required_splits": ["train"],
                 "min_families_per_source_type": 1,
                 "min_queries_per_split": 1,
+                "min_annotation_reviewers": 1,
             },
             "sources": [
                 {
@@ -251,6 +363,7 @@ def _write_minimal_corpus(tmp_path: Path) -> tuple[Path, Path]:
                     "adapter": "mcp-tools",
                     "domain": "test",
                     "split": "train",
+                    "evaluation_role": "development",
                     "languages": ["en"],
                     "paper_core": True,
                     "audit_status": "audited",

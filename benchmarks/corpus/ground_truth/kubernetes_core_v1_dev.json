@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "dataset_id": "kubernetes-core-v1-dev-v1",
+  "family_id": "kubernetes-core-v1",
+  "source_ids": [
+    "openapi-kubernetes-core-v1-ad6c155"
+  ],
+  "split": "dev",
+  "languages": [
+    "en",
+    "ko"
+  ],
+  "annotation_audit": {
+    "reviewers": [
+      "SonAIengine"
+    ],
+    "reviewed_at": "2026-07-27",
+    "protocol": "target-producer-v1",
+    "checks": [
+      "query_clarity",
+      "target_exists",
+      "producer_role"
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "kubernetes-dev-list-pods-en",
+      "query": "List every pod in a namespace.",
+      "expected_targets": [
+        "listCoreV1NamespacedPod"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "corpus-v2"
+      }
+    },
+    {
+      "case_id": "kubernetes-dev-pod-logs-en",
+      "query": "Find the pods and inspect the logs of one running pod.",
+      "expected_targets": [
+        "readCoreV1NamespacedPodLog"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [
+        "listCoreV1NamespacedPod"
+      ],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "corpus-v2"
+      }
+    },
+    {
+      "case_id": "kubernetes-dev-create-configmap-en",
+      "query": "Create a ConfigMap for application settings in a namespace.",
+      "expected_targets": [
+        "createCoreV1NamespacedConfigMap"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "corpus-v2"
+      }
+    },
+    {
+      "case_id": "kubernetes-dev-delete-service-en",
+      "query": "Delete one Kubernetes service from a namespace.",
+      "expected_targets": [
+        "deleteCoreV1NamespacedService"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "corpus-v2"
+      }
+    },
+    {
+      "case_id": "kubernetes-dev-pvc-status-ko",
+      "query": "네임스페이스에 있는 PVC의 현재 상태를 확인해줘.",
+      "expected_targets": [
+        "readCoreV1NamespacedPersistentVolumeClaimStatus"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored-bilingual",
+        "annotator_version": "corpus-v2"
+      }
+    },
+    {
+      "case_id": "kubernetes-dev-secret-inspection-en",
+      "query": "List the secrets in a namespace and inspect one selected secret.",
+      "expected_targets": [
+        "readCoreV1NamespacedSecret"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [
+        "listCoreV1NamespacedSecret"
+      ],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "corpus-v2"
+      }
+    }
+  ]
+}

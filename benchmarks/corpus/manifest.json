@@ -1,13 +1,15 @@
 {
   "schema_version": 1,
-  "corpus_id": "graph-tool-call-public-heterogeneous-seed-v1",
-  "description": "Auditable seed corpus for OpenAPI, GraphQL introspection, and MCP tool retrieval research.",
+  "corpus_id": "graph-tool-call-public-heterogeneous-v2",
+  "description": "Auditable family-split corpus for OpenAPI, GraphQL introspection, and MCP tool retrieval research.",
   "created_at": "2026-07-27T00:00:00Z",
-  "release_stage": "seed",
+  "release_stage": "review-candidate",
   "repository_root": "../..",
   "split_policy": {
     "unit": "api_family",
-    "rule": "Every snapshot, version, alias, and query paraphrase from one API family stays in one split."
+    "rule": "Every snapshot, version, alias, and query paraphrase from one API family stays in one split.",
+    "frozen_at": "2026-07-27T00:00:00Z",
+    "test_access_policy": "held-out-no-tuning"
   },
   "paper_readiness_policy": {
     "required_source_types": [
@@ -21,7 +23,8 @@
       "test"
     ],
     "min_families_per_source_type": 2,
-    "min_queries_per_split": 5
+    "min_queries_per_split": 5,
+    "min_annotation_reviewers": 2
   },
   "sources": [
     {
@@ -31,6 +34,7 @@
       "adapter": "openapi",
       "domain": "commerce",
       "split": "train",
+      "evaluation_role": "development",
       "languages": [
         "en"
       ],
@@ -41,7 +45,7 @@
       "bytes": 32786,
       "expected_tool_count": 19,
       "ground_truth_path": "ground_truth/petstore_train.json",
-      "ground_truth_sha256": "757ed0d9673544f6f5c9f4129b881042da607d3b5940d6682156e07c69c03f88",
+      "ground_truth_sha256": "b85e29c1c1707a0b080c0ae178428fd6b26e5226fe4db73deaf65a1436899cac",
       "license": {
         "spdx_id": "Apache-2.0",
         "evidence_url": "https://github.com/swagger-api/swagger-petstore/blob/8f0dd286987880b4af7bce552aca3813166f3049/LICENSE"
@@ -71,6 +75,7 @@
       "adapter": "graphql-introspection",
       "domain": "commerce",
       "split": "dev",
+      "evaluation_role": "development",
       "languages": [
         "en",
         "ko"
@@ -85,7 +90,7 @@
         "endpoint_url": "https://example.invalid/graphql"
       },
       "ground_truth_path": "ground_truth/graphql_commerce_dev.json",
-      "ground_truth_sha256": "45e1efe919ddd953f78ebf2827ad707362f20150a555b925bf1cab01c84295a6",
+      "ground_truth_sha256": "f62de2e2a7cb3b12bef5bfdc9fe42cf57811b03065c6d107412810c5283f59d0",
       "license": {
         "spdx_id": "MIT",
         "evidence_url": "https://github.com/SonAIengine/graph-tool-call/blob/main/LICENSE"
@@ -112,7 +117,8 @@
       "source_type": "mcp",
       "adapter": "mcp-tools",
       "domain": "developer-tools",
-      "split": "test",
+      "split": "dev",
+      "evaluation_role": "development",
       "languages": [
         "en",
         "ko"
@@ -126,8 +132,8 @@
       "ingest_options": {
         "server_name": "filesystem"
       },
-      "ground_truth_path": "ground_truth/mcp_filesystem_test.json",
-      "ground_truth_sha256": "82e45cff6a9ae03a9db32a56990a9e561d7127c89cbd2b494041ac2145b078b4",
+      "ground_truth_path": "ground_truth/mcp_filesystem_dev.json",
+      "ground_truth_sha256": "d15448bb1fb310e0b6b9ba64fa3edf00bbc2c9c174376d5c811b84cb88326899",
       "license": {
         "spdx_id": "MIT",
         "evidence_url": "https://github.com/SonAIengine/graph-tool-call/blob/c8b82e405523da32d4d4114a5d45b5cc11b4d576/LICENSE"
@@ -148,6 +154,141 @@
         "reference_url": "https://github.com/modelcontextprotocol/servers/tree/d31124c982401739917fd817c2a59db344529c16/src/filesystem",
         "reference_license_url": "https://github.com/modelcontextprotocol/servers/blob/d31124c982401739917fd817c2a59db344529c16/LICENSE",
         "snapshot_note": "Project fixture modeled after the public MCP filesystem server; it is not represented as a byte-for-byte upstream tools/list capture."
+      }
+    },
+    {
+      "id": "openapi-kubernetes-core-v1-ad6c155",
+      "family_id": "kubernetes-core-v1",
+      "source_type": "openapi",
+      "adapter": "openapi",
+      "domain": "infrastructure",
+      "split": "dev",
+      "evaluation_role": "development",
+      "languages": [
+        "en",
+        "ko"
+      ],
+      "paper_core": true,
+      "audit_status": "audited",
+      "snapshot_path": "../specs/k8s_core_v1.json",
+      "sha256": "48126ab4357e4f60c8d55a3691ebacb01acbc32bba9a8cd091ed756561ceeefa",
+      "bytes": 1991026,
+      "expected_tool_count": 248,
+      "ground_truth_path": "ground_truth/kubernetes_core_v1_dev.json",
+      "ground_truth_sha256": "e98ac5fda931a4523d2add6fd23b4c48b30e1e4e0c0e5eb80cf8b58c88795475",
+      "license": {
+        "spdx_id": "Apache-2.0",
+        "evidence_url": "https://github.com/kubernetes/kubernetes/blob/ad6c155449e38d7cca22230fdb99ae02b65ccb59/LICENSE"
+      },
+      "audit": {
+        "reviewer": "SonAIengine",
+        "reviewed_at": "2026-07-27",
+        "checks": [
+          "license",
+          "revision",
+          "redistribution"
+        ]
+      },
+      "provenance": {
+        "kind": "external-snapshot",
+        "upstream_url": "https://github.com/kubernetes/kubernetes/blob/ad6c155449e38d7cca22230fdb99ae02b65ccb59/api/openapi-spec/v3/api__v1_openapi.json",
+        "revision": "ad6c155449e38d7cca22230fdb99ae02b65ccb59",
+        "upstream_blob_sha": "95c5398f7422266a99cd9942781fd25da6836c8a",
+        "snapshot_note": "Byte-for-byte copy of the immutable Kubernetes core/v1 OpenAPI document."
+      }
+    },
+    {
+      "id": "graphql-countries-5a150ac",
+      "family_id": "countries-graphql",
+      "source_type": "graphql-introspection",
+      "adapter": "graphql-introspection",
+      "domain": "geography",
+      "split": "test",
+      "evaluation_role": "held-out",
+      "languages": [
+        "en",
+        "ko"
+      ],
+      "paper_core": true,
+      "audit_status": "audited",
+      "snapshot_path": "sources/graphql_countries_5a150ac.json",
+      "sha256": "f13ba5df2e1896bb25f10ece7a1e950f5d7e1b8e5759cd8ab7b88b778dcfb80e",
+      "bytes": 65122,
+      "expected_tool_count": 6,
+      "ingest_options": {
+        "endpoint_url": "https://countries.trevorblades.com/"
+      },
+      "ground_truth_path": "ground_truth/graphql_countries_test.json",
+      "ground_truth_sha256": "8d6663bb6ab7527db58678dfa85afb90000d51669f1e4d85bd007081b7511a89",
+      "license": {
+        "spdx_id": "MIT",
+        "evidence_url": "https://github.com/trevorblades/countries/blob/5a150acb0ef9fc0f220db3f154896f1a5c37c405/LICENSE"
+      },
+      "audit": {
+        "reviewer": "SonAIengine",
+        "reviewed_at": "2026-07-27",
+        "checks": [
+          "license",
+          "revision",
+          "redistribution"
+        ]
+      },
+      "provenance": {
+        "kind": "derived-snapshot",
+        "upstream_url": "https://github.com/trevorblades/countries/tree/5a150acb0ef9fc0f220db3f154896f1a5c37c405",
+        "revision": "5a150acb0ef9fc0f220db3f154896f1a5c37c405",
+        "source_schema_path": "src/schema.ts",
+        "dependency_lock_path": "bun.lock",
+        "dependency_lock_sha256": "1f8eaedbc98c429247cd93d92f7a9e544582995b1dfcc9a28902b243715409d1",
+        "generator": "bun 1.3.5 with graphql@16.11.0 getIntrospectionQuery",
+        "snapshot_note": "Introspection generated locally from the immutable MIT-licensed schema and frozen bun.lock; it matches the public endpoint capture and includes no API data or credentials."
+      }
+    },
+    {
+      "id": "mcp-memory-2025.4.25",
+      "family_id": "mcp-reference-memory",
+      "source_type": "mcp",
+      "adapter": "mcp-tools",
+      "domain": "knowledge-management",
+      "split": "train",
+      "evaluation_role": "development",
+      "languages": [
+        "en",
+        "ko"
+      ],
+      "paper_core": true,
+      "audit_status": "audited",
+      "snapshot_path": "sources/mcp_memory_2025.4.25.json",
+      "sha256": "d2abeb6b63443c699b79eeac408e561f79c78845030ba79d2b851572df5949f0",
+      "bytes": 6914,
+      "expected_tool_count": 9,
+      "ingest_options": {
+        "server_name": "memory"
+      },
+      "ground_truth_path": "ground_truth/mcp_memory_train.json",
+      "ground_truth_sha256": "d7f8436d431802bc50b18f2ba7d613734c057df184331603b815e8f39f123187",
+      "license": {
+        "spdx_id": "MIT",
+        "evidence_url": "https://github.com/modelcontextprotocol/servers/blob/b4ee623039a6c60053ce67269701ad9e95073306/LICENSE"
+      },
+      "audit": {
+        "reviewer": "SonAIengine",
+        "reviewed_at": "2026-07-27",
+        "checks": [
+          "license",
+          "revision",
+          "redistribution"
+        ]
+      },
+      "provenance": {
+        "kind": "derived-snapshot",
+        "upstream_url": "https://github.com/modelcontextprotocol/servers/tree/b4ee623039a6c60053ce67269701ad9e95073306/src/memory",
+        "revision": "b4ee623039a6c60053ce67269701ad9e95073306",
+        "release_tag": "2025.4.24",
+        "npm_package": "@modelcontextprotocol/server-memory@2025.4.25",
+        "npm_dist_integrity": "sha512-n6qZVRj3uHpysZVn3Q0IKqIPwQkVZVkcIfE65WRJkiSG4/Xli1xaVh+qOH4duXGC4a9I82391jsl9OdeQFlZuA==",
+        "capture_method": "MCP initialize followed by tools/list using protocol 2024-11-05",
+        "snapshot_note": "The released MIT package was executed in an empty temporary HOME; only result.tools was retained."
       }
     }
   ]
