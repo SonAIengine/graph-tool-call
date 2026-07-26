@@ -48,6 +48,7 @@ docs/
 │
 └── research/                   # 리서치 노트
     ├── paper-readiness-design.md # 논문 RQ/가설/실험/통계/제출 게이트
+    ├── public-heterogeneous-corpus.md # 공개 corpus provenance/split/gate
     ├── competitive-analysis.md # 경쟁 생태계 (RAG-MCP, LAPIS)
     ├── api-scale-data.md       # 실제 API 규모 데이터
     ├── framework-comparison.md # 프레임워크별 Swagger 차이
@@ -80,9 +81,10 @@ docs/
 
 **논문/연구 검증**
 1. **Canonical protocol**: [research/paper-readiness-design.md](research/paper-readiness-design.md)
-2. **제품 연구 목표**: [research/xgen-tool-graph-goals.md](research/xgen-tool-graph-goals.md)
-3. **개발 검증 루프**: [research/validation-loop.md](research/validation-loop.md)
-4. **관련 연구**: [research/references.md](research/references.md)
+2. **공개 corpus**: [research/public-heterogeneous-corpus.md](research/public-heterogeneous-corpus.md)
+3. **제품 연구 목표**: [research/xgen-tool-graph-goals.md](research/xgen-tool-graph-goals.md)
+4. **개발 검증 루프**: [research/validation-loop.md](research/validation-loop.md)
+5. **관련 연구**: [research/references.md](research/references.md)
 
 ## 최근 추가 (v0.12)
 

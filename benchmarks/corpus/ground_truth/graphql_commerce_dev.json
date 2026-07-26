@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "dataset_id": "graphql-commerce-dev-seed-v1",
+  "family_id": "gtc-graphql-commerce",
+  "source_ids": [
+    "graphql-commerce-project-fixture"
+  ],
+  "split": "dev",
+  "languages": [
+    "en",
+    "ko"
+  ],
+  "cases": [
+    {
+      "case_id": "graphql-commerce-dev-read-customer-en",
+      "query": "Read one customer by ID.",
+      "expected_targets": [
+        "query_customer"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "seed-v1"
+      }
+    },
+    {
+      "case_id": "graphql-commerce-dev-search-customers-en",
+      "query": "Search customers whose account is active.",
+      "expected_targets": [
+        "query_customers"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "seed-v1"
+      }
+    },
+    {
+      "case_id": "graphql-commerce-dev-read-order-en",
+      "query": "Get a single order by its identifier.",
+      "expected_targets": [
+        "query_order"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "seed-v1"
+      }
+    },
+    {
+      "case_id": "graphql-commerce-dev-update-customer-en",
+      "query": "Update the customer's display name.",
+      "expected_targets": [
+        "mutation_updateCustomer"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "seed-v1"
+      }
+    },
+    {
+      "case_id": "graphql-commerce-dev-read-customer-ko",
+      "query": "고객 ID로 한 명의 고객 정보를 조회해줘.",
+      "expected_targets": [
+        "query_customer"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored-bilingual",
+        "annotator_version": "seed-v1"
+      }
+    }
+  ]
+}

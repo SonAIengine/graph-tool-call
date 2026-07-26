@@ -366,6 +366,7 @@ model-in-the-loop benchmark.
 
 | Benchmark | Model used | What it evaluates |
 |---|---|---|
+| `make paper-corpus-check` | none | public OpenAPI/GraphQL/MCP corpus hashes, licenses, family splits, annotations, and ingest conformance |
 | `make xgen-benchmark` | none | graph-tool-call engine search, target selector exactness, producer expansion, plan synthesis across commerce/admin/workflow fixtures |
 | `make xgen-scale-acceptance` | none | X2BEE-scale Swagger UI discovery, dedupe, ingest, graph build, Korean product-case search |
 | `make xgen-scale-sweep` | none | one X2BEE-scale graph build, then top-K compression diagnostics for `k=3,5,10` |
@@ -376,6 +377,7 @@ model-in-the-loop benchmark.
 
 ```bash
 make xgen-benchmark
+make paper-corpus-check
 make xgen-scale-acceptance
 make xgen-scale-sweep
 MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \

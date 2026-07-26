@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "corpus_id": "graph-tool-call-public-heterogeneous-seed-v1",
+  "description": "Auditable seed corpus for OpenAPI, GraphQL introspection, and MCP tool retrieval research.",
+  "created_at": "2026-07-27T00:00:00Z",
+  "release_stage": "seed",
+  "repository_root": "../..",
+  "split_policy": {
+    "unit": "api_family",
+    "rule": "Every snapshot, version, alias, and query paraphrase from one API family stays in one split."
+  },
+  "paper_readiness_policy": {
+    "required_source_types": [
+      "openapi",
+      "graphql-introspection",
+      "mcp"
+    ],
+    "required_splits": [
+      "train",
+      "dev",
+      "test"
+    ],
+    "min_families_per_source_type": 2,
+    "min_queries_per_split": 5
+  },
+  "sources": [
+    {
+      "id": "openapi-swagger-petstore-1.0.27",
+      "family_id": "swagger-petstore",
+      "source_type": "openapi",
+      "adapter": "openapi",
+      "domain": "commerce",
+      "split": "train",
+      "languages": [
+        "en"
+      ],
+      "paper_core": true,
+      "audit_status": "audited",
+      "snapshot_path": "../specs/petstore3.json",
+      "sha256": "48160c880b651a663aa35373d97de112413113633fc8ebe9e94691e28ca616b1",
+      "bytes": 32786,
+      "expected_tool_count": 19,
+      "ground_truth_path": "ground_truth/petstore_train.json",
+      "ground_truth_sha256": "757ed0d9673544f6f5c9f4129b881042da607d3b5940d6682156e07c69c03f88",
+      "license": {
+        "spdx_id": "Apache-2.0",
+        "evidence_url": "https://github.com/swagger-api/swagger-petstore/blob/8f0dd286987880b4af7bce552aca3813166f3049/LICENSE"
+      },
+      "audit": {
+        "reviewer": "SonAIengine",
+        "reviewed_at": "2026-07-27",
+        "checks": [
+          "license",
+          "revision",
+          "redistribution"
+        ]
+      },
+      "provenance": {
+        "kind": "external-snapshot",
+        "upstream_url": "https://github.com/swagger-api/swagger-petstore/tree/8f0dd286987880b4af7bce552aca3813166f3049",
+        "revision": "8f0dd286987880b4af7bce552aca3813166f3049",
+        "release_tag": "swagger-petstore-v3-1.0.27",
+        "published_at": "2025-08-06T16:00:58Z",
+        "snapshot_note": "JSON representation of the tagged OpenAPI 3 Petstore contract."
+      }
+    },
+    {
+      "id": "graphql-commerce-project-fixture",
+      "family_id": "gtc-graphql-commerce",
+      "source_type": "graphql-introspection",
+      "adapter": "graphql-introspection",
+      "domain": "commerce",
+      "split": "dev",
+      "languages": [
+        "en",
+        "ko"
+      ],
+      "paper_core": true,
+      "audit_status": "audited",
+      "snapshot_path": "sources/graphql_commerce.json",
+      "sha256": "709ab805bd0a0ccec4a614cbf0f46b190d482c35ec6cd6894d0a8e92fba410f1",
+      "bytes": 8871,
+      "expected_tool_count": 4,
+      "ingest_options": {
+        "endpoint_url": "https://example.invalid/graphql"
+      },
+      "ground_truth_path": "ground_truth/graphql_commerce_dev.json",
+      "ground_truth_sha256": "45e1efe919ddd953f78ebf2827ad707362f20150a555b925bf1cab01c84295a6",
+      "license": {
+        "spdx_id": "MIT",
+        "evidence_url": "https://github.com/SonAIengine/graph-tool-call/blob/main/LICENSE"
+      },
+      "audit": {
+        "reviewer": "SonAIengine",
+        "reviewed_at": "2026-07-27",
+        "checks": [
+          "license",
+          "revision",
+          "redistribution"
+        ]
+      },
+      "provenance": {
+        "kind": "project-authored-fixture",
+        "upstream_url": "https://github.com/SonAIengine/graph-tool-call/tree/main/benchmarks/corpus/sources",
+        "revision": "paper-corpus-seed-v1",
+        "snapshot_note": "A project-authored introspection response; example.invalid is non-routable and used only to validate execution metadata."
+      }
+    },
+    {
+      "id": "mcp-filesystem-project-fixture",
+      "family_id": "mcp-reference-filesystem",
+      "source_type": "mcp",
+      "adapter": "mcp-tools",
+      "domain": "developer-tools",
+      "split": "test",
+      "languages": [
+        "en",
+        "ko"
+      ],
+      "paper_core": true,
+      "audit_status": "audited",
+      "snapshot_path": "../mcp_tools/filesystem.json",
+      "sha256": "130aa5857d5c5976b96ae6d842eadaae769db5bd0738b5797b78d71688dfb76c",
+      "bytes": 5627,
+      "expected_tool_count": 11,
+      "ingest_options": {
+        "server_name": "filesystem"
+      },
+      "ground_truth_path": "ground_truth/mcp_filesystem_test.json",
+      "ground_truth_sha256": "82e45cff6a9ae03a9db32a56990a9e561d7127c89cbd2b494041ac2145b078b4",
+      "license": {
+        "spdx_id": "MIT",
+        "evidence_url": "https://github.com/SonAIengine/graph-tool-call/blob/c8b82e405523da32d4d4114a5d45b5cc11b4d576/LICENSE"
+      },
+      "audit": {
+        "reviewer": "SonAIengine",
+        "reviewed_at": "2026-07-27",
+        "checks": [
+          "license",
+          "revision",
+          "redistribution"
+        ]
+      },
+      "provenance": {
+        "kind": "project-authored-fixture",
+        "upstream_url": "https://github.com/SonAIengine/graph-tool-call/blob/c8b82e405523da32d4d4114a5d45b5cc11b4d576/benchmarks/mcp_tools/filesystem.json",
+        "revision": "c8b82e405523da32d4d4114a5d45b5cc11b4d576",
+        "reference_url": "https://github.com/modelcontextprotocol/servers/tree/d31124c982401739917fd817c2a59db344529c16/src/filesystem",
+        "reference_license_url": "https://github.com/modelcontextprotocol/servers/blob/d31124c982401739917fd817c2a59db344529c16/LICENSE",
+        "snapshot_note": "Project fixture modeled after the public MCP filesystem server; it is not represented as a byte-for-byte upstream tools/list capture."
+      }
+    }
+  ]
+}
