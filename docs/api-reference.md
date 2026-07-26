@@ -47,8 +47,9 @@ print(result.adapter, result.ready, result.issues)
 tools = result.tools
 ```
 
-Built-in adapters recognize OpenAPI/Swagger dictionaries, MCP tool lists,
-Python functions, and OpenAI/Anthropic/MCP-shaped generic tool catalogs.
+Built-in adapters recognize OpenAPI/Swagger dictionaries, GraphQL introspection
+responses, MCP tool lists, Python functions, and OpenAI/Anthropic/MCP-shaped
+generic tool catalogs.
 Ambiguous paths and URLs should use an explicit `format_hint`:
 
 ```python
@@ -58,35 +59,53 @@ result = ingest_source(
 )
 ```
 
-Applications can register GraphQL, gRPC, AsyncAPI, Postman, proprietary RPC, or
+GraphQL introspection is built in. The endpoint is explicit because it is not
+part of the introspection response:
+
+```python
+from graph_tool_call import ingest_graphql_introspection
+
+result = ingest_graphql_introspection(
+    introspection_response,
+    endpoint_url="https://api.example.com/graphql",
+)
+customer = next(tool for tool in result.tools if tool.name == "query_customer")
+print(customer.metadata["execution"]["body_template"]["query"])
+```
+
+The adapter creates one tool per query, mutation, or subscription root field.
+It preserves variable and result JSON Schemas, a variable-based operation
+document, GraphQL type signatures, deprecation state, response paths, and
+`metadata.api_contract`. Query tools receive read-only annotations. Mutation
+tools are conservatively marked destructive. Subscription tools remain
+searchable but include `graphql_subscription_transport_required` until the
+application supplies a streaming transport.
+
+Applications can still register gRPC, AsyncAPI, Postman, proprietary RPC, or
 other adapters without changing retrieval or graph code:
 
 ```python
-from graph_tool_call import (
-    IngestCapabilities,
-    IngestResult,
-    register_ingest_adapter,
-)
+from graph_tool_call import IngestCapabilities, IngestResult, register_ingest_adapter
 
-class GraphQLAdapter:
-    name = "graphql"
+class AsyncAPIAdapter:
+    name = "asyncapi"
     capabilities = IngestCapabilities(
-        source_type="graphql",
-        features=frozenset({"input_schema", "output_schema"}),
-        transports=frozenset({"http"}),
+        source_type="asyncapi",
+        features=frozenset({"input_schema", "output_schema", "streaming"}),
+        transports=frozenset({"kafka", "websocket"}),
     )
 
     def detect(self, source):
-        return 1.0 if looks_like_graphql(source) else 0.0
+        return 1.0 if isinstance(source, dict) and "asyncapi" in source else 0.0
 
     def ingest(self, source, **options):
         return IngestResult(
-            tools=convert_graphql_operations(source),
+            tools=convert_asyncapi_operations(source),
             adapter=self.name,
             capabilities=self.capabilities,
         )
 
-register_ingest_adapter(GraphQLAdapter())
+register_ingest_adapter(AsyncAPIAdapter())
 ```
 
 `required_capabilities` turns unsupported behavior into stable
@@ -96,6 +115,8 @@ catalog, or missing required capabilities are present. See
 [Universal Ingest Adapters](design/universal-ingest-adapters.md).
 Unknown hints raise `UnknownIngestAdapterError`; equivalent strong detector
 matches raise `AmbiguousIngestAdapterError` and require an explicit hint.
+See [GraphQL Introspection Ingest](design/graphql-introspection-ingest.md) for
+the generated operation and execution contract.
 
 ### Retrieval
 

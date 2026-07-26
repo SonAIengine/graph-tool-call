@@ -136,15 +136,36 @@ product-neutral.
 Source-specific dictionaries for one customer or domain remain XGEN adapter
 configuration. They do not belong in the core registry.
 
+## Built-in GraphQL introspection adapter
+
+Standard GraphQL introspection responses are recognized as
+`graphql-introspection`. Each query, mutation, and subscription root field
+becomes a stable `ToolSchema`. The adapter preserves:
+
+- GraphQL argument and result types as JSON Schema
+- a variable-based operation document
+- operation type, root type, root field, and deprecation facts
+- a transport-neutral execution descriptor in `metadata.execution`
+- `api_contract.produces/consumes` rows for graph build and planning
+- a deterministic schema fingerprint without persisting the source response
+
+The GraphQL specification does not include the service URL in introspection,
+so `endpoint_url` is required for an execution-ready result. It must not include
+userinfo credentials or sensitive query parameters. Credentials remain in the
+application auth layer.
+
+Subscription fields are retained for discovery, but a warning records that an
+application-provided WebSocket/SSE transport is required. See
+[GraphQL Introspection Ingest](graphql-introspection-ingest.md).
+
 ## Follow-up adapters
 
 The extension boundary enables independent work in this order:
 
-1. GraphQL introspection and operation documents
-2. gRPC/protobuf service descriptors
-3. AsyncAPI channels and messages
-4. Postman collections and HAR traces
-5. proprietary RPC catalogs
+1. gRPC/protobuf service descriptors
+2. AsyncAPI channels and messages
+3. Postman collections and HAR traces
+4. proprietary RPC catalogs
 
 Each adapter must pass the same conformance contract before it is advertised as
 supported. A new adapter does not require changes to graph search, target

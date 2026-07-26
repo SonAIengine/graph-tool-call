@@ -2,6 +2,7 @@
 
 from graph_tool_call.ingest.adapters import (
     AmbiguousIngestAdapterError,
+    GraphQLIntrospectionIngestAdapter,
     IngestAdapter,
     IngestAdapterError,
     IngestAdapterRegistry,
@@ -18,6 +19,10 @@ from graph_tool_call.ingest.adapters import (
 )
 from graph_tool_call.ingest.arazzo import ArazzoRelation, ingest_arazzo
 from graph_tool_call.ingest.functions import ingest_function, ingest_functions
+from graph_tool_call.ingest.graphql import (
+    ingest_graphql_introspection,
+    is_graphql_introspection,
+)
 from graph_tool_call.ingest.normalizer import NormalizedSpec, SpecVersion, normalize
 from graph_tool_call.ingest.openapi import ingest_openapi
 
@@ -29,6 +34,7 @@ __all__ = [
     "IngestAdapterRegistry",
     "IngestCapabilities",
     "IngestConformanceError",
+    "GraphQLIntrospectionIngestAdapter",
     "IngestIssue",
     "IngestResult",
     "NormalizedSpec",
@@ -39,9 +45,11 @@ __all__ = [
     "ingest_arazzo",
     "ingest_function",
     "ingest_functions",
+    "ingest_graphql_introspection",
     "ingest_openapi",
     "ingest_source",
     "normalize",
+    "is_graphql_introspection",
     "register_ingest_adapter",
     "unregister_ingest_adapter",
 ]
