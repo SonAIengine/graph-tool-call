@@ -1,13 +1,14 @@
 {
   "schema_version": 1,
-  "dataset_id": "petstore-train-seed-v1",
-  "family_id": "swagger-petstore",
+  "dataset_id": "graphql-countries-test-v1",
+  "family_id": "countries-graphql",
   "source_ids": [
-    "openapi-swagger-petstore-1.0.27"
+    "graphql-countries-5a150ac"
   ],
-  "split": "train",
+  "split": "test",
   "languages": [
-    "en"
+    "en",
+    "ko"
   ],
   "annotation_audit": {
     "reviewers": [
@@ -23,84 +24,81 @@
   },
   "cases": [
     {
-      "case_id": "petstore-train-find-available-pets",
-      "query": "Find all available pets.",
+      "case_id": "countries-test-country-en",
+      "query": "Look up Brazil by its country code.",
       "expected_targets": [
-        "findPetsByStatus"
+        "query_country"
       ],
       "acceptable_alternatives": [],
       "required_producers": [],
       "provenance": {
         "origin": "human-authored",
-        "annotator_version": "seed-v1"
+        "annotator_version": "corpus-v2"
       }
     },
     {
-      "case_id": "petstore-train-read-pet",
-      "query": "Get the pet with identifier 42.",
+      "case_id": "countries-test-countries-en",
+      "query": "List countries in Europe.",
       "expected_targets": [
-        "getPetById"
+        "query_countries"
       ],
       "acceptable_alternatives": [],
       "required_producers": [],
       "provenance": {
         "origin": "human-authored",
-        "annotator_version": "seed-v1"
+        "annotator_version": "corpus-v2"
       }
     },
     {
-      "case_id": "petstore-train-create-pet",
-      "query": "Add a new dog to the pet store.",
+      "case_id": "countries-test-continent-en",
+      "query": "Get one continent by its code.",
       "expected_targets": [
-        "addPet"
+        "query_continent"
       ],
       "acceptable_alternatives": [],
       "required_producers": [],
       "provenance": {
         "origin": "human-authored",
-        "annotator_version": "seed-v1"
+        "annotator_version": "corpus-v2"
       }
     },
     {
-      "case_id": "petstore-train-store-inventory",
-      "query": "Check the current store inventory.",
+      "case_id": "countries-test-continents-en",
+      "query": "Show all available continents.",
       "expected_targets": [
-        "getInventory"
+        "query_continents"
       ],
       "acceptable_alternatives": [],
       "required_producers": [],
       "provenance": {
         "origin": "human-authored",
-        "annotator_version": "seed-v1"
+        "annotator_version": "corpus-v2"
       }
     },
     {
-      "case_id": "petstore-train-read-order",
-      "query": "Look up order number 5.",
+      "case_id": "countries-test-language-ko",
+      "query": "언어 코드로 포르투갈어 정보를 조회해줘.",
       "expected_targets": [
-        "getOrderById"
+        "query_language"
       ],
       "acceptable_alternatives": [],
       "required_producers": [],
       "provenance": {
-        "origin": "human-authored",
-        "annotator_version": "seed-v1"
+        "origin": "human-authored-bilingual",
+        "annotator_version": "corpus-v2"
       }
     },
     {
-      "case_id": "petstore-train-adoption-workflow",
-      "query": "Find an available pet, inspect its details, and place an order.",
+      "case_id": "countries-test-languages-ko",
+      "query": "사용 가능한 모든 언어 목록을 보여줘.",
       "expected_targets": [
-        "placeOrder"
+        "query_languages"
       ],
       "acceptable_alternatives": [],
-      "required_producers": [
-        "findPetsByStatus",
-        "getPetById"
-      ],
+      "required_producers": [],
       "provenance": {
-        "origin": "human-authored",
-        "annotator_version": "seed-v1"
+        "origin": "human-authored-bilingual",
+        "annotator_version": "corpus-v2"
       }
     }
   ]

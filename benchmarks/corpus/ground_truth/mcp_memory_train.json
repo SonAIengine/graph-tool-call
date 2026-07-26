@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "dataset_id": "mcp-memory-train-v1",
+  "family_id": "mcp-reference-memory",
+  "source_ids": [
+    "mcp-memory-2025.4.25"
+  ],
+  "split": "train",
+  "languages": [
+    "en",
+    "ko"
+  ],
+  "annotation_audit": {
+    "reviewers": [
+      "SonAIengine"
+    ],
+    "reviewed_at": "2026-07-27",
+    "protocol": "target-producer-v1",
+    "checks": [
+      "query_clarity",
+      "target_exists",
+      "producer_role"
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "memory-train-create-entities-en",
+      "query": "Create knowledge graph entities for Alice and Project Atlas.",
+      "expected_targets": [
+        "create_entities"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "corpus-v2"
+      }
+    },
+    {
+      "case_id": "memory-train-search-nodes-en",
+      "query": "Search memory for nodes related to Atlas.",
+      "expected_targets": [
+        "search_nodes"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "corpus-v2"
+      }
+    },
+    {
+      "case_id": "memory-train-add-observation-en",
+      "query": "Find the Atlas entity and add a new observation to it.",
+      "expected_targets": [
+        "add_observations"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [
+        "search_nodes"
+      ],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "corpus-v2"
+      }
+    },
+    {
+      "case_id": "memory-train-create-relation-en",
+      "query": "Open Alice and Atlas, then connect Alice as a contributor to Atlas.",
+      "expected_targets": [
+        "create_relations"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [
+        "open_nodes"
+      ],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "corpus-v2"
+      }
+    },
+    {
+      "case_id": "memory-train-delete-entity-ko",
+      "query": "삭제할 엔티티를 검색한 다음 지식 그래프에서 제거해줘.",
+      "expected_targets": [
+        "delete_entities"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [
+        "search_nodes"
+      ],
+      "provenance": {
+        "origin": "human-authored-bilingual",
+        "annotator_version": "corpus-v2"
+      }
+    },
+    {
+      "case_id": "memory-train-read-graph-ko",
+      "query": "현재 저장된 전체 지식 그래프를 읽어줘.",
+      "expected_targets": [
+        "read_graph"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored-bilingual",
+        "annotator_version": "corpus-v2"
+      }
+    }
+  ]
+}

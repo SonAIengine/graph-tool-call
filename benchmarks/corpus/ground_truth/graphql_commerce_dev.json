@@ -10,6 +10,18 @@
     "en",
     "ko"
   ],
+  "annotation_audit": {
+    "reviewers": [
+      "SonAIengine"
+    ],
+    "reviewed_at": "2026-07-27",
+    "protocol": "target-producer-v1",
+    "checks": [
+      "query_clarity",
+      "target_exists",
+      "producer_role"
+    ]
+  },
   "cases": [
     {
       "case_id": "graphql-commerce-dev-read-customer-en",
