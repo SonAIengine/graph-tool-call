@@ -17,7 +17,23 @@
 - RAG-MCP (arXiv:2505.03275) — https://arxiv.org/html/2505.03275v1
 - LAPIS (arXiv:2602.18541) — https://arxiv.org/abs/2602.18541
 - ToolLLM (arXiv:2307.16789) — https://ar5iv.labs.arxiv.org/html/2307.16789
+- Tool Graph Retriever (arXiv:2508.05152) — https://arxiv.org/abs/2508.05152
+- HyFunc (arXiv:2602.13665) — https://arxiv.org/abs/2602.13665
 - BEIR: Hybrid BM25+Dense+RRF benchmark
+
+### Execution Graphs & Experience Memory
+- SkillGraph (arXiv:2604.19793) — https://arxiv.org/abs/2604.19793
+- ExpGraph (arXiv:2605.30712) — https://arxiv.org/abs/2605.30712
+
+### Tool-Use Training
+- GLM-5 (arXiv:2602.15763) — https://arxiv.org/abs/2602.15763
+- DeepTool (arXiv:2605.29568) — https://arxiv.org/abs/2605.29568
+- Tool-Integrated Reasoning Recipe (arXiv:2605.06326) — https://arxiv.org/abs/2605.06326
+
+### Evaluation
+- BFCL V4 methodology — https://gorilla.cs.berkeley.edu/blogs/15_bfcl_v4_web_search.html
+- MCP-Atlas (arXiv:2602.00933) — https://arxiv.org/abs/2602.00933
+- Toolathlon / Tool Decathlon (arXiv:2510.25726) — https://arxiv.org/abs/2510.25726
 
 ## GitHub
 

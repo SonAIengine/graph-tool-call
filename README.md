@@ -396,7 +396,9 @@ For the XGEN tool graph research direction, use
 [docs/research/xgen-tool-graph-goals.md](docs/research/xgen-tool-graph-goals.md)
 as the roadmap and [docs/research/validation-loop.md](docs/research/validation-loop.md)
 as the day-to-day validation loop instead of running full model benchmarks after
-every change.
+every change. Claims, public datasets, baselines, ablations, and submission gates
+for a research paper are defined separately in the canonical
+[paper-readiness protocol](docs/research/paper-readiness-design.md).
 
 ---
 

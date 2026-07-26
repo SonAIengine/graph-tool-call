@@ -47,6 +47,7 @@ docs/
 │   └── benchmark.md            # 벤치마크 메트릭 + 데이터셋 + 결과
 │
 └── research/                   # 리서치 노트
+    ├── paper-readiness-design.md # 논문 RQ/가설/실험/통계/제출 게이트
     ├── competitive-analysis.md # 경쟁 생태계 (RAG-MCP, LAPIS)
     ├── api-scale-data.md       # 실제 API 규모 데이터
     ├── framework-comparison.md # 프레임워크별 Swagger 차이
@@ -76,6 +77,12 @@ docs/
 2. **진행 상황**: [wbs/README.md](wbs/README.md)
 3. **설계 깊이 파기**: `design/` 디렉토리
 4. **리서치 근거**: `research/` 디렉토리
+
+**논문/연구 검증**
+1. **Canonical protocol**: [research/paper-readiness-design.md](research/paper-readiness-design.md)
+2. **제품 연구 목표**: [research/xgen-tool-graph-goals.md](research/xgen-tool-graph-goals.md)
+3. **개발 검증 루프**: [research/validation-loop.md](research/validation-loop.md)
+4. **관련 연구**: [research/references.md](research/references.md)
 
 ## 최근 추가 (v0.12)
 

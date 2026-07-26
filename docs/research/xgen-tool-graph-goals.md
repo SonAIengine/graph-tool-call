@@ -516,6 +516,11 @@ Required work:
 
 ## Paper-Ready Target
 
+> The canonical paper protocol is
+> [`paper-readiness-design.md`](paper-readiness-design.md). This section records
+> the historical 0.27/0.28 product and BFCL milestone targets. It must not be
+> used by itself as evidence for a general research claim.
+
 논문급은 0.27과 다르다. 0.27은 제품 후보이고, paper-ready는 claim과 실험
 설계가 있어야 한다.
 
