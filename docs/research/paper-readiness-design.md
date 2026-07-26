@@ -829,7 +829,8 @@ This order prevents five-hour model runs from becoming the development loop.
 ## 20. Immediate Next Tasks
 
 - [ ] Audit licenses and reproducibility of BFCL V4, MCP-Atlas, and Toolathlon.
-- [ ] Define and hash the first public OpenAPI/GraphQL/MCP corpus manifest.
+- [x] Define and hash the first public OpenAPI/GraphQL/MCP seed corpus manifest.
+      See [`public-heterogeneous-corpus.md`](public-heterogeneous-corpus.md).
 - [ ] Upgrade ground truth from a flat tool list to target/producer/equivalence
       annotations.
 - [ ] Add adapter conformance metrics for request, response, auth, and

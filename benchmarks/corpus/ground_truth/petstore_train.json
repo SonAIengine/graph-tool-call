@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "dataset_id": "petstore-train-seed-v1",
+  "family_id": "swagger-petstore",
+  "source_ids": [
+    "openapi-swagger-petstore-1.0.27"
+  ],
+  "split": "train",
+  "languages": [
+    "en"
+  ],
+  "cases": [
+    {
+      "case_id": "petstore-train-find-available-pets",
+      "query": "Find all available pets.",
+      "expected_targets": [
+        "findPetsByStatus"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "seed-v1"
+      }
+    },
+    {
+      "case_id": "petstore-train-read-pet",
+      "query": "Get the pet with identifier 42.",
+      "expected_targets": [
+        "getPetById"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "seed-v1"
+      }
+    },
+    {
+      "case_id": "petstore-train-create-pet",
+      "query": "Add a new dog to the pet store.",
+      "expected_targets": [
+        "addPet"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "seed-v1"
+      }
+    },
+    {
+      "case_id": "petstore-train-store-inventory",
+      "query": "Check the current store inventory.",
+      "expected_targets": [
+        "getInventory"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "seed-v1"
+      }
+    },
+    {
+      "case_id": "petstore-train-read-order",
+      "query": "Look up order number 5.",
+      "expected_targets": [
+        "getOrderById"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "seed-v1"
+      }
+    },
+    {
+      "case_id": "petstore-train-adoption-workflow",
+      "query": "Find an available pet, inspect its details, and place an order.",
+      "expected_targets": [
+        "placeOrder"
+      ],
+      "acceptable_alternatives": [],
+      "required_producers": [
+        "findPetsByStatus",
+        "getPetById"
+      ],
+      "provenance": {
+        "origin": "human-authored",
+        "annotator_version": "seed-v1"
+      }
+    }
+  ]
+}
