@@ -53,6 +53,24 @@ is deliberately human: every annotation currently has one reviewer, while the
 protocol requires two. Passing integrity does not authorize a paper claim or
 opening held-out Countries retrieval results.
 
+An AI-assisted consistency review completed on 2026-07-28 covers all 35 cases
+and approved their query, target, producer, and alternative roles. It is bound
+to the exact ground-truth hashes in:
+
+```text
+benchmarks/corpus/reviews/internal_ai_consistency_v1.json
+```
+
+Validate it with:
+
+```bash
+make paper-corpus-internal-review-check
+```
+
+This review did not inspect held-out retrieval outcomes and does not count as
+an independent human reviewer. It supports development confidence without
+weakening the publication gate.
+
 ## Source Admission Contract
 
 Every source row records:
@@ -106,6 +124,10 @@ Every ground-truth file also records an `annotation_audit` with reviewer
 identities, review date, protocol version, and checks for query clarity, target
 existence, and producer roles. The paper policy currently requires two
 reviewers per source.
+
+Supplemental author or AI-assisted reviews live outside the ground-truth files.
+Their reviewer kind, exact source hashes, case coverage, and disagreements are
+validated separately so they cannot silently satisfy the human-review policy.
 
 ## Split and Leakage Policy
 
@@ -214,7 +236,8 @@ WP1 is complete only when:
 
 All source-family, split, provenance, integrity, and adapter-conformance
 criteria above now pass. Independent annotation review is the only remaining
-WP1 exit blocker.
+WP1 publication blocker. The internal 35/35 consistency review is complete, so
+WP2 harness development can proceed while the human gate remains explicit.
 
 The broader research questions and submission gates remain in
 [`paper-readiness-design.md`](paper-readiness-design.md).

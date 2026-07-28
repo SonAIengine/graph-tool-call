@@ -26,6 +26,14 @@
     "min_queries_per_split": 5,
     "min_annotation_reviewers": 2
   },
+  "supplemental_annotation_reviews": [
+    {
+      "path": "reviews/internal_ai_consistency_v1.json",
+      "sha256": "10fd0775d85192f72cd08059c50e2599736cad2e0751068d220bfe924ea39231",
+      "reviewer_kind": "ai-assisted",
+      "counts_toward_human_review_gate": false
+    }
+  ],
   "sources": [
     {
       "id": "openapi-swagger-petstore-1.0.27",
