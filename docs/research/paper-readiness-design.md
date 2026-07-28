@@ -825,6 +825,8 @@ This order prevents five-hour model runs from becoming the development loop.
 | 2026-07-27 | Local BFCL-compatible results are not called official leaderboard results. |
 | 2026-07-27 | Actual tokenizer tokens replace tool-count/character proxies in primary efficiency claims. |
 | 2026-07-27 | Main-paper claims require public heterogeneous and unseen-family evaluation. |
+| 2026-07-28 | AI-assisted annotation review may unblock development but never substitutes for independent human review. |
+| 2026-07-28 | Experiment schema v1 separates deterministic run identity from exact result content identity. |
 
 ## 20. Immediate Next Tasks
 
@@ -838,8 +840,8 @@ This order prevents five-hour model runs from becoming the development loop.
 - [ ] Implement B2 dense and B3 fixed hybrid baselines in the unified harness.
 - [ ] Add seeded random, oracle, and budgeted LLM catalog-selector baselines.
 - [ ] Add actual tokenizer accounting with frozen tokenizer revisions.
-- [ ] Define one artifact schema for deterministic, model, execution, and XGEN
-      runs.
+- [x] Define one artifact schema for deterministic, model, execution, and XGEN
+      runs. See [`experiment-artifact.md`](experiment-artifact.md).
 - [x] Freeze public-corpus train/dev/test family splits before tuning new
       retrieval rules.
 - [ ] Complete contamination-sensitivity and prospective power analyses.

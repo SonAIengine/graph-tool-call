@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "review_id": "internal-ai-consistency-2026-07-28-v1",
+  "corpus_id": "graph-tool-call-public-heterogeneous-v2",
+  "reviewed_at": "2026-07-28",
+  "protocol": "target-producer-consistency-v1",
+  "reviewer": {
+    "identity": "OpenAI Codex",
+    "kind": "ai-assisted",
+    "independence": "not-independent-human"
+  },
+  "counts_toward_human_review_gate": false,
+  "retrieval_results_inspected": false,
+  "checks": [
+    "query_clarity",
+    "target_semantics",
+    "producer_role",
+    "acceptable_alternatives"
+  ],
+  "method": [
+    "Compare each query with the exact ingested tool name and description.",
+    "Check target versus producer roles without running retrieval.",
+    "Inspect held-out annotations without inspecting held-out retrieval outcomes.",
+    "Record disagreements rather than silently rewriting ground truth."
+  ],
+  "source_reviews": [
+    {
+      "source_id": "openapi-swagger-petstore-1.0.27",
+      "ground_truth_sha256": "b85e29c1c1707a0b080c0ae178428fd6b26e5226fe4db73deaf65a1436899cac",
+      "decisions": [
+        {"case_id": "petstore-train-find-available-pets", "verdict": "approved"},
+        {"case_id": "petstore-train-read-pet", "verdict": "approved"},
+        {"case_id": "petstore-train-create-pet", "verdict": "approved"},
+        {"case_id": "petstore-train-store-inventory", "verdict": "approved"},
+        {"case_id": "petstore-train-read-order", "verdict": "approved"},
+        {"case_id": "petstore-train-adoption-workflow", "verdict": "approved"}
+      ]
+    },
+    {
+      "source_id": "graphql-commerce-project-fixture",
+      "ground_truth_sha256": "f62de2e2a7cb3b12bef5bfdc9fe42cf57811b03065c6d107412810c5283f59d0",
+      "decisions": [
+        {"case_id": "graphql-commerce-dev-read-customer-en", "verdict": "approved"},
+        {"case_id": "graphql-commerce-dev-search-customers-en", "verdict": "approved"},
+        {"case_id": "graphql-commerce-dev-read-order-en", "verdict": "approved"},
+        {"case_id": "graphql-commerce-dev-update-customer-en", "verdict": "approved"},
+        {"case_id": "graphql-commerce-dev-read-customer-ko", "verdict": "approved"}
+      ]
+    },
+    {
+      "source_id": "mcp-filesystem-project-fixture",
+      "ground_truth_sha256": "d15448bb1fb310e0b6b9ba64fa3edf00bbc2c9c174376d5c811b84cb88326899",
+      "decisions": [
+        {"case_id": "mcp-filesystem-dev-read-file-en", "verdict": "approved"},
+        {"case_id": "mcp-filesystem-dev-list-directory-en", "verdict": "approved"},
+        {"case_id": "mcp-filesystem-dev-search-files-en", "verdict": "approved"},
+        {"case_id": "mcp-filesystem-dev-directory-tree-en", "verdict": "approved"},
+        {"case_id": "mcp-filesystem-dev-edit-file-en", "verdict": "approved"},
+        {"case_id": "mcp-filesystem-dev-file-info-ko", "verdict": "approved"}
+      ]
+    },
+    {
+      "source_id": "openapi-kubernetes-core-v1-ad6c155",
+      "ground_truth_sha256": "e98ac5fda931a4523d2add6fd23b4c48b30e1e4e0c0e5eb80cf8b58c88795475",
+      "decisions": [
+        {"case_id": "kubernetes-dev-list-pods-en", "verdict": "approved"},
+        {"case_id": "kubernetes-dev-pod-logs-en", "verdict": "approved"},
+        {"case_id": "kubernetes-dev-create-configmap-en", "verdict": "approved"},
+        {"case_id": "kubernetes-dev-delete-service-en", "verdict": "approved"},
+        {"case_id": "kubernetes-dev-pvc-status-ko", "verdict": "approved"},
+        {"case_id": "kubernetes-dev-secret-inspection-en", "verdict": "approved"}
+      ]
+    },
+    {
+      "source_id": "graphql-countries-5a150ac",
+      "ground_truth_sha256": "8d6663bb6ab7527db58678dfa85afb90000d51669f1e4d85bd007081b7511a89",
+      "decisions": [
+        {"case_id": "countries-test-country-en", "verdict": "approved"},
+        {"case_id": "countries-test-countries-en", "verdict": "approved"},
+        {"case_id": "countries-test-continent-en", "verdict": "approved"},
+        {"case_id": "countries-test-continents-en", "verdict": "approved"},
+        {"case_id": "countries-test-language-ko", "verdict": "approved"},
+        {"case_id": "countries-test-languages-ko", "verdict": "approved"}
+      ]
+    },
+    {
+      "source_id": "mcp-memory-2025.4.25",
+      "ground_truth_sha256": "d7f8436d431802bc50b18f2ba7d613734c057df184331603b815e8f39f123187",
+      "decisions": [
+        {"case_id": "memory-train-create-entities-en", "verdict": "approved"},
+        {"case_id": "memory-train-search-nodes-en", "verdict": "approved"},
+        {"case_id": "memory-train-add-observation-en", "verdict": "approved"},
+        {"case_id": "memory-train-create-relation-en", "verdict": "approved"},
+        {"case_id": "memory-train-delete-entity-ko", "verdict": "approved"},
+        {"case_id": "memory-train-read-graph-ko", "verdict": "approved"}
+      ]
+    }
+  ]
+}
