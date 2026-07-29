@@ -74,6 +74,17 @@ make paper-baseline-run
 Its exact baseline and held-out access contracts are documented in
 [`paper-baselines.md`](paper-baselines.md).
 
+The deterministic E0 adapter-conformance runner also writes schema v1
+directly:
+
+```bash
+make paper-adapter-conformance
+```
+
+It records source-fact policy revisions, per-source micro/macro contract
+fidelity, exact serialization hashes, and structured negative probes. See
+[`adapter-conformance.md`](adapter-conformance.md).
+
 The native runner records the embedding model under `model` and the
 model-facing context tokenizer under `tokenizer`; these are deliberately
 separate roles. Candidate-count results remain under `observed`, `metrics`,

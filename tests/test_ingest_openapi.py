@@ -879,6 +879,8 @@ class TestIngestOpenAPI30:
         assert root["item_type"] == "object"
         assert root["item_field_count"] == 2
         assert fields["goodsNo"]["json_path"] == "$[*].goodsNo"
+        assert consumes["body"]["request_body_root"] is True
+        assert consumes["body"]["json_path"] == "$"
         assert consumes["quantity"]["json_path"] == "$[*].quantity"
 
     def test_response_envelope_aliases_are_preserved_for_execution(self) -> None:
@@ -1122,6 +1124,49 @@ class TestIngestOpenAPI30:
         assert json.loads(request.data.decode("utf-8")) == {
             "attributes": {"color": {"value": "red"}}
         }
+
+    def test_root_additional_properties_response_is_preserved_as_body_producer(
+        self,
+    ) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Inventory API", "version": "1.0.0"},
+            "paths": {
+                "/inventory": {
+                    "get": {
+                        "operationId": "getInventory",
+                        "responses": {
+                            "200": {
+                                "description": "Inventory by status",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "type": "integer",
+                                                "format": "int32",
+                                            },
+                                        }
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+        tool = tools[0]
+        response_fields = tool.metadata["openapi"]["response"]["fields"]
+        produces = tool.metadata["api_contract"]["produces"]
+
+        assert response_fields[0]["response_body_root"] is True
+        assert response_fields[0]["additional_properties"] is True
+        assert produces[0]["field_name"] == "body"
+        assert produces[0]["json_path"] == "$"
+        assert produces[0]["map_value"] is True
+        assert produces[0]["value_type"] == "integer"
 
     def test_parameter_content_schema_is_preserved_for_json_query_parameter(self) -> None:
         spec = {

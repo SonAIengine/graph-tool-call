@@ -127,6 +127,16 @@ An adapter conformance suite should cover:
 6. unsupported feature diagnostics
 7. stable serialization through `IngestResult.to_dict()`
 
+The built-in E0 runner evaluates these requirements against independently
+inspected source facts:
+
+```bash
+make paper-adapter-conformance
+```
+
+Metric definitions, denominator rules, and current limitations are in
+[E0 Adapter Conformance](../research/adapter-conformance.md).
+
 ## XGEN boundary
 
 XGEN may choose adapters, store source documents, resolve credentials, display
@@ -157,6 +167,20 @@ application auth layer.
 Subscription fields are retained for discovery, but a warning records that an
 application-provided WebSocket/SSE transport is required. See
 [GraphQL Introspection Ingest](graphql-introspection-ingest.md).
+
+## Built-in MCP tools adapter
+
+MCP `tools/list` rows preserve the complete `inputSchema` and optional
+`outputSchema`. Normalized metadata includes:
+
+- `request_body_schema` and optional `response_schema`;
+- `mcp.input_schema`, optional `mcp.output_schema`, and server provenance;
+- `api_contract.consumes/produces`; and
+- an abstract `tools/call` execution descriptor.
+
+The descriptor intentionally records `requires_client_binding=true`.
+Connection lifecycle, credentials, and the concrete MCP client remain
+application responsibilities.
 
 ## Follow-up adapters
 

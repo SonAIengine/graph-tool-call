@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from typing import Any
 from urllib.parse import urlparse
@@ -34,8 +35,52 @@ def ingest_mcp_tools(
     for tool_dict in tools:
         schema = parse_mcp_tool(tool_dict)
         schema.metadata["source"] = "mcp"
+        input_schema = tool_dict.get("inputSchema")
+        output_schema = tool_dict.get("outputSchema")
+        if not isinstance(input_schema, dict):
+            input_schema = {"type": "object", "properties": {}}
+        if not isinstance(output_schema, dict):
+            output_schema = {}
+
+        request_schema = copy.deepcopy(input_schema)
+        response_schema = copy.deepcopy(output_schema)
+
+        from graph_tool_call.graphify.io_contract import build_io_contract
+
+        produces, consumes = build_io_contract(
+            request_body_schema=request_schema,
+            response_schema=response_schema,
+        )
+        schema.metadata.update(
+            {
+                "request_body_schema": request_schema,
+                "input_locations": (["mcp_argument"] if request_schema.get("properties") else []),
+                "api_contract": {
+                    "produces": produces,
+                    "consumes": consumes,
+                    "links": [],
+                },
+                "mcp": {
+                    "input_schema": copy.deepcopy(request_schema),
+                    **(
+                        {"output_schema": copy.deepcopy(response_schema)} if response_schema else {}
+                    ),
+                },
+                "execution": {
+                    "transport": "mcp",
+                    "method": "tools/call",
+                    "tool_name": schema.name,
+                    "arguments_binding": "parameters_to_arguments",
+                    "requires_client_binding": True,
+                },
+            }
+        )
+        if response_schema:
+            schema.metadata["response_schema"] = response_schema
         if server_name:
             schema.metadata["mcp_server"] = server_name
+            schema.metadata["mcp"]["server_name"] = server_name
+            schema.metadata["execution"]["server_name"] = server_name
             if server_name not in schema.tags:
                 schema.tags.append(server_name)
         normalize_tool(schema)
