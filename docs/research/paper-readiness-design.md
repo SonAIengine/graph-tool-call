@@ -431,11 +431,11 @@ tokenizer accounting task is complete; see
 | B8 | Closest reproducible published graph retriever |
 | B9 | Optional external or small reranker over the same candidate pool |
 
-The primary flat comparator is B3 unless B4 is stronger on development data, in
-which case B4 becomes the preregistered flat comparator. Fusion weights may not
-be tuned on the test split. B0-L receives an explicit context/chunking budget
-and reports model calls, tokens, latency, and cost so that it is not an
-unbounded baseline.
+The primary flat comparator is the strongest frozen B1-B4 method on development
+data, selected before the held-out split is opened. Development selection must
+be recorded as a protocol decision; fusion weights may not be tuned on the test
+split. B0-L receives an explicit context/chunking budget and reports model
+calls, tokens, latency, and cost so that it is not an unbounded baseline.
 
 The related-work audit names B8 before test evaluation. If an exact reproduction
 is impossible, report the missing artifact and avoid superiority claims
@@ -831,6 +831,7 @@ This order prevents five-hour model runs from becoming the development loop.
 | 2026-07-27 | Main-paper claims require public heterogeneous and unseen-family evaluation. |
 | 2026-07-28 | AI-assisted annotation review may unblock development but never substitutes for independent human review. |
 | 2026-07-28 | Experiment schema v1 separates deterministic run identity from exact result content identity. |
+| 2026-07-29 | The strongest frozen B1-B4 development result becomes the primary flat comparator; B3 remains reported even when fusion underperforms B2. |
 
 ## 20. Immediate Next Tasks
 
@@ -841,7 +842,7 @@ This order prevents five-hour model runs from becoming the development loop.
       target/producer/alternative annotations.
 - [ ] Add adapter conformance metrics for request, response, auth, and
       execution templates.
-- [ ] Implement B2 dense and B3 fixed hybrid baselines in the unified harness.
+- [x] Implement B2 dense and B3 fixed hybrid baselines in the unified harness.
 - [x] Add seeded random and oracle baselines to the unified harness.
 - [x] Add the fixed B1 BM25 baseline to the unified harness.
 - [ ] Add the budgeted LLM catalog-selector baseline.

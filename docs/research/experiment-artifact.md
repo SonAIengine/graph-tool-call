@@ -64,7 +64,7 @@ Run the contract suite with:
 make paper-harness-check
 ```
 
-The native B-1/B0-O/B1 runner writes this schema directly rather than passing
+The native B-1/B0-O/B1/B2/B3 runner writes this schema directly rather than passing
 through a legacy adapter:
 
 ```bash
