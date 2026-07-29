@@ -49,6 +49,10 @@ paper-baseline-run:
 		--splits "$${SPLITS:-train,dev}" \
 		--top-k "$${TOP_K:-5}" \
 		--seed "$${SEED:-17}" \
+		--dense-model "$${DENSE_MODEL:-intfloat/multilingual-e5-small}" \
+		--dense-revision "$${DENSE_REVISION:-fd1525a9fd15316a2d503bf26ab031a61d056e98}" \
+		--dense-device "$${DENSE_DEVICE:-cpu}" \
+		--dense-batch-size "$${DENSE_BATCH_SIZE:-32}" \
 		--out "$${OUT:-/tmp/graph-tool-call-paper-baselines.json}"
 
 paper-harness-check:

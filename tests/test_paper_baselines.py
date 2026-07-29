@@ -1,3 +1,6 @@
+import hashlib
+import re
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -6,15 +9,62 @@ import pytest
 from benchmarks.experiment.artifact import validate_artifact
 from benchmarks.paper_baselines import (
     FIXED_BM25_TOKENIZER_REVISION,
+    FIXED_RRF_K,
     FixedBM25Retriever,
+    FixedDenseRetriever,
+    RankedCandidate,
+    SentenceTransformerDenseEncoder,
     fixed_lexical_tokens,
     oracle_rank,
+    reciprocal_rank_fusion,
     run_paper_baselines,
     seeded_random_rank,
 )
 from graph_tool_call.core.tool import ToolSchema
 
 MANIFEST = Path("benchmarks/corpus/manifest.json")
+
+
+class DeterministicTestEncoder:
+    def encode_documents(self, texts: list[str]) -> list[list[float]]:
+        return [_test_embedding(text) for text in texts]
+
+    def encode_queries(self, texts: list[str]) -> list[list[float]]:
+        return [_test_embedding(text) for text in texts]
+
+
+def _test_embedding(text: str) -> list[float]:
+    values = [0.0] * 32
+    for token in re.findall(r"[^\W_]+", text.casefold()):
+        digest = hashlib.sha256(token.encode()).digest()
+        values[int.from_bytes(digest[:2], "big") % len(values)] += 1.0
+    return values
+
+
+def _stable_summary(summary):
+    stable = {
+        "case_count": summary["case_count"],
+        "family_count": summary["family_count"],
+        "source_count": summary["source_count"],
+        "split_case_counts": summary["split_case_counts"],
+        "baselines": {},
+        "per_source": {},
+    }
+    for baseline, metrics in summary["baselines"].items():
+        stable["baselines"][baseline] = {
+            key: value for key, value in metrics.items() if key != "latency_ms"
+        }
+    for source_id, baselines in summary["per_source"].items():
+        stable["per_source"][source_id] = {
+            baseline: {key: value for key, value in metrics.items() if key != "latency_ms"}
+            for baseline, metrics in baselines.items()
+        }
+    return stable
+
+
+class _FakeVector(list):
+    def tolist(self) -> list[float]:
+        return list(self)
 
 
 @pytest.fixture(scope="module")
@@ -26,6 +76,9 @@ def baseline_artifact(tmp_path_factory: pytest.TempPathFactory):
         seed=17,
         output_path=output,
         created_at="2026-07-29T00:00:00+00:00",
+        dense_encoder=DeterministicTestEncoder(),
+        dense_model_name="deterministic-test-encoder",
+        dense_model_revision="v1",
     )
 
 
@@ -79,6 +132,94 @@ def test_retrievers_handle_empty_catalog_and_duplicate_names():
     assert FixedBM25Retriever([]).rank("anything", top_k=5) == []
     assert FixedBM25Retriever(duplicates).rank("anything", top_k=5)[0].name == "same"
     assert len(FixedBM25Retriever(duplicates).rank("anything", top_k=5)) == 1
+
+
+def test_fixed_dense_retriever_uses_cosine_and_stable_ties():
+    tools = [
+        ToolSchema(name="zetaOrder", description="purchase order"),
+        ToolSchema(name="memberList", description="customer members"),
+        ToolSchema(name="alphaOrder", description="purchase order"),
+    ]
+
+    ranking = FixedDenseRetriever(tools, DeterministicTestEncoder()).rank(
+        "purchase order",
+        top_k=3,
+    )
+
+    assert {candidate.name for candidate in ranking[:2]} == {"alphaOrder", "zetaOrder"}
+    assert ranking[0].score >= ranking[1].score >= ranking[2].score
+
+
+def test_fixed_dense_rejects_invalid_encoder_output():
+    class WrongCountEncoder(DeterministicTestEncoder):
+        def encode_documents(self, texts):
+            return []
+
+    class MixedDimensionEncoder(DeterministicTestEncoder):
+        def encode_documents(self, texts):
+            return [[1.0], [1.0, 0.0]]
+
+    tools = [ToolSchema(name="one"), ToolSchema(name="two")]
+    with pytest.raises(ValueError, match="different number"):
+        FixedDenseRetriever(tools, WrongCountEncoder())
+    with pytest.raises(ValueError, match="share one dimension"):
+        FixedDenseRetriever(tools, MixedDimensionEncoder())
+
+
+def test_sentence_transformer_encoder_pins_revision_and_e5_prefixes(monkeypatch):
+    calls = {}
+
+    class FakeModel:
+        def encode(self, texts, **kwargs):
+            calls["texts"] = texts
+            calls["encode_kwargs"] = kwargs
+            return [_FakeVector([1.0, 0.0]) for _ in texts]
+
+    def fake_sentence_transformer(model_name, **kwargs):
+        calls["model_name"] = model_name
+        calls["model_kwargs"] = kwargs
+        return FakeModel()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        SimpleNamespace(SentenceTransformer=fake_sentence_transformer),
+    )
+    encoder = SentenceTransformerDenseEncoder(
+        model_name="model",
+        revision="commit",
+        device="cpu",
+        batch_size=7,
+    )
+
+    assert encoder.encode_documents(["tool document"]) == [[1.0, 0.0]]
+    assert calls["texts"] == ["passage: tool document"]
+    assert calls["model_kwargs"] == {
+        "revision": "commit",
+        "device": "cpu",
+        "trust_remote_code": False,
+    }
+    encoder.encode_queries(["user query"])
+    assert calls["texts"] == ["query: user query"]
+    assert calls["encode_kwargs"]["batch_size"] == 7
+    assert calls["encode_kwargs"]["normalize_embeddings"] is True
+
+
+def test_fixed_rrf_is_unweighted_and_uses_stable_ties():
+    lexical = [
+        RankedCandidate("alpha", 20.0),
+        RankedCandidate("beta", 10.0),
+    ]
+    dense = [
+        RankedCandidate("beta", 0.9),
+        RankedCandidate("alpha", 0.8),
+    ]
+
+    ranking = reciprocal_rank_fusion([lexical, dense], top_k=2)
+
+    assert FIXED_RRF_K == 60
+    assert [candidate.name for candidate in ranking] == ["alpha", "beta"]
+    assert ranking[0].score == pytest.approx(ranking[1].score)
 
 
 def test_seeded_random_is_case_stable_and_seed_sensitive():
@@ -139,14 +280,20 @@ def test_train_dev_runner_emits_valid_paired_artifact(baseline_artifact):
         "seeded_random",
         "oracle",
         "bm25",
+        "dense",
+        "hybrid_rrf",
     }
+    assert baseline_artifact.model["name"] == "deterministic-test-encoder"
+    assert baseline_artifact.model["revision"] == "v1"
+    assert baseline_artifact.model["provider"] == "injected"
+    assert baseline_artifact.summary["setup"]["dense_model_load_ms"] >= 0.0
 
 
 def test_all_baselines_share_candidate_count_budget(baseline_artifact):
     top_k = baseline_artifact.config["top_k"]
 
     for case in baseline_artifact.cases:
-        for baseline in ("seeded_random", "oracle", "bm25"):
+        for baseline in ("seeded_random", "oracle", "bm25", "dense", "hybrid_rrf"):
             retrieved = case["observed"][baseline]["retrieved"]
             metrics = case["metrics"][baseline]
             assert len(retrieved) <= top_k
@@ -164,6 +311,8 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
                 "schema_utf8_bytes",
                 "latency_ms",
             }
+    assert "latency_ms" in baseline_artifact.summary["baselines"]["dense"]
+    assert "latency_ms" in baseline_artifact.statistics["bootstrap"]["hybrid_rrf"]
 
 
 def test_runner_rankings_are_reproducible(baseline_artifact, tmp_path: Path):
@@ -173,12 +322,15 @@ def test_runner_rankings_are_reproducible(baseline_artifact, tmp_path: Path):
         seed=17,
         output_path=tmp_path / "repeated.json",
         created_at="2026-07-29T00:00:00+00:00",
+        dense_encoder=DeterministicTestEncoder(),
+        dense_model_name="deterministic-test-encoder",
+        dense_model_revision="v1",
     )
 
     first_rankings = [case["observed"] for case in baseline_artifact.cases]
     repeated_rankings = [case["observed"] for case in repeated.cases]
     assert first_rankings == repeated_rankings
-    assert baseline_artifact.summary == repeated.summary
+    assert _stable_summary(baseline_artifact.summary) == _stable_summary(repeated.summary)
 
 
 def test_held_out_split_is_blocked_without_explicit_access(tmp_path: Path):
