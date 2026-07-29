@@ -1,6 +1,6 @@
 # Frozen Paper Retrieval Baselines
 
-The unified paper harness implements three deterministic development
+The unified paper harness implements five deterministic development
 comparators:
 
 | ID | Artifact key | Frozen behavior |
@@ -8,6 +8,8 @@ comparators:
 | B-1 | `seeded_random` | Per-case seeded sampling from sorted tool names |
 | B0-O | `oracle` | Annotated targets, required producers, then alternatives |
 | B1 | `bm25` | BM25 over tool name, one-line summary, and description |
+| B2 | `dense` | Revision-pinned multilingual E5 cosine retrieval |
+| B3 | `hybrid_rrf` | Unweighted RRF over complete B1 and B2 rankings |
 
 These baselines are research comparators, not product retrieval modes. They
 deliberately avoid graph-tool-call semantic expansion, contract scoring,
@@ -16,6 +18,7 @@ target selection, and graph evidence.
 ## Run
 
 ```bash
+poetry install --with dev -E embedding-local
 make paper-baseline-run
 
 TOP_K=8 SEED=17 OUT=/tmp/paper-baselines-k8.json \
@@ -72,6 +75,35 @@ emits Korean character bigrams for tokens longer than two characters. It does
 not stem, use parameters, paths, contracts, graph edges, query expansion,
 phrase boosts, or graph-tool-call's production BM25 scorer. Ties are resolved
 by case-folded tool name and then the original name.
+
+### B2 Fixed Dense
+
+B2 uses
+[`intfloat/multilingual-e5-small`](https://huggingface.co/intfloat/multilingual-e5-small/tree/fd1525a9fd15316a2d503bf26ab031a61d056e98)
+at commit `fd1525a9fd15316a2d503bf26ab031a61d056e98` (MIT license).
+The model supports the English and Korean development queries without changing
+models between slices. It embeds exactly the same three text fields as B1,
+using the E5 `query: ` and `passage: ` prefixes and normalized embeddings.
+Ranking uses cosine similarity with a stable tool-name tie break.
+
+The reference command runs on CPU with batch size 32. The artifact records the
+model commit, sentence-transformers version, device, batch size, model load
+latency, and document encoding latency for each source. Per-case dense latency
+covers query encoding and ranking; it excludes both separately reported setup
+stages.
+
+### B3 Fixed Hybrid
+
+B3 computes unweighted reciprocal rank fusion over the complete B1 and B2
+rankings:
+
+```text
+RRF(tool) = 1 / (60 + rank_bm25) + 1 / (60 + rank_dense)
+```
+
+It uses `k=60`, no tuned channel weights, and no graph, contract, selector, or
+semantic boosts. B3 latency is the sum of B1 ranking, B2 query ranking, and RRF
+fusion for the case.
 
 ## Metrics And Budget
 

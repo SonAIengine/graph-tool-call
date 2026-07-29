@@ -1,9 +1,10 @@
-"""Run frozen random, oracle, and BM25 baselines on the public corpus."""
+"""Run frozen random, oracle, BM25, dense, and hybrid baselines."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import time
 from collections import defaultdict
@@ -35,14 +36,21 @@ from graph_tool_call import ingest_source
 from graph_tool_call.core.tool import ToolSchema
 
 from .retrievers import (
+    DEFAULT_DENSE_MODEL,
+    DEFAULT_DENSE_MODEL_REVISION,
     FIXED_BM25_TOKENIZER_REVISION,
+    FIXED_RRF_K,
+    DenseEncoder,
     FixedBM25Retriever,
+    FixedDenseRetriever,
     RankedCandidate,
+    SentenceTransformerDenseEncoder,
     oracle_rank,
+    reciprocal_rank_fusion,
     seeded_random_rank,
 )
 
-BASELINE_NAMES = ("seeded_random", "oracle", "bm25")
+BASELINE_NAMES = ("seeded_random", "oracle", "bm25", "dense", "hybrid_rrf")
 PRIMARY_METRICS = (
     "target_hit_at_k",
     "producer_recall_at_k",
@@ -53,6 +61,7 @@ PRIMARY_METRICS = (
     "average_precision",
     "ndcg_at_k",
 )
+STATISTICAL_METRICS = (*PRIMARY_METRICS, "latency_ms")
 
 
 def run_paper_baselines(
@@ -64,10 +73,19 @@ def run_paper_baselines(
     output_path: str | Path = "/tmp/graph-tool-call-paper-baselines.json",
     allow_held_out: bool = False,
     created_at: str | None = None,
+    dense_encoder: DenseEncoder | None = None,
+    dense_model_name: str = DEFAULT_DENSE_MODEL,
+    dense_model_revision: str = DEFAULT_DENSE_MODEL_REVISION,
+    dense_device: str = "cpu",
+    dense_batch_size: int = 32,
 ) -> ExperimentArtifact:
-    """Evaluate the three frozen baselines and return one paired artifact."""
+    """Evaluate the five frozen baselines and return one paired artifact."""
     if top_k <= 0:
         raise ValueError("top_k must be greater than zero.")
+    if not dense_model_name.strip() or not dense_model_revision.strip():
+        raise ValueError("dense_model_name and dense_model_revision must be non-empty.")
+    if dense_batch_size <= 0:
+        raise ValueError("dense_batch_size must be greater than zero.")
     normalized_splits = tuple(dict.fromkeys(split.strip() for split in splits if split.strip()))
     invalid_splits = sorted(set(normalized_splits) - {"train", "dev", "test"})
     if not normalized_splits or invalid_splits:
@@ -96,6 +114,24 @@ def run_paper_baselines(
 
     manifest = load_corpus_manifest(resolved_manifest)
     manifest_root = resolved_manifest.parent
+    encoder_provider = "injected"
+    encoder_library = f"{type(dense_encoder).__module__}.{type(dense_encoder).__qualname__}"
+    encoder_library_version = ""
+    if dense_encoder is None:
+        dense_encoder = SentenceTransformerDenseEncoder(
+            model_name=dense_model_name,
+            revision=dense_model_revision,
+            device=dense_device,
+            batch_size=dense_batch_size,
+        )
+        encoder_provider = "sentence-transformers"
+        encoder_library = "sentence-transformers"
+        encoder_library_version = _package_version("sentence-transformers")
+    started = time.perf_counter()
+    warmup = getattr(dense_encoder, "warmup", None)
+    if callable(warmup):
+        warmup()
+    dense_model_load_ms = (time.perf_counter() - started) * 1000
     selected_sources = [
         source
         for source in manifest["sources"]
@@ -112,6 +148,8 @@ def run_paper_baselines(
                 ground_truth["cases"],
                 top_k=top_k,
                 seed=seed,
+                dense_encoder=dense_encoder,
+                dense_model_load_ms=dense_model_load_ms,
             )
         )
 
@@ -132,6 +170,14 @@ def run_paper_baselines(
         str(seed),
         "--out",
         output,
+        "--dense-model",
+        dense_model_name,
+        "--dense-revision",
+        dense_model_revision,
+        "--dense-device",
+        dense_device,
+        "--dense-batch-size",
+        str(dense_batch_size),
     ]
     if allow_held_out:
         replay_command.append("--allow-held-out")
@@ -174,7 +220,33 @@ def run_paper_baselines(
                     "query_expansion": False,
                     "graph_signals": False,
                 },
+                "dense": {
+                    "label": "B2",
+                    "model": dense_model_name,
+                    "revision": dense_model_revision,
+                    "document_prefix": "passage: ",
+                    "query_prefix": "query: ",
+                    "fields": ["name", "ai_metadata.one_line_summary", "description"],
+                    "similarity": "cosine",
+                    "normalized_embeddings": True,
+                    "device": dense_device,
+                    "batch_size": dense_batch_size,
+                },
+                "hybrid_rrf": {
+                    "label": "B3",
+                    "channels": ["bm25", "dense"],
+                    "fusion": "unweighted_reciprocal_rank_fusion",
+                    "rrf_k": FIXED_RRF_K,
+                },
             },
+        },
+        model={
+            "name": dense_model_name,
+            "provider": encoder_provider,
+            "revision": dense_model_revision,
+            "role": "embedding",
+            "library": encoder_library,
+            "library_version": encoder_library_version,
         },
         replay={
             "command": replay_command,
@@ -216,8 +288,11 @@ def _evaluate_source(
     *,
     top_k: int,
     seed: int,
+    dense_encoder: DenseEncoder,
+    dense_model_load_ms: float,
 ) -> list[dict[str, Any]]:
     bm25 = FixedBM25Retriever(tools)
+    dense = FixedDenseRetriever(tools, dense_encoder)
     available_names = {tool.name for tool in tools}
     tools_by_name = {tool.name: tool for tool in tools}
     evaluated: list[dict[str, Any]] = []
@@ -245,9 +320,24 @@ def _evaluate_source(
         )
         latencies["oracle"] = (time.perf_counter() - started) * 1000
 
+        full_ranking_size = len(tools)
         started = time.perf_counter()
-        rankings["bm25"] = bm25.rank(case["query"], top_k=top_k)
+        bm25_full = bm25.rank(case["query"], top_k=full_ranking_size)
         latencies["bm25"] = (time.perf_counter() - started) * 1000
+        rankings["bm25"] = bm25_full[:top_k]
+
+        started = time.perf_counter()
+        dense_full = dense.rank(case["query"], top_k=full_ranking_size)
+        latencies["dense"] = (time.perf_counter() - started) * 1000
+        rankings["dense"] = dense_full[:top_k]
+
+        started = time.perf_counter()
+        rankings["hybrid_rrf"] = reciprocal_rank_fusion(
+            [bm25_full, dense_full],
+            top_k=top_k,
+        )
+        fusion_latency_ms = (time.perf_counter() - started) * 1000
+        latencies["hybrid_rrf"] = latencies["bm25"] + latencies["dense"] + fusion_latency_ms
 
         observed: dict[str, Any] = {}
         metrics: dict[str, Any] = {}
@@ -278,6 +368,10 @@ def _evaluate_source(
                     "source_type": source["source_type"],
                     "domain": source.get("domain", ""),
                     "tool_count": len(tools),
+                    "baseline_setup_ms": {
+                        "dense_model_load": dense_model_load_ms,
+                        "dense_document_encoding": dense.build_latency_ms,
+                    },
                 },
                 "expected": {
                     "expected_targets": list(case["expected_targets"]),
@@ -370,6 +464,17 @@ def _summarize(
         "split_case_counts": dict(sorted(split_counts.items())),
         "baselines": per_baseline,
         "per_source": per_source,
+        "setup": {
+            "dense_model_load_ms": (
+                cases[0]["context"]["baseline_setup_ms"]["dense_model_load"] if cases else 0.0
+            ),
+            "dense_document_encoding_ms_by_source": {
+                source_id: source_cases[0]["context"]["baseline_setup_ms"][
+                    "dense_document_encoding"
+                ]
+                for source_id, source_cases in sorted(grouped.items())
+            },
+        },
     }
     statistics = {
         "bootstrap": {
@@ -384,7 +489,7 @@ def _summarize(
                         )
                     ),
                 }
-                for metric in PRIMARY_METRICS
+                for metric in STATISTICAL_METRICS
             }
             for baseline in BASELINE_NAMES
         }
@@ -395,7 +500,13 @@ def _summarize(
 def _aggregate_metrics(cases: list[dict[str, Any]], baseline: str) -> dict[str, float]:
     if not cases:
         return {metric: 0.0 for metric in PRIMARY_METRICS}
-    metric_names = (*PRIMARY_METRICS, "candidate_count", "schema_chars", "schema_utf8_bytes")
+    metric_names = (
+        *PRIMARY_METRICS,
+        "candidate_count",
+        "schema_chars",
+        "schema_utf8_bytes",
+        "latency_ms",
+    )
     result = {metric: fmean(_metric_values(cases, baseline, metric)) for metric in metric_names}
     result["producer_case_count"] = float(
         sum(bool(case["expected"]["required_producers"]) for case in cases)
@@ -425,6 +536,13 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _package_version(package: str) -> str:
+    try:
+        return importlib.metadata.version(package)
+    except importlib.metadata.PackageNotFoundError:
+        return ""
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST_PATH))
@@ -433,6 +551,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--out", required=True)
     parser.add_argument("--allow-held-out", action="store_true")
+    parser.add_argument("--dense-model", default=DEFAULT_DENSE_MODEL)
+    parser.add_argument("--dense-revision", default=DEFAULT_DENSE_MODEL_REVISION)
+    parser.add_argument("--dense-device", default="cpu")
+    parser.add_argument("--dense-batch-size", type=int, default=32)
     return parser.parse_args()
 
 
@@ -445,6 +567,10 @@ def main() -> int:
         seed=args.seed,
         output_path=args.out,
         allow_held_out=args.allow_held_out,
+        dense_model_name=args.dense_model,
+        dense_model_revision=args.dense_revision,
+        dense_device=args.dense_device,
+        dense_batch_size=args.dense_batch_size,
     )
     write_artifact(args.out, artifact)
     print(
