@@ -15,6 +15,9 @@ from benchmarks.paper_baselines import (
     RankedCandidate,
     SentenceTransformerDenseEncoder,
     fixed_lexical_tokens,
+    flat_semantic_coverage,
+    flat_semantic_document,
+    flat_semantic_metadata,
     oracle_rank,
     reciprocal_rank_fusion,
     run_paper_baselines,
@@ -114,6 +117,166 @@ def test_fixed_bm25_ranks_name_summary_and_description():
 
     assert ranking[0].name == "listMembers"
     assert ranking[0].score > ranking[1].score
+
+
+def test_flat_semantic_document_adds_only_frozen_metadata_fields():
+    tool = ToolSchema(
+        name="getOrder",
+        description="Read an order.",
+        metadata={
+            "ai_metadata": {
+                "one_line_summary": "Order detail",
+                "canonical_action": "read",
+                "primary_resource": "order",
+                "result_shape": "single",
+            },
+            "openapi": {"path_module": "orders"},
+            "api_contract": {
+                "consumes": [{"field_name": "secret_contract_field"}],
+            },
+            "graph": {"neighbors": ["secret_graph_neighbor"]},
+        },
+    )
+
+    document = flat_semantic_document(tool)
+
+    assert "canonical_action read" in document
+    assert "primary_resource order" in document
+    assert "path_module orders" in document
+    assert "result_shape single" in document
+    assert "secret_contract_field" not in document
+    assert "secret_graph_neighbor" not in document
+
+
+def test_flat_semantic_bm25_disambiguates_with_shape_metadata():
+    tools = [
+        ToolSchema(
+            name="alpha",
+            description="Order operation.",
+            metadata={
+                "ai_metadata": {
+                    "canonical_action": "search",
+                    "primary_resource": "order",
+                    "result_shape": "list",
+                }
+            },
+        ),
+        ToolSchema(
+            name="zeta",
+            description="Order operation.",
+            metadata={
+                "ai_metadata": {
+                    "canonical_action": "read",
+                    "primary_resource": "order",
+                    "result_shape": "single",
+                }
+            },
+        ),
+    ]
+
+    base = FixedBM25Retriever(tools).rank("single order", top_k=2)
+    semantic = FixedBM25Retriever(
+        tools,
+        document_builder=flat_semantic_document,
+    ).rank("single order", top_k=2)
+
+    assert base[0].name == "alpha"
+    assert semantic[0].name == "zeta"
+    assert semantic[0].score > semantic[1].score
+
+
+def test_flat_semantic_metadata_uses_deterministic_openapi_derivation():
+    tool = ToolSchema(
+        name="listPets",
+        description="List all pets.",
+        tags=["pet"],
+        metadata={
+            "source": "openapi",
+            "method": "get",
+            "path": "/pets",
+            "openapi": {"operation_id": "listPets"},
+        },
+    )
+
+    semantics = flat_semantic_metadata(tool)
+
+    assert semantics == {
+        "canonical_action": "search",
+        "primary_resource": "pet",
+        "path_module": "pets",
+        "result_shape": "list",
+    }
+    assert "ai_metadata" not in tool.metadata
+    assert tool.metadata["openapi"] == {"operation_id": "listPets"}
+
+
+def test_flat_semantic_coverage_does_not_invent_non_openapi_metadata():
+    tools = [
+        ToolSchema(
+            name="read_file",
+            metadata={
+                "source": "mcp",
+                "ai_metadata": {
+                    "canonical_action": "read",
+                    "primary_resource": "file",
+                    "result_shape": "single",
+                },
+            },
+        ),
+        ToolSchema(name="write_file", metadata={"source": "mcp"}),
+    ]
+
+    coverage = flat_semantic_coverage(tools)
+
+    assert coverage["tool_count"] == 2
+    assert coverage["canonical_action_count"] == 1
+    assert coverage["canonical_action_rate"] == 0.5
+    assert flat_semantic_metadata(tools[1]) == {
+        "canonical_action": "",
+        "primary_resource": "",
+        "path_module": "",
+        "result_shape": "",
+    }
+    assert flat_semantic_coverage([]) == {
+        "tool_count": 0,
+        "canonical_action_count": 0,
+        "primary_resource_count": 0,
+        "path_module_count": 0,
+        "result_shape_count": 0,
+        "canonical_action_rate": 0.0,
+        "primary_resource_rate": 0.0,
+        "path_module_rate": 0.0,
+        "result_shape_rate": 0.0,
+    }
+
+
+def test_fixed_dense_accepts_the_same_flat_semantic_document_builder():
+    class RecordingEncoder(DeterministicTestEncoder):
+        documents: list[str] = []
+
+        def encode_documents(self, texts):
+            self.documents = list(texts)
+            return super().encode_documents(texts)
+
+    encoder = RecordingEncoder()
+    tool = ToolSchema(
+        name="getOrder",
+        metadata={
+            "ai_metadata": {
+                "canonical_action": "read",
+                "primary_resource": "order",
+                "result_shape": "single",
+            }
+        },
+    )
+
+    FixedDenseRetriever(
+        [tool],
+        encoder,
+        document_builder=flat_semantic_document,
+    )
+
+    assert "result_shape single" in encoder.documents[0]
 
 
 def test_fixed_tokenizer_splits_identifiers_and_adds_korean_bigrams():
@@ -282,6 +445,7 @@ def test_train_dev_runner_emits_valid_paired_artifact(baseline_artifact):
         "bm25",
         "dense",
         "hybrid_rrf",
+        "flat_semantic_rrf",
     }
     assert baseline_artifact.model["name"] == "deterministic-test-encoder"
     assert baseline_artifact.model["revision"] == "v1"
@@ -293,7 +457,14 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
     top_k = baseline_artifact.config["top_k"]
 
     for case in baseline_artifact.cases:
-        for baseline in ("seeded_random", "oracle", "bm25", "dense", "hybrid_rrf"):
+        for baseline in (
+            "seeded_random",
+            "oracle",
+            "bm25",
+            "dense",
+            "hybrid_rrf",
+            "flat_semantic_rrf",
+        ):
             retrieved = case["observed"][baseline]["retrieved"]
             metrics = case["metrics"][baseline]
             assert len(retrieved) <= top_k
@@ -313,6 +484,45 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
             }
     assert "latency_ms" in baseline_artifact.summary["baselines"]["dense"]
     assert "latency_ms" in baseline_artifact.statistics["bootstrap"]["hybrid_rrf"]
+    assert baseline_artifact.config["baselines"]["flat_semantic_rrf"] == {
+        "label": "B4",
+        "channels": ["flat_semantic_bm25", "flat_semantic_dense"],
+        "fusion": "unweighted_reciprocal_rank_fusion",
+        "rrf_k": 60,
+        "base_fields": [
+            "name",
+            "ai_metadata.one_line_summary",
+            "description",
+        ],
+        "semantic_fields": [
+            "ai_metadata.canonical_action",
+            "ai_metadata.primary_resource",
+            "openapi.path_module",
+            "ai_metadata.result_shape",
+        ],
+        "openapi_semantic_derivation": "derive_openapi_tool_semantics",
+        "query_expansion": False,
+        "graph_signals": False,
+        "contract_signals": False,
+        "selector_signals": False,
+    }
+    assert set(baseline_artifact.summary["setup"]["flat_semantic_coverage_by_source"]) == {
+        "graphql-commerce-project-fixture",
+        "mcp-filesystem-project-fixture",
+        "mcp-memory-2025.4.25",
+        "openapi-kubernetes-core-v1-ad6c155",
+        "openapi-swagger-petstore-1.0.27",
+    }
+    for setup_key in (
+        "bm25_index_build_ms_by_source",
+        "dense_document_encoding_ms_by_source",
+        "flat_semantic_document_build_ms_by_source",
+        "flat_semantic_bm25_index_build_ms_by_source",
+        "flat_semantic_dense_document_encoding_ms_by_source",
+    ):
+        assert set(baseline_artifact.summary["setup"][setup_key]) == set(
+            baseline_artifact.summary["per_source"]
+        )
 
 
 def test_runner_rankings_are_reproducible(baseline_artifact, tmp_path: Path):

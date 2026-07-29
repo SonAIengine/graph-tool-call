@@ -8,11 +8,12 @@ import random
 import re
 import time
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from graph_tool_call.core.tool import ToolSchema
+from graph_tool_call.graphify.semantics import derive_openapi_tool_semantics
 
 FIXED_BM25_TOKENIZER_REVISION = "paper-bm25-lexical-v1"
 DEFAULT_DENSE_MODEL = "intfloat/multilingual-e5-small"
@@ -59,15 +60,18 @@ class FixedBM25Retriever:
         *,
         k1: float = 1.2,
         b: float = 0.75,
+        document_builder: Callable[[ToolSchema], str] | None = None,
     ) -> None:
+        started = time.perf_counter()
         self.k1 = float(k1)
         self.b = float(b)
+        build_document = document_builder or baseline_document
         unique_tools: dict[str, ToolSchema] = {}
         for tool in sorted(tools, key=_tool_sort_key):
             unique_tools.setdefault(tool.name, tool)
         self._tools = list(unique_tools.values())
         self._documents = [
-            Counter(fixed_lexical_tokens(baseline_document(tool))) for tool in self._tools
+            Counter(fixed_lexical_tokens(build_document(tool))) for tool in self._tools
         ]
         self._document_lengths = [sum(document.values()) for document in self._documents]
         self._average_document_length = (
@@ -78,6 +82,7 @@ class FixedBM25Retriever:
         self._document_frequency: Counter[str] = Counter()
         for document in self._documents:
             self._document_frequency.update(document)
+        self.build_latency_ms = (time.perf_counter() - started) * 1000
 
     def rank(self, query: str, *, top_k: int) -> list[RankedCandidate]:
         if top_k <= 0 or not self._tools:
@@ -189,16 +194,21 @@ class SentenceTransformerDenseEncoder:
 class FixedDenseRetriever:
     """Cosine dense retrieval over the same frozen text as B1."""
 
-    def __init__(self, tools: list[ToolSchema], encoder: DenseEncoder) -> None:
+    def __init__(
+        self,
+        tools: list[ToolSchema],
+        encoder: DenseEncoder,
+        *,
+        document_builder: Callable[[ToolSchema], str] | None = None,
+    ) -> None:
+        build_document = document_builder or baseline_document
         unique_tools: dict[str, ToolSchema] = {}
         for tool in sorted(tools, key=_tool_sort_key):
             unique_tools.setdefault(tool.name, tool)
         self._tools = list(unique_tools.values())
         self._encoder = encoder
         started = time.perf_counter()
-        self._embeddings = encoder.encode_documents(
-            [baseline_document(tool) for tool in self._tools]
-        )
+        self._embeddings = encoder.encode_documents([build_document(tool) for tool in self._tools])
         self.build_latency_ms = (time.perf_counter() - started) * 1000
         if len(self._embeddings) != len(self._tools):
             raise ValueError("Dense encoder returned a different number of document embeddings.")
@@ -297,6 +307,69 @@ def baseline_document(tool: ToolSchema) -> str:
     return " ".join((tool.name, str(summary or ""), tool.description or ""))
 
 
+def flat_semantic_document(tool: ToolSchema) -> str:
+    """Add only B4's frozen flat semantic fields to the B1 document."""
+    semantics = flat_semantic_metadata(tool)
+    semantic_text = " ".join(
+        f"{field} {semantics[field]}"
+        for field in (
+            "canonical_action",
+            "primary_resource",
+            "path_module",
+            "result_shape",
+        )
+        if semantics[field]
+    )
+    return " ".join((baseline_document(tool), semantic_text)).strip()
+
+
+def flat_semantic_metadata(tool: ToolSchema) -> dict[str, str]:
+    """Read normalized flat semantics without graph or contract evidence."""
+    metadata = tool.metadata if isinstance(tool.metadata, dict) else {}
+    ai_metadata = (
+        metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
+    )
+    openapi = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
+
+    derived: dict[str, Any] = {}
+    if metadata.get("source") == "openapi" or openapi:
+        derived = derive_openapi_tool_semantics(tool)
+    derived_ai = derived.get("ai_metadata") if isinstance(derived.get("ai_metadata"), dict) else {}
+    derived_openapi = derived.get("openapi") if isinstance(derived.get("openapi"), dict) else {}
+
+    return {
+        "canonical_action": _semantic_value(ai_metadata.get("canonical_action"))
+        or _semantic_value(derived_ai.get("canonical_action")),
+        "primary_resource": _semantic_value(ai_metadata.get("primary_resource"))
+        or _semantic_value(derived_ai.get("primary_resource")),
+        "path_module": _semantic_value(openapi.get("path_module"))
+        or _semantic_value(derived_openapi.get("path_module")),
+        "result_shape": _semantic_value(ai_metadata.get("result_shape"))
+        or _semantic_value(derived_ai.get("result_shape")),
+    }
+
+
+def flat_semantic_coverage(tools: list[ToolSchema]) -> dict[str, float | int]:
+    """Report how much normalized semantic metadata B4 can actually observe."""
+    unique_tools = {tool.name: tool for tool in sorted(tools, key=_tool_sort_key)}
+    total = len(unique_tools)
+    rows = [flat_semantic_metadata(tool) for tool in unique_tools.values()]
+    counts = {
+        field: sum(bool(row[field]) for row in rows)
+        for field in (
+            "canonical_action",
+            "primary_resource",
+            "path_module",
+            "result_shape",
+        )
+    }
+    return {
+        "tool_count": total,
+        **{f"{field}_count": count for field, count in counts.items()},
+        **{f"{field}_rate": count / total if total else 0.0 for field, count in counts.items()},
+    }
+
+
 def _cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
     if len(left) != len(right):
         raise ValueError("Dense query and document embeddings must share one dimension.")
@@ -316,3 +389,10 @@ def _contains_hangul(token: str) -> bool:
 
 def _tool_sort_key(tool: ToolSchema) -> tuple[str, str]:
     return tool.name.casefold(), tool.name
+
+
+def _semantic_value(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"unknown", "unassigned"}:
+        return ""
+    return normalized

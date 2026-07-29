@@ -1,6 +1,6 @@
 # Frozen Paper Retrieval Baselines
 
-The unified paper harness implements five deterministic development
+The unified paper harness implements six deterministic development
 comparators:
 
 | ID | Artifact key | Frozen behavior |
@@ -10,10 +10,12 @@ comparators:
 | B1 | `bm25` | BM25 over tool name, one-line summary, and description |
 | B2 | `dense` | Revision-pinned multilingual E5 cosine retrieval |
 | B3 | `hybrid_rrf` | Unweighted RRF over complete B1 and B2 rankings |
+| B4 | `flat_semantic_rrf` | B3 over frozen flat semantic metadata, without edges |
 
 These baselines are research comparators, not product retrieval modes. They
-deliberately avoid graph-tool-call semantic expansion, contract scoring,
-target selection, and graph evidence.
+deliberately avoid contract scoring, target selection, and graph evidence.
+B4 observes normalized semantic labels but does not perform query expansion or
+graph traversal.
 
 ## Run
 
@@ -104,6 +106,37 @@ RRF(tool) = 1 / (60 + rank_bm25) + 1 / (60 + rank_dense)
 It uses `k=60`, no tuned channel weights, and no graph, contract, selector, or
 semantic boosts. B3 latency is the sum of B1 ranking, B2 query ranking, and RRF
 fusion for the case.
+
+### B4 Fixed Flat Semantic Hybrid
+
+B4 repeats B3 with four normalized metadata values appended to the B1/B2
+document:
+
+```text
+metadata.ai_metadata.canonical_action
+metadata.ai_metadata.primary_resource
+metadata.openapi.path_module
+metadata.ai_metadata.result_shape
+```
+
+Each non-empty value is serialized with its field name. Values equal to
+`unknown` or `unassigned` are omitted. Existing normalized metadata wins. For
+OpenAPI tools only, missing values are filled by the public deterministic
+`derive_openapi_tool_semantics()` helper. The harness does not invent missing
+GraphQL or MCP semantic labels; per-source field coverage is recorded in the
+artifact so this limitation remains visible.
+
+B4 uses independent BM25 and E5 indexes over the augmented document and fuses
+their complete rankings with the same unweighted RRF formula and `k=60` as B3.
+It does not use parameters, IO-contract fields, graph edges, query aliases,
+semantic query expansion, target selection, producer expansion, manual
+evidence, or run-observed evidence. It is therefore the strongest candidate
+flat-metadata comparator, not a graph-tool-call pipeline result.
+
+Per-case B4 latency covers semantic BM25 ranking, semantic E5 query encoding
+and ranking, and RRF fusion. One-time semantic-document construction, BM25
+index construction, and dense document encoding are reported separately by
+source under the artifact setup block.
 
 ## Metrics And Budget
 
