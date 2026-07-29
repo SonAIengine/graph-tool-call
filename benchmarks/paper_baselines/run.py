@@ -51,6 +51,17 @@ from .retrievers import (
     reciprocal_rank_fusion,
     seeded_random_rank,
 )
+from .token_budget import (
+    DEFAULT_CONTEXT_TOKENIZER,
+    DEFAULT_CONTEXT_TOKENIZER_REVISION,
+    DEFAULT_TOKEN_BUDGET,
+    TOKEN_BUDGET_POLICY_REVISION,
+    TOOL_SCHEMA_SERIALIZATION_REVISION,
+    HuggingFaceTokenCounter,
+    TokenCounter,
+    apply_ranked_token_budget,
+    model_facing_schema,
+)
 
 BASELINE_NAMES = (
     "seeded_random",
@@ -87,6 +98,10 @@ def run_paper_baselines(
     dense_model_revision: str = DEFAULT_DENSE_MODEL_REVISION,
     dense_device: str = "cpu",
     dense_batch_size: int = 32,
+    token_budget: int = DEFAULT_TOKEN_BUDGET,
+    token_counter: TokenCounter | None = None,
+    context_tokenizer_name: str = DEFAULT_CONTEXT_TOKENIZER,
+    context_tokenizer_revision: str = DEFAULT_CONTEXT_TOKENIZER_REVISION,
 ) -> ExperimentArtifact:
     """Evaluate the six frozen baselines and return one paired artifact."""
     if top_k <= 0:
@@ -95,6 +110,10 @@ def run_paper_baselines(
         raise ValueError("dense_model_name and dense_model_revision must be non-empty.")
     if dense_batch_size <= 0:
         raise ValueError("dense_batch_size must be greater than zero.")
+    if token_budget <= 0:
+        raise ValueError("token_budget must be greater than zero.")
+    if not context_tokenizer_name.strip() or not context_tokenizer_revision.strip():
+        raise ValueError("context_tokenizer_name and context_tokenizer_revision must be non-empty.")
     normalized_splits = tuple(dict.fromkeys(split.strip() for split in splits if split.strip()))
     invalid_splits = sorted(set(normalized_splits) - {"train", "dev", "test"})
     if not normalized_splits or invalid_splits:
@@ -136,11 +155,27 @@ def run_paper_baselines(
         encoder_provider = "sentence-transformers"
         encoder_library = "sentence-transformers"
         encoder_library_version = _package_version("sentence-transformers")
+    tokenizer_provider = "injected"
+    tokenizer_library = f"{type(token_counter).__module__}.{type(token_counter).__qualname__}"
+    tokenizer_library_version = ""
+    if token_counter is None:
+        token_counter = HuggingFaceTokenCounter(
+            name=context_tokenizer_name,
+            revision=context_tokenizer_revision,
+        )
+        tokenizer_provider = "huggingface"
+        tokenizer_library = "transformers"
+        tokenizer_library_version = _package_version("transformers")
     started = time.perf_counter()
     warmup = getattr(dense_encoder, "warmup", None)
     if callable(warmup):
         warmup()
     dense_model_load_ms = (time.perf_counter() - started) * 1000
+    started = time.perf_counter()
+    tokenizer_warmup = getattr(token_counter, "warmup", None)
+    if callable(tokenizer_warmup):
+        tokenizer_warmup()
+    tokenizer_load_ms = (time.perf_counter() - started) * 1000
     selected_sources = [
         source
         for source in manifest["sources"]
@@ -159,6 +194,9 @@ def run_paper_baselines(
                 seed=seed,
                 dense_encoder=dense_encoder,
                 dense_model_load_ms=dense_model_load_ms,
+                token_counter=token_counter,
+                token_budget=token_budget,
+                tokenizer_load_ms=tokenizer_load_ms,
             )
         )
 
@@ -187,12 +225,18 @@ def run_paper_baselines(
         dense_device,
         "--dense-batch-size",
         str(dense_batch_size),
+        "--token-budget",
+        str(token_budget),
+        "--context-tokenizer",
+        context_tokenizer_name,
+        "--context-tokenizer-revision",
+        context_tokenizer_revision,
     ]
     if allow_held_out:
         replay_command.append("--allow-held-out")
     artifact = ExperimentArtifact(
         benchmark="public-heterogeneous-tool-retrieval",
-        methodology="paired-fixed-baselines-v2",
+        methodology="paired-fixed-baselines-v3",
         run_kind="deterministic",
         created_at=created_at or datetime.now(timezone.utc).isoformat(),
         seed=seed,
@@ -209,6 +253,16 @@ def run_paper_baselines(
                 "type": "candidate_count",
                 "limit": top_k,
                 "actual_token_budget_claimed": False,
+            },
+            "token_budget": {
+                "type": "model_facing_schema_tokens",
+                "limit": token_budget,
+                "candidate_limit": top_k,
+                "policy_revision": TOKEN_BUDGET_POLICY_REVISION,
+                "serialization_revision": TOOL_SCHEMA_SERIALIZATION_REVISION,
+                "add_special_tokens": False,
+                "payload_scope": ["name", "description", "parameters"],
+                "query_tokens_included": False,
             },
             "baselines": {
                 "seeded_random": {
@@ -279,6 +333,15 @@ def run_paper_baselines(
             "library": encoder_library,
             "library_version": encoder_library_version,
         },
+        tokenizer={
+            "name": context_tokenizer_name,
+            "provider": tokenizer_provider,
+            "revision": context_tokenizer_revision,
+            "library": tokenizer_library,
+            "library_version": tokenizer_library_version,
+            "add_special_tokens": False,
+            "serialization_revision": TOOL_SCHEMA_SERIALIZATION_REVISION,
+        },
         replay={
             "command": replay_command,
             "working_directory": ".",
@@ -321,6 +384,9 @@ def _evaluate_source(
     seed: int,
     dense_encoder: DenseEncoder,
     dense_model_load_ms: float,
+    token_counter: TokenCounter,
+    token_budget: int,
+    tokenizer_load_ms: float,
 ) -> list[dict[str, Any]]:
     bm25 = FixedBM25Retriever(tools)
     dense = FixedDenseRetriever(tools, dense_encoder)
@@ -413,6 +479,8 @@ def _evaluate_source(
 
         observed: dict[str, Any] = {}
         metrics: dict[str, Any] = {}
+        token_budget_observed: dict[str, Any] = {}
+        token_budget_metrics: dict[str, Any] = {}
         for baseline_name, ranking in rankings.items():
             retrieved = [candidate.name for candidate in ranking]
             observed[baseline_name] = {
@@ -428,6 +496,39 @@ def _evaluate_source(
                 tools_by_name=tools_by_name,
                 latency_ms=latencies[baseline_name],
             )
+            started = time.perf_counter()
+            budget_selection = apply_ranked_token_budget(
+                retrieved,
+                tools_by_name,
+                token_counter=token_counter,
+                token_budget=token_budget,
+            )
+            token_budget_accounting_ms = (time.perf_counter() - started) * 1000
+            selected_names = budget_selection.retrieved
+            selected_set = set(selected_names)
+            token_budget_observed[baseline_name] = {
+                **budget_selection.to_dict(),
+                "scores": [
+                    {"name": candidate.name, "score": candidate.score}
+                    for candidate in ranking
+                    if candidate.name in selected_set
+                ],
+            }
+            token_budget_metrics[baseline_name] = {
+                **_case_metrics(
+                    selected_names,
+                    case,
+                    top_k=top_k,
+                    tools_by_name=tools_by_name,
+                    latency_ms=latencies[baseline_name],
+                ),
+                "schema_tokens": budget_selection.schema_tokens,
+                "token_budget_limit": budget_selection.token_budget_limit,
+                "token_budget_used": budget_selection.token_budget_used,
+                "token_budget_utilization": budget_selection.token_budget_utilization,
+                "truncated": float(budget_selection.truncated),
+                "token_budget_accounting_ms": token_budget_accounting_ms,
+            }
 
         evaluated.append(
             {
@@ -442,6 +543,7 @@ def _evaluate_source(
                     "tool_count": len(tools),
                     "baseline_setup_ms": {
                         "dense_model_load": dense_model_load_ms,
+                        "context_tokenizer_load": tokenizer_load_ms,
                         "bm25_index_build": bm25.build_latency_ms,
                         "dense_document_encoding": dense.build_latency_ms,
                         "flat_semantic_document_build": flat_semantic_document_build_ms,
@@ -459,6 +561,8 @@ def _evaluate_source(
                 },
                 "observed": observed,
                 "metrics": metrics,
+                "token_budget_observed": token_budget_observed,
+                "token_budget_metrics": token_budget_metrics,
                 "stages": {},
                 "failure": {},
             }
@@ -485,7 +589,7 @@ def _case_metrics(
     relevance_grades.update({name: 3 for name in expected_targets})
     serialized = [
         json.dumps(
-            _model_facing_schema(tools_by_name[name]),
+            model_facing_schema(tools_by_name[name]),
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
@@ -510,26 +614,33 @@ def _case_metrics(
     }
 
 
-def _model_facing_schema(tool: ToolSchema) -> dict[str, Any]:
-    return {
-        "name": tool.name,
-        "description": tool.description or "",
-        "parameters": [parameter.to_dict() for parameter in tool.parameters],
-    }
-
-
 def _summarize(
     cases: list[dict[str, Any]],
     *,
     seed: int,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     per_baseline = {baseline: _aggregate_metrics(cases, baseline) for baseline in BASELINE_NAMES}
+    token_budget_per_baseline = {
+        baseline: _aggregate_metrics(cases, baseline, metrics_key="token_budget_metrics")
+        for baseline in BASELINE_NAMES
+    }
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for case in cases:
         grouped[case["context"]["source_id"]].append(case)
     per_source = {
         source_id: {
             baseline: _aggregate_metrics(source_cases, baseline) for baseline in BASELINE_NAMES
+        }
+        for source_id, source_cases in sorted(grouped.items())
+    }
+    token_budget_per_source = {
+        source_id: {
+            baseline: _aggregate_metrics(
+                source_cases,
+                baseline,
+                metrics_key="token_budget_metrics",
+            )
+            for baseline in BASELINE_NAMES
         }
         for source_id, source_cases in sorted(grouped.items())
     }
@@ -542,10 +653,15 @@ def _summarize(
         "source_count": len(grouped),
         "split_case_counts": dict(sorted(split_counts.items())),
         "baselines": per_baseline,
+        "token_budget_baselines": token_budget_per_baseline,
         "per_source": per_source,
+        "token_budget_per_source": token_budget_per_source,
         "setup": {
             "dense_model_load_ms": (
                 cases[0]["context"]["baseline_setup_ms"]["dense_model_load"] if cases else 0.0
+            ),
+            "context_tokenizer_load_ms": (
+                cases[0]["context"]["baseline_setup_ms"]["context_tokenizer_load"] if cases else 0.0
             ),
             "bm25_index_build_ms_by_source": {
                 source_id: source_cases[0]["context"]["baseline_setup_ms"]["bm25_index_build"]
@@ -597,12 +713,38 @@ def _summarize(
                 for metric in STATISTICAL_METRICS
             }
             for baseline in BASELINE_NAMES
-        }
+        },
+        "token_budget_bootstrap": {
+            baseline: {
+                metric: {
+                    "confidence": 0.95,
+                    "n_resamples": 1000,
+                    "mean_ci": list(
+                        confidence_interval(
+                            _metric_values(
+                                cases,
+                                baseline,
+                                metric,
+                                metrics_key="token_budget_metrics",
+                            ),
+                            seed=seed,
+                        )
+                    ),
+                }
+                for metric in STATISTICAL_METRICS
+            }
+            for baseline in BASELINE_NAMES
+        },
     }
     return summary, statistics
 
 
-def _aggregate_metrics(cases: list[dict[str, Any]], baseline: str) -> dict[str, float]:
+def _aggregate_metrics(
+    cases: list[dict[str, Any]],
+    baseline: str,
+    *,
+    metrics_key: str = "metrics",
+) -> dict[str, float]:
     if not cases:
         return {metric: 0.0 for metric in PRIMARY_METRICS}
     metric_names = (
@@ -612,7 +754,19 @@ def _aggregate_metrics(cases: list[dict[str, Any]], baseline: str) -> dict[str, 
         "schema_utf8_bytes",
         "latency_ms",
     )
-    result = {metric: fmean(_metric_values(cases, baseline, metric)) for metric in metric_names}
+    if metrics_key == "token_budget_metrics":
+        metric_names = (
+            *metric_names,
+            "schema_tokens",
+            "token_budget_used",
+            "token_budget_utilization",
+            "truncated",
+            "token_budget_accounting_ms",
+        )
+    result = {
+        metric: fmean(_metric_values(cases, baseline, metric, metrics_key=metrics_key))
+        for metric in metric_names
+    }
     result["producer_case_count"] = float(
         sum(bool(case["expected"]["required_producers"]) for case in cases)
     )
@@ -623,11 +777,13 @@ def _metric_values(
     cases: list[dict[str, Any]],
     baseline: str,
     metric: str,
+    *,
+    metrics_key: str = "metrics",
 ) -> list[float]:
     selected = cases
     if metric == "producer_recall_at_k":
         selected = [case for case in cases if case["expected"]["required_producers"]]
-    return [float(case["metrics"][baseline][metric]) for case in selected] or [0.0]
+    return [float(case[metrics_key][baseline][metric]) for case in selected] or [0.0]
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -660,6 +816,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--dense-revision", default=DEFAULT_DENSE_MODEL_REVISION)
     parser.add_argument("--dense-device", default="cpu")
     parser.add_argument("--dense-batch-size", type=int, default=32)
+    parser.add_argument("--token-budget", type=int, default=DEFAULT_TOKEN_BUDGET)
+    parser.add_argument("--context-tokenizer", default=DEFAULT_CONTEXT_TOKENIZER)
+    parser.add_argument(
+        "--context-tokenizer-revision",
+        default=DEFAULT_CONTEXT_TOKENIZER_REVISION,
+    )
     return parser.parse_args()
 
 
@@ -676,6 +838,9 @@ def main() -> int:
         dense_model_revision=args.dense_revision,
         dense_device=args.dense_device,
         dense_batch_size=args.dense_batch_size,
+        token_budget=args.token_budget,
+        context_tokenizer_name=args.context_tokenizer,
+        context_tokenizer_revision=args.context_tokenizer_revision,
     )
     write_artifact(args.out, artifact)
     print(
@@ -686,6 +851,7 @@ def main() -> int:
                 "case_count": artifact.summary["case_count"],
                 "family_count": artifact.summary["family_count"],
                 "metrics": artifact.summary["baselines"],
+                "token_budget_metrics": artifact.summary["token_budget_baselines"],
             },
             ensure_ascii=False,
             indent=2,
