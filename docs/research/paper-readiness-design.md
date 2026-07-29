@@ -410,14 +410,18 @@ annotations use bilingual review rather than automatic translation alone.
 
 All retrieval baselines receive the same normalized text and the same
 candidate budget unless the experiment explicitly isolates normalization.
+The first deterministic development harness freezes candidate-count budget
+only. It is not publication-grade token-budget fairness until the actual
+tokenizer accounting task is complete; see
+[`paper-baselines.md`](paper-baselines.md).
 
 | ID | Baseline |
 |---|---|
-| B-1 | Seeded random candidates at the same K and token budget |
+| B-1 | Seeded random candidates at the same K; publication runs also enforce token budget |
 | B0 | Full catalog to the model, subject to context limit |
 | B0-O | Oracle target/producer candidate set, measuring the post-retrieval ceiling |
 | B0-L | LLM catalog selector over the full or hierarchically chunked catalog |
-| B1 | BM25 over name, summary, and description |
+| B1 | Fixed BM25 over name, summary, and description |
 | B2 | Dense embedding retrieval with a frozen public embedding model |
 | B3 | BM25 + dense using unweighted RRF with `k=60` |
 | B4 | B3 over flat action/resource/module/result-shape metadata, no edges |
@@ -838,7 +842,9 @@ This order prevents five-hour model runs from becoming the development loop.
 - [ ] Add adapter conformance metrics for request, response, auth, and
       execution templates.
 - [ ] Implement B2 dense and B3 fixed hybrid baselines in the unified harness.
-- [ ] Add seeded random, oracle, and budgeted LLM catalog-selector baselines.
+- [x] Add seeded random and oracle baselines to the unified harness.
+- [x] Add the fixed B1 BM25 baseline to the unified harness.
+- [ ] Add the budgeted LLM catalog-selector baseline.
 - [ ] Add actual tokenizer accounting with frozen tokenizer revisions.
 - [x] Define one artifact schema for deterministic, model, execution, and XGEN
       runs. See [`experiment-artifact.md`](experiment-artifact.md).
