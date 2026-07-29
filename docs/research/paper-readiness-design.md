@@ -845,6 +845,7 @@ This order prevents five-hour model runs from becoming the development loop.
 - [x] Implement B2 dense and B3 fixed hybrid baselines in the unified harness.
 - [x] Add seeded random and oracle baselines to the unified harness.
 - [x] Add the fixed B1 BM25 baseline to the unified harness.
+- [x] Add the fixed B4 flat-semantic hybrid baseline to the unified harness.
 - [ ] Add the budgeted LLM catalog-selector baseline.
 - [ ] Add actual tokenizer accounting with frozen tokenizer revisions.
 - [x] Define one artifact schema for deterministic, model, execution, and XGEN

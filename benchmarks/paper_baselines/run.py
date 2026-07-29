@@ -1,4 +1,4 @@
-"""Run frozen random, oracle, BM25, dense, and hybrid baselines."""
+"""Run frozen random, oracle, lexical, dense, hybrid, and flat-semantic baselines."""
 
 from __future__ import annotations
 
@@ -45,12 +45,21 @@ from .retrievers import (
     FixedDenseRetriever,
     RankedCandidate,
     SentenceTransformerDenseEncoder,
+    flat_semantic_coverage,
+    flat_semantic_document,
     oracle_rank,
     reciprocal_rank_fusion,
     seeded_random_rank,
 )
 
-BASELINE_NAMES = ("seeded_random", "oracle", "bm25", "dense", "hybrid_rrf")
+BASELINE_NAMES = (
+    "seeded_random",
+    "oracle",
+    "bm25",
+    "dense",
+    "hybrid_rrf",
+    "flat_semantic_rrf",
+)
 PRIMARY_METRICS = (
     "target_hit_at_k",
     "producer_recall_at_k",
@@ -79,7 +88,7 @@ def run_paper_baselines(
     dense_device: str = "cpu",
     dense_batch_size: int = 32,
 ) -> ExperimentArtifact:
-    """Evaluate the five frozen baselines and return one paired artifact."""
+    """Evaluate the six frozen baselines and return one paired artifact."""
     if top_k <= 0:
         raise ValueError("top_k must be greater than zero.")
     if not dense_model_name.strip() or not dense_model_revision.strip():
@@ -183,7 +192,7 @@ def run_paper_baselines(
         replay_command.append("--allow-held-out")
     artifact = ExperimentArtifact(
         benchmark="public-heterogeneous-tool-retrieval",
-        methodology="paired-fixed-baselines-v1",
+        methodology="paired-fixed-baselines-v2",
         run_kind="deterministic",
         created_at=created_at or datetime.now(timezone.utc).isoformat(),
         seed=seed,
@@ -237,6 +246,28 @@ def run_paper_baselines(
                     "channels": ["bm25", "dense"],
                     "fusion": "unweighted_reciprocal_rank_fusion",
                     "rrf_k": FIXED_RRF_K,
+                },
+                "flat_semantic_rrf": {
+                    "label": "B4",
+                    "channels": ["flat_semantic_bm25", "flat_semantic_dense"],
+                    "fusion": "unweighted_reciprocal_rank_fusion",
+                    "rrf_k": FIXED_RRF_K,
+                    "base_fields": [
+                        "name",
+                        "ai_metadata.one_line_summary",
+                        "description",
+                    ],
+                    "semantic_fields": [
+                        "ai_metadata.canonical_action",
+                        "ai_metadata.primary_resource",
+                        "openapi.path_module",
+                        "ai_metadata.result_shape",
+                    ],
+                    "openapi_semantic_derivation": "derive_openapi_tool_semantics",
+                    "query_expansion": False,
+                    "graph_signals": False,
+                    "contract_signals": False,
+                    "selector_signals": False,
                 },
             },
         },
@@ -293,6 +324,23 @@ def _evaluate_source(
 ) -> list[dict[str, Any]]:
     bm25 = FixedBM25Retriever(tools)
     dense = FixedDenseRetriever(tools, dense_encoder)
+    started = time.perf_counter()
+    flat_semantic_documents = {tool.name: flat_semantic_document(tool) for tool in tools}
+    flat_semantic_document_build_ms = (time.perf_counter() - started) * 1000
+
+    def build_flat_semantic_document(tool: ToolSchema) -> str:
+        return flat_semantic_documents[tool.name]
+
+    flat_semantic_bm25 = FixedBM25Retriever(
+        tools,
+        document_builder=build_flat_semantic_document,
+    )
+    flat_semantic_dense = FixedDenseRetriever(
+        tools,
+        dense_encoder,
+        document_builder=build_flat_semantic_document,
+    )
+    semantic_coverage = flat_semantic_coverage(tools)
     available_names = {tool.name for tool in tools}
     tools_by_name = {tool.name: tool for tool in tools}
     evaluated: list[dict[str, Any]] = []
@@ -339,6 +387,30 @@ def _evaluate_source(
         fusion_latency_ms = (time.perf_counter() - started) * 1000
         latencies["hybrid_rrf"] = latencies["bm25"] + latencies["dense"] + fusion_latency_ms
 
+        started = time.perf_counter()
+        flat_semantic_bm25_full = flat_semantic_bm25.rank(
+            case["query"],
+            top_k=full_ranking_size,
+        )
+        flat_semantic_bm25_latency_ms = (time.perf_counter() - started) * 1000
+
+        started = time.perf_counter()
+        flat_semantic_dense_full = flat_semantic_dense.rank(
+            case["query"],
+            top_k=full_ranking_size,
+        )
+        flat_semantic_dense_latency_ms = (time.perf_counter() - started) * 1000
+
+        started = time.perf_counter()
+        rankings["flat_semantic_rrf"] = reciprocal_rank_fusion(
+            [flat_semantic_bm25_full, flat_semantic_dense_full],
+            top_k=top_k,
+        )
+        flat_semantic_fusion_ms = (time.perf_counter() - started) * 1000
+        latencies["flat_semantic_rrf"] = (
+            flat_semantic_bm25_latency_ms + flat_semantic_dense_latency_ms + flat_semantic_fusion_ms
+        )
+
         observed: dict[str, Any] = {}
         metrics: dict[str, Any] = {}
         for baseline_name, ranking in rankings.items():
@@ -370,8 +442,15 @@ def _evaluate_source(
                     "tool_count": len(tools),
                     "baseline_setup_ms": {
                         "dense_model_load": dense_model_load_ms,
+                        "bm25_index_build": bm25.build_latency_ms,
                         "dense_document_encoding": dense.build_latency_ms,
+                        "flat_semantic_document_build": flat_semantic_document_build_ms,
+                        "flat_semantic_bm25_index_build": flat_semantic_bm25.build_latency_ms,
+                        "flat_semantic_dense_document_encoding": (
+                            flat_semantic_dense.build_latency_ms
+                        ),
                     },
+                    "flat_semantic_coverage": semantic_coverage,
                 },
                 "expected": {
                     "expected_targets": list(case["expected_targets"]),
@@ -468,10 +547,36 @@ def _summarize(
             "dense_model_load_ms": (
                 cases[0]["context"]["baseline_setup_ms"]["dense_model_load"] if cases else 0.0
             ),
+            "bm25_index_build_ms_by_source": {
+                source_id: source_cases[0]["context"]["baseline_setup_ms"]["bm25_index_build"]
+                for source_id, source_cases in sorted(grouped.items())
+            },
             "dense_document_encoding_ms_by_source": {
                 source_id: source_cases[0]["context"]["baseline_setup_ms"][
                     "dense_document_encoding"
                 ]
+                for source_id, source_cases in sorted(grouped.items())
+            },
+            "flat_semantic_document_build_ms_by_source": {
+                source_id: source_cases[0]["context"]["baseline_setup_ms"][
+                    "flat_semantic_document_build"
+                ]
+                for source_id, source_cases in sorted(grouped.items())
+            },
+            "flat_semantic_bm25_index_build_ms_by_source": {
+                source_id: source_cases[0]["context"]["baseline_setup_ms"][
+                    "flat_semantic_bm25_index_build"
+                ]
+                for source_id, source_cases in sorted(grouped.items())
+            },
+            "flat_semantic_dense_document_encoding_ms_by_source": {
+                source_id: source_cases[0]["context"]["baseline_setup_ms"][
+                    "flat_semantic_dense_document_encoding"
+                ]
+                for source_id, source_cases in sorted(grouped.items())
+            },
+            "flat_semantic_coverage_by_source": {
+                source_id: source_cases[0]["context"]["flat_semantic_coverage"]
                 for source_id, source_cases in sorted(grouped.items())
             },
         },
