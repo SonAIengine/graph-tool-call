@@ -410,9 +410,9 @@ annotations use bilingual review rather than automatic translation alone.
 
 All retrieval baselines receive the same normalized text and the same
 candidate budget unless the experiment explicitly isolates normalization.
-The first deterministic development harness freezes candidate-count budget
-only. It is not publication-grade token-budget fairness until the actual
-tokenizer accounting task is complete; see
+The deterministic development harness preserves its original candidate-count
+view and also emits a paired actual-token view under one frozen tokenizer,
+serialization, and whole-schema truncation policy; see
 [`paper-baselines.md`](paper-baselines.md).
 
 | ID | Baseline |
@@ -847,7 +847,10 @@ This order prevents five-hour model runs from becoming the development loop.
 - [x] Add the fixed B1 BM25 baseline to the unified harness.
 - [x] Add the fixed B4 flat-semantic hybrid baseline to the unified harness.
 - [ ] Add the budgeted LLM catalog-selector baseline.
-- [ ] Add actual tokenizer accounting with frozen tokenizer revisions.
+- [x] Add actual tokenizer accounting with frozen tokenizer revisions.
+      The B-1/B0-O/B1-B4 harness uses pinned Qwen3 tokenizer accounting and a
+      ranked whole-schema prefix policy; see
+      [`paper-baselines.md`](paper-baselines.md).
 - [x] Define one artifact schema for deterministic, model, execution, and XGEN
       runs. See [`experiment-artifact.md`](experiment-artifact.md).
 - [x] Freeze public-corpus train/dev/test family splits before tuning new

@@ -25,6 +25,9 @@ make paper-baseline-run
 
 TOP_K=8 SEED=17 OUT=/tmp/paper-baselines-k8.json \
   make paper-baseline-run
+
+TOKEN_BUDGET=4096 OUT=/tmp/paper-baselines-4k.json \
+  make paper-baseline-run
 ```
 
 The default run uses only the frozen `train,dev` families. It produces one
@@ -140,11 +143,19 @@ source under the artifact setup block.
 
 ## Metrics And Budget
 
-Every query records target Hit@K, producer Recall@K, required-tool Recall@K,
+Every query records two paired views of the same frozen ranking:
+
+1. the original candidate-count view, capped at `K`;
+2. a token-budget view, capped at both `K` and 2,048 model-facing tokens by
+   default.
+
+Both views record target Hit@K, producer Recall@K, required-tool Recall@K,
 all-required-found, Precision@K, MRR, AP, graded nDCG@K, latency, candidate
 count, normalized model-facing schema characters, and UTF-8 bytes. The
-model-facing schema size includes name, description, and parameters but excludes
-internal metadata. Relevance grades are:
+token-budget view additionally records schema tokens, budget utilization,
+truncation status, and token-accounting latency. The model-facing payload
+includes name, description, and parameters but excludes internal metadata.
+Relevance grades are:
 
 - expected target: `3`;
 - required producer: `2`;
@@ -152,14 +163,23 @@ internal metadata. Relevance grades are:
 
 Aggregate producer recall is computed only over cases that annotate required
 producers. Bootstrap 95% confidence intervals use 1,000 deterministic
-resamples.
+resamples for both views.
 
-The current development gate equalizes the maximum candidate count (`K`).
-It records schema size for transparency but does **not** claim equal token
-budget: B0-O may return fewer candidates and different tools have different
-schema sizes. Publication comparisons requiring context fairness remain
-blocked until an actual tokenizer and token-budget truncation policy are
-frozen.
+Token accounting uses
+[`Qwen/Qwen3-4B`](https://huggingface.co/Qwen/Qwen3-4B/tree/1cfa9a7208912126459214e8b04321603b3df60c)
+at commit `1cfa9a7208912126459214e8b04321603b3df60c` with
+`add_special_tokens=false`. Complete schemas are serialized as one canonical,
+compact JSON array with sorted object keys. The policy
+`ranked-greedy-whole-schema-v1` accepts the longest ranked prefix that fits the
+budget. It stops at the first schema that would exceed the limit, never skips
+that schema to admit a later one, and never truncates a schema internally.
+
+Only the tool catalog payload is counted. Query and system-prompt tokens are
+excluded because they are identical across paired retrieval methods. This
+supports fair candidate-context comparisons; it is not a claim about complete
+end-to-end prompt tokens. The candidate-count fields remain in the artifact for
+backward comparison, while publication context-efficiency comparisons use the
+parallel `token_budget_*` fields.
 
 ## Held-Out Protection
 

@@ -53,12 +53,16 @@ paper-baseline-run:
 		--dense-revision "$${DENSE_REVISION:-fd1525a9fd15316a2d503bf26ab031a61d056e98}" \
 		--dense-device "$${DENSE_DEVICE:-cpu}" \
 		--dense-batch-size "$${DENSE_BATCH_SIZE:-32}" \
+		--token-budget "$${TOKEN_BUDGET:-2048}" \
+		--context-tokenizer "$${CONTEXT_TOKENIZER:-Qwen/Qwen3-4B}" \
+		--context-tokenizer-revision "$${CONTEXT_TOKENIZER_REVISION:-1cfa9a7208912126459214e8b04321603b3df60c}" \
 		--out "$${OUT:-/tmp/graph-tool-call-paper-baselines.json}"
 
 paper-harness-check:
 	poetry run pytest \
 		tests/test_experiment_artifact.py \
 		tests/test_paper_baselines.py \
+		tests/test_paper_token_budget.py \
 		tests/test_paper_corpus_manifest.py \
 		tests/test_paper_corpus_review.py \
 		-q

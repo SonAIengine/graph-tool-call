@@ -74,6 +74,21 @@ make paper-baseline-run
 Its exact baseline and held-out access contracts are documented in
 [`paper-baselines.md`](paper-baselines.md).
 
+The native runner records the embedding model under `model` and the
+model-facing context tokenizer under `tokenizer`; these are deliberately
+separate roles. Candidate-count results remain under `observed`, `metrics`,
+`summary.baselines`, and `statistics.bootstrap`. The paired token-budget view
+is additive:
+
+- per case: `token_budget_observed` and `token_budget_metrics`;
+- aggregate: `summary.token_budget_baselines` and
+  `summary.token_budget_per_source`;
+- confidence intervals: `statistics.token_budget_bootstrap`;
+- frozen policy: `config.token_budget`.
+
+The tokenizer name, immutable revision, library version, serialization
+revision, special-token policy, and replay flags all participate in `run_id`.
+
 ## Identity Rules
 
 `run_id` hashes the benchmark identity, methodology, run kind, seed, dataset,
