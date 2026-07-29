@@ -64,6 +64,16 @@ Run the contract suite with:
 make paper-harness-check
 ```
 
+The native B-1/B0-O/B1 runner writes this schema directly rather than passing
+through a legacy adapter:
+
+```bash
+make paper-baseline-run
+```
+
+Its exact baseline and held-out access contracts are documented in
+[`paper-baselines.md`](paper-baselines.md).
+
 ## Identity Rules
 
 `run_id` hashes the benchmark identity, methodology, run kind, seed, dataset,

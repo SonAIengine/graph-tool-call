@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke paper-corpus-check paper-corpus-internal-review-check paper-corpus-claim-check paper-harness-check xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-snapshot-check xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-028-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-028-gate bfcl-028-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke paper-corpus-check paper-corpus-internal-review-check paper-corpus-claim-check paper-baseline-run paper-harness-check xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-snapshot-check xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-028-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-028-gate bfcl-028-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -43,9 +43,18 @@ paper-corpus-claim-check:
 		--verify-ingest \
 		--require-paper-ready
 
+paper-baseline-run:
+	poetry run python -m benchmarks.paper_baselines.run \
+		--manifest "$${MANIFEST:-benchmarks/corpus/manifest.json}" \
+		--splits "$${SPLITS:-train,dev}" \
+		--top-k "$${TOP_K:-5}" \
+		--seed "$${SEED:-17}" \
+		--out "$${OUT:-/tmp/graph-tool-call-paper-baselines.json}"
+
 paper-harness-check:
 	poetry run pytest \
 		tests/test_experiment_artifact.py \
+		tests/test_paper_baselines.py \
 		tests/test_paper_corpus_manifest.py \
 		tests/test_paper_corpus_review.py \
 		-q
