@@ -9,6 +9,12 @@ from .graph_retrievers import (
     FixedGraphRetriever,
     full_graph_pipeline_rank,
 )
+from .producer_coverage import (
+    PRODUCER_COVERAGE_POLICY_REVISION,
+    PRODUCER_COVERAGE_REASON_CODES,
+    diagnose_required_producer_coverage,
+    summarize_producer_edge_coverage,
+)
 from .retrievers import (
     DEFAULT_DENSE_MODEL,
     DEFAULT_DENSE_MODEL_REVISION,
@@ -54,6 +60,8 @@ __all__ = [
     "FIXED_PRODUCERS_PER_FIELD",
     "FIXED_RRF_K",
     "FIXED_BM25_TOKENIZER_REVISION",
+    "PRODUCER_COVERAGE_POLICY_REVISION",
+    "PRODUCER_COVERAGE_REASON_CODES",
     "TOKEN_BUDGET_POLICY_REVISION",
     "TOOL_SCHEMA_SERIALIZATION_REVISION",
     "DenseEncoder",
@@ -66,6 +74,7 @@ __all__ = [
     "TokenBudgetSelection",
     "TokenCounter",
     "apply_ranked_token_budget",
+    "diagnose_required_producer_coverage",
     "flat_semantic_coverage",
     "flat_semantic_document",
     "flat_semantic_metadata",
@@ -77,6 +86,7 @@ __all__ = [
     "seeded_random_rank",
     "model_facing_schema",
     "serialize_model_facing_schemas",
+    "summarize_producer_edge_coverage",
 ]
 
 

@@ -11,11 +11,14 @@ from benchmarks.paper_baselines import (
     FIXED_BM25_TOKENIZER_REVISION,
     FIXED_GRAPH_POLICY_REVISION,
     FIXED_RRF_K,
+    PRODUCER_COVERAGE_POLICY_REVISION,
+    PRODUCER_COVERAGE_REASON_CODES,
     FixedBM25Retriever,
     FixedDenseRetriever,
     FixedGraphRetriever,
     RankedCandidate,
     SentenceTransformerDenseEncoder,
+    diagnose_required_producer_coverage,
     fixed_lexical_tokens,
     flat_semantic_coverage,
     flat_semantic_document,
@@ -25,6 +28,7 @@ from benchmarks.paper_baselines import (
     reciprocal_rank_fusion,
     run_paper_baselines,
     seeded_random_rank,
+    summarize_producer_edge_coverage,
 )
 from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.ontology.schema import Confidence, RelationType
@@ -70,6 +74,8 @@ def _stable_summary(summary):
         "token_budget_baselines": {},
         "token_budget_ablations": _stable_ablations(summary["token_budget_ablations"]),
         "token_budget_per_source": {},
+        "producer_edge_coverage": summary["producer_edge_coverage"],
+        "producer_edge_coverage_by_source": summary["producer_edge_coverage_by_source"],
     }
     for baseline, metrics in summary["baselines"].items():
         stable["baselines"][baseline] = {
@@ -691,6 +697,289 @@ def test_b7_handles_an_empty_candidate_surface():
     }
 
 
+def test_producer_coverage_diagnoses_direct_contract_evidence():
+    target = ToolSchema(
+        name="getOrder",
+        metadata={
+            "consumes": [
+                {
+                    "field_name": "order_id",
+                    "semantic_tag": "order_id",
+                    "kind": "data",
+                    "required": True,
+                }
+            ]
+        },
+    )
+    producer = ToolSchema(
+        name="listOrders",
+        metadata={
+            "produces": [
+                {
+                    "field_name": "orderId",
+                    "semantic_tag": "order_id",
+                    "kind": "data",
+                }
+            ]
+        },
+    )
+    graph = ToolGraph()
+    graph.add_tool(target)
+    graph.add_tool(producer)
+    graph.graph.add_edge(
+        "getOrder",
+        "listOrders",
+        relation=RelationType.REQUIRES,
+        confidence=Confidence.INFERRED,
+        conf_score=0.85,
+        evidence_sources=["api_contract"],
+        data_flow={"to_field": "order_id", "from_field": "orderId"},
+    )
+
+    report = diagnose_required_producer_coverage(
+        graph,
+        expected_targets=["getOrder"],
+        required_producers=["listOrders"],
+        seed_names=["getOrder"],
+        max_depth=2,
+    )
+
+    pair = report["pairs"][0]
+    assert report["policy_revision"] == PRODUCER_COVERAGE_POLICY_REVISION
+    assert report["evaluation_scope"] == "ground_truth_only"
+    assert pair["status"] == "direct_contract_edge"
+    assert pair["contract_matches"] == [
+        {
+            "consumer_field": "order_id",
+            "producer_field": "orderId",
+            "consumer_required": True,
+            "rule": "semantic_tag",
+        }
+    ]
+    assert pair["direct_contract_edge"] is True
+    assert pair["direct_edge_evidence"]["consumer_field"] == "order_id"
+    assert pair["direct_edge_evidence"]["producer_field"] == "orderId"
+    assert pair["bounded_forward_contract_path"] is True
+    assert pair["producer_reachable_from_seeds"] is True
+    assert pair["best_seed_path"] == ["getOrder", "listOrders"]
+    assert pair["reason_codes"] == ["producer_not_seeded"]
+
+
+def test_producer_coverage_flags_promoted_match_that_did_not_become_an_edge():
+    graph = ToolGraph()
+    graph.add_tool(
+        ToolSchema(
+            name="target",
+            metadata={
+                "consumes": [
+                    {
+                        "field_name": "item_id",
+                        "semantic_tag": "item_id",
+                        "kind": "data",
+                        "required": True,
+                    }
+                ]
+            },
+        )
+    )
+    graph.add_tool(
+        ToolSchema(
+            name="producer",
+            metadata={
+                "produces": [
+                    {
+                        "field_name": "itemId",
+                        "semantic_tag": "item_id",
+                        "kind": "data",
+                    }
+                ]
+            },
+        )
+    )
+
+    pair = diagnose_required_producer_coverage(
+        graph,
+        expected_targets=["target"],
+        required_producers=["producer"],
+        seed_names=["target"],
+    )["pairs"][0]
+
+    assert pair["required_contract_field_match"] is True
+    assert pair["promoted_required_contract_field_match"] is True
+    assert pair["direct_contract_edge"] is False
+    assert "promoted_contract_edge_not_selected" in pair["reason_codes"]
+
+
+def test_producer_coverage_separates_raw_contracts_from_promoted_fields():
+    graph = ToolGraph()
+    graph.add_tool(
+        ToolSchema(
+            name="target",
+            metadata={
+                "api_contract": {
+                    "consumes": [
+                        {
+                            "field_name": "item_id",
+                            "semantic_tag": "item_id",
+                            "kind": "data",
+                            "required": True,
+                        }
+                    ]
+                }
+            },
+        )
+    )
+    graph.add_tool(
+        ToolSchema(
+            name="producer",
+            metadata={
+                "api_contract": {
+                    "produces": [
+                        {
+                            "field_name": "itemId",
+                            "semantic_tag": "item_id",
+                            "kind": "data",
+                        }
+                    ]
+                }
+            },
+        )
+    )
+
+    pair = diagnose_required_producer_coverage(
+        graph,
+        expected_targets=["target"],
+        required_producers=["producer"],
+    )["pairs"][0]
+
+    assert pair["contract_field_match"] is True
+    assert pair["promoted_contract_field_match"] is False
+    assert set(pair["reason_codes"]) >= {
+        "consumer_input_contract_not_promoted",
+        "producer_output_contract_not_promoted",
+        "matching_contract_fields_not_promoted",
+    }
+
+
+def test_producer_coverage_separates_missing_contract_and_reverse_edge():
+    graph = ToolGraph()
+    graph.add_tool(
+        ToolSchema(
+            name="target",
+            metadata={
+                "consumes": [
+                    {
+                        "field_name": "entity_id",
+                        "semantic_tag": "entity_id",
+                        "kind": "data",
+                        "required": True,
+                    }
+                ]
+            },
+        )
+    )
+    graph.add_tool(ToolSchema(name="producer"))
+    graph.graph.add_edge(
+        "producer",
+        "target",
+        relation=RelationType.PRECEDES,
+        confidence=Confidence.INFERRED,
+        evidence_sources=["structural"],
+    )
+
+    pair = diagnose_required_producer_coverage(
+        graph,
+        expected_targets=["target"],
+        required_producers=["producer"],
+        seed_names=["target"],
+    )["pairs"][0]
+
+    assert pair["status"] == "bounded_graph_path"
+    assert pair["producer_output_contract_present"] is False
+    assert pair["direct_graph_edge"] is False
+    assert pair["reverse_graph_edge"] is True
+    assert pair["bounded_graph_path"] is True
+    assert pair["bounded_forward_graph_path"] is False
+    assert set(pair["reason_codes"]) >= {
+        "producer_output_contract_missing",
+        "contract_edge_missing",
+        "edge_direction_mismatch",
+        "path_direction_mismatch",
+        "producer_not_seeded",
+    }
+
+
+def test_producer_coverage_distinguishes_paths_beyond_the_frozen_depth():
+    graph = ToolGraph()
+    for name in ("target", "step-a", "step-b", "producer"):
+        graph.add_tool(ToolSchema(name=name))
+    for source, target in (
+        ("target", "step-a"),
+        ("step-a", "step-b"),
+        ("step-b", "producer"),
+    ):
+        graph.graph.add_edge(
+            source,
+            target,
+            relation=RelationType.REQUIRES,
+            confidence=Confidence.INFERRED,
+            evidence_sources=["structural"],
+        )
+
+    pair = diagnose_required_producer_coverage(
+        graph,
+        expected_targets=["target"],
+        required_producers=["producer"],
+        seed_names=["target"],
+        max_depth=2,
+    )["pairs"][0]
+
+    assert pair["status"] == "path_outside_budget"
+    assert pair["bounded_graph_path"] is False
+    assert pair["shortest_path"] == ["target", "step-a", "step-b", "producer"]
+    assert pair["shortest_path_depth"] == 3
+    assert "graph_path_beyond_budget" in pair["reason_codes"]
+    assert "producer_unreachable_from_seeds" in pair["reason_codes"]
+
+
+def test_producer_coverage_summary_uses_only_stable_reason_codes():
+    graph = ToolGraph()
+    graph.add_tool(ToolSchema(name="target"))
+    graph.add_tool(ToolSchema(name="producer"))
+    report = diagnose_required_producer_coverage(
+        graph,
+        expected_targets=["target"],
+        required_producers=["producer"],
+        seed_names=[],
+    )
+
+    summary = summarize_producer_edge_coverage([report, {"pairs": []}])
+
+    assert summary["case_count"] == 1
+    assert summary["pair_count"] == 1
+    assert summary["status_counts"] == {"uncovered": 1}
+    assert set(summary["reason_code_counts"]) <= PRODUCER_COVERAGE_REASON_CODES
+    assert summary["coverage"]["direct_contract_edge"] == {"count": 0, "rate": 0.0}
+
+
+def test_producer_coverage_marks_missing_ground_truth_tools():
+    graph = ToolGraph()
+    graph.add_tool(ToolSchema(name="target"))
+
+    pair = diagnose_required_producer_coverage(
+        graph,
+        expected_targets=["target"],
+        required_producers=["missing"],
+    )["pairs"][0]
+
+    assert pair["status"] == "missing_tool"
+    assert pair["reason_codes"] == [
+        "consumer_input_contract_missing",
+        "producer_tool_missing",
+        "target_not_seeded",
+    ]
+
+
 def test_seeded_random_is_case_stable_and_seed_sensitive():
     tools = [ToolSchema(name=f"tool_{index}") for index in range(20)]
 
@@ -858,6 +1147,47 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
         "max_hops": 1,
         "max_producers_per_field": 3,
     }
+    assert baseline_artifact.config["producer_edge_diagnostics"] == {
+        "policy_revision": PRODUCER_COVERAGE_POLICY_REVISION,
+        "evaluation_scope": "ground_truth_only",
+        "graph_profile": "typed_contract",
+        "path_direction": {
+            "retrieval": "both",
+            "dependency": "out",
+        },
+        "max_depth": 2,
+        "seed_source": "graph_typed_contract",
+        "used_for_ranking": False,
+    }
+    producer_coverage = baseline_artifact.summary["producer_edge_coverage"]
+    assert producer_coverage["case_count"] == 6
+    assert producer_coverage["pair_count"] == 7
+    assert producer_coverage["coverage"]["consumer_input_contract_present"]["count"] == 7
+    assert producer_coverage["coverage"]["producer_output_contract_present"]["count"] == 4
+    assert producer_coverage["coverage"]["consumer_promoted_input_present"]["count"] == 7
+    assert producer_coverage["coverage"]["producer_promoted_output_present"]["count"] == 1
+    assert producer_coverage["coverage"]["contract_field_match"]["count"] == 4
+    assert producer_coverage["coverage"]["required_contract_field_match"]["count"] == 2
+    assert producer_coverage["coverage"]["promoted_contract_field_match"]["count"] == 0
+    assert producer_coverage["coverage"]["promoted_required_contract_field_match"]["count"] == 0
+    assert producer_coverage["coverage"]["direct_contract_edge"]["count"] == 0
+    assert producer_coverage["coverage"]["bounded_contract_path"]["count"] == 0
+    assert producer_coverage["coverage"]["bounded_forward_contract_path"]["count"] == 0
+    assert producer_coverage["coverage"]["bounded_graph_path"]["count"] == 4
+    assert producer_coverage["coverage"]["bounded_forward_graph_path"]["count"] == 1
+    assert producer_coverage["reason_code_counts"]["producer_output_contract_missing"] == 3
+    assert producer_coverage["reason_code_counts"]["producer_output_contract_not_promoted"] == 3
+    assert producer_coverage["reason_code_counts"]["matching_contract_fields_not_promoted"] == 4
+    assert producer_coverage["reason_code_counts"]["path_direction_mismatch"] == 3
+    assert set(producer_coverage["reason_code_counts"]) <= PRODUCER_COVERAGE_REASON_CODES
+    assert set(baseline_artifact.summary["producer_edge_coverage_by_source"]) == set(
+        baseline_artifact.summary["per_source"]
+    )
+    for case in baseline_artifact.cases:
+        report = case["diagnostics"]["producer_edge_coverage"]
+        assert report["policy_revision"] == PRODUCER_COVERAGE_POLICY_REVISION
+        assert report["evaluation_scope"] == "ground_truth_only"
+        assert report["summary"]["pair_count"] == len(report["pairs"])
     assert set(baseline_artifact.statistics["paired_bootstrap"]) == set(
         baseline_artifact.summary["ablations"]
     )
