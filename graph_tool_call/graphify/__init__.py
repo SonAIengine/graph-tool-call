@@ -43,7 +43,11 @@ from graph_tool_call.graphify.ingest import (
     ingest_openapi_graphify,
     preserve_refs_for_detection,
 )
-from graph_tool_call.graphify.io_contract import build_io_contract, promote_api_contract_signals
+from graph_tool_call.graphify.io_contract import (
+    CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION,
+    build_io_contract,
+    promote_api_contract_signals,
+)
 from graph_tool_call.graphify.metadata import (
     COLLECTION_GRAPH_VERSION,
     annotate_graphify_metadata,
@@ -62,6 +66,7 @@ from graph_tool_call.graphify.semantics import (
 
 __all__ = [
     "COLLECTION_GRAPH_VERSION",
+    "CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION",
     "DEFAULT_CONF_AMBIGUOUS",
     "DEFAULT_CONF_EXTRACTED",
     "DEFAULT_CONF_INFERRED",

@@ -304,6 +304,7 @@ def _apply_contract_data_flow_edges(
         "skipped_self": 0,
         "skipped_no_producer": 0,
         "skipped_echo": 0,
+        "skipped_consumer_scope": 0,
     }
     tools_by_name = {schema.name: schema for schema in schemas}
     producer_index = _contract_producer_index(schemas)
@@ -350,6 +351,9 @@ def _apply_contract_data_flow_edges(
                     description_key=description_key,
                 )
                 if produce is None:
+                    continue
+                if not _produce_supports_consumer(produce, consumer.name):
+                    stats["skipped_consumer_scope"] += 1
                     continue
                 if _is_echo_producer(producer.metadata or {}, produce):
                     stats["skipped_echo"] += 1
@@ -746,6 +750,20 @@ def _is_echo_producer(metadata: dict[str, Any], produce: dict[str, Any]) -> bool
         if p_description_key and description_alias_key(consume) == p_description_key:
             return True
     return False
+
+
+def _produce_supports_consumer(produce: dict[str, Any], consumer_name: str) -> bool:
+    if not produce.get("consumer_alignment_only"):
+        return True
+    alignment = (
+        produce.get("consumer_alignment")
+        if isinstance(produce.get("consumer_alignment"), dict)
+        else {}
+    )
+    consumers = alignment.get("consumer_tools")
+    if not isinstance(consumers, list):
+        return False
+    return consumer_name in {str(name) for name in consumers}
 
 
 def _contract_edge_score(metadata: dict[str, Any], produce: dict[str, Any]) -> int:

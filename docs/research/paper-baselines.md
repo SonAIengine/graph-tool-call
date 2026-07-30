@@ -1,6 +1,6 @@
 # Frozen Paper Retrieval Baselines
 
-The unified paper harness implements nine deterministic development
+The unified paper harness implements ten deterministic development
 comparators:
 
 | ID | Artifact key | Frozen behavior |
@@ -13,6 +13,7 @@ comparators:
 | B4 | `flat_semantic_rrf` | B3 over frozen flat semantic metadata, without edges |
 | B5 | `graph_untyped` | B4 plus non-contract graph adjacency with uniform edge weights |
 | B6 | `graph_typed_contract` | B4 plus typed/confidence-weighted graph and IO-contract edges |
+| B6a | `graph_consumer_aligned_contract` | B6 with opt-in required-consumer-aligned output promotion |
 | B7 | `full_graph_pipeline` | B6 plus deterministic target selection and bounded producer expansion |
 
 These baselines are research comparators, not product retrieval modes. They
@@ -27,6 +28,7 @@ poetry install --with dev -E embedding-local
 make paper-baseline-run
 make paper-graph-ablation
 make paper-producer-coverage
+make paper-output-promotion
 
 TOP_K=8 SEED=17 OUT=/tmp/paper-baselines-k8.json \
   make paper-baseline-run
@@ -39,6 +41,9 @@ BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-graph-ablation.json \
 
 BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-producer-coverage.json \
   make paper-producer-coverage
+
+BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-output-promotion.json \
+  make paper-output-promotion
 ```
 
 The default run uses only the frozen `train,dev` families. It produces one
@@ -182,6 +187,27 @@ evidence and deterministic IO-contract edges together. It does not claim to
 separate those two subcomponents; a finer contract-edge versus edge-weight
 ablation belongs to the wider WP3 matrix.
 
+### B6a Required-Consumer-Aligned Output Promotion
+
+B6a is an opt-in cold-start ablation over B6. It promotes an otherwise
+unpromoted response field only when a required data consumer in the same
+collection supplies deterministic field or semantic evidence. It never reads
+the benchmark query, expected target, required producer annotation, execution
+trace, or LLM output.
+
+The policy retains at most one shortest JSON path per newly promoted aligned
+field by default, preserves every output already admitted by B6, keeps generic
+response wrappers excluded, and restricts field-name-only matches to compatible
+module or semantic scope. Evidence records the matching consumer, field, scope,
+and policy revision. Edges from an alignment-only output are emitted only to
+its evidenced consumers rather than every same-named field in the collection.
+
+B6a uses the same complete B4 ranking, five protected seeds, graph traversal,
+top-K surface, and token budget as B6. The B6-to-B6a delta therefore isolates
+output promotion and its resulting contract edges. The policy remains off in
+the product path until its graph-size and retrieval trade-offs are supported
+on broader data.
+
 ### B7 Frozen Full Graph Pipeline
 
 B7 takes B6's top-K surface, applies
@@ -203,6 +229,7 @@ bootstrap confidence intervals for:
 |---|---|
 | `b5_minus_b4_topology` | untyped graph topology over the flat semantic baseline |
 | `b6_minus_b5_typed_contract` | typed/confidence-weighted contract graph |
+| `b6a_minus_b6_output_promotion` | required-consumer-aligned output promotion |
 | `b7_minus_b6_selector_producers` | target selector and producer expansion |
 | `b7_minus_b4_full_pipeline` | complete deterministic graph-tool-call pipeline |
 
@@ -301,9 +328,44 @@ two have only optional consumer matches, and one has a reversed direct edge.
 This explains the zero B5-to-B6 gain more precisely: the frozen B6 graph has
 no promoted field match or contract path for any annotated producer, while
 five producers are already flat-retrieval seeds. Increasing a graph multiplier
-cannot repair either condition. The next cold-start experiments should
-separately test output-contract promotion, optional workflow evidence, and
-producer-cap selection before changing selector weights.
+cannot repair either condition.
+
+### Output-promotion follow-up
+
+The pinned train/dev replay then compared B6 with B6a using the same E5 and
+Qwen3 revisions, `K=5`, seed 17, 29 cases, and 1,000 bootstrap resamples. The
+held-out split remained unopened. The artifact ID is
+`exp-7b44cb52c35e81324819023d`.
+
+| Producer diagnostic | B6 | B6a |
+|---|---:|---:|
+| promoted producer output | 1/7 | 4/7 |
+| promoted contract field match | 0/7 | 2/7 |
+| promoted required-field match | 0/7 | 2/7 |
+| direct contract edge | 0/7 | 2/7 |
+| bounded forward contract path | 0/7 | 2/7 |
+| direct graph edge | 1/7 | 3/7 |
+| bounded forward graph path | 1/7 | 4/7 |
+| matching fields not promoted | 4/7 | 2/7 |
+
+The structural hypothesis was supported for two annotated pairs, but the
+retrieval hypothesis was not: B6 and B6a both produced target Hit@5 `0.9310`,
+producer Recall@5 `0.6667`, all-required-found `0.8621`, and MRR `0.8305`.
+All 29 effectiveness comparisons were ties.
+
+The reason is part of the result. B6 and B6a protect all five B4 seeds at
+`K=5`; newly reachable producers cannot displace a seed even when a valid
+contract path now exists. The experiment therefore identifies candidate
+admission and seed-slot allocation as the next isolated ablation, rather than
+justifying another edge-weight change.
+
+Output promotion also has a measurable graph cost. On the public Kubernetes
+source, final edges increased from `616` to `991`, promoted produces from
+`814` to `1,761`, and `5,442` extra JSON paths were rejected by the per-field
+cap. On Petstore, edges increased from `30` to `41`. These development results
+keep B6a opt-in and motivate a later precision/graph-growth study before any
+default rollout. Optional-consumer evidence and producer-cap changes remain
+separate experiments.
 
 ## Metrics And Budget
 

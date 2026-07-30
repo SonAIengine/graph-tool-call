@@ -8,6 +8,7 @@ from graph_tool_call import __version__
 from graph_tool_call.core.tool import ToolParameter, ToolSchema
 from graph_tool_call.graphify import (
     COLLECTION_GRAPH_VERSION,
+    CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION,
     EVIDENCE_API_CONTRACT,
     EVIDENCE_OPENAPI_LINK,
     build_candidate_set,
@@ -37,6 +38,7 @@ from graph_tool_call.tool_graph import ToolGraph
 
 def test_graphify_public_contract_imports():
     assert COLLECTION_GRAPH_VERSION == "2"
+    assert CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION == "required-consumer-aligned-output-v1"
     assert callable(build_candidate_set)
     assert callable(build_io_contract)
     assert callable(build_tool_equivalence_groups)
@@ -367,6 +369,249 @@ def test_promote_api_contract_signals_preserves_openapi_security_auth_hints():
     assert auth["bearer_format"] == "JWT"
     assert auth["credential_name"] == "Authorization"
     assert auth["requirement_indices"] == [0]
+
+
+def test_promote_api_contract_signals_can_promote_required_consumer_aligned_outputs():
+    producer = ToolSchema(
+        name="listResources",
+        metadata={
+            "openapi": {"path_module": "resources"},
+            "api_contract": {
+                "produces": [
+                    {
+                        "field_name": "name",
+                        "json_path": "$.items[*].metadata.name",
+                        "field_type": "string",
+                    },
+                    {
+                        "field_name": "name",
+                        "json_path": "$.items[*].metadata.ownerReferences[*].name",
+                        "field_type": "string",
+                    },
+                    {
+                        "field_name": "name",
+                        "json_path": "$.items[*].spec.containers[*].name",
+                        "field_type": "string",
+                    },
+                    {
+                        "field_name": "displayLabel",
+                        "json_path": "$.items[*].displayLabel",
+                        "field_type": "string",
+                    },
+                ],
+                "consumes": [],
+            },
+        },
+    )
+    detail = ToolSchema(
+        name="readResource",
+        metadata={
+            "openapi": {"path_module": "resources"},
+            "api_contract": {
+                "produces": [],
+                "consumes": [
+                    {
+                        "field_name": "name",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "path",
+                    },
+                    {
+                        "field_name": "displayLabel",
+                        "field_type": "string",
+                        "required": False,
+                        "location": "query",
+                    },
+                ],
+            },
+        },
+    )
+
+    stats = promote_api_contract_signals(
+        [producer, detail],
+        promote_consumer_aligned_produces=True,
+        max_consumer_aligned_paths_per_field=2,
+    )
+
+    produces = producer.metadata["produces"]
+    assert [row["json_path"] for row in produces] == [
+        "$.items[*].metadata.name",
+        "$.items[*].metadata.ownerReferences[*].name",
+    ]
+    assert all(row["promotion_reasons"] == ["required_consumer_match"] for row in produces)
+    assert all(row["consumer_alignment"]["consumer_tools"] == ["readResource"] for row in produces)
+    assert stats["produces_consumer_aligned"] == 2
+    assert stats["produces_skipped_path_cap"] == 1
+    assert stats["required_consumer_demand_keys"] >= 1
+    assert (
+        producer.metadata["contract_signal_policy"]["consumer_aligned_output_policy_revision"]
+        == "required-consumer-aligned-output-v1"
+    )
+
+
+def test_consumer_aligned_output_promotion_creates_required_data_flow_edge():
+    producer = ToolSchema(
+        name="listResources",
+        metadata={
+            "openapi": {"path_module": "resources"},
+            "api_contract": {
+                "produces": [
+                    {
+                        "field_name": "name",
+                        "json_path": "$.items[*].metadata.name",
+                        "field_type": "string",
+                    }
+                ],
+                "consumes": [],
+            },
+        },
+    )
+    detail = ToolSchema(
+        name="readResource",
+        metadata={
+            "openapi": {"path_module": "resources"},
+            "api_contract": {
+                "produces": [],
+                "consumes": [
+                    {
+                        "field_name": "name",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "path",
+                    }
+                ],
+            },
+        },
+    )
+    unrelated = ToolSchema(
+        name="listOtherResources",
+        metadata={
+            "openapi": {"path_module": "other-resources"},
+            "api_contract": {
+                "produces": [
+                    {
+                        "field_name": "name",
+                        "json_path": "$.items[*].metadata.name",
+                        "field_type": "string",
+                    }
+                ],
+                "consumes": [],
+            },
+        },
+    )
+
+    graph, stats = ingest_openapi_graphify(
+        [producer, unrelated, detail],
+        promote_contract_signals=True,
+        contract_signal_options={"promote_consumer_aligned_produces": True},
+    )
+
+    edge = graph.graph.get_edge_attrs("readResource", "listResources")
+    assert stats["contract_signals"]["produces_consumer_aligned"] == 1
+    assert stats["contract_edges"]["added"] == 1
+    assert edge["relation"] == "requires"
+    assert edge["data_flow"]["from_path"] == "$.items[*].metadata.name"
+    assert edge["data_flow"]["to_field"] == "name"
+    if graph.graph.has_edge("readResource", "listOtherResources"):
+        unrelated_edge = graph.graph.get_edge_attrs("readResource", "listOtherResources")
+        assert "api_contract" not in unrelated_edge.get("evidence_sources", [])
+
+
+def test_consumer_aligned_output_promotion_rejects_unscoped_field_name_only_match():
+    producer = ToolSchema(
+        name="listResources",
+        metadata={
+            "api_contract": {
+                "produces": [
+                    {
+                        "field_name": "name",
+                        "json_path": "$.items[*].name",
+                        "field_type": "string",
+                    }
+                ],
+                "consumes": [],
+            }
+        },
+    )
+    consumer = ToolSchema(
+        name="readResource",
+        metadata={
+            "api_contract": {
+                "produces": [],
+                "consumes": [
+                    {
+                        "field_name": "name",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "path",
+                    }
+                ],
+            }
+        },
+    )
+
+    stats = promote_api_contract_signals(
+        [producer, consumer],
+        promote_consumer_aligned_produces=True,
+    )
+
+    assert producer.metadata.get("produces", []) == []
+    assert stats["produces_consumer_aligned"] == 0
+
+
+def test_consumer_aligned_path_cap_does_not_remove_baseline_identifier_outputs():
+    producer = ToolSchema(
+        name="listResources",
+        metadata={
+            "openapi": {"path_module": "resources"},
+            "api_contract": {
+                "produces": [
+                    {
+                        "field_name": "resourceId",
+                        "json_path": "$.items[*].resourceId",
+                        "field_type": "string",
+                    },
+                    {
+                        "field_name": "resourceId",
+                        "json_path": "$.items[*].owner.resourceId",
+                        "field_type": "string",
+                    },
+                ],
+                "consumes": [],
+            },
+        },
+    )
+    consumer = ToolSchema(
+        name="readResource",
+        metadata={
+            "openapi": {"path_module": "resources"},
+            "api_contract": {
+                "produces": [],
+                "consumes": [
+                    {
+                        "field_name": "resourceId",
+                        "field_type": "string",
+                        "required": True,
+                        "location": "path",
+                    }
+                ],
+            },
+        },
+    )
+
+    stats = promote_api_contract_signals(
+        [producer, consumer],
+        promote_consumer_aligned_produces=True,
+        max_consumer_aligned_paths_per_field=1,
+    )
+
+    assert [row["json_path"] for row in producer.metadata["produces"]] == [
+        "$.items[*].resourceId",
+        "$.items[*].owner.resourceId",
+    ]
+    assert all("consumer_alignment" not in row for row in producer.metadata["produces"])
+    assert stats["produces_consumer_aligned"] == 0
+    assert stats["produces_skipped_path_cap"] == 0
 
 
 def test_promote_api_contract_signals_skips_inverse_direction_fields():
