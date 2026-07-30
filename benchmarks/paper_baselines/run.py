@@ -41,6 +41,8 @@ from graph_tool_call.graphify import (
 )
 
 from .graph_retrievers import (
+    FIXED_GRAPH_ADMISSION_POLICY_REVISION,
+    FIXED_GRAPH_ADMISSION_RESERVED_SLOTS,
     FIXED_GRAPH_DEPTH,
     FIXED_GRAPH_POLICY_REVISION,
     FIXED_GRAPH_SEED_COUNT,
@@ -92,6 +94,7 @@ BASELINE_NAMES = (
     "graph_untyped",
     "graph_typed_contract",
     "graph_consumer_aligned_contract",
+    "graph_consumer_aligned_admission",
     "full_graph_pipeline",
 )
 ABLATION_PAIRS = {
@@ -100,6 +103,10 @@ ABLATION_PAIRS = {
     "b6a_minus_b6_output_promotion": (
         "graph_typed_contract",
         "graph_consumer_aligned_contract",
+    ),
+    "b6b_minus_b6a_candidate_admission": (
+        "graph_consumer_aligned_contract",
+        "graph_consumer_aligned_admission",
     ),
     "b7_minus_b6_selector_producers": (
         "graph_typed_contract",
@@ -149,7 +156,7 @@ def run_paper_baselines(
     context_tokenizer_revision: str = DEFAULT_CONTEXT_TOKENIZER_REVISION,
     bootstrap_resamples: int = 1000,
 ) -> ExperimentArtifact:
-    """Evaluate the ten frozen baselines and return one paired artifact."""
+    """Evaluate the eleven frozen baselines and return one paired artifact."""
     if top_k <= 0:
         raise ValueError("top_k must be greater than zero.")
     if not dense_model_name.strip() or not dense_model_revision.strip():
@@ -290,7 +297,7 @@ def run_paper_baselines(
         replay_command.append("--allow-held-out")
     artifact = ExperimentArtifact(
         benchmark="public-heterogeneous-tool-retrieval",
-        methodology="paired-fixed-baselines-v6",
+        methodology="paired-fixed-baselines-v7",
         run_kind="deterministic",
         created_at=created_at or datetime.now(timezone.utc).isoformat(),
         seed=seed,
@@ -419,6 +426,29 @@ def run_paper_baselines(
                     "output_promotion_scope": "required_data_consumers",
                     "max_consumer_aligned_paths_per_field": 1,
                     "optional_consumer_evidence": False,
+                    "ground_truth_signals": False,
+                    "selector_signals": False,
+                },
+                "graph_consumer_aligned_admission": {
+                    "label": "B6b",
+                    "base_ranking": "flat_semantic_rrf",
+                    "policy_revision": FIXED_GRAPH_POLICY_REVISION,
+                    "profile": "typed_contract",
+                    "seed_count": FIXED_GRAPH_SEED_COUNT,
+                    "depth": FIXED_GRAPH_DEPTH,
+                    "score_combination": "seed_score_or_max_graph_path",
+                    "edge_weights": "frozen_intent_relation_weights",
+                    "confidence_weights": True,
+                    "contract_signals": True,
+                    "output_promotion_policy_revision": (CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION),
+                    "output_promotion_scope": "required_data_consumers",
+                    "candidate_admission_policy_revision": (FIXED_GRAPH_ADMISSION_POLICY_REVISION),
+                    "candidate_admission_policy": "consumer_aligned_contract_slot",
+                    "candidate_admission_reserved_slots": (FIXED_GRAPH_ADMISSION_RESERVED_SLOTS),
+                    "candidate_admission_qualification": (
+                        "non_seed_forward_consumer_aligned_api_contract_path_and_"
+                        "first_query_action_resource_match"
+                    ),
                     "ground_truth_signals": False,
                     "selector_signals": False,
                 },
@@ -570,6 +600,11 @@ def _evaluate_source(
         consumer_aligned_graph,
         profile="typed_contract",
     )
+    consumer_aligned_admission_retriever = FixedGraphRetriever(
+        consumer_aligned_graph,
+        profile="typed_contract",
+        admission_policy="consumer_aligned_contract_slot",
+    )
     available_names = {tool.name for tool in tools}
     tools_by_name = {tool.name: tool for tool in tools}
     typed_tools_by_name = dict(typed_graph.tools)
@@ -675,6 +710,20 @@ def _evaluate_source(
         rankings["graph_consumer_aligned_contract"] = consumer_aligned_full[:top_k]
         latencies["graph_consumer_aligned_contract"] = (
             latencies["flat_semantic_rrf"] + consumer_aligned_graph_latency_ms
+        )
+
+        started = time.perf_counter()
+        (
+            rankings["graph_consumer_aligned_admission"],
+            ranking_diagnostics["graph_consumer_aligned_admission"],
+        ) = consumer_aligned_admission_retriever.rank(
+            case["query"],
+            flat_semantic_full,
+            top_k=top_k,
+        )
+        consumer_aligned_admission_latency_ms = (time.perf_counter() - started) * 1000
+        latencies["graph_consumer_aligned_admission"] = (
+            latencies["flat_semantic_rrf"] + consumer_aligned_admission_latency_ms
         )
 
         started = time.perf_counter()
