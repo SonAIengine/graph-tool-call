@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.graphify import (
+    CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION,
     expand_candidates_with_producers,
     select_target_candidate,
     target_action_priority_for_query,
@@ -13,15 +15,67 @@ from graph_tool_call.graphify import (
 from graph_tool_call.retrieval.intent import classify_intent
 from graph_tool_call.tool_graph import ToolGraph
 
-from .retrievers import RankedCandidate
+from .retrievers import RankedCandidate, fixed_lexical_tokens
 
 FIXED_GRAPH_POLICY_REVISION = "paper-graph-rerank-v1"
 FIXED_GRAPH_SEED_COUNT = 5
 FIXED_GRAPH_DEPTH = 2
+FIXED_GRAPH_ADMISSION_POLICY_REVISION = "paper-consumer-aligned-contract-slot-v1"
+FIXED_GRAPH_ADMISSION_RESERVED_SLOTS = 1
 FIXED_PRODUCER_MAX_HOPS = 1
 FIXED_PRODUCERS_PER_FIELD = 3
 
 _PROFILES = frozenset({"untyped_topology", "typed_contract"})
+_ADMISSION_POLICIES = frozenset({"protected_seeds", "consumer_aligned_contract_slot"})
+_ADMISSION_ACTION_ALIASES = {
+    "search": ("list", "find", "search", "query", "목록", "검색", "찾"),
+    "read": (
+        "read",
+        "get",
+        "show",
+        "inspect",
+        "check",
+        "detail",
+        "status",
+        "log",
+        "확인",
+        "조회",
+        "상태",
+        "상세",
+        "로그",
+    ),
+    "create": ("create", "add", "register", "생성", "추가", "등록"),
+    "update": ("update", "modify", "edit", "change", "수정", "변경", "편집"),
+    "delete": ("delete", "remove", "withdraw", "삭제", "제거", "탈퇴"),
+    "action": ("send", "execute", "run", "approve", "reject", "실행", "승인", "거절"),
+}
+_ADMISSION_RESOURCE_STOPWORDS = frozenset(
+    {
+        "api",
+        "all",
+        "and",
+        "core",
+        "every",
+        "for",
+        "from",
+        "in",
+        "into",
+        "namespaced",
+        "namespace",
+        "namespaces",
+        "of",
+        "one",
+        "on",
+        "or",
+        "specified",
+        "the",
+        "to",
+        "v1",
+        "v2",
+        "with",
+        *(alias for aliases in _ADMISSION_ACTION_ALIASES.values() for alias in aliases),
+    }
+)
 _CONFIDENCE_FACTORS = {
     "EXTRACTED": 1.0,
     "INFERRED": 0.7,
@@ -72,11 +126,20 @@ class FixedGraphRetriever:
     API-contract edges and uses frozen relation/confidence weights.
     """
 
-    def __init__(self, graph: ToolGraph, *, profile: str) -> None:
+    def __init__(
+        self,
+        graph: ToolGraph,
+        *,
+        profile: str,
+        admission_policy: str = "protected_seeds",
+    ) -> None:
         if profile not in _PROFILES:
             raise ValueError(f"Unknown fixed graph profile: {profile}")
+        if admission_policy not in _ADMISSION_POLICIES:
+            raise ValueError(f"Unknown fixed graph admission policy: {admission_policy}")
         self.graph = graph
         self.profile = profile
+        self.admission_policy = admission_policy
 
     def rank(
         self,
@@ -102,6 +165,9 @@ class FixedGraphRetriever:
         seed_names = [candidate.name for candidate in unique_base[:FIXED_GRAPH_SEED_COUNT]]
         frontier = {name: base_scores[name] for name in seed_names}
         best_path = dict(frontier)
+        best_path_nodes = {name: [name] for name in seed_names}
+        consumer_aligned_scores: dict[str, float] = {}
+        consumer_aligned_paths: dict[str, list[str]] = {}
         graph_scores: dict[str, float] = {}
         used_edges: set[tuple[str, str]] = set()
         contract_edges: set[tuple[str, str]] = set()
@@ -124,9 +190,25 @@ class FixedGraphRetriever:
                         relation_weights=relation_weights,
                     )
                     propagated = parent_score * edge_score * decay
+                    if (
+                        source == node
+                        and _is_consumer_aligned_contract_edge(
+                            self.graph,
+                            source,
+                            target,
+                            attrs,
+                        )
+                        and propagated > consumer_aligned_scores.get(neighbour, 0.0)
+                    ):
+                        consumer_aligned_scores[neighbour] = propagated
+                        consumer_aligned_paths[neighbour] = [
+                            *best_path_nodes[node],
+                            neighbour,
+                        ]
                     if propagated <= best_path.get(neighbour, 0.0):
                         continue
                     best_path[neighbour] = propagated
+                    best_path_nodes[neighbour] = [*best_path_nodes[node], neighbour]
                     graph_scores[neighbour] = max(graph_scores.get(neighbour, 0.0), propagated)
                     next_frontier[neighbour] = max(
                         next_frontier.get(neighbour, 0.0),
@@ -159,10 +241,21 @@ class FixedGraphRetriever:
                 candidate.name,
             )
         )
+        selected, admission = _apply_candidate_admission(
+            rescored,
+            query=query,
+            graph=self.graph,
+            top_k=top_k,
+            seed_names=seed_names,
+            consumer_aligned_scores=consumer_aligned_scores,
+            consumer_aligned_paths=consumer_aligned_paths,
+            policy=self.admission_policy,
+        )
         diagnostics = self._diagnostics(seed_names, used_edges, contract_edges)
         diagnostics["expanded_tool_count"] = len(set(graph_scores) - set(seed_names))
         diagnostics["graph_reached_tool_count"] = len(graph_scores)
-        return rescored[:top_k], diagnostics
+        diagnostics["candidate_admission"] = admission
+        return selected, diagnostics
 
     def _diagnostics(
         self,
@@ -173,6 +266,7 @@ class FixedGraphRetriever:
         return {
             "policy_revision": FIXED_GRAPH_POLICY_REVISION,
             "profile": self.profile,
+            "admission_policy": self.admission_policy,
             "seed_count": len(seeds),
             "seeds": list(seeds),
             "depth": FIXED_GRAPH_DEPTH,
@@ -182,6 +276,90 @@ class FixedGraphRetriever:
             "expanded_tool_count": 0,
             "graph_reached_tool_count": 0,
         }
+
+
+def _apply_candidate_admission(
+    ranking: list[RankedCandidate],
+    *,
+    query: str,
+    graph: ToolGraph,
+    top_k: int,
+    seed_names: list[str],
+    consumer_aligned_scores: dict[str, float],
+    consumer_aligned_paths: dict[str, list[str]],
+    policy: str,
+) -> tuple[list[RankedCandidate], dict[str, Any]]:
+    selected = list(ranking[:top_k])
+    diagnostics: dict[str, Any] = {
+        "policy_revision": FIXED_GRAPH_ADMISSION_POLICY_REVISION,
+        "policy": policy,
+        "surface_top_k": top_k,
+        "reserved_slots": (
+            FIXED_GRAPH_ADMISSION_RESERVED_SLOTS
+            if policy == "consumer_aligned_contract_slot" and top_k > 1
+            else 0
+        ),
+        "qualification": (
+            "non_seed_forward_consumer_aligned_api_contract_path"
+            "_and_first_query_action_resource_match"
+        ),
+        "contract_qualified_candidate_count": 0,
+        "qualified_candidate_count": 0,
+        "satisfied_by_ranking": False,
+        "triggered": False,
+        "admitted": [],
+        "evicted": [],
+    }
+    if policy != "consumer_aligned_contract_slot" or top_k <= 1 or len(selected) < top_k:
+        return selected, diagnostics
+
+    seed_set = set(seed_names)
+    ranking_index = {candidate.name: index for index, candidate in enumerate(ranking)}
+    contract_qualified = sorted(
+        (
+            candidate
+            for candidate in ranking
+            if candidate.name not in seed_set and candidate.name in consumer_aligned_scores
+        ),
+        key=lambda candidate: (
+            -consumer_aligned_scores[candidate.name],
+            ranking_index[candidate.name],
+            candidate.name.casefold(),
+            candidate.name,
+        ),
+    )
+    semantic_evidence = {
+        candidate.name: _candidate_admission_semantic_evidence(
+            query,
+            graph.tools[candidate.name],
+        )
+        for candidate in contract_qualified
+    }
+    qualified = [candidate for candidate in contract_qualified if semantic_evidence[candidate.name]]
+    diagnostics["contract_qualified_candidate_count"] = len(contract_qualified)
+    diagnostics["qualified_candidate_count"] = len(qualified)
+    selected_names = {candidate.name for candidate in selected}
+    if any(candidate.name in selected_names for candidate in qualified):
+        diagnostics["satisfied_by_ranking"] = True
+        return selected, diagnostics
+    if not qualified:
+        return selected, diagnostics
+
+    admitted = qualified[0]
+    evicted = selected[-1]
+    selected[-1] = admitted
+    diagnostics["triggered"] = True
+    diagnostics["admitted"] = [
+        {
+            "name": admitted.name,
+            "score": admitted.score,
+            "admission_score": consumer_aligned_scores[admitted.name],
+            "path": consumer_aligned_paths.get(admitted.name, []),
+            "semantic_evidence": semantic_evidence[admitted.name],
+        }
+    ]
+    diagnostics["evicted"] = [{"name": evicted.name, "score": evicted.score}]
+    return selected, diagnostics
 
 
 def full_graph_pipeline_rank(
@@ -276,6 +454,104 @@ def _is_contract_edge(attrs: dict[str, Any]) -> bool:
     if isinstance(sources, str):
         sources = [sources]
     return "api_contract" in {str(source).strip().lower() for source in sources}
+
+
+def _is_consumer_aligned_contract_edge(
+    graph: ToolGraph,
+    source: str,
+    target: str,
+    attrs: dict[str, Any],
+) -> bool:
+    if not _is_contract_edge(attrs):
+        return False
+    producer = graph.tools.get(target)
+    if producer is None:
+        return False
+    data_flow = attrs.get("data_flow") or {}
+    from_field = str(data_flow.get("from_field") or "")
+    from_path = str(data_flow.get("from_path") or "")
+    for row in producer.metadata.get("produces") or []:
+        if not row.get("consumer_alignment_only"):
+            continue
+        alignment = row.get("consumer_alignment") or {}
+        if alignment.get("policy_revision") != CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION:
+            continue
+        if source not in set(alignment.get("consumer_tools") or []):
+            continue
+        if from_field and row.get("field_name") != from_field:
+            continue
+        if from_path and row.get("json_path") != from_path:
+            continue
+        return True
+    return False
+
+
+def _candidate_admission_semantic_evidence(
+    query: str,
+    tool: ToolSchema,
+) -> list[dict[str, Any]]:
+    first_action = _first_query_action(query)
+    ai = tool.metadata.get("ai_metadata") or {}
+    canonical_action = str(ai.get("canonical_action") or "").strip().lower()
+    if not first_action or canonical_action != first_action:
+        return []
+
+    openapi = tool.metadata.get("openapi") or {}
+    surface = " ".join(
+        [
+            str(ai.get("primary_resource") or ""),
+            str(openapi.get("path_module") or ""),
+        ]
+    )
+    if not _resource_terms(surface):
+        surface = " ".join(
+            [
+                tool.name,
+                str(ai.get("one_line_summary") or ""),
+                str(openapi.get("summary") or ""),
+            ]
+        )
+    query_terms = _resource_terms(query)
+    candidate_terms = _resource_terms(surface)
+    matched_terms = sorted(query_terms & candidate_terms)
+    if not matched_terms:
+        return []
+    return [
+        {
+            "source": "first_query_action",
+            "value": canonical_action,
+        },
+        {
+            "source": "resource_terms",
+            "matched_terms": matched_terms[:12],
+        },
+    ]
+
+
+def _first_query_action(query: str) -> str:
+    normalized = str(query or "").casefold()
+    matches: list[tuple[int, str]] = []
+    for action, aliases in _ADMISSION_ACTION_ALIASES.items():
+        for alias in aliases:
+            if alias.isascii():
+                match = re.search(rf"\b{re.escape(alias)}\b", normalized)
+                position = match.start() if match else -1
+            else:
+                position = normalized.find(alias)
+            if position >= 0:
+                matches.append((position, action))
+    return min(matches)[1] if matches else ""
+
+
+def _resource_terms(text: str) -> set[str]:
+    terms: set[str] = set()
+    for token in fixed_lexical_tokens(text):
+        if token in _ADMISSION_RESOURCE_STOPWORDS or len(token) <= 1:
+            continue
+        terms.add(token)
+        if token.isascii() and token.endswith("s") and len(token) > 3:
+            terms.add(token[:-1])
+    return terms
 
 
 def _edge_score(

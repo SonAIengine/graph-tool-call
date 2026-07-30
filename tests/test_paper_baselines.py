@@ -9,6 +9,8 @@ import pytest
 from benchmarks.experiment.artifact import validate_artifact
 from benchmarks.paper_baselines import (
     FIXED_BM25_TOKENIZER_REVISION,
+    FIXED_GRAPH_ADMISSION_POLICY_REVISION,
+    FIXED_GRAPH_ADMISSION_RESERVED_SLOTS,
     FIXED_GRAPH_POLICY_REVISION,
     FIXED_RRF_K,
     PRODUCER_COVERAGE_POLICY_REVISION,
@@ -578,6 +580,201 @@ def test_b6_typed_graph_uses_contract_edges_and_confidence():
     assert ranking[-1].score == pytest.approx(0.8 * (2 / 3))
 
 
+def test_b6b_reserves_one_slot_for_forward_contract_candidate():
+    tools = [
+        ToolSchema(name="target"),
+        *(ToolSchema(name=f"distractor-{index}") for index in range(1, 5)),
+        ToolSchema(
+            name="producer",
+            metadata={
+                "ai_metadata": {
+                    "canonical_action": "read",
+                    "primary_resource": "target",
+                    "result_shape": "single",
+                },
+                "produces": [
+                    {
+                        "field_name": "id",
+                        "json_path": "$.id",
+                        "consumer_alignment_only": True,
+                        "consumer_alignment": {
+                            "policy_revision": CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION,
+                            "consumer_tools": ["target"],
+                        },
+                    }
+                ],
+            },
+        ),
+    ]
+    graph = ToolGraph()
+    for tool in tools:
+        graph.add_tool(tool)
+    graph.graph.add_edge(
+        "target",
+        "producer",
+        relation=RelationType.REQUIRES,
+        confidence=Confidence.EXTRACTED,
+        evidence_sources=["api_contract"],
+    )
+    base = [
+        RankedCandidate("target", 1.0),
+        RankedCandidate("distractor-1", 0.9),
+        RankedCandidate("distractor-2", 0.8),
+        RankedCandidate("distractor-3", 0.7),
+        RankedCandidate("distractor-4", 0.6),
+        RankedCandidate("producer", 0.1),
+    ]
+
+    protected, _ = FixedGraphRetriever(
+        graph,
+        profile="typed_contract",
+    ).rank("read target", base, top_k=5)
+    admitted, diagnostics = FixedGraphRetriever(
+        graph,
+        profile="typed_contract",
+        admission_policy="consumer_aligned_contract_slot",
+    ).rank("read target", base, top_k=5)
+
+    assert [candidate.name for candidate in protected] == [
+        "target",
+        "distractor-1",
+        "distractor-2",
+        "distractor-3",
+        "distractor-4",
+    ]
+    assert [candidate.name for candidate in admitted] == [
+        "target",
+        "distractor-1",
+        "distractor-2",
+        "distractor-3",
+        "producer",
+    ]
+    admission = diagnostics["candidate_admission"]
+    assert FIXED_GRAPH_ADMISSION_POLICY_REVISION == "paper-consumer-aligned-contract-slot-v1"
+    assert FIXED_GRAPH_ADMISSION_RESERVED_SLOTS == 1
+    assert admission["triggered"] is True
+    assert admission["qualified_candidate_count"] == 1
+    assert admission["admitted"] == [
+        {
+            "name": "producer",
+            "score": pytest.approx(0.8 * (2 / 3)),
+            "admission_score": pytest.approx(0.8 * (2 / 3)),
+            "path": ["target", "producer"],
+            "semantic_evidence": [
+                {
+                    "source": "first_query_action",
+                    "value": "read",
+                },
+                {
+                    "source": "resource_terms",
+                    "matched_terms": ["target"],
+                },
+            ],
+        }
+    ]
+    assert admission["evicted"] == [{"name": "distractor-4", "score": pytest.approx(0.6)}]
+
+
+def test_b6b_does_not_reserve_slot_for_reverse_contract_traversal():
+    tools = [
+        ToolSchema(name="target"),
+        *(ToolSchema(name=f"distractor-{index}") for index in range(1, 5)),
+        ToolSchema(name="consumer"),
+    ]
+    graph = ToolGraph()
+    for tool in tools:
+        graph.add_tool(tool)
+    graph.graph.add_edge(
+        "consumer",
+        "target",
+        relation=RelationType.REQUIRES,
+        confidence=Confidence.EXTRACTED,
+        evidence_sources=["api_contract"],
+    )
+    base = [
+        RankedCandidate("target", 1.0),
+        RankedCandidate("distractor-1", 0.9),
+        RankedCandidate("distractor-2", 0.8),
+        RankedCandidate("distractor-3", 0.7),
+        RankedCandidate("distractor-4", 0.6),
+        RankedCandidate("consumer", 0.1),
+    ]
+
+    ranking, diagnostics = FixedGraphRetriever(
+        graph,
+        profile="typed_contract",
+        admission_policy="consumer_aligned_contract_slot",
+    ).rank("read target", base, top_k=5)
+
+    assert [candidate.name for candidate in ranking] == [
+        "target",
+        "distractor-1",
+        "distractor-2",
+        "distractor-3",
+        "distractor-4",
+    ]
+    admission = diagnostics["candidate_admission"]
+    assert admission["qualified_candidate_count"] == 0
+    assert admission["triggered"] is False
+
+
+def test_b6b_rejects_consumer_aligned_candidate_with_unrelated_semantics():
+    tools = [
+        ToolSchema(name="target"),
+        *(ToolSchema(name=f"distractor-{index}") for index in range(1, 5)),
+        ToolSchema(
+            name="createUnrelated",
+            metadata={
+                "ai_metadata": {
+                    "canonical_action": "create",
+                    "primary_resource": "unrelated",
+                },
+                "produces": [
+                    {
+                        "field_name": "id",
+                        "json_path": "$.id",
+                        "consumer_alignment_only": True,
+                        "consumer_alignment": {
+                            "policy_revision": CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION,
+                            "consumer_tools": ["target"],
+                        },
+                    }
+                ],
+            },
+        ),
+    ]
+    graph = ToolGraph()
+    for tool in tools:
+        graph.add_tool(tool)
+    graph.graph.add_edge(
+        "target",
+        "createUnrelated",
+        relation=RelationType.REQUIRES,
+        confidence=Confidence.INFERRED,
+        evidence_sources=["api_contract"],
+    )
+    base = [
+        RankedCandidate("target", 1.0),
+        RankedCandidate("distractor-1", 0.9),
+        RankedCandidate("distractor-2", 0.8),
+        RankedCandidate("distractor-3", 0.7),
+        RankedCandidate("distractor-4", 0.6),
+        RankedCandidate("createUnrelated", 0.1),
+    ]
+
+    ranking, diagnostics = FixedGraphRetriever(
+        graph,
+        profile="typed_contract",
+        admission_policy="consumer_aligned_contract_slot",
+    ).rank("read target", base, top_k=5)
+
+    assert [candidate.name for candidate in ranking][-1] == "distractor-4"
+    admission = diagnostics["candidate_admission"]
+    assert admission["contract_qualified_candidate_count"] == 1
+    assert admission["qualified_candidate_count"] == 0
+    assert admission["triggered"] is False
+
+
 def test_fixed_graph_retriever_bounds_cycles_and_keeps_the_strongest_path():
     tools = [
         ToolSchema(name="target"),
@@ -1051,12 +1248,14 @@ def test_train_dev_runner_emits_valid_paired_artifact(baseline_artifact):
         "graph_untyped",
         "graph_typed_contract",
         "graph_consumer_aligned_contract",
+        "graph_consumer_aligned_admission",
         "full_graph_pipeline",
     }
     assert set(baseline_artifact.summary["ablations"]) == {
         "b5_minus_b4_topology",
         "b6_minus_b5_typed_contract",
         "b6a_minus_b6_output_promotion",
+        "b6b_minus_b6a_candidate_admission",
         "b7_minus_b6_selector_producers",
         "b7_minus_b4_full_pipeline",
     }
@@ -1083,6 +1282,7 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
             "graph_untyped",
             "graph_typed_contract",
             "graph_consumer_aligned_contract",
+            "graph_consumer_aligned_admission",
             "full_graph_pipeline",
         ):
             retrieved = case["observed"][baseline]["retrieved"]
@@ -1165,6 +1365,34 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
         ]
         is False
     )
+    admission_config = baseline_artifact.config["baselines"]["graph_consumer_aligned_admission"]
+    assert admission_config["label"] == "B6b"
+    assert (
+        admission_config["candidate_admission_policy_revision"]
+        == FIXED_GRAPH_ADMISSION_POLICY_REVISION
+    )
+    assert admission_config["candidate_admission_reserved_slots"] == 1
+    assert admission_config["ground_truth_signals"] is False
+    for case in baseline_artifact.cases:
+        admission = case["observed"]["graph_consumer_aligned_admission"]["diagnostics"][
+            "candidate_admission"
+        ]
+        assert admission["policy_revision"] == FIXED_GRAPH_ADMISSION_POLICY_REVISION
+        assert admission["reserved_slots"] == FIXED_GRAPH_ADMISSION_RESERVED_SLOTS
+    admission_ablation = baseline_artifact.summary["ablations"]["b6b_minus_b6a_candidate_admission"]
+    assert admission_ablation["improved_case_count"]["target_hit_at_k"] >= 1
+    assert admission_ablation["improved_case_count"]["producer_recall_at_k"] >= 1
+    for metric in (
+        "target_hit_at_k",
+        "producer_recall_at_k",
+        "required_tool_recall_at_k",
+        "all_required_found_at_k",
+        "precision_at_k",
+        "mrr",
+        "average_precision",
+        "ndcg_at_k",
+    ):
+        assert admission_ablation["regressed_case_count"][metric] == 0
     assert baseline_artifact.config["baselines"]["full_graph_pipeline"]["label"] == "B7"
     assert baseline_artifact.config["baselines"]["graph_untyped"]["contract_signals"] is False
     assert baseline_artifact.config["baselines"]["graph_typed_contract"]["contract_signals"] is True
