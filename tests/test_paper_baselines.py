@@ -8,6 +8,7 @@ import pytest
 
 from benchmarks.experiment.artifact import validate_artifact
 from benchmarks.paper_baselines import (
+    CONTRACT_PROJECTED_SCHEMA_POLICY_REVISION,
     FIXED_BM25_TOKENIZER_REVISION,
     FIXED_GRAPH_ADMISSION_POLICY_REVISION,
     FIXED_GRAPH_ADMISSION_RESERVED_SLOTS,
@@ -50,7 +51,7 @@ class DeterministicTestEncoder:
 
 class DeterministicTestTokenCounter:
     def count(self, text: str) -> int:
-        return len(text)
+        return max(1, (len(text) + 3) // 4)
 
 
 def _test_embedding(text: str) -> list[float]:
@@ -1249,6 +1250,7 @@ def test_train_dev_runner_emits_valid_paired_artifact(baseline_artifact):
         "graph_typed_contract",
         "graph_consumer_aligned_contract",
         "graph_consumer_aligned_admission",
+        "graph_budget_aware_schema_admission",
         "full_graph_pipeline",
     }
     assert set(baseline_artifact.summary["ablations"]) == {
@@ -1256,6 +1258,7 @@ def test_train_dev_runner_emits_valid_paired_artifact(baseline_artifact):
         "b6_minus_b5_typed_contract",
         "b6a_minus_b6_output_promotion",
         "b6b_minus_b6a_candidate_admission",
+        "b6c_minus_b6b_contract_projection",
         "b7_minus_b6_selector_producers",
         "b7_minus_b4_full_pipeline",
     }
@@ -1283,6 +1286,7 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
             "graph_typed_contract",
             "graph_consumer_aligned_contract",
             "graph_consumer_aligned_admission",
+            "graph_budget_aware_schema_admission",
             "full_graph_pipeline",
         ):
             retrieved = case["observed"][baseline]["retrieved"]
@@ -1320,6 +1324,9 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
         "limit": 2048,
         "candidate_limit": 5,
         "policy_revision": "ranked-greedy-whole-schema-v1",
+        "alternate_policy_revisions": {
+            "graph_budget_aware_schema_admission": ("paper-contract-projected-admission-v1")
+        },
         "serialization_revision": "paper-tool-schema-json-v1",
         "add_special_tokens": False,
         "payload_scope": ["name", "description", "parameters"],
@@ -1506,6 +1513,52 @@ def test_runner_rankings_are_reproducible(baseline_artifact, tmp_path: Path):
     repeated_budget_rankings = [case["token_budget_observed"] for case in repeated.cases]
     assert first_budget_rankings == repeated_budget_rankings
     assert _stable_summary(baseline_artifact.summary) == _stable_summary(repeated.summary)
+
+
+def test_b6c_preserves_b6b_ranking_and_changes_only_admitted_schema_context(
+    baseline_artifact,
+):
+    config = baseline_artifact.config["baselines"]["graph_budget_aware_schema_admission"]
+    assert config["label"] == "B6c"
+    assert config["base_ranking"] == "graph_consumer_aligned_admission"
+    assert config["schema_projection_policy_revision"] == CONTRACT_PROJECTED_SCHEMA_POLICY_REVISION
+    assert config["projection_scope"] == "b6b_evidence_admitted_candidates_only"
+    assert config["description_char_limit"] == 240
+    assert config["parameter_description_char_limit"] == 160
+    assert config["enum_value_limit"] == 16
+    assert config["optional_parameters_included"] is False
+    assert config["full_schema_hydration"] == "before_execution"
+    assert config["ground_truth_signals"] is False
+
+    regressed = 0
+    projected_schema_count = 0
+    for case in baseline_artifact.cases:
+        assert (
+            case["observed"]["graph_budget_aware_schema_admission"]["retrieved"]
+            == case["observed"]["graph_consumer_aligned_admission"]["retrieved"]
+        )
+        b6b = case["token_budget_metrics"]["graph_consumer_aligned_admission"]
+        b6c = case["token_budget_metrics"]["graph_budget_aware_schema_admission"]
+        if b6c["required_tool_recall_at_k"] < b6b["required_tool_recall_at_k"]:
+            regressed += 1
+
+        budget = case["token_budget_observed"]["graph_budget_aware_schema_admission"]
+        admission = case["observed"]["graph_consumer_aligned_admission"]["diagnostics"][
+            "candidate_admission"
+        ]
+        admitted = {row["name"] for row in admission["admitted"]}
+        projected = {
+            name for name, mode in budget["schema_modes"].items() if mode == "contract_projected"
+        }
+        assert projected <= admitted
+        projected_schema_count += len(projected)
+
+    assert projected_schema_count >= 1
+    assert regressed == 0
+    ablation = baseline_artifact.summary["token_budget_ablations"][
+        "b6c_minus_b6b_contract_projection"
+    ]
+    assert ablation["regressed_case_count"]["required_tool_recall_at_k"] == 0
 
 
 def test_held_out_split_is_blocked_without_explicit_access(tmp_path: Path):

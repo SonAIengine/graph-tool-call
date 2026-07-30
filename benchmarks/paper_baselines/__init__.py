@@ -36,6 +36,10 @@ from .retrievers import (
     seeded_random_rank,
 )
 from .token_budget import (
+    CONTRACT_PROJECTED_DESCRIPTION_LIMIT,
+    CONTRACT_PROJECTED_ENUM_LIMIT,
+    CONTRACT_PROJECTED_PARAMETER_DESCRIPTION_LIMIT,
+    CONTRACT_PROJECTED_SCHEMA_POLICY_REVISION,
     DEFAULT_CONTEXT_TOKENIZER,
     DEFAULT_CONTEXT_TOKENIZER_REVISION,
     DEFAULT_TOKEN_BUDGET,
@@ -44,8 +48,11 @@ from .token_budget import (
     HuggingFaceTokenCounter,
     TokenBudgetSelection,
     TokenCounter,
+    apply_contract_projected_token_budget,
     apply_ranked_token_budget,
+    contract_projected_model_facing_schema,
     model_facing_schema,
+    serialize_model_facing_payloads,
     serialize_model_facing_schemas,
 )
 
@@ -55,6 +62,10 @@ __all__ = [
     "DEFAULT_CONTEXT_TOKENIZER",
     "DEFAULT_CONTEXT_TOKENIZER_REVISION",
     "DEFAULT_TOKEN_BUDGET",
+    "CONTRACT_PROJECTED_DESCRIPTION_LIMIT",
+    "CONTRACT_PROJECTED_ENUM_LIMIT",
+    "CONTRACT_PROJECTED_PARAMETER_DESCRIPTION_LIMIT",
+    "CONTRACT_PROJECTED_SCHEMA_POLICY_REVISION",
     "FIXED_GRAPH_ADMISSION_POLICY_REVISION",
     "FIXED_GRAPH_ADMISSION_RESERVED_SLOTS",
     "FIXED_GRAPH_DEPTH",
@@ -77,7 +88,9 @@ __all__ = [
     "HuggingFaceTokenCounter",
     "TokenBudgetSelection",
     "TokenCounter",
+    "apply_contract_projected_token_budget",
     "apply_ranked_token_budget",
+    "contract_projected_model_facing_schema",
     "diagnose_required_producer_coverage",
     "flat_semantic_coverage",
     "flat_semantic_document",
@@ -89,6 +102,7 @@ __all__ = [
     "run_paper_baselines",
     "seeded_random_rank",
     "model_facing_schema",
+    "serialize_model_facing_payloads",
     "serialize_model_facing_schemas",
     "summarize_producer_edge_coverage",
 ]
