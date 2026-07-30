@@ -427,6 +427,7 @@ serialization, and whole-schema truncation policy; see
 | B4 | B3 over flat action/resource/module/result-shape metadata, no edges |
 | B5 | B4 + untyped graph topology, no IO-contract fields |
 | B6 | Graph + typed IO contract, no target selector |
+| B6a | B6 + opt-in required-consumer-aligned output promotion |
 | B7 | Full graph-tool-call pipeline: retrieval + selector + producer expansion |
 | B8 | Closest reproducible published graph retriever |
 | B9 | Optional external or small reranker over the same candidate pool |
@@ -461,6 +462,7 @@ component at a time:
 | no deterministic semantic metadata | Do action/resource/module signals matter? |
 | no graph expansion | Does graph structure add value over flat retrieval? |
 | no IO contract | Are typed request/response dependencies useful? |
+| no consumer-aligned output promotion | Do required consumers recover useful response paths without unacceptable graph growth? |
 | no producer expansion | Is multi-step coverage coming from explicit producer discovery? |
 | no target selector | Does guarded selection reduce sibling ambiguity? |
 | no result-shape signal | Does single/list/count/mutation disambiguation matter? |
@@ -840,6 +842,7 @@ This order prevents five-hour model runs from becoming the development loop.
 | 2026-07-29 | The strongest frozen B1-B4 development result becomes the primary flat comparator; B3 remains reported even when fusion underperforms B2. |
 | 2026-07-30 | B5-B7 share B4 seeds and budgets; graph, typed-contract, and selector/producer effects are reported as paired deltas. |
 | 2026-07-30 | Producer-edge failures are diagnosed with ground-truth-only contract, path, direction, and seed coverage before graph weights are tuned. |
+| 2026-07-30 | Required-consumer-aligned output promotion improves contract-path coverage but not Recall@5 under protected B4 seeds; candidate admission is the next isolated ablation. |
 
 ## 20. Immediate Next Tasks
 
@@ -859,6 +862,10 @@ This order prevents five-hour model runs from becoming the development loop.
       deterministic pipeline baselines with paired bootstrap deltas.
 - [x] Add producer-target contract, edge, path, and seed coverage diagnostics
       that are recorded but never used for ranking.
+- [x] Add the B6a required-consumer-aligned output-promotion ablation and
+      record both structural coverage gains and graph-growth cost.
+- [ ] Add a frozen candidate-admission/seed-slot ablation without changing
+      retrieval channels, graph weights, or output-promotion policy.
 - [ ] Add the budgeted LLM catalog-selector baseline.
 - [x] Add actual tokenizer accounting with frozen tokenizer revisions.
       The B-1/B0-O/B1-B7 harness uses pinned Qwen3 tokenizer accounting and a

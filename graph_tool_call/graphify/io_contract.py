@@ -13,6 +13,7 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
+from graph_tool_call.core.contract_matching import description_alias_key
 from graph_tool_call.ingest.example_fields import EXAMPLE_FIELD_HINT_KEYS
 from graph_tool_call.ingest.io_contract import extract_leaves
 from graph_tool_call.ingest.response_shape import (
@@ -21,6 +22,8 @@ from graph_tool_call.ingest.response_shape import (
 )
 
 FieldPredicate = Callable[[str], bool]
+
+CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION = "required-consumer-aligned-output-v1"
 
 _GENERIC_PRODUCE_FIELDS = frozenset(
     {
@@ -296,6 +299,7 @@ def promote_api_contract_signals(
     *,
     max_produces_per_tool: int = 32,
     max_consumes_per_tool: int = 32,
+    max_consumer_aligned_paths_per_field: int = 1,
     max_field_frequency_ratio: float = 0.12,
     user_input_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
     context_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
@@ -308,6 +312,7 @@ def promote_api_contract_signals(
     search_filter_detector: FieldPredicate | None = None,
     infer_semantic_tags: bool = True,
     promote_rare_produces: bool = False,
+    promote_consumer_aligned_produces: bool = False,
     index_promoted_contract_fields: bool = False,
 ) -> dict[str, int]:
     """Promote selected raw OpenAPI contract rows into graph/search IO signals.
@@ -333,16 +338,31 @@ def promote_api_contract_signals(
         paging_detector=paging_detector,
         search_filter_detector=search_filter_detector,
     )
+    if max_consumer_aligned_paths_per_field < 0:
+        raise ValueError("max_consumer_aligned_paths_per_field must be non-negative.")
+
     produce_freq = _contract_field_frequency(schemas, direction="produces")
+    consumer_demand = (
+        _required_consumer_demand(
+            schemas,
+            policy=policy,
+            infer_semantic_tags=infer_semantic_tags,
+        )
+        if promote_consumer_aligned_produces
+        else {}
+    )
     tool_count = max(1, len(schemas))
     max_field_frequency = max(2, int(tool_count * max_field_frequency_ratio))
 
     stats = {
         "tools_promoted": 0,
         "produces_added": 0,
+        "produces_consumer_aligned": 0,
         "consumes_added": 0,
         "produces_skipped": 0,
+        "produces_skipped_path_cap": 0,
         "consumes_skipped": 0,
+        "required_consumer_demand_keys": len(consumer_demand),
     }
 
     for schema in schemas:
@@ -354,12 +374,18 @@ def promote_api_contract_signals(
         promoted_consumes: list[dict[str, Any]] = []
 
         for row in contract.get("produces") or []:
+            consumer_alignment = _consumer_alignment(
+                row,
+                consumer_demand,
+                producer_metadata=metadata,
+            )
             promoted = _promote_produce_row(
                 row,
                 produce_freq=produce_freq,
                 max_field_frequency=max_field_frequency,
                 infer_semantic_tags=infer_semantic_tags,
                 promote_rare_produces=promote_rare_produces,
+                consumer_alignment=consumer_alignment,
                 search_signal=index_promoted_contract_fields,
             )
             if promoted is None:
@@ -367,8 +393,17 @@ def promote_api_contract_signals(
                 continue
             promoted_produces.append(promoted)
         promoted_produces.sort(key=_promoted_produce_sort_key)
+        if promote_consumer_aligned_produces:
+            promoted_produces, skipped_path_count = _limit_consumer_aligned_paths(
+                promoted_produces,
+                max_paths_per_field=max_consumer_aligned_paths_per_field,
+            )
+            stats["produces_skipped_path_cap"] += skipped_path_count
         if max_produces_per_tool >= 0:
             promoted_produces = promoted_produces[:max_produces_per_tool]
+        stats["produces_consumer_aligned"] += sum(
+            bool(row.get("consumer_alignment")) for row in promoted_produces
+        )
 
         for row in contract.get("consumes") or []:
             promoted = _promote_consume_row(
@@ -394,10 +429,15 @@ def promote_api_contract_signals(
                     "source": "api_contract",
                     "max_produces_per_tool": max_produces_per_tool,
                     "max_consumes_per_tool": max_consumes_per_tool,
+                    "max_consumer_aligned_paths_per_field": (max_consumer_aligned_paths_per_field),
                     "max_field_frequency_ratio": max_field_frequency_ratio,
                     "max_field_frequency": max_field_frequency,
                     "infer_semantic_tags": infer_semantic_tags,
                     "promote_rare_produces": promote_rare_produces,
+                    "promote_consumer_aligned_produces": (promote_consumer_aligned_produces),
+                    "consumer_aligned_output_policy_revision": (
+                        CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION
+                    ),
                     "index_promoted_contract_fields": index_promoted_contract_fields,
                 }
             )
@@ -627,6 +667,127 @@ def _contract_field_frequency(schemas: list[Any], *, direction: str) -> Counter[
     return freq
 
 
+def _required_consumer_demand(
+    schemas: list[Any],
+    *,
+    policy: _Policy,
+    infer_semantic_tags: bool,
+) -> dict[tuple[str, str], dict[str, str]]:
+    demand: dict[tuple[str, str], dict[str, str]] = {}
+    for schema in schemas:
+        metadata = getattr(schema, "metadata", None) or {}
+        contract = (
+            metadata.get("api_contract") if isinstance(metadata.get("api_contract"), dict) else {}
+        )
+        tool_name = str(getattr(schema, "name", "") or "")
+        scope = _contract_alignment_scope(metadata)
+        for row in contract.get("consumes") or []:
+            promoted = _promote_consume_row(
+                row,
+                policy=policy,
+                infer_semantic_tags=infer_semantic_tags,
+                search_signal=False,
+            )
+            if promoted is None or not promoted.get("required") or promoted.get("kind") != "data":
+                continue
+            for key in _contract_match_keys(promoted):
+                demand.setdefault(key, {})[tool_name] = scope
+    return demand
+
+
+def _consumer_alignment(
+    row: Any,
+    demand: dict[tuple[str, str], dict[str, str]],
+    *,
+    producer_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(row, dict) or not demand:
+        return {}
+    producer_scope = _contract_alignment_scope(producer_metadata)
+    matched: dict[tuple[str, str], dict[str, str]] = {}
+    for key in _contract_match_keys(row):
+        compatible = {
+            tool_name: consumer_scope
+            for tool_name, consumer_scope in demand.get(key, {}).items()
+            if _contract_scopes_compatible(
+                producer_scope,
+                consumer_scope,
+                match_type=key[0],
+            )
+        }
+        if compatible:
+            matched[key] = compatible
+    if not matched:
+        return {}
+    consumers = sorted(
+        {
+            tool_name
+            for consumers_by_scope in matched.values()
+            for tool_name in consumers_by_scope
+            if tool_name
+        }
+    )
+    consumer_scopes = sorted(
+        {
+            scope
+            for consumers_by_scope in matched.values()
+            for scope in consumers_by_scope.values()
+            if scope
+        }
+    )
+    return {
+        "policy_revision": CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION,
+        "match_types": sorted({key[0] for key in matched}),
+        "required_consumer_count": len(consumers),
+        "consumer_tools": consumers,
+        "producer_scope": producer_scope,
+        "consumer_scopes": consumer_scopes,
+    }
+
+
+def _contract_match_keys(row: dict[str, Any]) -> set[tuple[str, str]]:
+    keys: set[tuple[str, str]] = set()
+    field_key = _canonical_field_key(row.get("field_name"))
+    if field_key:
+        keys.add(("field", field_key))
+    semantic = str(row.get("semantic_tag") or "").strip()
+    if semantic and row.get("semantic_inferred_from") != "field_name":
+        keys.add(("semantic", semantic))
+    description_key = _specific_description_key(row)
+    if description_key:
+        keys.add(("description", description_key))
+    return keys
+
+
+def _contract_alignment_scope(metadata: dict[str, Any]) -> str:
+    openapi = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
+    ai = metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
+    candidates = (
+        ("module", openapi.get("path_module") or metadata.get("path_module")),
+        ("operation_group", openapi.get("operation_group")),
+        ("resource", ai.get("primary_resource")),
+        ("source", metadata.get("source_label")),
+    )
+    for scope_type, value in candidates:
+        normalized = str(value or "").strip().casefold()
+        if normalized and normalized not in {"unknown", "unassigned"}:
+            return f"{scope_type}:{normalized}"
+    return ""
+
+
+def _contract_scopes_compatible(
+    producer_scope: str,
+    consumer_scope: str,
+    *,
+    match_type: str,
+) -> bool:
+    if match_type in {"semantic", "description"}:
+        return True
+    if not producer_scope or not consumer_scope or producer_scope != consumer_scope:
+        return False
+    return producer_scope.startswith(("module:", "operation_group:", "resource:"))
+
+
 def _promote_produce_row(
     row: Any,
     *,
@@ -634,6 +795,7 @@ def _promote_produce_row(
     max_field_frequency: int,
     infer_semantic_tags: bool,
     promote_rare_produces: bool,
+    consumer_alignment: dict[str, Any],
     search_signal: bool,
 ) -> dict[str, Any] | None:
     if not isinstance(row, dict):
@@ -649,7 +811,8 @@ def _promote_produce_row(
     identifier = _is_identifier_like(field_name)
     rare = produce_freq.get(field_key, 0) <= max_field_frequency
     semantic = str(row.get("semantic_tag") or "").strip()
-    if not (semantic or identifier or (promote_rare_produces and rare)):
+    baseline_eligible = bool(semantic or identifier or (promote_rare_produces and rare))
+    if not (baseline_eligible or consumer_alignment):
         return None
 
     promoted = _copy_contract_field(row)
@@ -660,6 +823,14 @@ def _promote_produce_row(
         identifier=identifier,
         rare=rare,
     )
+    if consumer_alignment and not baseline_eligible:
+        promoted["consumer_alignment"] = dict(consumer_alignment)
+        promoted["consumer_alignment_only"] = True
+        promoted["promotion_reasons"] = ["required_consumer_match"]
+        promoted["signal_score"] += 6 + min(
+            int(consumer_alignment.get("required_consumer_count") or 0),
+            4,
+        )
     if infer_semantic_tags and not promoted.get("semantic_tag"):
         promoted["semantic_tag"] = _semantic_tag(field_name)
         promoted["semantic_inferred_from"] = "field_name"
@@ -792,6 +963,9 @@ def _merge_rows(metadata: dict[str, Any], key: str, incoming: list[dict[str, Any
             "contract_source",
             "search_signal",
             "signal_score",
+            "consumer_alignment",
+            "consumer_alignment_only",
+            "promotion_reasons",
             *_CONTRACT_HINT_KEYS,
         ):
             if merge_key in row and not existing.get(merge_key):
@@ -811,8 +985,14 @@ def _row_identity(row: dict[str, Any], *, direction: str) -> tuple[str, str, str
     return field, semantic, str(row.get("location") or row.get("kind") or "")
 
 
-def _promoted_produce_sort_key(row: dict[str, Any]) -> tuple[int, str]:
-    return (-int(row.get("signal_score") or 0), str(row.get("field_name") or ""))
+def _promoted_produce_sort_key(row: dict[str, Any]) -> tuple[int, int, str, str]:
+    json_path = str(row.get("json_path") or "")
+    return (
+        -int(row.get("signal_score") or 0),
+        _json_path_depth(json_path),
+        str(row.get("field_name") or ""),
+        json_path,
+    )
 
 
 def _promoted_consume_sort_key(row: dict[str, Any]) -> tuple[int, str]:
@@ -849,6 +1029,35 @@ def _consume_signal_score(row: dict[str, Any]) -> int:
     return score
 
 
+def _limit_consumer_aligned_paths(
+    rows: list[dict[str, Any]],
+    *,
+    max_paths_per_field: int,
+) -> tuple[list[dict[str, Any]], int]:
+    kept: list[dict[str, Any]] = []
+    aligned_counts: Counter[str] = Counter()
+    skipped = 0
+    for row in rows:
+        if not row.get("consumer_alignment_only"):
+            kept.append(row)
+            continue
+        field_key = _canonical_field_key(row.get("field_name"))
+        if aligned_counts[field_key] >= max_paths_per_field:
+            skipped += 1
+            continue
+        aligned_counts[field_key] += 1
+        kept.append(row)
+    return kept, skipped
+
+
+def _json_path_depth(path: str) -> int:
+    return len([segment for segment in re.split(r"[.\[]+", path) if segment not in {"", "$"}])
+
+
+def _specific_description_key(row: dict[str, Any]) -> str:
+    return description_alias_key(row)
+
+
 def _canonical_field_key(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
 
@@ -874,4 +1083,8 @@ def _split_field_words(field_name: str) -> list[str]:
     return [token.lower() for token in re.split(r"[^A-Za-z0-9]+", spaced) if token]
 
 
-__all__ = ["build_io_contract", "promote_api_contract_signals"]
+__all__ = [
+    "CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION",
+    "build_io_contract",
+    "promote_api_contract_signals",
+]

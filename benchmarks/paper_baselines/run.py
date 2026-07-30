@@ -35,7 +35,10 @@ from benchmarks.metrics import (
 )
 from graph_tool_call import ingest_source
 from graph_tool_call.core.tool import ToolSchema
-from graph_tool_call.graphify import ingest_openapi_graphify
+from graph_tool_call.graphify import (
+    CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION,
+    ingest_openapi_graphify,
+)
 
 from .graph_retrievers import (
     FIXED_GRAPH_DEPTH,
@@ -88,11 +91,16 @@ BASELINE_NAMES = (
     "flat_semantic_rrf",
     "graph_untyped",
     "graph_typed_contract",
+    "graph_consumer_aligned_contract",
     "full_graph_pipeline",
 )
 ABLATION_PAIRS = {
     "b5_minus_b4_topology": ("flat_semantic_rrf", "graph_untyped"),
     "b6_minus_b5_typed_contract": ("graph_untyped", "graph_typed_contract"),
+    "b6a_minus_b6_output_promotion": (
+        "graph_typed_contract",
+        "graph_consumer_aligned_contract",
+    ),
     "b7_minus_b6_selector_producers": (
         "graph_typed_contract",
         "full_graph_pipeline",
@@ -141,7 +149,7 @@ def run_paper_baselines(
     context_tokenizer_revision: str = DEFAULT_CONTEXT_TOKENIZER_REVISION,
     bootstrap_resamples: int = 1000,
 ) -> ExperimentArtifact:
-    """Evaluate the nine frozen baselines and return one paired artifact."""
+    """Evaluate the ten frozen baselines and return one paired artifact."""
     if top_k <= 0:
         raise ValueError("top_k must be greater than zero.")
     if not dense_model_name.strip() or not dense_model_revision.strip():
@@ -282,7 +290,7 @@ def run_paper_baselines(
         replay_command.append("--allow-held-out")
     artifact = ExperimentArtifact(
         benchmark="public-heterogeneous-tool-retrieval",
-        methodology="paired-fixed-baselines-v5",
+        methodology="paired-fixed-baselines-v6",
         run_kind="deterministic",
         created_at=created_at or datetime.now(timezone.utc).isoformat(),
         seed=seed,
@@ -396,6 +404,24 @@ def run_paper_baselines(
                     "contract_signals": True,
                     "selector_signals": False,
                 },
+                "graph_consumer_aligned_contract": {
+                    "label": "B6a",
+                    "base_ranking": "flat_semantic_rrf",
+                    "policy_revision": FIXED_GRAPH_POLICY_REVISION,
+                    "profile": "typed_contract",
+                    "seed_count": FIXED_GRAPH_SEED_COUNT,
+                    "depth": FIXED_GRAPH_DEPTH,
+                    "score_combination": "seed_score_or_max_graph_path",
+                    "edge_weights": "frozen_intent_relation_weights",
+                    "confidence_weights": True,
+                    "contract_signals": True,
+                    "output_promotion_policy_revision": (CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION),
+                    "output_promotion_scope": "required_data_consumers",
+                    "max_consumer_aligned_paths_per_field": 1,
+                    "optional_consumer_evidence": False,
+                    "ground_truth_signals": False,
+                    "selector_signals": False,
+                },
                 "full_graph_pipeline": {
                     "label": "B7",
                     "base_ranking": "graph_typed_contract",
@@ -415,6 +441,7 @@ def run_paper_baselines(
                 "policy_revision": PRODUCER_COVERAGE_POLICY_REVISION,
                 "evaluation_scope": "ground_truth_only",
                 "graph_profile": "typed_contract",
+                "comparison_graph_profile": "consumer_aligned_contract",
                 "path_direction": {
                     "retrieval": "both",
                     "dependency": "out",
@@ -520,12 +547,27 @@ def _evaluate_source(
         derive_semantic_metadata=True,
     )
     typed_graph_build_ms = (time.perf_counter() - started) * 1000
+    started = time.perf_counter()
+    consumer_aligned_graph, consumer_aligned_graph_stats = ingest_openapi_graphify(
+        _clone_tools_for_cold_graph(tools),
+        promote_contract_signals=True,
+        contract_signal_options={
+            "promote_consumer_aligned_produces": True,
+            "max_consumer_aligned_paths_per_field": 1,
+        },
+        derive_semantic_metadata=True,
+    )
+    consumer_aligned_graph_build_ms = (time.perf_counter() - started) * 1000
     untyped_graph_retriever = FixedGraphRetriever(
         untyped_graph,
         profile="untyped_topology",
     )
     typed_graph_retriever = FixedGraphRetriever(
         typed_graph,
+        profile="typed_contract",
+    )
+    consumer_aligned_graph_retriever = FixedGraphRetriever(
+        consumer_aligned_graph,
         profile="typed_contract",
     )
     available_names = {tool.name for tool in tools}
@@ -622,6 +664,20 @@ def _evaluate_source(
         latencies["graph_typed_contract"] = latencies["flat_semantic_rrf"] + typed_graph_latency_ms
 
         started = time.perf_counter()
+        consumer_aligned_full, ranking_diagnostics["graph_consumer_aligned_contract"] = (
+            consumer_aligned_graph_retriever.rank(
+                case["query"],
+                flat_semantic_full,
+                top_k=full_ranking_size,
+            )
+        )
+        consumer_aligned_graph_latency_ms = (time.perf_counter() - started) * 1000
+        rankings["graph_consumer_aligned_contract"] = consumer_aligned_full[:top_k]
+        latencies["graph_consumer_aligned_contract"] = (
+            latencies["flat_semantic_rrf"] + consumer_aligned_graph_latency_ms
+        )
+
+        started = time.perf_counter()
         rankings["full_graph_pipeline"], ranking_diagnostics["full_graph_pipeline"] = (
             full_graph_pipeline_rank(
                 case["query"],
@@ -639,6 +695,13 @@ def _evaluate_source(
             expected_targets=case["expected_targets"],
             required_producers=case.get("required_producers", []),
             seed_names=ranking_diagnostics["graph_typed_contract"]["seeds"],
+            max_depth=FIXED_GRAPH_DEPTH,
+        )
+        producer_edge_coverage_consumer_aligned = diagnose_required_producer_coverage(
+            consumer_aligned_graph,
+            expected_targets=case["expected_targets"],
+            required_producers=case.get("required_producers", []),
+            seed_names=ranking_diagnostics["graph_consumer_aligned_contract"]["seeds"],
             max_depth=FIXED_GRAPH_DEPTH,
         )
 
@@ -720,11 +783,15 @@ def _evaluate_source(
                         ),
                         "untyped_graph_build": untyped_graph_build_ms,
                         "typed_contract_graph_build": typed_graph_build_ms,
+                        "consumer_aligned_contract_graph_build": (consumer_aligned_graph_build_ms),
                     },
                     "flat_semantic_coverage": semantic_coverage,
                     "graph_profiles": {
                         "untyped": _graph_profile_summary(untyped_graph_stats),
                         "typed_contract": _graph_profile_summary(typed_graph_stats),
+                        "consumer_aligned_contract": _graph_profile_summary(
+                            consumer_aligned_graph_stats
+                        ),
                     },
                 },
                 "expected": {
@@ -738,6 +805,9 @@ def _evaluate_source(
                 "token_budget_metrics": token_budget_metrics,
                 "diagnostics": {
                     "producer_edge_coverage": producer_edge_coverage,
+                    "producer_edge_coverage_consumer_aligned": (
+                        producer_edge_coverage_consumer_aligned
+                    ),
                 },
                 "stages": {},
                 "failure": {},
@@ -857,6 +927,18 @@ def _summarize(
         )
         for source_id, source_cases in sorted(grouped.items())
     }
+    producer_edge_coverage_consumer_aligned = summarize_producer_edge_coverage(
+        [case["diagnostics"]["producer_edge_coverage_consumer_aligned"] for case in cases]
+    )
+    producer_edge_coverage_consumer_aligned_by_source = {
+        source_id: summarize_producer_edge_coverage(
+            [
+                case["diagnostics"]["producer_edge_coverage_consumer_aligned"]
+                for case in source_cases
+            ]
+        )
+        for source_id, source_cases in sorted(grouped.items())
+    }
     summary = {
         "case_count": len(cases),
         "family_count": len({case["context"]["family_id"] for case in cases}),
@@ -871,6 +953,10 @@ def _summarize(
         "per_source_ablations": per_source_ablations,
         "producer_edge_coverage": producer_edge_coverage,
         "producer_edge_coverage_by_source": producer_edge_coverage_by_source,
+        "producer_edge_coverage_consumer_aligned": (producer_edge_coverage_consumer_aligned),
+        "producer_edge_coverage_consumer_aligned_by_source": (
+            producer_edge_coverage_consumer_aligned_by_source
+        ),
         "setup": {
             "dense_model_load_ms": (
                 cases[0]["context"]["baseline_setup_ms"]["dense_model_load"] if cases else 0.0
@@ -917,6 +1003,12 @@ def _summarize(
             "typed_contract_graph_build_ms_by_source": {
                 source_id: source_cases[0]["context"]["baseline_setup_ms"][
                     "typed_contract_graph_build"
+                ]
+                for source_id, source_cases in sorted(grouped.items())
+            },
+            "consumer_aligned_contract_graph_build_ms_by_source": {
+                source_id: source_cases[0]["context"]["baseline_setup_ms"][
+                    "consumer_aligned_contract_graph_build"
                 ]
                 for source_id, source_cases in sorted(grouped.items())
             },
@@ -1131,11 +1223,26 @@ def _graph_profile_summary(stats: dict[str, Any]) -> dict[str, Any]:
     contract_edges = stats.get("contract_edges")
     if not isinstance(contract_edges, dict):
         contract_edges = {}
+    contract_signals = stats.get("contract_signals")
+    if not isinstance(contract_signals, dict):
+        contract_signals = {}
     contract_edge_count = sum(int(contract_edges.get(key) or 0) for key in ("added", "merged"))
     return {
         "tool_count": int(stats.get("tool_count") or 0),
         "edge_count": int(stats.get("edge_count") or 0),
         "contract_edge_count": contract_edge_count,
+        "contract_signals": {
+            key: int(contract_signals.get(key) or 0)
+            for key in (
+                "produces_added",
+                "produces_consumer_aligned",
+                "produces_skipped",
+                "produces_skipped_path_cap",
+                "consumes_added",
+                "consumes_skipped",
+                "required_consumer_demand_keys",
+            )
+        },
         "by_relation": dict(stats.get("by_relation") or {}),
     }
 
@@ -1223,6 +1330,9 @@ def main() -> int:
                 "metrics": artifact.summary["baselines"],
                 "ablations": artifact.summary["ablations"],
                 "producer_edge_coverage": artifact.summary["producer_edge_coverage"],
+                "producer_edge_coverage_consumer_aligned": artifact.summary[
+                    "producer_edge_coverage_consumer_aligned"
+                ],
                 "token_budget_metrics": artifact.summary["token_budget_baselines"],
             },
             ensure_ascii=False,

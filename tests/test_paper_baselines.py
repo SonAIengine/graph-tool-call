@@ -31,6 +31,7 @@ from benchmarks.paper_baselines import (
     summarize_producer_edge_coverage,
 )
 from graph_tool_call.core.tool import ToolSchema
+from graph_tool_call.graphify import CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION
 from graph_tool_call.ontology.schema import Confidence, RelationType
 from graph_tool_call.tool_graph import ToolGraph
 
@@ -76,6 +77,12 @@ def _stable_summary(summary):
         "token_budget_per_source": {},
         "producer_edge_coverage": summary["producer_edge_coverage"],
         "producer_edge_coverage_by_source": summary["producer_edge_coverage_by_source"],
+        "producer_edge_coverage_consumer_aligned": summary[
+            "producer_edge_coverage_consumer_aligned"
+        ],
+        "producer_edge_coverage_consumer_aligned_by_source": summary[
+            "producer_edge_coverage_consumer_aligned_by_source"
+        ],
     }
     for baseline, metrics in summary["baselines"].items():
         stable["baselines"][baseline] = {
@@ -1043,11 +1050,13 @@ def test_train_dev_runner_emits_valid_paired_artifact(baseline_artifact):
         "flat_semantic_rrf",
         "graph_untyped",
         "graph_typed_contract",
+        "graph_consumer_aligned_contract",
         "full_graph_pipeline",
     }
     assert set(baseline_artifact.summary["ablations"]) == {
         "b5_minus_b4_topology",
         "b6_minus_b5_typed_contract",
+        "b6a_minus_b6_output_promotion",
         "b7_minus_b6_selector_producers",
         "b7_minus_b4_full_pipeline",
     }
@@ -1073,6 +1082,7 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
             "flat_semantic_rrf",
             "graph_untyped",
             "graph_typed_contract",
+            "graph_consumer_aligned_contract",
             "full_graph_pipeline",
         ):
             retrieved = case["observed"][baseline]["retrieved"]
@@ -1140,6 +1150,21 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
     }
     assert baseline_artifact.config["baselines"]["graph_untyped"]["label"] == "B5"
     assert baseline_artifact.config["baselines"]["graph_typed_contract"]["label"] == "B6"
+    assert (
+        baseline_artifact.config["baselines"]["graph_consumer_aligned_contract"]["label"] == "B6a"
+    )
+    assert (
+        baseline_artifact.config["baselines"]["graph_consumer_aligned_contract"][
+            "output_promotion_policy_revision"
+        ]
+        == CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION
+    )
+    assert (
+        baseline_artifact.config["baselines"]["graph_consumer_aligned_contract"][
+            "ground_truth_signals"
+        ]
+        is False
+    )
     assert baseline_artifact.config["baselines"]["full_graph_pipeline"]["label"] == "B7"
     assert baseline_artifact.config["baselines"]["graph_untyped"]["contract_signals"] is False
     assert baseline_artifact.config["baselines"]["graph_typed_contract"]["contract_signals"] is True
@@ -1151,6 +1176,7 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
         "policy_revision": PRODUCER_COVERAGE_POLICY_REVISION,
         "evaluation_scope": "ground_truth_only",
         "graph_profile": "typed_contract",
+        "comparison_graph_profile": "consumer_aligned_contract",
         "path_direction": {
             "retrieval": "both",
             "dependency": "out",
@@ -1183,11 +1209,26 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
     assert set(baseline_artifact.summary["producer_edge_coverage_by_source"]) == set(
         baseline_artifact.summary["per_source"]
     )
+    aligned_coverage = baseline_artifact.summary["producer_edge_coverage_consumer_aligned"]
+    assert aligned_coverage["pair_count"] == producer_coverage["pair_count"]
+    assert aligned_coverage["coverage"]["producer_promoted_output_present"]["count"] == 4
+    assert aligned_coverage["coverage"]["promoted_contract_field_match"]["count"] == 2
+    assert aligned_coverage["coverage"]["promoted_required_contract_field_match"]["count"] == 2
+    assert aligned_coverage["coverage"]["direct_contract_edge"]["count"] == 2
+    assert aligned_coverage["coverage"]["bounded_forward_contract_path"]["count"] == 2
+    assert aligned_coverage["reason_code_counts"]["matching_contract_fields_not_promoted"] == 2
+    assert set(
+        baseline_artifact.summary["producer_edge_coverage_consumer_aligned_by_source"]
+    ) == set(baseline_artifact.summary["per_source"])
     for case in baseline_artifact.cases:
         report = case["diagnostics"]["producer_edge_coverage"]
+        aligned_report = case["diagnostics"]["producer_edge_coverage_consumer_aligned"]
         assert report["policy_revision"] == PRODUCER_COVERAGE_POLICY_REVISION
         assert report["evaluation_scope"] == "ground_truth_only"
         assert report["summary"]["pair_count"] == len(report["pairs"])
+        assert aligned_report["policy_revision"] == PRODUCER_COVERAGE_POLICY_REVISION
+        assert aligned_report["evaluation_scope"] == "ground_truth_only"
+        assert aligned_report["summary"]["pair_count"] == len(aligned_report["pairs"])
     assert set(baseline_artifact.statistics["paired_bootstrap"]) == set(
         baseline_artifact.summary["ablations"]
     )
@@ -1206,6 +1247,7 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
         "flat_semantic_dense_document_encoding_ms_by_source",
         "untyped_graph_build_ms_by_source",
         "typed_contract_graph_build_ms_by_source",
+        "consumer_aligned_contract_graph_build_ms_by_source",
         "graph_profiles_by_source",
     ):
         assert set(baseline_artifact.summary["setup"][setup_key]) == set(

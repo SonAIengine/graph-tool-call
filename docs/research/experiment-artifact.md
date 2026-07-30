@@ -64,7 +64,7 @@ Run the contract suite with:
 make paper-harness-check
 ```
 
-The native B-1/B0-O/B1/B2/B3/B4/B5/B6/B7 runner writes this schema directly
+The native B-1/B0-O/B1/B2/B3/B4/B5/B6/B6a/B7 runner writes this schema directly
 rather than passing through a legacy adapter:
 
 ```bash
@@ -112,13 +112,19 @@ retrieval:
 
 - frozen policy: `config.producer_edge_diagnostics`;
 - per annotated pair: `cases[].diagnostics.producer_edge_coverage.pairs`;
+- consumer-aligned comparison:
+  `cases[].diagnostics.producer_edge_coverage_consumer_aligned.pairs`;
 - aggregate contract/edge/path/seed rates:
   `summary.producer_edge_coverage`;
+- consumer-aligned aggregate:
+  `summary.producer_edge_coverage_consumer_aligned`;
 - source slices: `summary.producer_edge_coverage_by_source`.
 
 The diagnostic config must retain `used_for_ranking=false` and
 `evaluation_scope=ground_truth_only`. An artifact that uses expected targets
-or producers as ranking input is not comparable to B1-B7.
+or producers as ranking input is not comparable to the declared B1-B7 and
+B6a baselines. B6a derives promotion evidence only from collection contracts;
+ground-truth diagnostics are computed after ranking.
 
 The tokenizer name, immutable revision, library version, serialization
 revision, special-token policy, and replay flags all participate in `run_id`.
