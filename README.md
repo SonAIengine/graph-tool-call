@@ -369,6 +369,8 @@ model-in-the-loop benchmark.
 | `make paper-corpus-check` | none | public OpenAPI/GraphQL/MCP corpus hashes, licenses, family splits, annotations, and ingest conformance |
 | `make paper-corpus-claim-check` | none | stricter paper gate, including independent annotation-review coverage |
 | `make paper-adapter-conformance` | none | request/response/auth/execution/IO-contract preservation, deterministic replay, and structured unsupported diagnostics |
+| `make paper-baseline-run` | pinned E5 encoder | B-1 through B7 paired retrieval, token-budget, and confidence-interval artifact |
+| `make paper-graph-ablation` | pinned E5 encoder | B4→B5→B6→B7 topology, typed-contract, selector, and producer-expansion deltas |
 | `make xgen-benchmark` | none | graph-tool-call engine search, target selector exactness, producer expansion, plan synthesis across commerce/admin/workflow fixtures |
 | `make xgen-scale-acceptance` | none | X2BEE-scale Swagger UI discovery, dedupe, ingest, graph build, Korean product-case search |
 | `make xgen-scale-sweep` | none | one X2BEE-scale graph build, then top-K compression diagnostics for `k=3,5,10` |
@@ -381,6 +383,7 @@ model-in-the-loop benchmark.
 make xgen-benchmark
 make paper-corpus-check
 make paper-adapter-conformance
+make paper-graph-ablation
 # Expected to fail until an independent reviewer signs the corpus annotations.
 make paper-corpus-claim-check
 make xgen-scale-acceptance

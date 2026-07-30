@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke paper-corpus-check paper-corpus-internal-review-check paper-corpus-claim-check paper-adapter-conformance paper-baseline-run paper-harness-check xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-snapshot-check xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-028-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-028-gate bfcl-028-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke paper-corpus-check paper-corpus-internal-review-check paper-corpus-claim-check paper-adapter-conformance paper-baseline-run paper-graph-ablation paper-harness-check xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-snapshot-check xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-028-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-028-gate bfcl-028-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -62,7 +62,12 @@ paper-baseline-run:
 		--token-budget "$${TOKEN_BUDGET:-2048}" \
 		--context-tokenizer "$${CONTEXT_TOKENIZER:-Qwen/Qwen3-4B}" \
 		--context-tokenizer-revision "$${CONTEXT_TOKENIZER_REVISION:-1cfa9a7208912126459214e8b04321603b3df60c}" \
+		--bootstrap-resamples "$${BOOTSTRAP_RESAMPLES:-1000}" \
 		--out "$${OUT:-/tmp/graph-tool-call-paper-baselines.json}"
+
+paper-graph-ablation:
+	@$(MAKE) paper-baseline-run \
+		OUT="$${OUT:-/tmp/graph-tool-call-paper-graph-ablation.json}"
 
 paper-harness-check:
 	poetry run pytest \

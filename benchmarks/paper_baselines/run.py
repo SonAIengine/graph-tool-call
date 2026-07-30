@@ -1,8 +1,9 @@
-"""Run frozen random, oracle, lexical, dense, hybrid, and flat-semantic baselines."""
+"""Run frozen flat, graph, contract, and full-pipeline paper baselines."""
 
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import importlib.metadata
 import json
@@ -34,7 +35,17 @@ from benchmarks.metrics import (
 )
 from graph_tool_call import ingest_source
 from graph_tool_call.core.tool import ToolSchema
+from graph_tool_call.graphify import ingest_openapi_graphify
 
+from .graph_retrievers import (
+    FIXED_GRAPH_DEPTH,
+    FIXED_GRAPH_POLICY_REVISION,
+    FIXED_GRAPH_SEED_COUNT,
+    FIXED_PRODUCER_MAX_HOPS,
+    FIXED_PRODUCERS_PER_FIELD,
+    FixedGraphRetriever,
+    full_graph_pipeline_rank,
+)
 from .retrievers import (
     DEFAULT_DENSE_MODEL,
     DEFAULT_DENSE_MODEL_REVISION,
@@ -70,7 +81,22 @@ BASELINE_NAMES = (
     "dense",
     "hybrid_rrf",
     "flat_semantic_rrf",
+    "graph_untyped",
+    "graph_typed_contract",
+    "full_graph_pipeline",
 )
+ABLATION_PAIRS = {
+    "b5_minus_b4_topology": ("flat_semantic_rrf", "graph_untyped"),
+    "b6_minus_b5_typed_contract": ("graph_untyped", "graph_typed_contract"),
+    "b7_minus_b6_selector_producers": (
+        "graph_typed_contract",
+        "full_graph_pipeline",
+    ),
+    "b7_minus_b4_full_pipeline": (
+        "flat_semantic_rrf",
+        "full_graph_pipeline",
+    ),
+}
 PRIMARY_METRICS = (
     "target_hit_at_k",
     "producer_recall_at_k",
@@ -82,6 +108,12 @@ PRIMARY_METRICS = (
     "ndcg_at_k",
 )
 STATISTICAL_METRICS = (*PRIMARY_METRICS, "latency_ms")
+_COST_METRICS = {
+    "latency_ms",
+    "schema_tokens",
+    "token_budget_used",
+    "truncated",
+}
 
 
 def run_paper_baselines(
@@ -102,8 +134,9 @@ def run_paper_baselines(
     token_counter: TokenCounter | None = None,
     context_tokenizer_name: str = DEFAULT_CONTEXT_TOKENIZER,
     context_tokenizer_revision: str = DEFAULT_CONTEXT_TOKENIZER_REVISION,
+    bootstrap_resamples: int = 1000,
 ) -> ExperimentArtifact:
-    """Evaluate the six frozen baselines and return one paired artifact."""
+    """Evaluate the nine frozen baselines and return one paired artifact."""
     if top_k <= 0:
         raise ValueError("top_k must be greater than zero.")
     if not dense_model_name.strip() or not dense_model_revision.strip():
@@ -114,6 +147,8 @@ def run_paper_baselines(
         raise ValueError("token_budget must be greater than zero.")
     if not context_tokenizer_name.strip() or not context_tokenizer_revision.strip():
         raise ValueError("context_tokenizer_name and context_tokenizer_revision must be non-empty.")
+    if bootstrap_resamples <= 0:
+        raise ValueError("bootstrap_resamples must be greater than zero.")
     normalized_splits = tuple(dict.fromkeys(split.strip() for split in splits if split.strip()))
     invalid_splits = sorted(set(normalized_splits) - {"train", "dev", "test"})
     if not normalized_splits or invalid_splits:
@@ -200,7 +235,11 @@ def run_paper_baselines(
             )
         )
 
-    summary, statistics = _summarize(cases, seed=seed)
+    summary, statistics = _summarize(
+        cases,
+        seed=seed,
+        bootstrap_resamples=bootstrap_resamples,
+    )
     manifest_sha256 = _sha256(resolved_manifest)
     output = str(Path(output_path))
     replay_command = [
@@ -231,12 +270,14 @@ def run_paper_baselines(
         context_tokenizer_name,
         "--context-tokenizer-revision",
         context_tokenizer_revision,
+        "--bootstrap-resamples",
+        str(bootstrap_resamples),
     ]
     if allow_held_out:
         replay_command.append("--allow-held-out")
     artifact = ExperimentArtifact(
         benchmark="public-heterogeneous-tool-retrieval",
-        methodology="paired-fixed-baselines-v3",
+        methodology="paired-fixed-baselines-v4",
         run_kind="deterministic",
         created_at=created_at or datetime.now(timezone.utc).isoformat(),
         seed=seed,
@@ -249,6 +290,7 @@ def run_paper_baselines(
         },
         config={
             "top_k": top_k,
+            "bootstrap_resamples": bootstrap_resamples,
             "budget": {
                 "type": "candidate_count",
                 "limit": top_k,
@@ -323,6 +365,46 @@ def run_paper_baselines(
                     "contract_signals": False,
                     "selector_signals": False,
                 },
+                "graph_untyped": {
+                    "label": "B5",
+                    "base_ranking": "flat_semantic_rrf",
+                    "policy_revision": FIXED_GRAPH_POLICY_REVISION,
+                    "profile": "untyped_topology",
+                    "seed_count": FIXED_GRAPH_SEED_COUNT,
+                    "depth": FIXED_GRAPH_DEPTH,
+                    "score_combination": "seed_score_or_max_graph_path",
+                    "edge_weights": "uniform",
+                    "confidence_weights": False,
+                    "contract_signals": False,
+                    "selector_signals": False,
+                },
+                "graph_typed_contract": {
+                    "label": "B6",
+                    "base_ranking": "flat_semantic_rrf",
+                    "policy_revision": FIXED_GRAPH_POLICY_REVISION,
+                    "profile": "typed_contract",
+                    "seed_count": FIXED_GRAPH_SEED_COUNT,
+                    "depth": FIXED_GRAPH_DEPTH,
+                    "score_combination": "seed_score_or_max_graph_path",
+                    "edge_weights": "frozen_intent_relation_weights",
+                    "confidence_weights": True,
+                    "contract_signals": True,
+                    "selector_signals": False,
+                },
+                "full_graph_pipeline": {
+                    "label": "B7",
+                    "base_ranking": "graph_typed_contract",
+                    "target_selector": "select_target_candidate:strong_evidence",
+                    "producer_expansion": {
+                        "max_hops": FIXED_PRODUCER_MAX_HOPS,
+                        "max_producers_per_field": FIXED_PRODUCERS_PER_FIELD,
+                    },
+                    "learning_signals": False,
+                    "llm_target": False,
+                },
+            },
+            "ablation_pairs": {
+                name: {"from": pair[0], "to": pair[1]} for name, pair in ABLATION_PAIRS.items()
             },
         },
         model={
@@ -407,11 +489,35 @@ def _evaluate_source(
         document_builder=build_flat_semantic_document,
     )
     semantic_coverage = flat_semantic_coverage(tools)
+    started = time.perf_counter()
+    untyped_graph, untyped_graph_stats = ingest_openapi_graphify(
+        _clone_tools_for_cold_graph(tools),
+        promote_contract_signals=False,
+        derive_semantic_metadata=True,
+    )
+    untyped_graph_build_ms = (time.perf_counter() - started) * 1000
+    started = time.perf_counter()
+    typed_graph, typed_graph_stats = ingest_openapi_graphify(
+        _clone_tools_for_cold_graph(tools),
+        promote_contract_signals=True,
+        derive_semantic_metadata=True,
+    )
+    typed_graph_build_ms = (time.perf_counter() - started) * 1000
+    untyped_graph_retriever = FixedGraphRetriever(
+        untyped_graph,
+        profile="untyped_topology",
+    )
+    typed_graph_retriever = FixedGraphRetriever(
+        typed_graph,
+        profile="typed_contract",
+    )
     available_names = {tool.name for tool in tools}
     tools_by_name = {tool.name: tool for tool in tools}
+    typed_tools_by_name = dict(typed_graph.tools)
     evaluated: list[dict[str, Any]] = []
     for case in ground_truth_cases:
         rankings: dict[str, list[RankedCandidate]] = {}
+        ranking_diagnostics: dict[str, dict[str, Any]] = {}
         latencies: dict[str, float] = {}
 
         started = time.perf_counter()
@@ -468,13 +574,48 @@ def _evaluate_source(
         flat_semantic_dense_latency_ms = (time.perf_counter() - started) * 1000
 
         started = time.perf_counter()
-        rankings["flat_semantic_rrf"] = reciprocal_rank_fusion(
+        flat_semantic_full = reciprocal_rank_fusion(
             [flat_semantic_bm25_full, flat_semantic_dense_full],
-            top_k=top_k,
+            top_k=full_ranking_size,
         )
         flat_semantic_fusion_ms = (time.perf_counter() - started) * 1000
+        rankings["flat_semantic_rrf"] = flat_semantic_full[:top_k]
         latencies["flat_semantic_rrf"] = (
             flat_semantic_bm25_latency_ms + flat_semantic_dense_latency_ms + flat_semantic_fusion_ms
+        )
+
+        started = time.perf_counter()
+        untyped_full, ranking_diagnostics["graph_untyped"] = untyped_graph_retriever.rank(
+            case["query"],
+            flat_semantic_full,
+            top_k=full_ranking_size,
+        )
+        untyped_graph_latency_ms = (time.perf_counter() - started) * 1000
+        rankings["graph_untyped"] = untyped_full[:top_k]
+        latencies["graph_untyped"] = latencies["flat_semantic_rrf"] + untyped_graph_latency_ms
+
+        started = time.perf_counter()
+        typed_full, ranking_diagnostics["graph_typed_contract"] = typed_graph_retriever.rank(
+            case["query"],
+            flat_semantic_full,
+            top_k=full_ranking_size,
+        )
+        typed_graph_latency_ms = (time.perf_counter() - started) * 1000
+        rankings["graph_typed_contract"] = typed_full[:top_k]
+        latencies["graph_typed_contract"] = latencies["flat_semantic_rrf"] + typed_graph_latency_ms
+
+        started = time.perf_counter()
+        rankings["full_graph_pipeline"], ranking_diagnostics["full_graph_pipeline"] = (
+            full_graph_pipeline_rank(
+                case["query"],
+                typed_full,
+                typed_tools_by_name,
+                top_k=top_k,
+            )
+        )
+        full_pipeline_latency_ms = (time.perf_counter() - started) * 1000
+        latencies["full_graph_pipeline"] = (
+            latencies["graph_typed_contract"] + full_pipeline_latency_ms
         )
 
         observed: dict[str, Any] = {}
@@ -489,6 +630,8 @@ def _evaluate_source(
                     {"name": candidate.name, "score": candidate.score} for candidate in ranking
                 ],
             }
+            if baseline_name in ranking_diagnostics:
+                observed[baseline_name]["diagnostics"] = ranking_diagnostics[baseline_name]
             metrics[baseline_name] = _case_metrics(
                 retrieved,
                 case,
@@ -551,8 +694,14 @@ def _evaluate_source(
                         "flat_semantic_dense_document_encoding": (
                             flat_semantic_dense.build_latency_ms
                         ),
+                        "untyped_graph_build": untyped_graph_build_ms,
+                        "typed_contract_graph_build": typed_graph_build_ms,
                     },
                     "flat_semantic_coverage": semantic_coverage,
+                    "graph_profiles": {
+                        "untyped": _graph_profile_summary(untyped_graph_stats),
+                        "typed_contract": _graph_profile_summary(typed_graph_stats),
+                    },
                 },
                 "expected": {
                     "expected_targets": list(case["expected_targets"]),
@@ -618,6 +767,7 @@ def _summarize(
     cases: list[dict[str, Any]],
     *,
     seed: int,
+    bootstrap_resamples: int,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     per_baseline = {baseline: _aggregate_metrics(cases, baseline) for baseline in BASELINE_NAMES}
     token_budget_per_baseline = {
@@ -644,6 +794,30 @@ def _summarize(
         }
         for source_id, source_cases in sorted(grouped.items())
     }
+    ablations = {
+        name: _paired_ablation_summary(cases, before=pair[0], after=pair[1])
+        for name, pair in ABLATION_PAIRS.items()
+    }
+    token_budget_ablations = {
+        name: _paired_ablation_summary(
+            cases,
+            before=pair[0],
+            after=pair[1],
+            metrics_key="token_budget_metrics",
+        )
+        for name, pair in ABLATION_PAIRS.items()
+    }
+    per_source_ablations = {
+        source_id: {
+            name: _paired_ablation_summary(
+                source_cases,
+                before=pair[0],
+                after=pair[1],
+            )
+            for name, pair in ABLATION_PAIRS.items()
+        }
+        for source_id, source_cases in sorted(grouped.items())
+    }
     split_counts: dict[str, int] = defaultdict(int)
     for case in cases:
         split_counts[case["context"]["split"]] += 1
@@ -654,8 +828,11 @@ def _summarize(
         "split_case_counts": dict(sorted(split_counts.items())),
         "baselines": per_baseline,
         "token_budget_baselines": token_budget_per_baseline,
+        "ablations": ablations,
+        "token_budget_ablations": token_budget_ablations,
         "per_source": per_source,
         "token_budget_per_source": token_budget_per_source,
+        "per_source_ablations": per_source_ablations,
         "setup": {
             "dense_model_load_ms": (
                 cases[0]["context"]["baseline_setup_ms"]["dense_model_load"] if cases else 0.0
@@ -695,6 +872,20 @@ def _summarize(
                 source_id: source_cases[0]["context"]["flat_semantic_coverage"]
                 for source_id, source_cases in sorted(grouped.items())
             },
+            "untyped_graph_build_ms_by_source": {
+                source_id: source_cases[0]["context"]["baseline_setup_ms"]["untyped_graph_build"]
+                for source_id, source_cases in sorted(grouped.items())
+            },
+            "typed_contract_graph_build_ms_by_source": {
+                source_id: source_cases[0]["context"]["baseline_setup_ms"][
+                    "typed_contract_graph_build"
+                ]
+                for source_id, source_cases in sorted(grouped.items())
+            },
+            "graph_profiles_by_source": {
+                source_id: source_cases[0]["context"]["graph_profiles"]
+                for source_id, source_cases in sorted(grouped.items())
+            },
         },
     }
     statistics = {
@@ -702,10 +893,11 @@ def _summarize(
             baseline: {
                 metric: {
                     "confidence": 0.95,
-                    "n_resamples": 1000,
+                    "n_resamples": bootstrap_resamples,
                     "mean_ci": list(
                         confidence_interval(
                             _metric_values(cases, baseline, metric),
+                            n_bootstrap=bootstrap_resamples,
                             seed=seed,
                         )
                     ),
@@ -718,7 +910,7 @@ def _summarize(
             baseline: {
                 metric: {
                     "confidence": 0.95,
-                    "n_resamples": 1000,
+                    "n_resamples": bootstrap_resamples,
                     "mean_ci": list(
                         confidence_interval(
                             _metric_values(
@@ -727,6 +919,7 @@ def _summarize(
                                 metric,
                                 metrics_key="token_budget_metrics",
                             ),
+                            n_bootstrap=bootstrap_resamples,
                             seed=seed,
                         )
                     ),
@@ -734,6 +927,27 @@ def _summarize(
                 for metric in STATISTICAL_METRICS
             }
             for baseline in BASELINE_NAMES
+        },
+        "paired_bootstrap": {
+            name: _paired_bootstrap(
+                cases,
+                before=pair[0],
+                after=pair[1],
+                seed=seed,
+                bootstrap_resamples=bootstrap_resamples,
+            )
+            for name, pair in ABLATION_PAIRS.items()
+        },
+        "token_budget_paired_bootstrap": {
+            name: _paired_bootstrap(
+                cases,
+                before=pair[0],
+                after=pair[1],
+                seed=seed,
+                metrics_key="token_budget_metrics",
+                bootstrap_resamples=bootstrap_resamples,
+            )
+            for name, pair in ABLATION_PAIRS.items()
         },
     }
     return summary, statistics
@@ -786,6 +1000,122 @@ def _metric_values(
     return [float(case[metrics_key][baseline][metric]) for case in selected] or [0.0]
 
 
+def _paired_ablation_summary(
+    cases: list[dict[str, Any]],
+    *,
+    before: str,
+    after: str,
+    metrics_key: str = "metrics",
+) -> dict[str, Any]:
+    metric_names = list(STATISTICAL_METRICS)
+    if metrics_key == "token_budget_metrics":
+        metric_names.extend(("schema_tokens", "token_budget_used", "truncated"))
+    deltas = {
+        metric: _paired_metric_values(
+            cases,
+            before=before,
+            after=after,
+            metric=metric,
+            metrics_key=metrics_key,
+        )
+        for metric in metric_names
+    }
+    return {
+        "from": before,
+        "to": after,
+        "case_count": len(cases),
+        "mean_delta": {
+            metric: fmean(values) if values else 0.0 for metric, values in deltas.items()
+        },
+        "improved_case_count": {
+            metric: sum(value < 0.0 if metric in _COST_METRICS else value > 0.0 for value in values)
+            for metric, values in deltas.items()
+        },
+        "regressed_case_count": {
+            metric: sum(value > 0.0 if metric in _COST_METRICS else value < 0.0 for value in values)
+            for metric, values in deltas.items()
+        },
+        "tied_case_count": {
+            metric: sum(value == 0.0 for value in values) for metric, values in deltas.items()
+        },
+    }
+
+
+def _paired_bootstrap(
+    cases: list[dict[str, Any]],
+    *,
+    before: str,
+    after: str,
+    seed: int,
+    bootstrap_resamples: int,
+    metrics_key: str = "metrics",
+) -> dict[str, Any]:
+    return {
+        metric: {
+            "confidence": 0.95,
+            "n_resamples": bootstrap_resamples,
+            "mean_delta_ci": list(
+                confidence_interval(
+                    _paired_metric_values(
+                        cases,
+                        before=before,
+                        after=after,
+                        metric=metric,
+                        metrics_key=metrics_key,
+                    ),
+                    n_bootstrap=bootstrap_resamples,
+                    seed=seed,
+                )
+            ),
+        }
+        for metric in STATISTICAL_METRICS
+    }
+
+
+def _paired_metric_values(
+    cases: list[dict[str, Any]],
+    *,
+    before: str,
+    after: str,
+    metric: str,
+    metrics_key: str,
+) -> list[float]:
+    selected = cases
+    if metric == "producer_recall_at_k":
+        selected = [case for case in cases if case["expected"]["required_producers"]]
+    return [
+        float(case[metrics_key][after][metric]) - float(case[metrics_key][before][metric])
+        for case in selected
+    ] or [0.0]
+
+
+def _graph_profile_summary(stats: dict[str, Any]) -> dict[str, Any]:
+    contract_edges = stats.get("contract_edges")
+    if not isinstance(contract_edges, dict):
+        contract_edges = {}
+    contract_edge_count = sum(int(contract_edges.get(key) or 0) for key in ("added", "merged"))
+    return {
+        "tool_count": int(stats.get("tool_count") or 0),
+        "edge_count": int(stats.get("edge_count") or 0),
+        "contract_edge_count": contract_edge_count,
+        "by_relation": dict(stats.get("by_relation") or {}),
+    }
+
+
+def _clone_tools_for_cold_graph(tools: list[ToolSchema]) -> list[ToolSchema]:
+    clones = copy.deepcopy(tools)
+    for tool in clones:
+        metadata = tool.metadata if isinstance(tool.metadata, dict) else {}
+        ai_metadata = (
+            metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else None
+        )
+        if ai_metadata is not None:
+            ai_metadata.pop("pairs_well_with", None)
+        metadata.pop("learning", None)
+        metadata.pop("trace_edges", None)
+    return clones
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.resolve().read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -822,6 +1152,7 @@ def _parse_args() -> argparse.Namespace:
         "--context-tokenizer-revision",
         default=DEFAULT_CONTEXT_TOKENIZER_REVISION,
     )
+    parser.add_argument("--bootstrap-resamples", type=int, default=1000)
     return parser.parse_args()
 
 
@@ -841,6 +1172,7 @@ def main() -> int:
         token_budget=args.token_budget,
         context_tokenizer_name=args.context_tokenizer,
         context_tokenizer_revision=args.context_tokenizer_revision,
+        bootstrap_resamples=args.bootstrap_resamples,
     )
     write_artifact(args.out, artifact)
     print(
@@ -851,6 +1183,7 @@ def main() -> int:
                 "case_count": artifact.summary["case_count"],
                 "family_count": artifact.summary["family_count"],
                 "metrics": artifact.summary["baselines"],
+                "ablations": artifact.summary["ablations"],
                 "token_budget_metrics": artifact.summary["token_budget_baselines"],
             },
             ensure_ascii=False,

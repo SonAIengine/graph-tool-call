@@ -64,8 +64,8 @@ Run the contract suite with:
 make paper-harness-check
 ```
 
-The native B-1/B0-O/B1/B2/B3/B4 runner writes this schema directly rather than
-passing through a legacy adapter:
+The native B-1/B0-O/B1/B2/B3/B4/B5/B6/B7 runner writes this schema directly
+rather than passing through a legacy adapter:
 
 ```bash
 make paper-baseline-run
@@ -96,6 +96,16 @@ is additive:
   `summary.token_budget_per_source`;
 - confidence intervals: `statistics.token_budget_bootstrap`;
 - frozen policy: `config.token_budget`.
+
+Graph ablations are paired on the same cases:
+
+- aggregate deltas: `summary.ablations` and
+  `summary.token_budget_ablations`;
+- source slices: `summary.per_source_ablations`;
+- paired confidence intervals: `statistics.paired_bootstrap` and
+  `statistics.token_budget_paired_bootstrap`;
+- graph build cost and edge profile: `summary.setup.graph_profiles_by_source`;
+- per-case graph/selector evidence: `cases[].observed.<baseline>.diagnostics`.
 
 The tokenizer name, immutable revision, library version, serialization
 revision, special-token policy, and replay flags all participate in `run_id`.

@@ -1,5 +1,14 @@
 """Frozen deterministic baselines for the public paper corpus."""
 
+from .graph_retrievers import (
+    FIXED_GRAPH_DEPTH,
+    FIXED_GRAPH_POLICY_REVISION,
+    FIXED_GRAPH_SEED_COUNT,
+    FIXED_PRODUCER_MAX_HOPS,
+    FIXED_PRODUCERS_PER_FIELD,
+    FixedGraphRetriever,
+    full_graph_pipeline_rank,
+)
 from .retrievers import (
     DEFAULT_DENSE_MODEL,
     DEFAULT_DENSE_MODEL_REVISION,
@@ -38,6 +47,11 @@ __all__ = [
     "DEFAULT_CONTEXT_TOKENIZER",
     "DEFAULT_CONTEXT_TOKENIZER_REVISION",
     "DEFAULT_TOKEN_BUDGET",
+    "FIXED_GRAPH_DEPTH",
+    "FIXED_GRAPH_POLICY_REVISION",
+    "FIXED_GRAPH_SEED_COUNT",
+    "FIXED_PRODUCER_MAX_HOPS",
+    "FIXED_PRODUCERS_PER_FIELD",
     "FIXED_RRF_K",
     "FIXED_BM25_TOKENIZER_REVISION",
     "TOKEN_BUDGET_POLICY_REVISION",
@@ -45,6 +59,7 @@ __all__ = [
     "DenseEncoder",
     "FixedBM25Retriever",
     "FixedDenseRetriever",
+    "FixedGraphRetriever",
     "RankedCandidate",
     "SentenceTransformerDenseEncoder",
     "HuggingFaceTokenCounter",
@@ -55,6 +70,7 @@ __all__ = [
     "flat_semantic_document",
     "flat_semantic_metadata",
     "fixed_lexical_tokens",
+    "full_graph_pipeline_rank",
     "oracle_rank",
     "reciprocal_rank_fusion",
     "run_paper_baselines",
