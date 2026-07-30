@@ -107,6 +107,19 @@ Graph ablations are paired on the same cases:
 - graph build cost and edge profile: `summary.setup.graph_profiles_by_source`;
 - per-case graph/selector evidence: `cases[].observed.<baseline>.diagnostics`.
 
+Ground-truth-only producer coverage diagnostics are additive and never affect
+retrieval:
+
+- frozen policy: `config.producer_edge_diagnostics`;
+- per annotated pair: `cases[].diagnostics.producer_edge_coverage.pairs`;
+- aggregate contract/edge/path/seed rates:
+  `summary.producer_edge_coverage`;
+- source slices: `summary.producer_edge_coverage_by_source`.
+
+The diagnostic config must retain `used_for_ranking=false` and
+`evaluation_scope=ground_truth_only`. An artifact that uses expected targets
+or producers as ranking input is not comparable to B1-B7.
+
 The tokenizer name, immutable revision, library version, serialization
 revision, special-token policy, and replay flags all participate in `run_id`.
 

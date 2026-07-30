@@ -839,6 +839,7 @@ This order prevents five-hour model runs from becoming the development loop.
 | 2026-07-28 | Experiment schema v1 separates deterministic run identity from exact result content identity. |
 | 2026-07-29 | The strongest frozen B1-B4 development result becomes the primary flat comparator; B3 remains reported even when fusion underperforms B2. |
 | 2026-07-30 | B5-B7 share B4 seeds and budgets; graph, typed-contract, and selector/producer effects are reported as paired deltas. |
+| 2026-07-30 | Producer-edge failures are diagnosed with ground-truth-only contract, path, direction, and seed coverage before graph weights are tuned. |
 
 ## 20. Immediate Next Tasks
 
@@ -856,6 +857,8 @@ This order prevents five-hour model runs from becoming the development loop.
 - [x] Add the fixed B4 flat-semantic hybrid baseline to the unified harness.
 - [x] Add frozen B5 untyped graph, B6 typed-contract graph, and B7 full
       deterministic pipeline baselines with paired bootstrap deltas.
+- [x] Add producer-target contract, edge, path, and seed coverage diagnostics
+      that are recorded but never used for ranking.
 - [ ] Add the budgeted LLM catalog-selector baseline.
 - [x] Add actual tokenizer accounting with frozen tokenizer revisions.
       The B-1/B0-O/B1-B7 harness uses pinned Qwen3 tokenizer accounting and a

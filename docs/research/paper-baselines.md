@@ -26,6 +26,7 @@ graph traversal.
 poetry install --with dev -E embedding-local
 make paper-baseline-run
 make paper-graph-ablation
+make paper-producer-coverage
 
 TOP_K=8 SEED=17 OUT=/tmp/paper-baselines-k8.json \
   make paper-baseline-run
@@ -35,6 +36,9 @@ TOKEN_BUDGET=4096 OUT=/tmp/paper-baselines-4k.json \
 
 BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-graph-ablation.json \
   make paper-graph-ablation
+
+BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-producer-coverage.json \
+  make paper-producer-coverage
 ```
 
 The default run uses only the frozen `train,dev` families. It produces one
@@ -207,6 +211,32 @@ schema tokens, budget use, and truncation, the artifact's improvement counts
 treat lower values as better. Graph construction remains a separately reported
 setup cost rather than being charged to one query.
 
+## Producer Edge Coverage Diagnostics
+
+`paper-producer-coverage-v1` explains graph misses without changing any
+ranking. It runs only in the offline evaluator and is explicitly marked
+`ground_truth_only`; annotated targets and producers are never supplied to the
+retriever or selector.
+
+For every expected-target/required-producer pair, it records:
+
+- whether both tools and their data `consumes`/`produces` contracts exist;
+- field-name or semantic-tag matches, split into required and optional inputs;
+- direct graph and `api_contract` edges, including compact edge evidence;
+- shortest bidirectional retrieval paths and forward dependency paths, with
+  graph and contract-only variants at B6's depth-two budget;
+- whether target and producer were B6 seeds, and whether a seed can reach the
+  producer; and
+- stable reason codes for missing contracts, field mismatch, optional-only
+  matches, unpromoted matching contracts, reversed edges, excessive depth,
+  missing paths, and seed misses.
+
+Pair reports live under
+`cases[].diagnostics.producer_edge_coverage`. Aggregate and source-level
+summaries live under `summary.producer_edge_coverage` and
+`summary.producer_edge_coverage_by_source`. Empty single-tool cases do not
+inflate rates.
+
 ## Train/Dev Implementation Pilot
 
 The 2026-07-30 implementation-branch pilot used the pinned E5 encoder,
@@ -239,6 +269,41 @@ worktree, not publication evidence. The immediate implication is to run the
 remaining token-budget sweeps and inspect missing producer-edge coverage and
 ambiguous selector evidence. It is not a reason to tune on or open the
 held-out family.
+
+### Producer coverage follow-up
+
+The pinned `K=5` replay was repeated after adding diagnostics. Its seven
+annotated producer-target pairs produced:
+
+| Diagnostic | Count | Rate |
+|---|---:|---:|
+| consumer input contract present | 7/7 | 1.0000 |
+| producer output contract present | 4/7 | 0.5714 |
+| producer output promoted for graph construction | 1/7 | 0.1429 |
+| any contract field match | 4/7 | 0.5714 |
+| required-input contract match | 2/7 | 0.2857 |
+| promoted contract field match | 0/7 | 0.0000 |
+| direct contract edge | 0/7 | 0.0000 |
+| depth-two contract-only path | 0/7 | 0.0000 |
+| direct graph edge of any evidence class | 1/7 | 0.1429 |
+| depth-two bidirectional retrieval path | 4/7 | 0.5714 |
+| depth-two forward dependency path | 1/7 | 0.1429 |
+| producer already in the five B4 seeds | 5/7 | 0.7143 |
+| producer reachable from a seed | 6/7 | 0.8571 |
+
+The pair statuses are one direct structural edge, three bounded structural
+paths, and three uncovered pairs. All three non-direct bounded paths require
+traversing at least one edge in reverse. Three pairs have no producer output
+contract, three more have raw outputs that are not promoted for graph
+construction, four have raw matches that disappear from the promoted surface,
+two have only optional consumer matches, and one has a reversed direct edge.
+
+This explains the zero B5-to-B6 gain more precisely: the frozen B6 graph has
+no promoted field match or contract path for any annotated producer, while
+five producers are already flat-retrieval seeds. Increasing a graph multiplier
+cannot repair either condition. The next cold-start experiments should
+separately test output-contract promotion, optional workflow evidence, and
+producer-cap selection before changing selector weights.
 
 ## Metrics And Budget
 

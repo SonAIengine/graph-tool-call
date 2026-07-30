@@ -46,6 +46,11 @@ from .graph_retrievers import (
     FixedGraphRetriever,
     full_graph_pipeline_rank,
 )
+from .producer_coverage import (
+    PRODUCER_COVERAGE_POLICY_REVISION,
+    diagnose_required_producer_coverage,
+    summarize_producer_edge_coverage,
+)
 from .retrievers import (
     DEFAULT_DENSE_MODEL,
     DEFAULT_DENSE_MODEL_REVISION,
@@ -277,7 +282,7 @@ def run_paper_baselines(
         replay_command.append("--allow-held-out")
     artifact = ExperimentArtifact(
         benchmark="public-heterogeneous-tool-retrieval",
-        methodology="paired-fixed-baselines-v4",
+        methodology="paired-fixed-baselines-v5",
         run_kind="deterministic",
         created_at=created_at or datetime.now(timezone.utc).isoformat(),
         seed=seed,
@@ -405,6 +410,18 @@ def run_paper_baselines(
             },
             "ablation_pairs": {
                 name: {"from": pair[0], "to": pair[1]} for name, pair in ABLATION_PAIRS.items()
+            },
+            "producer_edge_diagnostics": {
+                "policy_revision": PRODUCER_COVERAGE_POLICY_REVISION,
+                "evaluation_scope": "ground_truth_only",
+                "graph_profile": "typed_contract",
+                "path_direction": {
+                    "retrieval": "both",
+                    "dependency": "out",
+                },
+                "max_depth": FIXED_GRAPH_DEPTH,
+                "seed_source": "graph_typed_contract",
+                "used_for_ranking": False,
             },
         },
         model={
@@ -617,6 +634,13 @@ def _evaluate_source(
         latencies["full_graph_pipeline"] = (
             latencies["graph_typed_contract"] + full_pipeline_latency_ms
         )
+        producer_edge_coverage = diagnose_required_producer_coverage(
+            typed_graph,
+            expected_targets=case["expected_targets"],
+            required_producers=case.get("required_producers", []),
+            seed_names=ranking_diagnostics["graph_typed_contract"]["seeds"],
+            max_depth=FIXED_GRAPH_DEPTH,
+        )
 
         observed: dict[str, Any] = {}
         metrics: dict[str, Any] = {}
@@ -712,6 +736,9 @@ def _evaluate_source(
                 "metrics": metrics,
                 "token_budget_observed": token_budget_observed,
                 "token_budget_metrics": token_budget_metrics,
+                "diagnostics": {
+                    "producer_edge_coverage": producer_edge_coverage,
+                },
                 "stages": {},
                 "failure": {},
             }
@@ -821,6 +848,15 @@ def _summarize(
     split_counts: dict[str, int] = defaultdict(int)
     for case in cases:
         split_counts[case["context"]["split"]] += 1
+    producer_edge_coverage = summarize_producer_edge_coverage(
+        [case["diagnostics"]["producer_edge_coverage"] for case in cases]
+    )
+    producer_edge_coverage_by_source = {
+        source_id: summarize_producer_edge_coverage(
+            [case["diagnostics"]["producer_edge_coverage"] for case in source_cases]
+        )
+        for source_id, source_cases in sorted(grouped.items())
+    }
     summary = {
         "case_count": len(cases),
         "family_count": len({case["context"]["family_id"] for case in cases}),
@@ -833,6 +869,8 @@ def _summarize(
         "per_source": per_source,
         "token_budget_per_source": token_budget_per_source,
         "per_source_ablations": per_source_ablations,
+        "producer_edge_coverage": producer_edge_coverage,
+        "producer_edge_coverage_by_source": producer_edge_coverage_by_source,
         "setup": {
             "dense_model_load_ms": (
                 cases[0]["context"]["baseline_setup_ms"]["dense_model_load"] if cases else 0.0
@@ -1184,6 +1222,7 @@ def main() -> int:
                 "family_count": artifact.summary["family_count"],
                 "metrics": artifact.summary["baselines"],
                 "ablations": artifact.summary["ablations"],
+                "producer_edge_coverage": artifact.summary["producer_edge_coverage"],
                 "token_budget_metrics": artifact.summary["token_budget_baselines"],
             },
             ensure_ascii=False,
