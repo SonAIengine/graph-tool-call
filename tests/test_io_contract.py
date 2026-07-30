@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from graph_tool_call.graphify.io_contract import build_io_contract
 from graph_tool_call.ingest.io_contract import (
     extract_consumes_for_operation,
     extract_leaves,
@@ -97,6 +98,51 @@ def test_extract_leaves_root_primitive_map_without_field_name_is_empty():
     schema = {"type": "object", "additionalProperties": {"type": "string"}}
 
     assert extract_leaves(schema, base_path="$") == []
+
+
+def test_build_io_contract_preserves_root_map_response_as_body_producer():
+    schema = {
+        "type": "object",
+        "additionalProperties": {"type": "integer", "format": "int32"},
+    }
+
+    produces, consumes = build_io_contract(response_schema=schema)
+
+    assert consumes == []
+    assert produces == [
+        {
+            "json_path": "$",
+            "field_name": "body",
+            "field_type": "object",
+            "additional_properties": True,
+            "map_value": True,
+            "map_key_placeholder": "*",
+            "value_type": "integer",
+            "value_format": "int32",
+            "value_path_aliases": ["$.body"],
+        }
+    ]
+
+
+def test_build_io_contract_preserves_root_primitive_response_as_body_producer():
+    produces, _ = build_io_contract(
+        response_schema={
+            "type": "string",
+            "format": "uuid",
+            "description": "Created identifier",
+        }
+    )
+
+    assert produces == [
+        {
+            "json_path": "$",
+            "field_name": "body",
+            "field_type": "string",
+            "format": "uuid",
+            "description": "Created identifier",
+            "value_path_aliases": ["$.body"],
+        }
+    ]
 
 
 def test_extract_leaves_captures_enum():

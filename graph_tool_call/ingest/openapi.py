@@ -183,9 +183,13 @@ _DERIVED_FIELD_HINT_KEYS = (
     "content_schema_type",
     "content_fields",
     "content_top_level_fields",
+    "request_body_root",
     "additional_properties",
     "map_value",
     "map_key_placeholder",
+    "response_body_root",
+    "value_type",
+    "value_format",
     "discriminator_property",
     "discriminator_value",
     "discriminator_values",
@@ -1762,6 +1766,42 @@ def _request_body_root_row(schema: dict[str, Any], *, required: bool) -> dict[st
     return row
 
 
+def _response_body_root_row(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a synthetic producer for root scalar or dynamic-map responses."""
+    if not isinstance(schema, dict) or not schema:
+        return {}
+
+    schema_type = _schema_type(schema)
+    additional = schema.get("additionalProperties")
+    is_dynamic_map = schema_type == "object" and isinstance(additional, dict) and bool(additional)
+    if schema_type in {"object", "array"} and not is_dynamic_map:
+        return {}
+
+    row: dict[str, Any] = {
+        "field_name": "body",
+        "json_path": "$",
+        "field_type": schema_type,
+        "required": False,
+        "location": "response",
+        "response_body_root": True,
+    }
+    _add_schema_hints(row, schema)
+    enum = _schema_enum(schema)
+    if enum:
+        row["enum"] = enum
+    description = _schema_description(schema)
+    if description:
+        row["description"] = description[:300]
+    if is_dynamic_map:
+        row["additional_properties"] = True
+        row["map_value"] = True
+        row["map_key_placeholder"] = "*"
+        row["value_type"] = _schema_type(additional)
+        if additional.get("format"):
+            row["value_format"] = str(additional["format"])
+    return row
+
+
 def _needs_request_body_root_slot(schema: dict[str, Any]) -> bool:
     if not isinstance(schema, dict) or not schema:
         return False
@@ -2706,6 +2746,11 @@ def _operation_to_tool(
         request_body_content_type_rows,
         field_key="fields",
     )
+    if request_body_root:
+        all_body_leaf_rows = _merge_field_rows(
+            [request_body_root],
+            all_body_leaf_rows,
+        )
     selected_response = next(
         (row for row in response_rows if row.get("status") == response_status),
         {},
@@ -2722,6 +2767,10 @@ def _operation_to_tool(
         _schema_field_rows(response_schema, location="response"),
         response_example_rows,
     )
+    if not response_leaf_rows:
+        response_body_root = _response_body_root_row(response_schema)
+        if response_body_root:
+            response_leaf_rows = [response_body_root]
     response_envelope = annotate_response_path_aliases(response_schema, response_leaf_rows)
     security = _security_metadata(operation, resolved_spec)
     produces, consumes = _api_contract_rows(

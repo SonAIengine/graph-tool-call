@@ -93,6 +93,59 @@ def test_ingest_mcp_tools_preserves_annotations():
     assert result[0].annotations.destructive_hint is True
 
 
+def test_ingest_mcp_tools_preserves_contract_and_execution_metadata():
+    tools = [
+        {
+            "name": "lookup_order",
+            "description": "Look up an order",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "filters": {
+                        "type": "object",
+                        "properties": {
+                            "orderId": {"type": "string"},
+                        },
+                        "required": ["orderId"],
+                    }
+                },
+                "required": ["filters"],
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "order": {
+                        "type": "object",
+                        "properties": {
+                            "status": {"type": "string"},
+                        },
+                    }
+                },
+            },
+        }
+    ]
+
+    tool = ingest_mcp_tools(tools, server_name="orders")[0]
+
+    assert tool.metadata["request_body_schema"] == tools[0]["inputSchema"]
+    assert tool.metadata["response_schema"] == tools[0]["outputSchema"]
+    assert tool.metadata["mcp"]["input_schema"] == tools[0]["inputSchema"]
+    assert tool.metadata["mcp"]["output_schema"] == tools[0]["outputSchema"]
+    assert tool.metadata["mcp"]["server_name"] == "orders"
+    consumes = tool.metadata["api_contract"]["consumes"]
+    produces = tool.metadata["api_contract"]["produces"]
+    assert any(row["field_name"] == "orderId" for row in consumes)
+    assert any(row["field_name"] == "status" for row in produces)
+    assert tool.metadata["execution"] == {
+        "transport": "mcp",
+        "method": "tools/call",
+        "tool_name": "lookup_order",
+        "arguments_binding": "parameters_to_arguments",
+        "requires_client_binding": True,
+        "server_name": "orders",
+    }
+
+
 def test_tool_graph_ingest_mcp_tools():
     from graph_tool_call import ToolGraph
 

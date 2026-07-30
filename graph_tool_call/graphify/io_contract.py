@@ -130,6 +130,10 @@ _CONTRACT_HINT_KEYS = (
     "additional_properties",
     "map_value",
     "map_key_placeholder",
+    "request_body_root",
+    "response_body_root",
+    "value_type",
+    "value_format",
     "header",
     "status",
     "security_required",
@@ -468,7 +472,45 @@ def _build_produces(response_schema: dict[str, Any] | None) -> list[dict[str, An
             row["enum"] = list(leaf.enum)
         _copy_leaf_hints(leaf, row)
         produces.append(row)
+    if not produces:
+        root_row = _root_response_produce(response_schema)
+        if root_row:
+            produces.append(root_row)
     return produces
+
+
+def _root_response_produce(response_schema: dict[str, Any]) -> dict[str, Any]:
+    """Represent an actionable root response that has no stable named leaf."""
+    schema_type = str(response_schema.get("type") or "").strip()
+    additional = response_schema.get("additionalProperties")
+    if schema_type == "object" and isinstance(additional, dict) and additional:
+        row: dict[str, Any] = {
+            "json_path": "$",
+            "field_name": "body",
+            "field_type": "object",
+            "additional_properties": True,
+            "map_value": True,
+            "map_key_placeholder": "*",
+            "value_type": str(additional.get("type") or "unknown"),
+        }
+        if additional.get("format"):
+            row["value_format"] = str(additional["format"])
+        return row
+    if schema_type and schema_type not in {"object", "array"}:
+        row = {
+            "json_path": "$",
+            "field_name": "body",
+            "field_type": schema_type,
+        }
+        enum = _schema_enum(response_schema)
+        if enum:
+            row["enum"] = enum
+        for key in ("format", "description", "default", "example", "nullable"):
+            value = response_schema.get(key)
+            if value not in (None, ""):
+                row[key] = value
+        return row
+    return {}
 
 
 def _request_body_maps(

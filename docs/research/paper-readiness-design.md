@@ -593,6 +593,11 @@ Exit criterion:
 Validate normalized contracts, execution templates, source diagnostics, and
 deterministic replay. No LLM is required.
 
+The deterministic runner and metric contract are implemented in
+[`adapter-conformance.md`](adapter-conformance.md). The current train/dev pilot
+passes, but E0 is not a publication claim until the held-out and clean-machine
+gates are completed.
+
 Exit criterion:
 
 - the complete run can be reconstructed in a clean environment;
@@ -794,7 +799,8 @@ Recommended implementation order:
 2. replace scattered benchmark result schemas with one experiment artifact;
 3. implement missing random/oracle/LLM/flat/dense/hybrid baselines before new
    heuristics;
-4. add actual tokenizer accounting and adapter conformance metrics;
+4. add actual tokenizer accounting and adapter conformance metrics (implemented
+   for train/dev; held-out evaluation remains frozen);
 5. run deterministic ablations;
 6. run small model subsets, then expensive full model evaluations;
 7. perform XGEN external validation last.
@@ -840,8 +846,9 @@ This order prevents five-hour model runs from becoming the development loop.
       See [`public-heterogeneous-corpus.md`](public-heterogeneous-corpus.md).
 - [x] Upgrade public-corpus ground truth from a flat tool list to
       target/producer/alternative annotations.
-- [ ] Add adapter conformance metrics for request, response, auth, and
-      execution templates.
+- [x] Add adapter conformance metrics for request, response, auth, execution
+      templates, IO contracts, deterministic replay, and unsupported
+      diagnostics. See [`adapter-conformance.md`](adapter-conformance.md).
 - [x] Implement B2 dense and B3 fixed hybrid baselines in the unified harness.
 - [x] Add seeded random and oracle baselines to the unified harness.
 - [x] Add the fixed B1 BM25 baseline to the unified harness.
