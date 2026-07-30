@@ -1,6 +1,6 @@
 # Frozen Paper Retrieval Baselines
 
-The unified paper harness implements six deterministic development
+The unified paper harness implements nine deterministic development
 comparators:
 
 | ID | Artifact key | Frozen behavior |
@@ -11,6 +11,9 @@ comparators:
 | B2 | `dense` | Revision-pinned multilingual E5 cosine retrieval |
 | B3 | `hybrid_rrf` | Unweighted RRF over complete B1 and B2 rankings |
 | B4 | `flat_semantic_rrf` | B3 over frozen flat semantic metadata, without edges |
+| B5 | `graph_untyped` | B4 plus non-contract graph adjacency with uniform edge weights |
+| B6 | `graph_typed_contract` | B4 plus typed/confidence-weighted graph and IO-contract edges |
+| B7 | `full_graph_pipeline` | B6 plus deterministic target selection and bounded producer expansion |
 
 These baselines are research comparators, not product retrieval modes. They
 deliberately avoid contract scoring, target selection, and graph evidence.
@@ -22,12 +25,16 @@ graph traversal.
 ```bash
 poetry install --with dev -E embedding-local
 make paper-baseline-run
+make paper-graph-ablation
 
 TOP_K=8 SEED=17 OUT=/tmp/paper-baselines-k8.json \
   make paper-baseline-run
 
 TOKEN_BUDGET=4096 OUT=/tmp/paper-baselines-4k.json \
   make paper-baseline-run
+
+BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-graph-ablation.json \
+  make paper-graph-ablation
 ```
 
 The default run uses only the frozen `train,dev` families. It produces one
@@ -140,6 +147,98 @@ Per-case B4 latency covers semantic BM25 ranking, semantic E5 query encoding
 and ranking, and RRF fusion. One-time semantic-document construction, BM25
 index construction, and dense document encoding are reported separately by
 source under the artifact setup block.
+
+### B5 Frozen Untyped Graph
+
+B5 starts from the complete B4 ranking. Its top five B4 candidates are the
+only graph seeds, so B4-to-B5 does not change the lexical, dense, semantic, or
+fusion channels. The graph is built without contract promotion. Contract-only
+edges are also rejected defensively at traversal time.
+
+Every remaining edge is treated as untyped: relation, direction, confidence,
+and evidence strength do not change its weight. Traversal is bidirectional,
+bounded to depth two, and uses decay `1 / (0.5 * depth + 1)`. The strongest
+path score ranks an expanded tool; it is not added to that tool's B4 score.
+Seeds retain their normalized B4 score, preventing lexical/semantic and graph
+channels from counting the same candidate twice. Tools that are neither seeds
+nor graph-reached retain only their B4 tie-break order. This policy is
+identified as `paper-graph-rerank-v1`.
+
+### B6 Frozen Typed Contract Graph
+
+B6 uses the same complete B4 ranking, five seeds, depth, decay, and
+seed-versus-path score policy as B5. Its graph additionally promotes generic
+`api_contract.consumes` and `api_contract.produces` rows into data-flow edges.
+Relation and confidence weights are the frozen graph-tool-call defaults
+recorded in the benchmark module. No target selector, producer expansion,
+learning suggestion, manual edge, or run-observed trace is applied.
+
+The B5-to-B6 paired delta therefore measures adding typed relation/confidence
+evidence and deterministic IO-contract edges together. It does not claim to
+separate those two subcomponents; a finer contract-edge versus edge-weight
+ablation belongs to the wider WP3 matrix.
+
+### B7 Frozen Full Graph Pipeline
+
+B7 takes B6's top-K surface, applies
+`select_target_candidate(..., policy="strong_evidence")` without an LLM
+target, and expands only the selected target. Producer expansion is limited to
+one hop and three producers per required field. The selected target, admitted
+producers, and remaining B6 candidates share the same top-K and token budget.
+
+Learning suggestions, query-history signals, and product-specific aliases are
+disabled. B6-to-B7 isolates the deterministic selector and producer-expansion
+stage; B4-to-B7 reports the complete graph-tool-call contribution.
+
+## Paired Ablations
+
+Every artifact reports per-case deltas, improvement/regression/tie counts, and
+bootstrap confidence intervals for:
+
+| Artifact key | Comparison |
+|---|---|
+| `b5_minus_b4_topology` | untyped graph topology over the flat semantic baseline |
+| `b6_minus_b5_typed_contract` | typed/confidence-weighted contract graph |
+| `b7_minus_b6_selector_producers` | target selector and producer expansion |
+| `b7_minus_b4_full_pipeline` | complete deterministic graph-tool-call pipeline |
+
+Positive deltas mean higher quality for effectiveness metrics. For latency,
+schema tokens, budget use, and truncation, the artifact's improvement counts
+treat lower values as better. Graph construction remains a separately reported
+setup cost rather than being charged to one query.
+
+## Train/Dev Implementation Pilot
+
+The 2026-07-30 implementation-branch pilot used the pinned E5 encoder,
+Qwen3 tokenizer, `K=5`, 29 train/dev cases, and 1,000 bootstrap resamples.
+It did not open the held-out split.
+
+| Baseline | Target Hit@5 | Producer Recall@5 | All required | MRR |
+|---|---:|---:|---:|---:|
+| B2 dense | 0.9655 | 0.6667 | 0.8966 | 0.9207 |
+| B4 flat semantic | 0.9310 | 0.6667 | 0.8621 | 0.8305 |
+| B5 untyped graph | 0.9310 | 0.6667 | 0.8621 | 0.8305 |
+| B6 typed contract | 0.9310 | 0.6667 | 0.8621 | 0.8305 |
+| B7 full deterministic | 0.9310 | 0.6667 | 0.8621 | 0.7931 |
+
+This pilot does not support H1 or H2. At `K=5`, the five protected B4 seeds
+already fill the candidate budget, and available graph paths do not introduce
+a stronger required producer. B7 preserves set-level recall but its
+deterministic selector improves MRR on two cases and regresses five; the paired
+B7-minus-B4 MRR delta is `-0.0374` with bootstrap 95% CI
+`[-0.1322, 0.0603]`.
+
+The same pinned run at `K=3` and `K=8` also produced zero B4-to-B5 and
+B5-to-B6 effectiveness deltas. Dense producer recall rose from `0.5833` to
+`1.0000` across that budget sweep, while the graph profiles matched B4 at each
+K. This points to missing useful producer paths or insufficient admissible
+edge evidence, rather than a need for a larger graph score multiplier.
+
+These are diagnostic development numbers from a dirty implementation
+worktree, not publication evidence. The immediate implication is to run the
+remaining token-budget sweeps and inspect missing producer-edge coverage and
+ambiguous selector evidence. It is not a reason to tune on or open the
+held-out family.
 
 ## Metrics And Budget
 

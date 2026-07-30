@@ -9,21 +9,26 @@ import pytest
 from benchmarks.experiment.artifact import validate_artifact
 from benchmarks.paper_baselines import (
     FIXED_BM25_TOKENIZER_REVISION,
+    FIXED_GRAPH_POLICY_REVISION,
     FIXED_RRF_K,
     FixedBM25Retriever,
     FixedDenseRetriever,
+    FixedGraphRetriever,
     RankedCandidate,
     SentenceTransformerDenseEncoder,
     fixed_lexical_tokens,
     flat_semantic_coverage,
     flat_semantic_document,
     flat_semantic_metadata,
+    full_graph_pipeline_rank,
     oracle_rank,
     reciprocal_rank_fusion,
     run_paper_baselines,
     seeded_random_rank,
 )
 from graph_tool_call.core.tool import ToolSchema
+from graph_tool_call.ontology.schema import Confidence, RelationType
+from graph_tool_call.tool_graph import ToolGraph
 
 MANIFEST = Path("benchmarks/corpus/manifest.json")
 
@@ -56,8 +61,14 @@ def _stable_summary(summary):
         "source_count": summary["source_count"],
         "split_case_counts": summary["split_case_counts"],
         "baselines": {},
+        "ablations": _stable_ablations(summary["ablations"]),
         "per_source": {},
+        "per_source_ablations": {
+            source_id: _stable_ablations(ablations)
+            for source_id, ablations in summary["per_source_ablations"].items()
+        },
         "token_budget_baselines": {},
+        "token_budget_ablations": _stable_ablations(summary["token_budget_ablations"]),
         "token_budget_per_source": {},
     }
     for baseline, metrics in summary["baselines"].items():
@@ -87,6 +98,26 @@ def _stable_summary(summary):
     return stable
 
 
+def _stable_ablations(ablations):
+    stable = {}
+    for name, row in ablations.items():
+        stable[name] = {
+            key: (
+                {metric: value for metric, value in values.items() if metric != "latency_ms"}
+                if key
+                in {
+                    "mean_delta",
+                    "improved_case_count",
+                    "regressed_case_count",
+                    "tied_case_count",
+                }
+                else values
+            )
+            for key, values in row.items()
+        }
+    return stable
+
+
 class _FakeVector(list):
     def tolist(self) -> list[float]:
         return list(self)
@@ -107,6 +138,7 @@ def baseline_artifact(tmp_path_factory: pytest.TempPathFactory):
         token_counter=DeterministicTestTokenCounter(),
         context_tokenizer_name="deterministic-test-tokenizer",
         context_tokenizer_revision="v1",
+        bootstrap_resamples=25,
     )
 
 
@@ -410,6 +442,255 @@ def test_fixed_rrf_is_unweighted_and_uses_stable_ties():
     assert ranking[0].score == pytest.approx(ranking[1].score)
 
 
+def test_b5_untyped_graph_excludes_contract_only_edges():
+    tools = [
+        ToolSchema(name="target"),
+        ToolSchema(name="distractor"),
+        ToolSchema(name="producer"),
+    ]
+    graph = ToolGraph()
+    for tool in tools:
+        graph.add_tool(tool)
+    graph.graph.add_edge(
+        "target",
+        "producer",
+        relation=RelationType.REQUIRES,
+        confidence=Confidence.EXTRACTED,
+        evidence_sources=["api_contract"],
+    )
+    base = [
+        RankedCandidate("target", 1.0),
+        RankedCandidate("distractor", 0.75),
+        RankedCandidate("producer", 0.7),
+    ]
+
+    ranking, diagnostics = FixedGraphRetriever(
+        graph,
+        profile="untyped_topology",
+    ).rank("read target", base, top_k=3)
+
+    assert FIXED_GRAPH_POLICY_REVISION == "paper-graph-rerank-v1"
+    assert [candidate.name for candidate in ranking] == [
+        "target",
+        "distractor",
+        "producer",
+    ]
+    assert diagnostics["contract_edges_used"] == 0
+
+
+def test_b5_untyped_graph_uses_structural_adjacency_without_edge_labels():
+    tools = [
+        ToolSchema(name="target"),
+        *(ToolSchema(name=f"distractor-{index}") for index in range(1, 5)),
+        ToolSchema(name="related"),
+    ]
+    graph = ToolGraph()
+    for tool in tools:
+        graph.add_tool(tool)
+    graph.graph.add_edge(
+        "target",
+        "related",
+        relation=RelationType.CONFLICTS_WITH,
+        confidence=Confidence.AMBIGUOUS,
+        evidence_sources=["structural"],
+    )
+    base = [
+        RankedCandidate("target", 1.0),
+        RankedCandidate("distractor-1", 0.75),
+        RankedCandidate("distractor-2", 0.74),
+        RankedCandidate("distractor-3", 0.73),
+        RankedCandidate("distractor-4", 0.4),
+        RankedCandidate("related", 0.1),
+    ]
+
+    ranking, diagnostics = FixedGraphRetriever(
+        graph,
+        profile="untyped_topology",
+    ).rank("read target", base, top_k=5)
+
+    assert [candidate.name for candidate in ranking] == [
+        "target",
+        "distractor-1",
+        "distractor-2",
+        "distractor-3",
+        "related",
+    ]
+    assert diagnostics["edge_count_used"] == 1
+    assert diagnostics["contract_edges_used"] == 0
+    assert ranking[-1].score == pytest.approx(2 / 3)
+
+
+def test_b6_typed_graph_uses_contract_edges_and_confidence():
+    tools = [
+        ToolSchema(name="target"),
+        ToolSchema(name="distractor-1"),
+        ToolSchema(name="distractor-2"),
+        ToolSchema(name="distractor-3"),
+        ToolSchema(name="distractor-4"),
+        ToolSchema(name="producer"),
+    ]
+    graph = ToolGraph()
+    for tool in tools:
+        graph.add_tool(tool)
+    graph.graph.add_edge(
+        "target",
+        "producer",
+        relation=RelationType.REQUIRES,
+        confidence=Confidence.EXTRACTED,
+        evidence_sources=["api_contract"],
+    )
+    base = [
+        RankedCandidate("target", 1.0),
+        RankedCandidate("distractor-1", 0.75),
+        RankedCandidate("distractor-2", 0.74),
+        RankedCandidate("distractor-3", 0.73),
+        RankedCandidate("distractor-4", 0.4),
+        RankedCandidate("producer", 0.1),
+    ]
+
+    ranking, diagnostics = FixedGraphRetriever(
+        graph,
+        profile="typed_contract",
+    ).rank("read target", base, top_k=5)
+
+    assert [candidate.name for candidate in ranking] == [
+        "target",
+        "distractor-1",
+        "distractor-2",
+        "distractor-3",
+        "producer",
+    ]
+    assert diagnostics["contract_edges_used"] == 1
+    assert diagnostics["expanded_tool_count"] == 1
+    assert ranking[-1].score == pytest.approx(0.8 * (2 / 3))
+
+
+def test_fixed_graph_retriever_bounds_cycles_and_keeps_the_strongest_path():
+    tools = [
+        ToolSchema(name="target"),
+        ToolSchema(name="short_path"),
+        ToolSchema(name="long_path"),
+        ToolSchema(name="result"),
+        ToolSchema(name="fallback"),
+        ToolSchema(name="tail"),
+    ]
+    graph = ToolGraph()
+    for tool in tools:
+        graph.add_tool(tool)
+    for source, target in (
+        ("target", "short_path"),
+        ("short_path", "target"),
+        ("short_path", "result"),
+        ("target", "long_path"),
+        ("long_path", "result"),
+    ):
+        graph.graph.add_edge(
+            source,
+            target,
+            relation=RelationType.REQUIRES,
+            confidence=Confidence.EXTRACTED,
+            evidence_sources=["structural"],
+        )
+    base = [
+        RankedCandidate("target", 1.0),
+        RankedCandidate("short_path", 0.9),
+        RankedCandidate("long_path", 0.8),
+        RankedCandidate("fallback", 0.7),
+        RankedCandidate("tail", 0.2),
+        RankedCandidate("result", 0.1),
+    ]
+
+    ranking, diagnostics = FixedGraphRetriever(
+        graph,
+        profile="untyped_topology",
+    ).rank("target result", base, top_k=6)
+
+    assert len({candidate.name for candidate in ranking}) == len(ranking) == 6
+    assert diagnostics["depth"] == 2
+    assert diagnostics["graph_reached_tool_count"] >= 1
+    assert next(candidate for candidate in ranking if candidate.name == "result").score > 0.0
+
+
+def test_b7_selector_and_producer_expansion_share_the_candidate_budget():
+    tools = [
+        ToolSchema(
+            name="getOrderDetail",
+            description="Read one order detail.",
+            metadata={
+                "ai_metadata": {
+                    "canonical_action": "read",
+                    "primary_resource": "order",
+                    "result_shape": "single",
+                },
+                "consumes": [
+                    {
+                        "field_name": "order_id",
+                        "semantic_tag": "order_id",
+                        "kind": "data",
+                        "required": True,
+                    }
+                ],
+            },
+        ),
+        ToolSchema(
+            name="listOrders",
+            description="List orders and return order identifiers.",
+            metadata={
+                "ai_metadata": {
+                    "canonical_action": "search",
+                    "primary_resource": "order",
+                    "result_shape": "list",
+                },
+                "produces": [
+                    {
+                        "field_name": "order_id",
+                        "semantic_tag": "order_id",
+                        "kind": "data",
+                    }
+                ],
+            },
+        ),
+        ToolSchema(name="unrelated"),
+    ]
+    typed_ranking = [
+        RankedCandidate("getOrderDetail", 1.0),
+        RankedCandidate("unrelated", 0.9),
+        RankedCandidate("listOrders", 0.2),
+    ]
+
+    ranking, diagnostics = full_graph_pipeline_rank(
+        "show one order detail",
+        typed_ranking,
+        {tool.name: tool for tool in tools},
+        top_k=2,
+    )
+
+    assert [candidate.name for candidate in ranking] == [
+        "getOrderDetail",
+        "listOrders",
+    ]
+    assert diagnostics["selected_target"] == "getOrderDetail"
+    assert diagnostics["producer_candidates"] == ["listOrders"]
+    assert diagnostics["candidate_count"] == 2
+
+
+def test_b7_handles_an_empty_candidate_surface():
+    ranking, diagnostics = full_graph_pipeline_rank(
+        "anything",
+        [],
+        {},
+        top_k=5,
+    )
+
+    assert ranking == []
+    assert diagnostics == {
+        "selected_target": "",
+        "producer_candidates": [],
+        "candidate_count": 0,
+        "target_selector": {},
+    }
+
+
 def test_seeded_random_is_case_stable_and_seed_sensitive():
     tools = [ToolSchema(name=f"tool_{index}") for index in range(20)]
 
@@ -471,6 +752,15 @@ def test_train_dev_runner_emits_valid_paired_artifact(baseline_artifact):
         "dense",
         "hybrid_rrf",
         "flat_semantic_rrf",
+        "graph_untyped",
+        "graph_typed_contract",
+        "full_graph_pipeline",
+    }
+    assert set(baseline_artifact.summary["ablations"]) == {
+        "b5_minus_b4_topology",
+        "b6_minus_b5_typed_contract",
+        "b7_minus_b6_selector_producers",
+        "b7_minus_b4_full_pipeline",
     }
     assert baseline_artifact.model["name"] == "deterministic-test-encoder"
     assert baseline_artifact.model["revision"] == "v1"
@@ -492,6 +782,9 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
             "dense",
             "hybrid_rrf",
             "flat_semantic_rrf",
+            "graph_untyped",
+            "graph_typed_contract",
+            "full_graph_pipeline",
         ):
             retrieved = case["observed"][baseline]["retrieved"]
             metrics = case["metrics"][baseline]
@@ -533,6 +826,7 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
         "payload_scope": ["name", "description", "parameters"],
         "query_tokens_included": False,
     }
+    assert baseline_artifact.config["bootstrap_resamples"] == 25
     assert baseline_artifact.config["baselines"]["flat_semantic_rrf"] == {
         "label": "B4",
         "channels": ["flat_semantic_bm25", "flat_semantic_dense"],
@@ -555,6 +849,18 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
         "contract_signals": False,
         "selector_signals": False,
     }
+    assert baseline_artifact.config["baselines"]["graph_untyped"]["label"] == "B5"
+    assert baseline_artifact.config["baselines"]["graph_typed_contract"]["label"] == "B6"
+    assert baseline_artifact.config["baselines"]["full_graph_pipeline"]["label"] == "B7"
+    assert baseline_artifact.config["baselines"]["graph_untyped"]["contract_signals"] is False
+    assert baseline_artifact.config["baselines"]["graph_typed_contract"]["contract_signals"] is True
+    assert baseline_artifact.config["baselines"]["full_graph_pipeline"]["producer_expansion"] == {
+        "max_hops": 1,
+        "max_producers_per_field": 3,
+    }
+    assert set(baseline_artifact.statistics["paired_bootstrap"]) == set(
+        baseline_artifact.summary["ablations"]
+    )
     assert set(baseline_artifact.summary["setup"]["flat_semantic_coverage_by_source"]) == {
         "graphql-commerce-project-fixture",
         "mcp-filesystem-project-fixture",
@@ -568,6 +874,9 @@ def test_all_baselines_share_candidate_count_budget(baseline_artifact):
         "flat_semantic_document_build_ms_by_source",
         "flat_semantic_bm25_index_build_ms_by_source",
         "flat_semantic_dense_document_encoding_ms_by_source",
+        "untyped_graph_build_ms_by_source",
+        "typed_contract_graph_build_ms_by_source",
+        "graph_profiles_by_source",
     ):
         assert set(baseline_artifact.summary["setup"][setup_key]) == set(
             baseline_artifact.summary["per_source"]
@@ -587,6 +896,7 @@ def test_runner_rankings_are_reproducible(baseline_artifact, tmp_path: Path):
         token_counter=DeterministicTestTokenCounter(),
         context_tokenizer_name="deterministic-test-tokenizer",
         context_tokenizer_revision="v1",
+        bootstrap_resamples=25,
     )
 
     first_rankings = [case["observed"] for case in baseline_artifact.cases]
@@ -613,6 +923,15 @@ def test_runner_rejects_invalid_token_budget(tmp_path: Path):
             MANIFEST,
             token_budget=0,
             output_path=tmp_path / "invalid-budget.json",
+        )
+
+
+def test_runner_rejects_invalid_bootstrap_resamples(tmp_path: Path):
+    with pytest.raises(ValueError, match="bootstrap_resamples must be greater than zero"):
+        run_paper_baselines(
+            MANIFEST,
+            bootstrap_resamples=0,
+            output_path=tmp_path / "invalid-bootstrap.json",
         )
 
 

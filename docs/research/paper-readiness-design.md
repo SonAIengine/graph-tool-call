@@ -838,6 +838,7 @@ This order prevents five-hour model runs from becoming the development loop.
 | 2026-07-28 | AI-assisted annotation review may unblock development but never substitutes for independent human review. |
 | 2026-07-28 | Experiment schema v1 separates deterministic run identity from exact result content identity. |
 | 2026-07-29 | The strongest frozen B1-B4 development result becomes the primary flat comparator; B3 remains reported even when fusion underperforms B2. |
+| 2026-07-30 | B5-B7 share B4 seeds and budgets; graph, typed-contract, and selector/producer effects are reported as paired deltas. |
 
 ## 20. Immediate Next Tasks
 
@@ -853,9 +854,11 @@ This order prevents five-hour model runs from becoming the development loop.
 - [x] Add seeded random and oracle baselines to the unified harness.
 - [x] Add the fixed B1 BM25 baseline to the unified harness.
 - [x] Add the fixed B4 flat-semantic hybrid baseline to the unified harness.
+- [x] Add frozen B5 untyped graph, B6 typed-contract graph, and B7 full
+      deterministic pipeline baselines with paired bootstrap deltas.
 - [ ] Add the budgeted LLM catalog-selector baseline.
 - [x] Add actual tokenizer accounting with frozen tokenizer revisions.
-      The B-1/B0-O/B1-B4 harness uses pinned Qwen3 tokenizer accounting and a
+      The B-1/B0-O/B1-B7 harness uses pinned Qwen3 tokenizer accounting and a
       ranked whole-schema prefix policy; see
       [`paper-baselines.md`](paper-baselines.md).
 - [x] Define one artifact schema for deterministic, model, execution, and XGEN
