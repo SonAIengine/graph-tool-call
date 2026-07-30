@@ -428,6 +428,7 @@ serialization, and whole-schema truncation policy; see
 | B5 | B4 + untyped graph topology, no IO-contract fields |
 | B6 | Graph + typed IO contract, no target selector |
 | B6a | B6 + opt-in required-consumer-aligned output promotion |
+| B6b | B6a + one evidence-gated consumer-aligned candidate slot |
 | B7 | Full graph-tool-call pipeline: retrieval + selector + producer expansion |
 | B8 | Closest reproducible published graph retriever |
 | B9 | Optional external or small reranker over the same candidate pool |
@@ -864,8 +865,13 @@ This order prevents five-hour model runs from becoming the development loop.
       that are recorded but never used for ranking.
 - [x] Add the B6a required-consumer-aligned output-promotion ablation and
       record both structural coverage gains and graph-growth cost.
-- [ ] Add a frozen candidate-admission/seed-slot ablation without changing
-      retrieval channels, graph weights, or output-promotion policy.
+- [x] Add a frozen candidate-admission/seed-slot ablation without changing
+      retrieval channels, graph weights, or output-promotion policy. B6b
+      improves candidate-count producer recall without an effectiveness
+      regression, but the gain does not survive the 2,048-token whole-schema
+      budget; see [`paper-baselines.md`](paper-baselines.md).
+- [ ] Add a budget-aware schema-admission or contract-projected schema
+      ablation that preserves B6b's producer under the same 2,048-token limit.
 - [ ] Add the budgeted LLM catalog-selector baseline.
 - [x] Add actual tokenizer accounting with frozen tokenizer revisions.
       The B-1/B0-O/B1-B7 harness uses pinned Qwen3 tokenizer accounting and a

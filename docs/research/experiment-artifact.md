@@ -64,8 +64,8 @@ Run the contract suite with:
 make paper-harness-check
 ```
 
-The native B-1/B0-O/B1/B2/B3/B4/B5/B6/B6a/B7 runner writes this schema directly
-rather than passing through a legacy adapter:
+The native B-1/B0-O/B1/B2/B3/B4/B5/B6/B6a/B6b/B7 runner writes this schema
+directly rather than passing through a legacy adapter:
 
 ```bash
 make paper-baseline-run
@@ -122,9 +122,11 @@ retrieval:
 
 The diagnostic config must retain `used_for_ranking=false` and
 `evaluation_scope=ground_truth_only`. An artifact that uses expected targets
-or producers as ranking input is not comparable to the declared B1-B7 and
-B6a baselines. B6a derives promotion evidence only from collection contracts;
-ground-truth diagnostics are computed after ranking.
+or producers as ranking input is not comparable to the declared B1-B7,
+B6a, and B6b baselines. B6a derives promotion evidence only from collection
+contracts. B6b derives admission evidence only from those promoted contracts,
+the query, and collection semantics; ground-truth diagnostics are computed
+after ranking.
 
 The tokenizer name, immutable revision, library version, serialization
 revision, special-token policy, and replay flags all participate in `run_id`.

@@ -1,6 +1,6 @@
 # Frozen Paper Retrieval Baselines
 
-The unified paper harness implements ten deterministic development
+The unified paper harness implements eleven deterministic development
 comparators:
 
 | ID | Artifact key | Frozen behavior |
@@ -14,6 +14,7 @@ comparators:
 | B5 | `graph_untyped` | B4 plus non-contract graph adjacency with uniform edge weights |
 | B6 | `graph_typed_contract` | B4 plus typed/confidence-weighted graph and IO-contract edges |
 | B6a | `graph_consumer_aligned_contract` | B6 with opt-in required-consumer-aligned output promotion |
+| B6b | `graph_consumer_aligned_admission` | B6a with one evidence-gated candidate-admission slot |
 | B7 | `full_graph_pipeline` | B6 plus deterministic target selection and bounded producer expansion |
 
 These baselines are research comparators, not product retrieval modes. They
@@ -29,6 +30,7 @@ make paper-baseline-run
 make paper-graph-ablation
 make paper-producer-coverage
 make paper-output-promotion
+make paper-candidate-admission
 
 TOP_K=8 SEED=17 OUT=/tmp/paper-baselines-k8.json \
   make paper-baseline-run
@@ -44,6 +46,9 @@ BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-producer-coverage.json \
 
 BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-output-promotion.json \
   make paper-output-promotion
+
+BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-candidate-admission.json \
+  make paper-candidate-admission
 ```
 
 The default run uses only the frozen `train,dev` families. It produces one
@@ -208,6 +213,28 @@ output promotion and its resulting contract edges. The policy remains off in
 the product path until its graph-size and retrieval trade-offs are supported
 on broader data.
 
+### B6b Consumer-Aligned Candidate Admission
+
+B6b keeps B6a's complete B4 ranking, five traversal seeds, graph, edge
+weights, output-promotion policy, depth, and candidate/token budgets. It
+changes only final top-K admission. At most one non-seed candidate can replace
+the last protected seed.
+
+A candidate qualifies without benchmark annotations only when:
+
+1. a forward `api_contract` path ends at an output promoted by B6a for that
+   exact required consumer;
+2. the candidate's canonical action matches the first explicit action in the
+   query; and
+3. query resource terms overlap the candidate's normalized OpenAPI path
+   module or primary resource.
+
+The frozen policy revision is `paper-consumer-aligned-contract-slot-v1`.
+Diagnostics record qualifying, admitted, and evicted candidates, plus path,
+graph score, admission score, action evidence, and resource evidence.
+Expected targets, required producers, traces, LLM output, product aliases, and
+held-out cases are never ranking inputs.
+
 ### B7 Frozen Full Graph Pipeline
 
 B7 takes B6's top-K surface, applies
@@ -230,6 +257,7 @@ bootstrap confidence intervals for:
 | `b5_minus_b4_topology` | untyped graph topology over the flat semantic baseline |
 | `b6_minus_b5_typed_contract` | typed/confidence-weighted contract graph |
 | `b6a_minus_b6_output_promotion` | required-consumer-aligned output promotion |
+| `b6b_minus_b6a_candidate_admission` | one evidence-gated consumer-aligned candidate slot |
 | `b7_minus_b6_selector_producers` | target selector and producer expansion |
 | `b7_minus_b4_full_pipeline` | complete deterministic graph-tool-call pipeline |
 
@@ -276,6 +304,8 @@ It did not open the held-out split.
 | B4 flat semantic | 0.9310 | 0.6667 | 0.8621 | 0.8305 |
 | B5 untyped graph | 0.9310 | 0.6667 | 0.8621 | 0.8305 |
 | B6 typed contract | 0.9310 | 0.6667 | 0.8621 | 0.8305 |
+| B6a aligned output | 0.9310 | 0.6667 | 0.8621 | 0.8305 |
+| B6b candidate admission | 0.9310 | 0.8333 | 0.8966 | 0.8305 |
 | B7 full deterministic | 0.9310 | 0.6667 | 0.8621 | 0.7931 |
 
 This pilot does not support H1 or H2. At `K=5`, the five protected B4 seeds
@@ -366,6 +396,39 @@ cap. On Petstore, edges increased from `30` to `41`. These development results
 keep B6a opt-in and motivate a later precision/graph-growth study before any
 default rollout. Optional-consumer evidence and producer-cap changes remain
 separate experiments.
+
+### Candidate-admission follow-up
+
+The clean B6b replay used commit `ac3e7c0`, the same pinned E5 and Qwen3
+revisions, `K=5`, a 2,048-token budget, seed 17, 29 train/dev cases, and 1,000
+bootstrap resamples. The held-out split remained unopened. Artifact
+`exp-15f214a1d4b96cea07bdf098` passed schema validation with
+`git_dirty=false`.
+
+| Candidate-count metric | B6a | B6b |
+|---|---:|---:|
+| target Hit@5 | 0.9310 | 0.9310 |
+| producer Recall@5 | 0.6667 | 0.8333 |
+| required-tool Recall@5 | 0.9138 | 0.9310 |
+| all-required-found | 0.8621 | 0.8966 |
+| Precision@5 | 0.2293 | 0.2362 |
+| MRR | 0.8305 | 0.8305 |
+
+Exactly one effectiveness case improved and none regressed. For the
+Kubernetes pod-log workflow, B6b admitted `listCoreV1NamespacedPod` through
+the direct `readCoreV1NamespacedPodLog -> listCoreV1NamespacedPod`
+aligned-contract path and evicted the fifth protected seed. No other case
+passed all evidence gates.
+
+The 2,048-token view did not retain that gain: producer recall stayed at
+`0.5000` and all-required-found at `0.7931` for both methods. The admitted
+producer's complete schema did not fit as the fifth item under
+`ranked-greedy-whole-schema-v1`, so B6b selected four schemas and stopped.
+Mean serialized schema use fell from `494.86` to `466.62` tokens, while the
+truncation rate rose from `0.1724` to `0.2069`. This is a negative
+context-budget result, not evidence that the producer is available to the
+model. Budget-aware admission or schema projection must therefore be tested
+as a separate ablation before B6b can support an end-to-end context claim.
 
 ## Metrics And Budget
 
