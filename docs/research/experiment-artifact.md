@@ -64,8 +64,8 @@ Run the contract suite with:
 make paper-harness-check
 ```
 
-The native B-1/B0-O/B1/B2/B3/B4/B5/B6/B6a/B6b/B7 runner writes this schema
-directly rather than passing through a legacy adapter:
+The native B-1/B0-O/B1/B2/B3/B4/B5/B6/B6a/B6b/B6c/B7 runner writes this
+schema directly rather than passing through a legacy adapter:
 
 ```bash
 make paper-baseline-run
@@ -97,6 +97,14 @@ is additive:
 - confidence intervals: `statistics.token_budget_bootstrap`;
 - frozen policy: `config.token_budget`.
 
+Budget-aware schema projection is additive to the same per-case view:
+
+- policy identity: `token_budget_observed.<baseline>.policy_revision`;
+- selected representation: `schema_modes` (`full` or `contract_projected`);
+- projection use: `projected_schema_count`;
+- savings against complete schemas: `projection_saved_tokens`;
+- exact payload size: `schema_chars` and `schema_utf8_bytes`.
+
 Graph ablations are paired on the same cases:
 
 - aggregate deltas: `summary.ablations` and
@@ -122,11 +130,12 @@ retrieval:
 
 The diagnostic config must retain `used_for_ranking=false` and
 `evaluation_scope=ground_truth_only`. An artifact that uses expected targets
-or producers as ranking input is not comparable to the declared B1-B7,
-B6a, and B6b baselines. B6a derives promotion evidence only from collection
+or producers as ranking input is not comparable to the declared B1-B7, B6a,
+B6b, and B6c baselines. B6a derives promotion evidence only from collection
 contracts. B6b derives admission evidence only from those promoted contracts,
-the query, and collection semantics; ground-truth diagnostics are computed
-after ranking.
+the query, and collection semantics. B6c projects only candidates identified
+by that B6b admission evidence and does not change ranking. Ground-truth
+diagnostics are computed after ranking.
 
 The tokenizer name, immutable revision, library version, serialization
 revision, special-token policy, and replay flags all participate in `run_id`.

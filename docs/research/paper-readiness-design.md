@@ -429,6 +429,7 @@ serialization, and whole-schema truncation policy; see
 | B6 | Graph + typed IO contract, no target selector |
 | B6a | B6 + opt-in required-consumer-aligned output promotion |
 | B6b | B6a + one evidence-gated consumer-aligned candidate slot |
+| B6c | B6b ranking + selection-time contract projection for evidence-admitted candidates |
 | B7 | Full graph-tool-call pipeline: retrieval + selector + producer expansion |
 | B8 | Closest reproducible published graph retriever |
 | B9 | Optional external or small reranker over the same candidate pool |
@@ -844,6 +845,7 @@ This order prevents five-hour model runs from becoming the development loop.
 | 2026-07-30 | B5-B7 share B4 seeds and budgets; graph, typed-contract, and selector/producer effects are reported as paired deltas. |
 | 2026-07-30 | Producer-edge failures are diagnosed with ground-truth-only contract, path, direction, and seed coverage before graph weights are tuned. |
 | 2026-07-30 | Required-consumer-aligned output promotion improves contract-path coverage but not Recall@5 under protected B4 seeds; candidate admission is the next isolated ablation. |
+| 2026-07-30 | B6c selection-time contract projection preserves B6b ranking and restores its producer gain under 2,048 tokens; complete schemas remain mandatory before argument generation and execution. |
 
 ## 20. Immediate Next Tasks
 
@@ -870,8 +872,14 @@ This order prevents five-hour model runs from becoming the development loop.
       improves candidate-count producer recall without an effectiveness
       regression, but the gain does not survive the 2,048-token whole-schema
       budget; see [`paper-baselines.md`](paper-baselines.md).
-- [ ] Add a budget-aware schema-admission or contract-projected schema
-      ablation that preserves B6b's producer under the same 2,048-token limit.
+- [x] Add a budget-aware contract-projected schema ablation that preserves
+      B6b's producer under the same 2,048-token limit. B6c raises token-budget
+      producer recall from `0.5000` to `0.6667` on train/dev with one improved
+      case and no observed effectiveness regression; the confidence interval
+      includes zero, so model-in-loop and broader-corpus validation remain
+      open. See [`paper-baselines.md`](paper-baselines.md).
+- [ ] Run a frozen model-in-loop B6b-vs-B6c target-selection comparison, then
+      hydrate the selected tool's complete schema before argument generation.
 - [ ] Add the budgeted LLM catalog-selector baseline.
 - [x] Add actual tokenizer accounting with frozen tokenizer revisions.
       The B-1/B0-O/B1-B7 harness uses pinned Qwen3 tokenizer accounting and a
