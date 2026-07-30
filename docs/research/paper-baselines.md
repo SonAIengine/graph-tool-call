@@ -402,8 +402,8 @@ separate experiments.
 The clean B6b replay used commit `ac3e7c0`, the same pinned E5 and Qwen3
 revisions, `K=5`, a 2,048-token budget, seed 17, 29 train/dev cases, and 1,000
 bootstrap resamples. The held-out split remained unopened. Artifact
-`exp-15f214a1d4b96cea07bdf098` passed schema validation with
-`git_dirty=false`.
+`exp-15f214a1d4b96cea07bdf098` (run
+`run-fa09c248ed37ccaa84c7`) passed schema validation with `git_dirty=false`.
 
 | Candidate-count metric | B6a | B6b |
 |---|---:|---:|
