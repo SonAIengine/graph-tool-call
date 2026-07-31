@@ -848,6 +848,7 @@ This order prevents five-hour model runs from becoming the development loop.
 | 2026-07-30 | B6c selection-time contract projection preserves B6b ranking and restores its producer gain under 2,048 tokens; complete schemas remain mandatory before argument generation and execution. |
 | 2026-07-31 | A clean single-repeat Qwen3.6-27B model loop confirms the B6c mechanism on train/dev: one paired E2E improvement, zero regressions, and confidence intervals that still include zero. |
 | 2026-07-31 | The clean three-repeat publication candidate reproduces the same B6c gain in every repeat with zero observed regressions; held-out remains sealed and all effectiveness intervals still include zero. |
+| 2026-07-31 | Model-loop inference clusters repeats by the 29 original cases; repeated rows no longer narrow the publication CI or inflate the independent task count. |
 
 ## 20. Immediate Next Tasks
 
@@ -891,6 +892,10 @@ This order prevents five-hour model runs from becoming the development loop.
       ranking/budget protocol compliance. The held-out split was not accessed;
       confidence intervals still include zero. See
       [`paper-model-loop.md`](paper-model-loop.md).
+- [x] Add original-case-clustered bootstrap and repeat-stability diagnostics.
+      Offline analysis `analysis-a1b9002abae40581fc8691f8` uses 29 clusters,
+      reports 100% repeat-grid completeness and outcome consistency, and keeps
+      the held-out split sealed without additional model calls.
 - [ ] Add the budgeted LLM catalog-selector baseline.
 - [x] Add actual tokenizer accounting with frozen tokenizer revisions.
       The B-1/B0-O/B1-B7 harness uses pinned Qwen3 tokenizer accounting and a

@@ -11,6 +11,12 @@ from typing import Any
 import pytest
 
 from benchmarks.experiment.artifact import ExperimentArtifact, finalize_artifact, write_artifact
+from benchmarks.paper_model_loop.analysis import (
+    MODEL_LOOP_ANALYSIS_REVISION,
+    analyze_model_loop_artifact,
+    analyze_paired_repeats,
+    pair_model_loop_cases,
+)
 from benchmarks.paper_model_loop.catalog import (
     B6B_BASELINE,
     B6C_BASELINE,
@@ -325,6 +331,8 @@ def test_paired_model_loop_records_b6c_gain_and_valid_hydration(
 ) -> None:
     baseline_path = tmp_path / "baseline.json"
     write_artifact(baseline_path, _baseline_artifact())
+    with pytest.raises(ValueError, match="not a paper model-loop"):
+        analyze_model_loop_artifact(baseline_path, bootstrap_resamples=20)
     client = _CatalogAwareModel()
 
     artifact = run_paired_model_loop(
@@ -348,9 +356,28 @@ def test_paired_model_loop_records_b6c_gain_and_valid_hydration(
     assert paired["end_to_end_valid"]["mean_after"] == 1.0
     assert artifact.summary["protocol_integrity"] == {
         "paired_case_count": 1,
+        "original_case_cluster_count": 1,
+        "repeat_count": 1,
+        "complete_repeat_grid_rate": 1.0,
         "ranking_identity_rate": 1.0,
         "catalog_budget_compliance_rate": 1.0,
     }
+    assert artifact.statistics["clustered_paired_bootstrap"]["end_to_end_valid"] == {
+        "confidence": 0.95,
+        "n_resamples": 20,
+        "cluster_key": "original_case_id",
+        "cluster_count": 1,
+        "repeated_pair_count": 1,
+        "within_cluster_aggregation": "mean_delta",
+        "mean_delta": 1.0,
+        "mean_delta_ci": [1.0, 1.0],
+    }
+    single_repeat_stability = artifact.summary["repeat_analysis"]["metric_stability"][
+        "end_to_end_valid"
+    ]
+    assert single_repeat_stability["repeat_consistency_evaluable_cluster_count"] == 0
+    assert single_repeat_stability["repeat_consistency_unevaluable_cluster_count"] == 1
+    assert single_repeat_stability["pair_outcome_consistency_rate"] is None
     b6c = next(case for case in artifact.cases if case["context"]["baseline"] == B6C_BASELINE)
     assert b6c["observed"]["hydration"]["success"] is True
     assert b6c["observed"]["selection_catalog"]["schema_modes"]["placeOrder"] == (
@@ -365,9 +392,127 @@ def test_paired_model_loop_records_b6c_gain_and_valid_hydration(
     assert "source_schema_sha256" in all_prompt_text
     assert "api_contract" in all_prompt_text
 
+    model_artifact_path = tmp_path / "model-loop.json"
+    write_artifact(model_artifact_path, artifact)
+    offline = analyze_model_loop_artifact(
+        model_artifact_path,
+        bootstrap_resamples=20,
+    )
+    assert offline["analysis_id"].startswith("analysis-")
+    assert offline["source"] == {
+        "artifact_id": artifact.artifact_id,
+        "run_id": artifact.run_id,
+        "sha256": hashlib.sha256(model_artifact_path.read_bytes()).hexdigest(),
+    }
+    assert offline["config"]["model_calls_performed"] == 0
+    assert offline["analysis"]["design"]["cluster_count"] == 1
+    assert offline == analyze_model_loop_artifact(
+        model_artifact_path,
+        bootstrap_resamples=20,
+    )
+
+
+def test_repeat_analysis_clusters_by_original_case_instead_of_repeat() -> None:
+    cases = _analysis_cases(
+        {
+            "case-a": [1.0, 1.0, 1.0],
+            "case-b": [0.0, 0.0, 0.0],
+        }
+    )
+
+    analysis = analyze_paired_repeats(cases, bootstrap_resamples=100, seed=17)
+
+    assert analysis["revision"] == MODEL_LOOP_ANALYSIS_REVISION
+    assert analysis["design"] == {
+        "cluster_key": "original_case_id",
+        "cluster_count": 2,
+        "repeat_count": 3,
+        "repeated_pair_count": 6,
+        "complete_repeat_grid_rate": 1.0,
+        "within_cluster_aggregation": "mean_delta",
+    }
+    assert [row["pair_count"] for row in analysis["repeat_summaries"]] == [2, 2, 2]
+    stability = analysis["metric_stability"]["end_to_end_valid"]
+    assert stability["per_repeat_mean_deltas"] == [0.5, 0.5, 0.5]
+    assert stability["per_repeat_mean_delta_range"] == [0.5, 0.5]
+    assert stability["mean_delta_stdev"] == 0.0
+    assert stability["repeat_consistency_evaluable_cluster_count"] == 2
+    assert stability["repeat_consistency_unevaluable_cluster_count"] == 0
+    assert stability["pair_outcome_consistency_rate"] == 1.0
+
+    clustered = analysis["clustered_paired_bootstrap"]["end_to_end_valid"]
+    assert clustered["cluster_count"] == 2
+    assert clustered["repeated_pair_count"] == 6
+    assert clustered["mean_delta"] == 0.5
+    assert clustered["mean_delta_ci"] == [0.0, 1.0]
+
+
+def test_repeat_analysis_reports_instability_and_incomplete_repeat_grid() -> None:
+    cases = _analysis_cases(
+        {
+            "case-a": [1.0, 0.0],
+            "case-b": [0.0],
+        }
+    )
+
+    analysis = analyze_paired_repeats(cases, bootstrap_resamples=50, seed=17)
+
+    assert analysis["design"]["complete_repeat_grid_rate"] == 0.75
+    stability = analysis["metric_stability"]["end_to_end_valid"]
+    assert stability["per_repeat_mean_deltas"] == [0.5, 0.0]
+    assert stability["per_repeat_mean_delta_range"] == [0.0, 0.5]
+    assert stability["repeat_consistency_evaluable_cluster_count"] == 1
+    assert stability["repeat_consistency_unevaluable_cluster_count"] == 1
+    assert stability["pair_outcome_consistency_rate"] == 0.0
+
+
+def test_pairing_rejects_duplicate_model_loop_conditions() -> None:
+    cases = _analysis_cases({"case-a": [1.0]})
+    cases.append(copy.deepcopy(cases[0]))
+
+    with pytest.raises(ValueError, match="Duplicate model-loop condition"):
+        pair_model_loop_cases(cases)
+
 
 def test_redacted_url_removes_embedded_credentials() -> None:
     assert redacted_url("https://user:secret@example.com/v1") == "https://***@example.com/v1"
+
+
+def _analysis_cases(deltas_by_case: dict[str, list[float]]) -> list[dict[str, Any]]:
+    cases: list[dict[str, Any]] = []
+    for case_id, deltas in deltas_by_case.items():
+        for repeat, delta in enumerate(deltas):
+            pair_key = f"{case_id}::repeat-{repeat}"
+            for baseline, value in (
+                (B6B_BASELINE, 0.0),
+                (B6C_BASELINE, delta),
+            ):
+                cases.append(
+                    {
+                        "case_id": f"{pair_key}::{baseline}",
+                        "context": {
+                            "baseline": baseline,
+                            "original_case_id": case_id,
+                            "pair_key": pair_key,
+                            "repeat": repeat,
+                        },
+                        "metrics": {
+                            metric: value
+                            for metric in (
+                                "selector_target_accuracy",
+                                "selector_producer_recall",
+                                "selector_required_tool_recall",
+                                "all_required_selected",
+                                "hydration_success",
+                                "plan_tool_validity",
+                                "argument_schema_validity",
+                                "required_input_accounting",
+                                "end_to_end_valid",
+                            )
+                        },
+                    }
+                )
+    return cases
 
 
 def _paired_case() -> dict[str, Any]:

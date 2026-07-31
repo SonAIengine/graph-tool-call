@@ -112,6 +112,16 @@ poetry run python -m benchmarks.paper_model_loop.run \
   --out /tmp/graph-tool-call-paper-b6c-model-loop.json
 ```
 
+Repeat statistics can be recomputed from the saved artifact without loading or
+calling the model:
+
+```bash
+ARTIFACT=/tmp/graph-tool-call-paper-b6c-model-loop.json \
+BOOTSTRAP_RESAMPLES=10000 \
+OUT=/tmp/graph-tool-call-paper-b6c-model-loop-analysis.json \
+make paper-model-loop-analysis
+```
+
 The endpoint URL is redacted before it enters the artifact. API key values,
 request headers, and environment values are never persisted.
 
@@ -132,8 +142,11 @@ Each B6b/B6c condition records:
 - selection/planning tokens, calls, and latency.
 
 The artifact reports paired B6c-minus-B6b improvement, regression, and tie
-counts plus bootstrap confidence intervals. Protocol gates require identical
-B6b/B6c rankings and catalog-budget compliance for every case.
+counts plus both repeated-row and original-case-clustered bootstrap confidence
+intervals. Publication inference uses the clustered interval: repeat deltas
+are averaged within each `original_case_id` before resampling. Protocol gates
+require identical B6b/B6c rankings and catalog-budget compliance for every
+case.
 
 ## Validated Development Run
 
@@ -180,34 +193,42 @@ separate publication gate.
 
 The clean three-repeat train/dev run used merged `main` commit
 `406f7e127099f68a497eaae4adb26e5ff719ebdd`, the same deterministic input
-artifact and model revision as the development run, and 10,000 paired
-bootstrap resamples. Artifact `exp-af3e63a6328a3e3ed981c898` (run
+artifact and model revision as the development run, and 10,000 bootstrap
+resamples. Artifact `exp-af3e63a6328a3e3ed981c898` (run
 `run-04a25f625f4a4a89cf53`) contains 29 unique cases, three repeats, 174
 condition records, and 87 B6b/B6c pairs. Its SHA-256 is
 `e82bc9876a8ccf8c0e1a234508e7174156ecacde0a2575c4edc38e6c4755d221`.
+
+Offline clustered analysis
+[`analysis-a1b9002abae40581fc8691f8`](../../benchmarks/results/paper/b6c-model-loop-publication-r3-clustered-analysis.json)
+references that exact artifact and performed zero model calls. The analysis
+report SHA-256 is
+`e176706d589c44fdb829069dea04ac587efb07874f5c7e29c1591571e120e2e4`.
 
 The artifact passed schema validation with `git_dirty=false`, exact source and
 dependency-lock hashes, 100% B6b/B6c ranking identity, 100% catalog-budget
 compliance, and `held_out_accessed=false`. The model-serving configuration was
 unchanged from the development run.
 
-| Model-loop metric | B6b | B6c | Paired change | 95% paired bootstrap CI |
+| Model-loop metric | B6b | B6c | Paired change | 95% case-clustered CI |
 |---|---:|---:|---:|---:|
 | selector target accuracy | 0.8966 | 0.8966 | 0.0000 | [0.0000, 0.0000] |
-| selector producer recall | 0.8966 | 0.9310 | +0.0345 | [0.0000, 0.0805] |
-| selector required-tool recall | 0.8621 | 0.8793 | +0.0172 | [0.0000, 0.0402] |
-| all required selected | 0.7931 | 0.8276 | +0.0345 | [0.0000, 0.0805] |
+| selector producer recall | 0.8966 | 0.9310 | +0.0345 | [0.0000, 0.1034] |
+| selector required-tool recall | 0.8621 | 0.8793 | +0.0172 | [0.0000, 0.0517] |
+| all required selected | 0.7931 | 0.8276 | +0.0345 | [0.0000, 0.1034] |
 | full-schema hydration success | 0.9655 | 0.9655 | 0.0000 | [0.0000, 0.0000] |
 | argument-schema validity | 0.8621 | 0.8621 | 0.0000 | [0.0000, 0.0000] |
 | required-input accounting | 0.9310 | 0.9310 | 0.0000 | [0.0000, 0.0000] |
-| end-to-end structural validity | 0.6552 | 0.6897 | +0.0345 | [0.0000, 0.0805] |
+| end-to-end structural validity | 0.6552 | 0.6897 | +0.0345 | [0.0000, 0.1034] |
 
 All three repeats produced the same aggregate effectiveness values. The same
 `kubernetes-dev-pod-logs-en` pair improved in every repeat: B6b selected pod
 status as support, while B6c selected and hydrated the required pod-list
 producer. Across the 87 repeated pairs this yields three improvements, zero
 regressions, and 84 ties for producer recall, all-required selection, and
-end-to-end structural validity.
+end-to-end structural validity. The mean paired delta was identical in every
+repeat, its repeat-level standard deviation was zero, and original-case
+outcome consistency was 1.0 for all effectiveness metrics.
 
 Absolute plan-validity rates were not bit-exact across server restarts. Relative
 to the earlier single-repeat development artifact,
@@ -225,10 +246,12 @@ actionable, not a zero-cost quality gain.
 
 The repeated outcome strengthens evidence that the observed mechanism is
 stable for this frozen model, prompt, seed policy, and development corpus. It
-does not add new independent case families. The confidence intervals still
-include zero; they summarize 87 repeated condition pairs, not 87 independent
-task identities. The held-out split remains sealed and HTTP execution was not
-performed. The result is therefore a publication candidate for the narrow
+does not add new independent case families. The clustered confidence intervals
+therefore resample 29 original cases after averaging each case's three repeat
+deltas; all still include zero. The narrower legacy interval over 87 repeated
+rows is retained only for artifact compatibility and is not used for the paper
+claim. The held-out split remains sealed and HTTP execution was not performed.
+The result is therefore a publication candidate for the narrow
 contract-projection mechanism, not evidence of broad statistical superiority.
 
 ## Failure Taxonomy

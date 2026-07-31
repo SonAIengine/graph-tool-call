@@ -1,0 +1,526 @@
+{
+  "analysis": {
+    "clustered_paired_bootstrap": {
+      "all_required_selected": {
+        "cluster_count": 29,
+        "cluster_key": "original_case_id",
+        "confidence": 0.95,
+        "mean_delta": 0.034482758620689655,
+        "mean_delta_ci": [
+          0.0,
+          0.10344827586206896
+        ],
+        "n_resamples": 10000,
+        "repeated_pair_count": 87,
+        "within_cluster_aggregation": "mean_delta"
+      },
+      "argument_schema_validity": {
+        "cluster_count": 29,
+        "cluster_key": "original_case_id",
+        "confidence": 0.95,
+        "mean_delta": 0.0,
+        "mean_delta_ci": [
+          0.0,
+          0.0
+        ],
+        "n_resamples": 10000,
+        "repeated_pair_count": 87,
+        "within_cluster_aggregation": "mean_delta"
+      },
+      "end_to_end_valid": {
+        "cluster_count": 29,
+        "cluster_key": "original_case_id",
+        "confidence": 0.95,
+        "mean_delta": 0.034482758620689655,
+        "mean_delta_ci": [
+          0.0,
+          0.10344827586206896
+        ],
+        "n_resamples": 10000,
+        "repeated_pair_count": 87,
+        "within_cluster_aggregation": "mean_delta"
+      },
+      "hydration_success": {
+        "cluster_count": 29,
+        "cluster_key": "original_case_id",
+        "confidence": 0.95,
+        "mean_delta": 0.0,
+        "mean_delta_ci": [
+          0.0,
+          0.0
+        ],
+        "n_resamples": 10000,
+        "repeated_pair_count": 87,
+        "within_cluster_aggregation": "mean_delta"
+      },
+      "plan_tool_validity": {
+        "cluster_count": 29,
+        "cluster_key": "original_case_id",
+        "confidence": 0.95,
+        "mean_delta": 0.0,
+        "mean_delta_ci": [
+          0.0,
+          0.0
+        ],
+        "n_resamples": 10000,
+        "repeated_pair_count": 87,
+        "within_cluster_aggregation": "mean_delta"
+      },
+      "required_input_accounting": {
+        "cluster_count": 29,
+        "cluster_key": "original_case_id",
+        "confidence": 0.95,
+        "mean_delta": 0.0,
+        "mean_delta_ci": [
+          0.0,
+          0.0
+        ],
+        "n_resamples": 10000,
+        "repeated_pair_count": 87,
+        "within_cluster_aggregation": "mean_delta"
+      },
+      "selector_producer_recall": {
+        "cluster_count": 29,
+        "cluster_key": "original_case_id",
+        "confidence": 0.95,
+        "mean_delta": 0.034482758620689655,
+        "mean_delta_ci": [
+          0.0,
+          0.10344827586206896
+        ],
+        "n_resamples": 10000,
+        "repeated_pair_count": 87,
+        "within_cluster_aggregation": "mean_delta"
+      },
+      "selector_required_tool_recall": {
+        "cluster_count": 29,
+        "cluster_key": "original_case_id",
+        "confidence": 0.95,
+        "mean_delta": 0.017241379310344827,
+        "mean_delta_ci": [
+          0.0,
+          0.05172413793103448
+        ],
+        "n_resamples": 10000,
+        "repeated_pair_count": 87,
+        "within_cluster_aggregation": "mean_delta"
+      },
+      "selector_target_accuracy": {
+        "cluster_count": 29,
+        "cluster_key": "original_case_id",
+        "confidence": 0.95,
+        "mean_delta": 0.0,
+        "mean_delta_ci": [
+          0.0,
+          0.0
+        ],
+        "n_resamples": 10000,
+        "repeated_pair_count": 87,
+        "within_cluster_aggregation": "mean_delta"
+      }
+    },
+    "design": {
+      "cluster_count": 29,
+      "cluster_key": "original_case_id",
+      "complete_repeat_grid_rate": 1.0,
+      "repeat_count": 3,
+      "repeated_pair_count": 87,
+      "within_cluster_aggregation": "mean_delta"
+    },
+    "metric_stability": {
+      "all_required_selected": {
+        "aggregate_mean_delta_exact_across_repeats": true,
+        "mean_delta_stdev": 0.0,
+        "pair_outcome_consistency_rate": 1.0,
+        "per_repeat_mean_delta_range": [
+          0.034482758620689655,
+          0.034482758620689655
+        ],
+        "per_repeat_mean_deltas": [
+          0.034482758620689655,
+          0.034482758620689655,
+          0.034482758620689655
+        ],
+        "repeat_consistency_evaluable_cluster_count": 29,
+        "repeat_consistency_unevaluable_cluster_count": 0
+      },
+      "argument_schema_validity": {
+        "aggregate_mean_delta_exact_across_repeats": true,
+        "mean_delta_stdev": 0.0,
+        "pair_outcome_consistency_rate": 1.0,
+        "per_repeat_mean_delta_range": [
+          0.0,
+          0.0
+        ],
+        "per_repeat_mean_deltas": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "repeat_consistency_evaluable_cluster_count": 29,
+        "repeat_consistency_unevaluable_cluster_count": 0
+      },
+      "end_to_end_valid": {
+        "aggregate_mean_delta_exact_across_repeats": true,
+        "mean_delta_stdev": 0.0,
+        "pair_outcome_consistency_rate": 1.0,
+        "per_repeat_mean_delta_range": [
+          0.034482758620689655,
+          0.034482758620689655
+        ],
+        "per_repeat_mean_deltas": [
+          0.034482758620689655,
+          0.034482758620689655,
+          0.034482758620689655
+        ],
+        "repeat_consistency_evaluable_cluster_count": 29,
+        "repeat_consistency_unevaluable_cluster_count": 0
+      },
+      "hydration_success": {
+        "aggregate_mean_delta_exact_across_repeats": true,
+        "mean_delta_stdev": 0.0,
+        "pair_outcome_consistency_rate": 1.0,
+        "per_repeat_mean_delta_range": [
+          0.0,
+          0.0
+        ],
+        "per_repeat_mean_deltas": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "repeat_consistency_evaluable_cluster_count": 29,
+        "repeat_consistency_unevaluable_cluster_count": 0
+      },
+      "plan_tool_validity": {
+        "aggregate_mean_delta_exact_across_repeats": true,
+        "mean_delta_stdev": 0.0,
+        "pair_outcome_consistency_rate": 1.0,
+        "per_repeat_mean_delta_range": [
+          0.0,
+          0.0
+        ],
+        "per_repeat_mean_deltas": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "repeat_consistency_evaluable_cluster_count": 29,
+        "repeat_consistency_unevaluable_cluster_count": 0
+      },
+      "required_input_accounting": {
+        "aggregate_mean_delta_exact_across_repeats": true,
+        "mean_delta_stdev": 0.0,
+        "pair_outcome_consistency_rate": 1.0,
+        "per_repeat_mean_delta_range": [
+          0.0,
+          0.0
+        ],
+        "per_repeat_mean_deltas": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "repeat_consistency_evaluable_cluster_count": 29,
+        "repeat_consistency_unevaluable_cluster_count": 0
+      },
+      "selector_producer_recall": {
+        "aggregate_mean_delta_exact_across_repeats": true,
+        "mean_delta_stdev": 0.0,
+        "pair_outcome_consistency_rate": 1.0,
+        "per_repeat_mean_delta_range": [
+          0.034482758620689655,
+          0.034482758620689655
+        ],
+        "per_repeat_mean_deltas": [
+          0.034482758620689655,
+          0.034482758620689655,
+          0.034482758620689655
+        ],
+        "repeat_consistency_evaluable_cluster_count": 29,
+        "repeat_consistency_unevaluable_cluster_count": 0
+      },
+      "selector_required_tool_recall": {
+        "aggregate_mean_delta_exact_across_repeats": true,
+        "mean_delta_stdev": 0.0,
+        "pair_outcome_consistency_rate": 1.0,
+        "per_repeat_mean_delta_range": [
+          0.017241379310344827,
+          0.017241379310344827
+        ],
+        "per_repeat_mean_deltas": [
+          0.017241379310344827,
+          0.017241379310344827,
+          0.017241379310344827
+        ],
+        "repeat_consistency_evaluable_cluster_count": 29,
+        "repeat_consistency_unevaluable_cluster_count": 0
+      },
+      "selector_target_accuracy": {
+        "aggregate_mean_delta_exact_across_repeats": true,
+        "mean_delta_stdev": 0.0,
+        "pair_outcome_consistency_rate": 1.0,
+        "per_repeat_mean_delta_range": [
+          0.0,
+          0.0
+        ],
+        "per_repeat_mean_deltas": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "repeat_consistency_evaluable_cluster_count": 29,
+        "repeat_consistency_unevaluable_cluster_count": 0
+      }
+    },
+    "repeat_summaries": [
+      {
+        "metrics": {
+          "all_required_selected": {
+            "improvements": 1,
+            "mean_after": 0.8275862068965517,
+            "mean_before": 0.7931034482758621,
+            "mean_delta": 0.034482758620689655,
+            "regressions": 0,
+            "ties": 28
+          },
+          "argument_schema_validity": {
+            "improvements": 0,
+            "mean_after": 0.8620689655172413,
+            "mean_before": 0.8620689655172413,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "end_to_end_valid": {
+            "improvements": 1,
+            "mean_after": 0.6896551724137931,
+            "mean_before": 0.6551724137931034,
+            "mean_delta": 0.034482758620689655,
+            "regressions": 0,
+            "ties": 28
+          },
+          "hydration_success": {
+            "improvements": 0,
+            "mean_after": 0.9655172413793104,
+            "mean_before": 0.9655172413793104,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "plan_tool_validity": {
+            "improvements": 0,
+            "mean_after": 0.9655172413793104,
+            "mean_before": 0.9655172413793104,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "required_input_accounting": {
+            "improvements": 0,
+            "mean_after": 0.9310344827586207,
+            "mean_before": 0.9310344827586207,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "selector_producer_recall": {
+            "improvements": 1,
+            "mean_after": 0.9310344827586207,
+            "mean_before": 0.896551724137931,
+            "mean_delta": 0.034482758620689655,
+            "regressions": 0,
+            "ties": 28
+          },
+          "selector_required_tool_recall": {
+            "improvements": 1,
+            "mean_after": 0.8793103448275862,
+            "mean_before": 0.8620689655172413,
+            "mean_delta": 0.017241379310344827,
+            "regressions": 0,
+            "ties": 28
+          },
+          "selector_target_accuracy": {
+            "improvements": 0,
+            "mean_after": 0.896551724137931,
+            "mean_before": 0.896551724137931,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          }
+        },
+        "pair_count": 29,
+        "repeat": 0
+      },
+      {
+        "metrics": {
+          "all_required_selected": {
+            "improvements": 1,
+            "mean_after": 0.8275862068965517,
+            "mean_before": 0.7931034482758621,
+            "mean_delta": 0.034482758620689655,
+            "regressions": 0,
+            "ties": 28
+          },
+          "argument_schema_validity": {
+            "improvements": 0,
+            "mean_after": 0.8620689655172413,
+            "mean_before": 0.8620689655172413,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "end_to_end_valid": {
+            "improvements": 1,
+            "mean_after": 0.6896551724137931,
+            "mean_before": 0.6551724137931034,
+            "mean_delta": 0.034482758620689655,
+            "regressions": 0,
+            "ties": 28
+          },
+          "hydration_success": {
+            "improvements": 0,
+            "mean_after": 0.9655172413793104,
+            "mean_before": 0.9655172413793104,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "plan_tool_validity": {
+            "improvements": 0,
+            "mean_after": 0.9655172413793104,
+            "mean_before": 0.9655172413793104,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "required_input_accounting": {
+            "improvements": 0,
+            "mean_after": 0.9310344827586207,
+            "mean_before": 0.9310344827586207,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "selector_producer_recall": {
+            "improvements": 1,
+            "mean_after": 0.9310344827586207,
+            "mean_before": 0.896551724137931,
+            "mean_delta": 0.034482758620689655,
+            "regressions": 0,
+            "ties": 28
+          },
+          "selector_required_tool_recall": {
+            "improvements": 1,
+            "mean_after": 0.8793103448275862,
+            "mean_before": 0.8620689655172413,
+            "mean_delta": 0.017241379310344827,
+            "regressions": 0,
+            "ties": 28
+          },
+          "selector_target_accuracy": {
+            "improvements": 0,
+            "mean_after": 0.896551724137931,
+            "mean_before": 0.896551724137931,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          }
+        },
+        "pair_count": 29,
+        "repeat": 1
+      },
+      {
+        "metrics": {
+          "all_required_selected": {
+            "improvements": 1,
+            "mean_after": 0.8275862068965517,
+            "mean_before": 0.7931034482758621,
+            "mean_delta": 0.034482758620689655,
+            "regressions": 0,
+            "ties": 28
+          },
+          "argument_schema_validity": {
+            "improvements": 0,
+            "mean_after": 0.8620689655172413,
+            "mean_before": 0.8620689655172413,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "end_to_end_valid": {
+            "improvements": 1,
+            "mean_after": 0.6896551724137931,
+            "mean_before": 0.6551724137931034,
+            "mean_delta": 0.034482758620689655,
+            "regressions": 0,
+            "ties": 28
+          },
+          "hydration_success": {
+            "improvements": 0,
+            "mean_after": 0.9655172413793104,
+            "mean_before": 0.9655172413793104,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "plan_tool_validity": {
+            "improvements": 0,
+            "mean_after": 0.9655172413793104,
+            "mean_before": 0.9655172413793104,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "required_input_accounting": {
+            "improvements": 0,
+            "mean_after": 0.9310344827586207,
+            "mean_before": 0.9310344827586207,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          },
+          "selector_producer_recall": {
+            "improvements": 1,
+            "mean_after": 0.9310344827586207,
+            "mean_before": 0.896551724137931,
+            "mean_delta": 0.034482758620689655,
+            "regressions": 0,
+            "ties": 28
+          },
+          "selector_required_tool_recall": {
+            "improvements": 1,
+            "mean_after": 0.8793103448275862,
+            "mean_before": 0.8620689655172413,
+            "mean_delta": 0.017241379310344827,
+            "regressions": 0,
+            "ties": 28
+          },
+          "selector_target_accuracy": {
+            "improvements": 0,
+            "mean_after": 0.896551724137931,
+            "mean_before": 0.896551724137931,
+            "mean_delta": 0.0,
+            "regressions": 0,
+            "ties": 29
+          }
+        },
+        "pair_count": 29,
+        "repeat": 2
+      }
+    ],
+    "revision": "paper-model-loop-clustered-repeat-v1"
+  },
+  "analysis_id": "analysis-a1b9002abae40581fc8691f8",
+  "analysis_revision": "paper-model-loop-clustered-repeat-v1",
+  "config": {
+    "bootstrap_resamples": 10000,
+    "model_calls_performed": 0,
+    "seed": 17
+  },
+  "source": {
+    "artifact_id": "exp-af3e63a6328a3e3ed981c898",
+    "run_id": "run-04a25f625f4a4a89cf53",
+    "sha256": "e82bc9876a8ccf8c0e1a234508e7174156ecacde0a2575c4edc38e6c4755d221"
+  }
+}
