@@ -896,7 +896,14 @@ This order prevents five-hour model runs from becoming the development loop.
       Offline analysis `analysis-a1b9002abae40581fc8691f8` uses 29 clusters,
       reports 100% repeat-grid completeness and outcome consistency, and keeps
       the held-out split sealed without additional model calls.
-- [ ] Add the budgeted LLM catalog-selector baseline.
+- [x] Add the budgeted LLM catalog-selector baseline harness.
+      B0-L exhaustively scans a deterministic flat contract catalog through
+      per-call budgeted hierarchy rounds, pairs the same model and seed with
+      B6c, hydrates complete schemas before the shared planner, and reports
+      quality alongside calls, tokens, and latency. See
+      [`paper-llm-catalog-baseline.md`](paper-llm-catalog-baseline.md).
+- [ ] Run and review the frozen three-repeat B0-L-vs-B6c train/dev artifact.
+      Start with a three-case smoke; do not open the held-out split.
 - [x] Add actual tokenizer accounting with frozen tokenizer revisions.
       The B-1/B0-O/B1-B7 harness uses pinned Qwen3 tokenizer accounting and a
       ranked whole-schema prefix policy; see

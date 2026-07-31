@@ -148,6 +148,21 @@ The model artifact references the exact deterministic input through
 `source.sha256`. Ground-truth labels remain evaluation-only. See
 [`paper-model-loop.md`](paper-model-loop.md) for the two-pass protocol.
 
+The budgeted LLM catalog-selector comparison also writes schema v1 directly:
+
+```bash
+BASELINE_ARTIFACT=/tmp/graph-tool-call-paper-contract-projection.json \
+MODEL=model-name \
+MODEL_REVISION=immutable-revision \
+make paper-llm-catalog-baseline
+```
+
+It records paired B6c/B0-L rows, complete first-round catalog coverage,
+per-round chunk hashes, maximum per-call catalog tokens, cumulative catalog
+tokens scanned, selector calls, provider tokens, and latency. B0-L never uses
+graph edges, retrieval ranks, or evaluation labels. See
+[`paper-llm-catalog-baseline.md`](paper-llm-catalog-baseline.md).
+
 Graph ablations are paired on the same cases:
 
 - aggregate deltas: `summary.ablations` and
