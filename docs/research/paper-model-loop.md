@@ -279,3 +279,8 @@ families, or replace the budgeted full-catalog LLM selector baseline. HTTP
 execution and B0-L remain separate experiments. The validated development run
 and three-repeat publication candidate support this narrow mechanism claim;
 they do not yet support a broad quality or statistical-superiority claim.
+
+The frozen B0-L protocol and runner are documented in
+[`paper-llm-catalog-baseline.md`](paper-llm-catalog-baseline.md). It compares
+B6c with an exhaustive hierarchical LLM catalog scan under the same per-call
+catalog budget while reporting the additional calls, tokens, and latency.
