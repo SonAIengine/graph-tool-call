@@ -1,4 +1,4 @@
-.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke paper-corpus-check paper-corpus-internal-review-check paper-corpus-claim-check paper-adapter-conformance paper-baseline-run paper-graph-ablation paper-producer-coverage paper-output-promotion paper-candidate-admission paper-contract-projection paper-model-loop paper-harness-check xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-snapshot-check xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-028-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-028-gate bfcl-028-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
+.PHONY: quick lint test verify research-check research-check-unit research-check-deterministic research-check-smoke paper-corpus-check paper-corpus-internal-review-check paper-corpus-claim-check paper-adapter-conformance paper-baseline-run paper-graph-ablation paper-producer-coverage paper-output-promotion paper-candidate-admission paper-contract-projection paper-model-loop paper-model-loop-analysis paper-harness-check xgen-benchmark xgen-llm-benchmark xgen-scale-snapshot xgen-scale-snapshot-check xgen-scale-acceptance xgen-scale-sweep xgen-scale-gate-check xgen-scale-028-gate-check xgen-scale-contract-ablation bfcl-benchmark bfcl-llm-benchmark bfcl-sweep bfcl-027-gate bfcl-027-gate-check bfcl-028-gate bfcl-028-gate-check bfcl-failure-subset bfcl-inspect-failures bfcl-hard-cases release-check pypi-smoke
 
 quick:
 	scripts/quick-check.sh
@@ -101,6 +101,13 @@ paper-model-loop:
 		--timeout "$${TIMEOUT:-180}" \
 		--bootstrap-resamples "$${BOOTSTRAP_RESAMPLES:-1000}" \
 		--out "$${OUT:-/tmp/graph-tool-call-paper-b6c-model-loop.json}"
+
+paper-model-loop-analysis:
+	@test -n "$${ARTIFACT:-}" || (echo "ARTIFACT is required"; exit 2)
+	poetry run python -m benchmarks.paper_model_loop.analysis \
+		--artifact "$$ARTIFACT" \
+		--bootstrap-resamples "$${BOOTSTRAP_RESAMPLES:-10000}" \
+		--out "$${OUT:-/tmp/graph-tool-call-paper-model-loop-analysis.json}"
 
 paper-harness-check:
 	poetry run pytest \

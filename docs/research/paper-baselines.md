@@ -500,10 +500,13 @@ improves after target/support selection and complete-schema hydration:
 producer recall and end-to-end structural validity each rose by `0.0345` over
 29 unique cases with no observed regression. The publication-candidate replay
 repeated all 29 cases three times and reproduced the same aggregate deltas in
-every repeat. Its 95% confidence intervals still include zero and the held-out
-split remains sealed, so this is stable mechanism evidence rather than a broad
-statistical claim. See [`paper-model-loop.md`](paper-model-loop.md) for the
-frozen protocol, exact artifact IDs, token cost, and interpretation boundary.
+every repeat. Its original-case-clustered 95% intervals are
+`[0.0000, 0.1034]` for producer recall and end-to-end validity and
+`[0.0000, 0.0517]` for required-tool recall. They still include zero and the
+held-out split remains sealed, so this is stable mechanism evidence rather
+than a broad statistical claim. See
+[`paper-model-loop.md`](paper-model-loop.md) for the frozen protocol, exact
+artifact IDs, token cost, and interpretation boundary.
 
 ## Metrics And Budget
 

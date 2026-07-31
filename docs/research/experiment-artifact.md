@@ -123,6 +123,26 @@ under `observed`, `metrics`, `stages`, and `failure`. Aggregate paired deltas
 live under `summary.paired_b6c_minus_b6b`, with confidence intervals under
 `statistics.paired_bootstrap`.
 
+Repeated model runs additionally record `summary.repeat_analysis`, including
+per-repeat paired summaries, delta ranges, delta standard deviations, and the
+fraction of repeat-evaluable original cases whose paired outcome is identical
+across repeats.
+Publication inference uses `statistics.clustered_paired_bootstrap`, which
+clusters by `original_case_id` and averages repeat deltas within each original
+case before resampling. The legacy repeated-row interval remains under
+`statistics.paired_bootstrap` for backward compatibility but does not increase
+the independent task count.
+
+An existing artifact can be reanalyzed without model calls:
+
+```bash
+ARTIFACT=/tmp/graph-tool-call-paper-b6c-model-loop.json \
+make paper-model-loop-analysis
+```
+
+The deterministic analysis report references the source artifact ID, run ID,
+and SHA-256 and records `model_calls_performed=0`.
+
 The model artifact references the exact deterministic input through
 `dataset.baseline_artifact_id`, `dataset.baseline_run_id`, and
 `source.sha256`. Ground-truth labels remain evaluation-only. See

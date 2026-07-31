@@ -28,6 +28,12 @@ from benchmarks.paper_baselines.token_budget import (
 from graph_tool_call import ingest_source
 from graph_tool_call.core.tool import ToolSchema
 
+from .analysis import (
+    EFFECTIVENESS_METRICS,
+    analyze_paired_repeats,
+    pair_model_loop_cases,
+    summarize_paired_metric,
+)
 from .catalog import (
     B6B_BASELINE,
     B6C_BASELINE,
@@ -50,17 +56,6 @@ DEFAULT_OUTPUT_PATH = "/tmp/graph-tool-call-paper-b6c-model-loop.json"
 DEFAULT_MAX_SELECTION_TOKENS = 384
 DEFAULT_MAX_PLAN_TOKENS = 1024
 MODEL_LOOP_METHODOLOGY = "paired-b6b-b6c-two-pass-model-loop-v1"
-EFFECTIVENESS_METRICS = (
-    "selector_target_accuracy",
-    "selector_producer_recall",
-    "selector_required_tool_recall",
-    "all_required_selected",
-    "hydration_success",
-    "plan_tool_validity",
-    "argument_schema_validity",
-    "required_input_accounting",
-    "end_to_end_valid",
-)
 
 
 def run_paired_model_loop(
@@ -557,12 +552,20 @@ def _summarize(
         )
         for baseline, rows in sorted(grouped.items())
     }
-    paired_rows = _paired_rows(cases)
+    paired_rows = pair_model_loop_cases(cases)
     paired_summary = {
-        metric: _paired_metric_summary(paired_rows, metric) for metric in EFFECTIVENESS_METRICS
+        metric: summarize_paired_metric(paired_rows, metric) for metric in EFFECTIVENESS_METRICS
     }
+    repeat_analysis = analyze_paired_repeats(
+        cases,
+        bootstrap_resamples=bootstrap_resamples,
+        seed=seed,
+    )
     protocol = {
         "paired_case_count": len(paired_rows),
+        "original_case_cluster_count": repeat_analysis["design"]["cluster_count"],
+        "repeat_count": repeat_analysis["design"]["repeat_count"],
+        "complete_repeat_grid_rate": repeat_analysis["design"]["complete_repeat_grid_rate"],
         "ranking_identity_rate": fmean(
             float(case["context"]["pair_contract"]["ranking_identical"]) for case in cases
         )
@@ -596,7 +599,8 @@ def _summarize(
                 ),
             }
             for metric in EFFECTIVENESS_METRICS
-        }
+        },
+        "clustered_paired_bootstrap": repeat_analysis["clustered_paired_bootstrap"],
     }
     return (
         {
@@ -606,38 +610,18 @@ def _summarize(
             "failures": failures,
             "paired_b6c_minus_b6b": paired_summary,
             "protocol_integrity": protocol,
+            "repeat_analysis": {
+                key: repeat_analysis[key]
+                for key in (
+                    "revision",
+                    "design",
+                    "repeat_summaries",
+                    "metric_stability",
+                )
+            },
         },
         statistics,
     )
-
-
-def _paired_rows(cases: list[dict[str, Any]]) -> list[dict[str, dict[str, Any]]]:
-    grouped: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
-    for case in cases:
-        grouped[str(case["context"]["pair_key"])][str(case["context"]["baseline"])] = case
-    return [pair for _, pair in sorted(grouped.items()) if set(pair) == set(MODEL_LOOP_BASELINES)]
-
-
-def _paired_metric_summary(
-    paired_rows: list[dict[str, dict[str, Any]]],
-    metric: str,
-) -> dict[str, Any]:
-    deltas = [
-        float(pair[B6C_BASELINE]["metrics"][metric]) - float(pair[B6B_BASELINE]["metrics"][metric])
-        for pair in paired_rows
-    ]
-    return {
-        "mean_before": fmean(float(pair[B6B_BASELINE]["metrics"][metric]) for pair in paired_rows)
-        if paired_rows
-        else 0.0,
-        "mean_after": fmean(float(pair[B6C_BASELINE]["metrics"][metric]) for pair in paired_rows)
-        if paired_rows
-        else 0.0,
-        "mean_delta": fmean(deltas) if deltas else 0.0,
-        "improvements": sum(delta > 0 for delta in deltas),
-        "regressions": sum(delta < 0 for delta in deltas),
-        "ties": sum(delta == 0 for delta in deltas),
-    }
 
 
 def _load_tools_by_source(
