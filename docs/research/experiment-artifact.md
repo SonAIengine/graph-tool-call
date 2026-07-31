@@ -105,6 +105,29 @@ Budget-aware schema projection is additive to the same per-case view:
 - savings against complete schemas: `projection_saved_tokens`;
 - exact payload size: `schema_chars` and `schema_utf8_bytes`.
 
+The paired B6b/B6c model loop also writes schema v1 directly:
+
+```bash
+make paper-model-loop \
+  BASELINE_ARTIFACT=/tmp/graph-tool-call-paper-contract-projection.json \
+  MODEL=model-name \
+  MODEL_REVISION=immutable-revision
+```
+
+Its model cases use composite IDs
+`<original-case>::repeat-<n>::<baseline>`. The frozen pair key, baseline,
+repeat, and paired seed live under `cases[].context`. Selection catalog hashes,
+schema modes, model decisions, complete-schema hydration hashes, plan
+validation, stage tokens/latency, and structured failure reasons are recorded
+under `observed`, `metrics`, `stages`, and `failure`. Aggregate paired deltas
+live under `summary.paired_b6c_minus_b6b`, with confidence intervals under
+`statistics.paired_bootstrap`.
+
+The model artifact references the exact deterministic input through
+`dataset.baseline_artifact_id`, `dataset.baseline_run_id`, and
+`source.sha256`. Ground-truth labels remain evaluation-only. See
+[`paper-model-loop.md`](paper-model-loop.md) for the two-pass protocol.
+
 Graph ablations are paired on the same cases:
 
 - aggregate deltas: `summary.ablations` and

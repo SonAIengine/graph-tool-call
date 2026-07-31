@@ -497,6 +497,9 @@ required-tool-recall delta `[0.0000, 0.0517]`, and all-required delta
 mechanism and absence of observed regressions; it is not a broad statistical
 or model-in-loop quality claim. The next validation must compare B6b and B6c
 with a frozen model performing target selection and full-schema hydration.
+That paired protocol is implemented in
+[`paper-model-loop.md`](paper-model-loop.md); it consumes this deterministic
+artifact rather than recomputing retrieval.
 
 ## Metrics And Budget
 

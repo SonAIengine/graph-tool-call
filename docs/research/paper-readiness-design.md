@@ -880,6 +880,9 @@ This order prevents five-hour model runs from becoming the development loop.
       open. See [`paper-baselines.md`](paper-baselines.md).
 - [ ] Run a frozen model-in-loop B6b-vs-B6c target-selection comparison, then
       hydrate the selected tool's complete schema before argument generation.
+      The paired two-pass harness and artifact contract are implemented; the
+      clean fixed-model run remains. See
+      [`paper-model-loop.md`](paper-model-loop.md).
 - [ ] Add the budgeted LLM catalog-selector baseline.
 - [x] Add actual tokenizer accounting with frozen tokenizer revisions.
       The B-1/B0-O/B1-B7 harness uses pinned Qwen3 tokenizer accounting and a
