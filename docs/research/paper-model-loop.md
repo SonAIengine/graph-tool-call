@@ -172,8 +172,64 @@ its complete schema, bound its pod name and namespace outputs to
 This is mechanism evidence, not a final significance claim. The 95% paired
 bootstrap intervals for producer recall and end-to-end validity were both
 `[0.0000, 0.1034]`. They include zero because only one of the 29 development
-cases used a projected schema. A three-repeat clean run and the still-sealed
-held-out evaluation remain publication gates.
+cases used a projected schema. The three-repeat publication candidate below
+tests repeat stability; the still-sealed held-out evaluation remains a
+separate publication gate.
+
+## Validated Three-Repeat Publication Candidate
+
+The clean three-repeat train/dev run used merged `main` commit
+`406f7e127099f68a497eaae4adb26e5ff719ebdd`, the same deterministic input
+artifact and model revision as the development run, and 10,000 paired
+bootstrap resamples. Artifact `exp-af3e63a6328a3e3ed981c898` (run
+`run-04a25f625f4a4a89cf53`) contains 29 unique cases, three repeats, 174
+condition records, and 87 B6b/B6c pairs. Its SHA-256 is
+`e82bc9876a8ccf8c0e1a234508e7174156ecacde0a2575c4edc38e6c4755d221`.
+
+The artifact passed schema validation with `git_dirty=false`, exact source and
+dependency-lock hashes, 100% B6b/B6c ranking identity, 100% catalog-budget
+compliance, and `held_out_accessed=false`. The model-serving configuration was
+unchanged from the development run.
+
+| Model-loop metric | B6b | B6c | Paired change | 95% paired bootstrap CI |
+|---|---:|---:|---:|---:|
+| selector target accuracy | 0.8966 | 0.8966 | 0.0000 | [0.0000, 0.0000] |
+| selector producer recall | 0.8966 | 0.9310 | +0.0345 | [0.0000, 0.0805] |
+| selector required-tool recall | 0.8621 | 0.8793 | +0.0172 | [0.0000, 0.0402] |
+| all required selected | 0.7931 | 0.8276 | +0.0345 | [0.0000, 0.0805] |
+| full-schema hydration success | 0.9655 | 0.9655 | 0.0000 | [0.0000, 0.0000] |
+| argument-schema validity | 0.8621 | 0.8621 | 0.0000 | [0.0000, 0.0000] |
+| required-input accounting | 0.9310 | 0.9310 | 0.0000 | [0.0000, 0.0000] |
+| end-to-end structural validity | 0.6552 | 0.6897 | +0.0345 | [0.0000, 0.0805] |
+
+All three repeats produced the same aggregate effectiveness values. The same
+`kubernetes-dev-pod-logs-en` pair improved in every repeat: B6b selected pod
+status as support, while B6c selected and hydrated the required pod-list
+producer. Across the 87 repeated pairs this yields three improvements, zero
+regressions, and 84 ties for producer recall, all-required selection, and
+end-to-end structural validity.
+
+Absolute plan-validity rates were not bit-exact across server restarts. Relative
+to the earlier single-repeat development artifact,
+`mcp-filesystem-dev-edit-file-en` changed from valid to invalid under both B6b
+and B6c, reducing both absolute end-to-end rates by `0.0345` without changing
+the paired B6c-minus-B6b delta. This is why the causal interpretation relies on
+same-run paired conditions rather than comparing absolute rates across runs.
+
+B6c used a mean of 1,452.41 input tokens across selection and planning,
+compared with 1,367.24 for B6b. Selection-catalog schema use increased by only
+two tokens on average, from 466.62 to 468.62; most of the 85.17-token total
+increase occurred after the newly selected producer was hydrated for planning.
+This is the expected cost of making the previously excluded dependency
+actionable, not a zero-cost quality gain.
+
+The repeated outcome strengthens evidence that the observed mechanism is
+stable for this frozen model, prompt, seed policy, and development corpus. It
+does not add new independent case families. The confidence intervals still
+include zero; they summarize 87 repeated condition pairs, not 87 independent
+task identities. The held-out split remains sealed and HTTP execution was not
+performed. The result is therefore a publication candidate for the narrow
+contract-projection mechanism, not evidence of broad statistical superiority.
 
 ## Failure Taxonomy
 
@@ -198,5 +254,5 @@ evidence-admitted tools actionable for a frozen model under a fixed catalog
 budget. It does not establish execution success, generalize to held-out
 families, or replace the budgeted full-catalog LLM selector baseline. HTTP
 execution and B0-L remain separate experiments. The validated development run
-supports this narrow mechanism claim; it does not yet support a broad quality
-or statistical-superiority claim.
+and three-repeat publication candidate support this narrow mechanism claim;
+they do not yet support a broad quality or statistical-superiority claim.

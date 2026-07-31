@@ -495,13 +495,15 @@ intervals still include zero: producer-recall delta `[0.0000, 0.5000]`,
 required-tool-recall delta `[0.0000, 0.0517]`, and all-required delta
 `[0.0000, 0.1034]`. This small development result supports the packing
 mechanism and absence of observed regressions; it is not a broad statistical
-claim. The subsequent clean, single-repeat Qwen3.6-27B model loop confirmed
-that the same case improves after target/support selection and complete-schema
-hydration: producer recall and end-to-end structural validity each rose by
-`0.0345` over 29 pairs with no observed regression. Its confidence intervals
-still include zero, so the three-repeat and held-out gates remain open. See
-[`paper-model-loop.md`](paper-model-loop.md) for the frozen protocol and exact
-artifact IDs.
+claim. The subsequent clean Qwen3.6-27B model loop confirmed that the same case
+improves after target/support selection and complete-schema hydration:
+producer recall and end-to-end structural validity each rose by `0.0345` over
+29 unique cases with no observed regression. The publication-candidate replay
+repeated all 29 cases three times and reproduced the same aggregate deltas in
+every repeat. Its 95% confidence intervals still include zero and the held-out
+split remains sealed, so this is stable mechanism evidence rather than a broad
+statistical claim. See [`paper-model-loop.md`](paper-model-loop.md) for the
+frozen protocol, exact artifact IDs, token cost, and interpretation boundary.
 
 ## Metrics And Budget
 
