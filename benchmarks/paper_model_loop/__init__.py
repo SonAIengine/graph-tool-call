@@ -1,0 +1,46 @@
+"""Paper-specific paired model-in-loop benchmark contracts."""
+
+from .catalog import (
+    B6B_BASELINE,
+    B6C_BASELINE,
+    HYDRATION_POLICY_REVISION,
+    MODEL_LOOP_BASELINES,
+    PLAN_VALIDATION_POLICY_REVISION,
+    PLANNING_CONTRACT_VIEW_REVISION,
+    SELECTION_PROTOCOL_REVISION,
+    HydratedCatalog,
+    PlanValidation,
+    SelectionCatalog,
+    SelectorDecision,
+    build_planning_contract_view,
+    build_selection_catalog,
+    hydrate_full_schemas,
+    parse_selector_decision,
+    validate_paired_case_contract,
+    validate_plan_payload,
+)
+from .client import HTTPModelClient, ModelClient, ModelResponse, redacted_url
+
+__all__ = [
+    "B6B_BASELINE",
+    "B6C_BASELINE",
+    "HYDRATION_POLICY_REVISION",
+    "MODEL_LOOP_BASELINES",
+    "PLAN_VALIDATION_POLICY_REVISION",
+    "PLANNING_CONTRACT_VIEW_REVISION",
+    "SELECTION_PROTOCOL_REVISION",
+    "HydratedCatalog",
+    "HTTPModelClient",
+    "ModelClient",
+    "ModelResponse",
+    "PlanValidation",
+    "SelectionCatalog",
+    "SelectorDecision",
+    "build_planning_contract_view",
+    "build_selection_catalog",
+    "hydrate_full_schemas",
+    "parse_selector_decision",
+    "validate_paired_case_contract",
+    "validate_plan_payload",
+    "redacted_url",
+]
