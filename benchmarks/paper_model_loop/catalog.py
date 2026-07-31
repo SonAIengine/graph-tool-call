@@ -506,12 +506,15 @@ def _binding_path_is_valid(
 ) -> bool:
     if not path:
         return False
+    normalized_path = _normalize_binding_path(path)
     for row in (source_tool.metadata.get("api_contract") or {}).get("produces") or []:
         valid_paths = {
             str(row.get("json_path") or ""),
             *(str(value) for value in row.get("value_path_aliases") or []),
         }
-        if path not in valid_paths:
+        if normalized_path not in {
+            _normalize_binding_path(valid_path) for valid_path in valid_paths
+        }:
             continue
         field_name = str(row.get("field_name") or "")
         if not _field_names_compatible(field_name, target_parameter.name):
@@ -521,6 +524,10 @@ def _binding_path_is_valid(
             continue
         return True
     return False
+
+
+def _normalize_binding_path(path: str) -> str:
+    return re.sub(r"\[(?:\*|\d+)\]", "[*]", path.strip())
 
 
 def _compact_contract_row(row: dict[str, Any]) -> dict[str, Any]:

@@ -241,6 +241,35 @@ def test_plan_validation_requires_known_tools_arguments_and_required_accounting(
     )
     assert valid.valid is True
 
+    concrete_array_index = validate_plan_payload(
+        {
+            "final_target": "readItem",
+            "plan": [
+                {
+                    "tool": "listItems",
+                    "arguments": {},
+                    "bindings": {},
+                    "missing_required_inputs": [],
+                },
+                {
+                    "tool": "readItem",
+                    "arguments": {},
+                    "bindings": {
+                        "itemId": {
+                            "from_tool": "listItems",
+                            "path": "$.items[0].itemId",
+                        }
+                    },
+                    "missing_required_inputs": [],
+                },
+            ],
+        },
+        selected_target="readItem",
+        hydrated=hydrated,
+        tools_by_name=tools,
+    )
+    assert concrete_array_index.valid is True
+
     invalid = validate_plan_payload(
         {
             "final_target": "readItem",
