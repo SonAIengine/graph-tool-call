@@ -73,6 +73,10 @@ from .retrievers import (
     seeded_random_rank,
 )
 from .token_budget import (
+    CONTRACT_PROJECTED_DESCRIPTION_LIMIT,
+    CONTRACT_PROJECTED_ENUM_LIMIT,
+    CONTRACT_PROJECTED_PARAMETER_DESCRIPTION_LIMIT,
+    CONTRACT_PROJECTED_SCHEMA_POLICY_REVISION,
     DEFAULT_CONTEXT_TOKENIZER,
     DEFAULT_CONTEXT_TOKENIZER_REVISION,
     DEFAULT_TOKEN_BUDGET,
@@ -80,6 +84,7 @@ from .token_budget import (
     TOOL_SCHEMA_SERIALIZATION_REVISION,
     HuggingFaceTokenCounter,
     TokenCounter,
+    apply_contract_projected_token_budget,
     apply_ranked_token_budget,
     model_facing_schema,
 )
@@ -95,6 +100,7 @@ BASELINE_NAMES = (
     "graph_typed_contract",
     "graph_consumer_aligned_contract",
     "graph_consumer_aligned_admission",
+    "graph_budget_aware_schema_admission",
     "full_graph_pipeline",
 )
 ABLATION_PAIRS = {
@@ -107,6 +113,10 @@ ABLATION_PAIRS = {
     "b6b_minus_b6a_candidate_admission": (
         "graph_consumer_aligned_contract",
         "graph_consumer_aligned_admission",
+    ),
+    "b6c_minus_b6b_contract_projection": (
+        "graph_consumer_aligned_admission",
+        "graph_budget_aware_schema_admission",
     ),
     "b7_minus_b6_selector_producers": (
         "graph_typed_contract",
@@ -156,7 +166,7 @@ def run_paper_baselines(
     context_tokenizer_revision: str = DEFAULT_CONTEXT_TOKENIZER_REVISION,
     bootstrap_resamples: int = 1000,
 ) -> ExperimentArtifact:
-    """Evaluate the eleven frozen baselines and return one paired artifact."""
+    """Evaluate the twelve frozen baselines and return one paired artifact."""
     if top_k <= 0:
         raise ValueError("top_k must be greater than zero.")
     if not dense_model_name.strip() or not dense_model_revision.strip():
@@ -297,7 +307,7 @@ def run_paper_baselines(
         replay_command.append("--allow-held-out")
     artifact = ExperimentArtifact(
         benchmark="public-heterogeneous-tool-retrieval",
-        methodology="paired-fixed-baselines-v7",
+        methodology="paired-fixed-baselines-v8",
         run_kind="deterministic",
         created_at=created_at or datetime.now(timezone.utc).isoformat(),
         seed=seed,
@@ -321,6 +331,11 @@ def run_paper_baselines(
                 "limit": token_budget,
                 "candidate_limit": top_k,
                 "policy_revision": TOKEN_BUDGET_POLICY_REVISION,
+                "alternate_policy_revisions": {
+                    "graph_budget_aware_schema_admission": (
+                        CONTRACT_PROJECTED_SCHEMA_POLICY_REVISION
+                    )
+                },
                 "serialization_revision": TOOL_SCHEMA_SERIALIZATION_REVISION,
                 "add_special_tokens": False,
                 "payload_scope": ["name", "description", "parameters"],
@@ -449,6 +464,29 @@ def run_paper_baselines(
                         "non_seed_forward_consumer_aligned_api_contract_path_and_"
                         "first_query_action_resource_match"
                     ),
+                    "ground_truth_signals": False,
+                    "selector_signals": False,
+                },
+                "graph_budget_aware_schema_admission": {
+                    "label": "B6c",
+                    "base_ranking": "graph_consumer_aligned_admission",
+                    "ranking_changes": False,
+                    "schema_projection_policy_revision": (
+                        CONTRACT_PROJECTED_SCHEMA_POLICY_REVISION
+                    ),
+                    "projection_scope": "b6b_evidence_admitted_candidates_only",
+                    "projection_payload": [
+                        "name",
+                        "bounded_semantic_description",
+                        "required_parameters",
+                    ],
+                    "description_char_limit": CONTRACT_PROJECTED_DESCRIPTION_LIMIT,
+                    "parameter_description_char_limit": (
+                        CONTRACT_PROJECTED_PARAMETER_DESCRIPTION_LIMIT
+                    ),
+                    "enum_value_limit": CONTRACT_PROJECTED_ENUM_LIMIT,
+                    "optional_parameters_included": False,
+                    "full_schema_hydration": "before_execution",
                     "ground_truth_signals": False,
                     "selector_signals": False,
                 },
@@ -725,6 +763,17 @@ def _evaluate_source(
         latencies["graph_consumer_aligned_admission"] = (
             latencies["flat_semantic_rrf"] + consumer_aligned_admission_latency_ms
         )
+        rankings["graph_budget_aware_schema_admission"] = list(
+            rankings["graph_consumer_aligned_admission"]
+        )
+        ranking_diagnostics["graph_budget_aware_schema_admission"] = {
+            "base_ranking": "graph_consumer_aligned_admission",
+            "ranking_unchanged": True,
+            "schema_projection_policy_revision": CONTRACT_PROJECTED_SCHEMA_POLICY_REVISION,
+        }
+        latencies["graph_budget_aware_schema_admission"] = latencies[
+            "graph_consumer_aligned_admission"
+        ]
 
         started = time.perf_counter()
         rankings["full_graph_pipeline"], ranking_diagnostics["full_graph_pipeline"] = (
@@ -776,12 +825,29 @@ def _evaluate_source(
                 latency_ms=latencies[baseline_name],
             )
             started = time.perf_counter()
-            budget_selection = apply_ranked_token_budget(
-                retrieved,
-                tools_by_name,
-                token_counter=token_counter,
-                token_budget=token_budget,
-            )
+            if baseline_name == "graph_budget_aware_schema_admission":
+                admission = ranking_diagnostics["graph_consumer_aligned_admission"][
+                    "candidate_admission"
+                ]
+                projection_names = {
+                    str(row.get("name") or "")
+                    for row in admission.get("admitted") or []
+                    if row.get("name")
+                }
+                budget_selection = apply_contract_projected_token_budget(
+                    retrieved,
+                    tools_by_name,
+                    projection_names=projection_names,
+                    token_counter=token_counter,
+                    token_budget=token_budget,
+                )
+            else:
+                budget_selection = apply_ranked_token_budget(
+                    retrieved,
+                    tools_by_name,
+                    token_counter=token_counter,
+                    token_budget=token_budget,
+                )
             token_budget_accounting_ms = (time.perf_counter() - started) * 1000
             selected_names = budget_selection.retrieved
             selected_set = set(selected_names)
@@ -793,14 +859,17 @@ def _evaluate_source(
                     if candidate.name in selected_set
                 ],
             }
+            budget_case_metrics = _case_metrics(
+                selected_names,
+                case,
+                top_k=top_k,
+                tools_by_name=tools_by_name,
+                latency_ms=latencies[baseline_name],
+            )
+            budget_case_metrics["schema_chars"] = budget_selection.schema_chars
+            budget_case_metrics["schema_utf8_bytes"] = budget_selection.schema_utf8_bytes
             token_budget_metrics[baseline_name] = {
-                **_case_metrics(
-                    selected_names,
-                    case,
-                    top_k=top_k,
-                    tools_by_name=tools_by_name,
-                    latency_ms=latencies[baseline_name],
-                ),
+                **budget_case_metrics,
                 "schema_tokens": budget_selection.schema_tokens,
                 "token_budget_limit": budget_selection.token_budget_limit,
                 "token_budget_used": budget_selection.token_budget_used,

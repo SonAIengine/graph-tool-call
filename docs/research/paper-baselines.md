@@ -1,6 +1,6 @@
 # Frozen Paper Retrieval Baselines
 
-The unified paper harness implements eleven deterministic development
+The unified paper harness implements twelve deterministic development
 comparators:
 
 | ID | Artifact key | Frozen behavior |
@@ -15,6 +15,7 @@ comparators:
 | B6 | `graph_typed_contract` | B4 plus typed/confidence-weighted graph and IO-contract edges |
 | B6a | `graph_consumer_aligned_contract` | B6 with opt-in required-consumer-aligned output promotion |
 | B6b | `graph_consumer_aligned_admission` | B6a with one evidence-gated candidate-admission slot |
+| B6c | `graph_budget_aware_schema_admission` | B6b ranking with contract projection for evidence-admitted candidates |
 | B7 | `full_graph_pipeline` | B6 plus deterministic target selection and bounded producer expansion |
 
 These baselines are research comparators, not product retrieval modes. They
@@ -31,6 +32,7 @@ make paper-graph-ablation
 make paper-producer-coverage
 make paper-output-promotion
 make paper-candidate-admission
+make paper-contract-projection
 
 TOP_K=8 SEED=17 OUT=/tmp/paper-baselines-k8.json \
   make paper-baseline-run
@@ -49,6 +51,9 @@ BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-output-promotion.json \
 
 BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-candidate-admission.json \
   make paper-candidate-admission
+
+BOOTSTRAP_RESAMPLES=1000 OUT=/tmp/paper-contract-projection.json \
+  make paper-contract-projection
 ```
 
 The default run uses only the frozen `train,dev` families. It produces one
@@ -235,6 +240,30 @@ graph score, admission score, action evidence, and resource evidence.
 Expected targets, required producers, traces, LLM output, product aliases, and
 held-out cases are never ranking inputs.
 
+### B6c Budget-Aware Contract Projection
+
+B6c preserves B6b's complete ranking, candidate-admission decision, top-K,
+token budget, graph, and evidence gates. It changes only the model-facing
+selection schema for a candidate newly admitted by B6b. All other candidates
+retain the complete schema, and B6c never skips an oversized ranked candidate
+to admit a later one. The B6b-to-B6c delta therefore isolates contract
+projection rather than ranking or slot-allocation changes.
+
+The frozen policy revision is `paper-contract-projected-admission-v1`. A
+projected schema contains the tool name, a semantic description bounded to 240
+characters, required parameters only, required-parameter descriptions bounded
+to 160 characters, and at most 16 enum values per parameter. Optional
+parameters and internal metadata are omitted. Existing one-line semantic
+summaries are preferred over OpenAPI summaries and raw descriptions.
+
+Projection eligibility comes only from B6b's collection-derived admission
+evidence. Expected targets, required producers, held-out annotations, traces,
+LLM output, and product aliases are not available to the policy. The protocol
+requires the complete tool schema to be hydrated after target selection and
+before argument generation or execution. The deterministic harness evaluates
+selection-context availability; it does not claim that the projected form is
+an execution contract.
+
 ### B7 Frozen Full Graph Pipeline
 
 B7 takes B6's top-K surface, applies
@@ -258,6 +287,7 @@ bootstrap confidence intervals for:
 | `b6_minus_b5_typed_contract` | typed/confidence-weighted contract graph |
 | `b6a_minus_b6_output_promotion` | required-consumer-aligned output promotion |
 | `b6b_minus_b6a_candidate_admission` | one evidence-gated consumer-aligned candidate slot |
+| `b6c_minus_b6b_contract_projection` | selection-time projection for the evidence-admitted candidate |
 | `b7_minus_b6_selector_producers` | target selector and producer expansion |
 | `b7_minus_b4_full_pipeline` | complete deterministic graph-tool-call pipeline |
 
@@ -306,6 +336,7 @@ It did not open the held-out split.
 | B6 typed contract | 0.9310 | 0.6667 | 0.8621 | 0.8305 |
 | B6a aligned output | 0.9310 | 0.6667 | 0.8621 | 0.8305 |
 | B6b candidate admission | 0.9310 | 0.8333 | 0.8966 | 0.8305 |
+| B6c contract projection | 0.9310 | 0.8333 | 0.8966 | 0.8305 |
 | B7 full deterministic | 0.9310 | 0.6667 | 0.8621 | 0.7931 |
 
 This pilot does not support H1 or H2. At `K=5`, the five protected B4 seeds
@@ -430,6 +461,43 @@ context-budget result, not evidence that the producer is available to the
 model. Budget-aware admission or schema projection must therefore be tested
 as a separate ablation before B6b can support an end-to-end context claim.
 
+### Contract-projection follow-up
+
+The clean B6c replay used commit
+`9f27de8f4b0ad92ae922543aabd83b6ab2e079c6`, the same pinned E5 and Qwen3
+revisions, `K=5`, a 2,048-token budget, seed 17, 29 train/dev cases, and 1,000
+bootstrap resamples. The held-out split remained unopened. Artifact
+`exp-c7f4b09c92ca16f14fafde76` (run
+`run-d69ba667aa2fb4705ce7`) passed schema validation with `git_dirty=false`.
+
+| Token-budget metric | B6b | B6c |
+|---|---:|---:|
+| target Hit@5 | 0.8966 | 0.8966 |
+| producer Recall@5 | 0.5000 | 0.6667 |
+| required-tool Recall@5 | 0.8621 | 0.8793 |
+| all-required-found | 0.7931 | 0.8276 |
+| Precision@5 | 0.2828 | 0.2879 |
+| MRR | 0.8218 | 0.8218 |
+| mean admitted schemas | 4.2069 | 4.2414 |
+| mean schema tokens | 466.62 | 468.62 |
+| truncation rate | 0.2069 | 0.1724 |
+
+Exactly one effectiveness case improved and none regressed. In
+`kubernetes-dev-pod-logs-en`, B6c retained the B6b ranking and admitted
+projected `listCoreV1NamespacedPod` as the fifth schema. Projection saved
+1,321 tokens relative to that tool's complete selection schema, leaving a
+1,211-token catalog. Producer recall for the case increased from `0` to `1`
+and required-tool recall from `0.5` to `1.0`.
+
+The two-token increase in mean schema use is intentional: B6c used previously
+unavailable budget to expose one relevant fifth tool. The paired bootstrap 95%
+intervals still include zero: producer-recall delta `[0.0000, 0.5000]`,
+required-tool-recall delta `[0.0000, 0.0517]`, and all-required delta
+`[0.0000, 0.1034]`. This small development result supports the packing
+mechanism and absence of observed regressions; it is not a broad statistical
+or model-in-loop quality claim. The next validation must compare B6b and B6c
+with a frozen model performing target selection and full-schema hydration.
+
 ## Metrics And Budget
 
 Every query records two paired views of the same frozen ranking:
@@ -442,7 +510,8 @@ Both views record target Hit@K, producer Recall@K, required-tool Recall@K,
 all-required-found, Precision@K, MRR, AP, graded nDCG@K, latency, candidate
 count, normalized model-facing schema characters, and UTF-8 bytes. The
 token-budget view additionally records schema tokens, budget utilization,
-truncation status, and token-accounting latency. The model-facing payload
+truncation status, token-accounting latency, per-tool schema mode, projected
+schema count, and tokens saved by projection. The default model-facing payload
 includes name, description, and parameters but excludes internal metadata.
 Relevance grades are:
 
@@ -462,6 +531,9 @@ compact JSON array with sorted object keys. The policy
 `ranked-greedy-whole-schema-v1` accepts the longest ranked prefix that fits the
 budget. It stops at the first schema that would exceed the limit, never skips
 that schema to admit a later one, and never truncates a schema internally.
+B6c alone replaces an evidence-admitted candidate's complete schema with the
+bounded contract projection declared above and records both the schema mode
+and token savings. It otherwise follows the same ranked-prefix policy.
 
 Only the tool catalog payload is counted. Query and system-prompt tokens are
 excluded because they are identical across paired retrieval methods. This
