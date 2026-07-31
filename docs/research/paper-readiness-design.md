@@ -846,6 +846,7 @@ This order prevents five-hour model runs from becoming the development loop.
 | 2026-07-30 | Producer-edge failures are diagnosed with ground-truth-only contract, path, direction, and seed coverage before graph weights are tuned. |
 | 2026-07-30 | Required-consumer-aligned output promotion improves contract-path coverage but not Recall@5 under protected B4 seeds; candidate admission is the next isolated ablation. |
 | 2026-07-30 | B6c selection-time contract projection preserves B6b ranking and restores its producer gain under 2,048 tokens; complete schemas remain mandatory before argument generation and execution. |
+| 2026-07-31 | A clean single-repeat Qwen3.6-27B model loop confirms the B6c mechanism on train/dev: one paired E2E improvement, zero regressions, and confidence intervals that still include zero. |
 
 ## 20. Immediate Next Tasks
 
@@ -878,11 +879,14 @@ This order prevents five-hour model runs from becoming the development loop.
       case and no observed effectiveness regression; the confidence interval
       includes zero, so model-in-loop and broader-corpus validation remain
       open. See [`paper-baselines.md`](paper-baselines.md).
-- [ ] Run a frozen model-in-loop B6b-vs-B6c target-selection comparison, then
+- [x] Run a frozen model-in-loop B6b-vs-B6c target-selection comparison, then
       hydrate the selected tool's complete schema before argument generation.
-      The paired two-pass harness and artifact contract are implemented; the
-      clean fixed-model run remains. See
+      The clean single-repeat Qwen3.6-27B train/dev artifact confirms one
+      E2E improvement and no regressions. See
       [`paper-model-loop.md`](paper-model-loop.md).
+- [ ] Run the B6b-vs-B6c publication candidate with three paired repeats and
+      preserve the sealed held-out split until the remaining protocol gates
+      pass.
 - [ ] Add the budgeted LLM catalog-selector baseline.
 - [x] Add actual tokenizer accounting with frozen tokenizer revisions.
       The B-1/B0-O/B1-B7 harness uses pinned Qwen3 tokenizer accounting and a

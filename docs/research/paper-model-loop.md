@@ -90,7 +90,7 @@ Then run the paired model loop against an OpenAI-compatible endpoint:
 
 ```bash
 BASELINE_ARTIFACT=/tmp/graph-tool-call-paper-contract-projection.json \
-MODEL=Qwen/Qwen3.6-27B-FP8 \
+MODEL=qwen3.6-27b \
 MODEL_REVISION=e89b16ebf1988b3d6befa7de50abc2d76f26eb09 \
 PROVIDER=openai-compatible \
 LLM_URL=http://localhost:8000/v1 \
@@ -104,7 +104,7 @@ publication candidate uses three paired repeats and a clean commit:
 ```bash
 poetry run python -m benchmarks.paper_model_loop.run \
   --baseline-artifact /tmp/graph-tool-call-paper-contract-projection.json \
-  --model Qwen/Qwen3.6-27B-FP8 \
+  --model qwen3.6-27b \
   --model-revision e89b16ebf1988b3d6befa7de50abc2d76f26eb09 \
   --provider openai-compatible \
   --llm-url http://localhost:8000/v1 \
@@ -135,6 +135,46 @@ The artifact reports paired B6c-minus-B6b improvement, regression, and tie
 counts plus bootstrap confidence intervals. Protocol gates require identical
 B6b/B6c rankings and catalog-budget compliance for every case.
 
+## Validated Development Run
+
+The clean single-repeat train/dev run used commit
+`1b1f9f4e791441eee37407182bb7ac4e4af58789`, deterministic input artifact
+`exp-c7f4b09c92ca16f14fafde76`, and
+`Qwen/Qwen3.6-27B-FP8` revision
+`e89b16ebf1988b3d6befa7de50abc2d76f26eb09`. The model was served as
+`qwen3.6-27b` by vLLM `0.24.0` with two RTX 5090 GPUs, tensor parallel size
+two, a 32,768-token context, FP8 model weights, BF16 KV cache,
+FlashAttention, and CUTLASS FP8 kernels. Thinking was disabled and paired
+conditions used the same derived seed.
+
+Artifact `exp-33319da455a89aa3e89312b3` (run
+`run-11c41a69e9cbe8f1b58e`) contains 29 paired cases and 58 condition records.
+It passed schema validation with `git_dirty=false`, identical B6b/B6c ranking
+for every pair, and 100% catalog-budget compliance.
+
+| Model-loop metric | B6b | B6c | Paired change |
+|---|---:|---:|---:|
+| selector target accuracy | 0.8966 | 0.8966 | 0.0000 |
+| selector producer recall | 0.8966 | 0.9310 | +0.0345 |
+| selector required-tool recall | 0.8621 | 0.8793 | +0.0172 |
+| all required selected | 0.7931 | 0.8276 | +0.0345 |
+| full-schema hydration success | 0.9655 | 0.9655 | 0.0000 |
+| argument-schema validity | 0.8966 | 0.8966 | 0.0000 |
+| end-to-end structural validity | 0.6897 | 0.7241 | +0.0345 |
+
+Exactly one pair improved and none regressed. For
+`kubernetes-dev-pod-logs-en`, B6b selected the target but chose
+`readCoreV1NamespacedPodStatus` as support. B6c exposed the previously
+budget-excluded `listCoreV1NamespacedPod`; the same model selected it, hydrated
+its complete schema, bound its pod name and namespace outputs to
+`readCoreV1NamespacedPodLog`, and passed structural plan validation.
+
+This is mechanism evidence, not a final significance claim. The 95% paired
+bootstrap intervals for producer recall and end-to-end validity were both
+`[0.0000, 0.1034]`. They include zero because only one of the 29 development
+cases used a projected schema. A three-repeat clean run and the still-sealed
+held-out evaluation remain publication gates.
+
 ## Failure Taxonomy
 
 Stable reason codes separate:
@@ -157,4 +197,6 @@ An improvement supports the claim that contract projection makes useful
 evidence-admitted tools actionable for a frozen model under a fixed catalog
 budget. It does not establish execution success, generalize to held-out
 families, or replace the budgeted full-catalog LLM selector baseline. HTTP
-execution and B0-L remain separate experiments.
+execution and B0-L remain separate experiments. The validated development run
+supports this narrow mechanism claim; it does not yet support a broad quality
+or statistical-superiority claim.
