@@ -1,5 +1,8 @@
 # Frozen Paper Retrieval Baselines
 
+For comparisons against published systems and their official datasets, see
+[`external-tool-retrieval-comparison.md`](external-tool-retrieval-comparison.md).
+
 The unified paper harness implements twelve deterministic development
 comparators:
 
