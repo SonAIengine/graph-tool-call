@@ -21,6 +21,15 @@ from graph_tool_call.graphify.catalog import (
 )
 from graph_tool_call.graphify.collection_artifact import build_openapi_collection_artifact
 from graph_tool_call.graphify.contract_index import extract_openapi_contract_index
+from graph_tool_call.graphify.dependency_closure import (
+    DEPENDENCY_CLOSURE_POLICY_REVISION,
+    TOOL_BUNDLE_POLICY_REVISION,
+    DependencyClosureResult,
+    ToolBundle,
+    assemble_tool_bundle,
+    complete_target_dependencies,
+    contract_projected_tool_schema,
+)
 from graph_tool_call.graphify.edges import (
     EVIDENCE_API_CONTRACT,
     EVIDENCE_LLM_CURATED,
@@ -67,6 +76,7 @@ from graph_tool_call.graphify.semantics import (
 __all__ = [
     "COLLECTION_GRAPH_VERSION",
     "CONSUMER_ALIGNED_OUTPUT_POLICY_REVISION",
+    "DEPENDENCY_CLOSURE_POLICY_REVISION",
     "DEFAULT_CONF_AMBIGUOUS",
     "DEFAULT_CONF_EXTRACTED",
     "DEFAULT_CONF_INFERRED",
@@ -78,14 +88,20 @@ __all__ = [
     "EVIDENCE_PROVEN",
     "EVIDENCE_RUN",
     "EVIDENCE_STRUCTURAL",
+    "TOOL_BUNDLE_POLICY_REVISION",
+    "DependencyClosureResult",
+    "ToolBundle",
     "_apply_pair_hints",
     "annotate_graphify_metadata",
     "annotate_openapi_tool_semantics",
+    "assemble_tool_bundle",
     "bucket_confidence",
     "build_candidate_set",
     "build_openapi_collection_artifact",
     "build_io_contract",
     "build_tool_equivalence_groups",
+    "complete_target_dependencies",
+    "contract_projected_tool_schema",
     "derive_plan_trace_edges",
     "derive_openapi_tool_semantics",
     "detect_enrichment_status",

@@ -28,6 +28,33 @@ expanded = expand_candidates_with_producers(
 `cancelOrder`가 `orderNo`를 요구하고 다른 tool이 `orderNo`를 produce한다면, target
 selection 또는 planning 전에 producer가 candidate list에 추가될 수 있습니다.
 
+## Target-Specific Dependency Closure
+
+```python
+from graph_tool_call.graphify import assemble_tool_bundle, complete_target_dependencies
+
+closure = complete_target_dependencies(
+    selected_target,
+    tools_by_name,
+    graph=tool_graph,
+    available_fields={"tenant_id"},
+    max_hops=3,
+)
+```
+
+Closure는 target, required dependency, optional dependency를 별도 역할로 유지합니다.
+OpenAPI graph에서 consumer-aligned output promotion은 producer coverage를 높일 수 있지만,
+일치하는 모든 neighbor를 실행해도 된다는 뜻은 아닙니다. API contract edge는 required
+field별로 해석하고, 출처 없는 structural `requires` edge는 optional hint로 남깁니다.
+
+```bash
+make paper-openapi-closure
+```
+
+이 gate는 required-producer recall, 전체 dependency 완성률, 불필요한 dependency,
+표본 충분성을 함께 검사합니다. OpenAPI에서 optional인 workflow step은 query, manual,
+OpenAPI Link 또는 promoted trace 근거가 생기기 전까지 planner의 판단으로 남깁니다.
+
 ## Expansion Sources
 
 - deterministic IO contract edge
