@@ -209,6 +209,100 @@ def test_produces_for_edge_is_followed_only_from_consumer_to_producer():
     assert producer.required_dependencies == []
 
 
+def test_unscoped_structural_requires_is_only_an_optional_hint():
+    tools = [_tool("target"), _tool("structuralGuess")]
+    graph = {
+        "edges": [
+            {
+                "source": "target",
+                "target": "structuralGuess",
+                "relation": "requires",
+                "confidence": "EXTRACTED",
+                "conf_score": 0.9,
+            }
+        ]
+    }
+
+    result = complete_target_dependencies("target", tools, graph=graph)
+
+    assert result.required_dependencies == []
+    assert result.optional_dependencies == ["structuralGuess"]
+
+
+def test_manual_requires_edge_remains_auto_selectable():
+    tools = [_tool("target"), _tool("manualProducer")]
+    graph = {
+        "edges": [
+            {
+                "source": "target",
+                "target": "manualProducer",
+                "relation": "requires",
+                "confidence": "EXTRACTED",
+                "conf_score": 0.9,
+                "evidence_sources": ["manual"],
+                "is_manual": True,
+            }
+        ]
+    }
+
+    result = complete_target_dependencies("target", tools, graph=graph)
+
+    assert result.required_dependencies == ["manualProducer"]
+
+
+def test_contract_graph_evidence_is_scoped_to_its_required_field():
+    tools = [
+        _tool(
+            "target",
+            consumes=[_field("customerId", "customer_id"), _field("orderId", "order_id")],
+        ),
+        _tool("findCustomer", produces=[_field("customerId", "customer_id", required=False)]),
+        _tool("findOrder", produces=[_field("orderId", "order_id", required=False)]),
+    ]
+    graph = {
+        "edges": [
+            {
+                "source": "target",
+                "target": "findCustomer",
+                "relation": "requires",
+                "confidence": "INFERRED",
+                "conf_score": 0.82,
+                "evidence_sources": ["api_contract"],
+                "data_flow": {
+                    "to_field": "customerId",
+                    "semantic_tag": "customer_id",
+                },
+            }
+        ]
+    }
+
+    result = complete_target_dependencies("target", tools, graph=graph)
+
+    assert result.required_dependencies == ["findCustomer", "findOrder"]
+    assert result.complete is True
+
+
+def test_explicit_openapi_link_is_not_suppressed_when_merged_with_contract_evidence():
+    tools = [_tool("target"), _tool("linkedProducer")]
+    graph = {
+        "edges": [
+            {
+                "source": "target",
+                "target": "linkedProducer",
+                "relation": "requires",
+                "confidence": "EXTRACTED",
+                "conf_score": 0.95,
+                "evidence_sources": ["api_contract", "openapi_link"],
+                "data_flow": {"to_field": "resourceId"},
+            }
+        ]
+    }
+
+    result = complete_target_dependencies("target", tools, graph=graph)
+
+    assert result.required_dependencies == ["linkedProducer"]
+
+
 def test_zero_hop_budget_does_not_admit_direct_dependency():
     tools = [_tool("target"), _tool("producer")]
 

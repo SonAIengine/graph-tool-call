@@ -165,6 +165,41 @@ below Graph RAG-Tool Fusion's manual-graph mAP/Recall/all-required result.
 Validated artifact: `exp-a01dd53552226d1484ffcdaf`; full JSON SHA-256:
 `66ddbf39474bfe47c2b068775754c017e815764b0aa9eb61defd0bd491d15a9a`.
 
+## Automatic OpenAPI graph gate
+
+The external ToolLinkOS run supplies a published manual dependency graph. It
+therefore cannot establish that graph-tool-call can recover the same roles from
+OpenAPI alone. The automatic graph gate fixes the expected target only after
+retrieval, builds the graph without ground-truth producers, and scores strict
+required-producer closure separately.
+
+```bash
+make paper-openapi-closure
+```
+
+The first public-corpus run covered Petstore and Kubernetes: 267 tools, 12
+queries, and three dependency-bearing cases. The default contract profile found
+none of the annotated producers. Consumer-aligned contract promotion raised
+required-producer recall and all-required-found rate to `0.667`. The result is a
+real improvement, but it does not pass promotion:
+
+- dependency cases: `3`, below the frozen minimum of `30`;
+- required-producer recall: `0.667`, below `0.80`;
+- all-required-found: `0.667`, below `0.70`;
+- unexpected dependencies per dependency case: `0.667`, within the `1.0` cap.
+
+Petstore's remaining workflow uses an OpenAPI-optional `petId`. Strict closure
+does not turn that optional field into an automatic call without query/plan
+evidence. This is intentionally reported as a miss instead of silently making a
+network call. Optional semantic workflow completion is a separate planner
+evaluation, not a reason to weaken the deterministic safety gate.
+
+Validated default artifact: `exp-7a434b986e820b30d1dcda9a`; SHA-256:
+`dd65e656dc8c0fd0a30106f6f9394afb75c7b992a8d075cef35cb6d790fbd759`.
+
+Validated consumer-aligned artifact: `exp-a14710eb642d8d5f758da855`; SHA-256:
+`60377326a74efd8fc84db39688893bfbfc6bc16595ef1268b1ea46f63001bd78`.
+
 ## Primary sources
 
 - ToolRet: <https://arxiv.org/abs/2503.01763>

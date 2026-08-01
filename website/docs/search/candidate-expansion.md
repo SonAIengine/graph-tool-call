@@ -65,6 +65,20 @@ producer. Weak name-only evidence is reported as ambiguity instead of being
 silently executed. If the target and required chain do not fit the token budget,
 the bundle returns `budget_insufficient`.
 
+For OpenAPI graphs, consumer-aligned output promotion can improve producer
+coverage, but it is not a blanket license to execute every matching neighbor.
+API-contract edges are resolved per required field, while unscoped structural
+`requires` edges remain optional hints. Validate a collection before rollout:
+
+```bash
+make paper-openapi-closure
+```
+
+The gate reports required-producer recall, complete dependency coverage,
+unexpected dependencies, and sample sufficiency. OpenAPI-optional workflow
+steps remain planner decisions unless query, manual, OpenAPI Link, or promoted
+trace evidence makes them explicit.
+
 ## Expansion Sources
 
 - deterministic IO contract edges

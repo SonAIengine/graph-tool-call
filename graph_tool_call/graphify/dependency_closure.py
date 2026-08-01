@@ -154,6 +154,12 @@ def complete_target_dependencies(
 
         graph_candidates = _graph_dependency_candidates(tool_name, graph, tools_by_name)
         for candidate in graph_candidates:
+            # API-contract edges are field-scoped evidence. They participate in
+            # _contract_producer_candidates below so only one producer is chosen
+            # for a concrete required field instead of admitting every matching
+            # graph neighbor.
+            if set(candidate.evidence_sources) == {EVIDENCE_API_CONTRACT}:
+                continue
             if not candidate.auto_selectable:
                 if candidate.name not in optional and candidate.name not in selected:
                     optional.append(candidate.name)
@@ -486,6 +492,13 @@ def _contract_producer_candidates(
         candidate.name: candidate
         for candidate in _graph_dependency_candidates(consumer_name, graph, tools_by_name)
     }
+    consume_keys = {value for value in (consume_semantic, consume_field) if value}
+    has_scoped_graph_evidence = any(
+        candidate.auto_selectable
+        and EVIDENCE_API_CONTRACT in candidate.evidence_sources
+        and consume_keys.intersection(candidate.matched_fields)
+        for candidate in graph_by_name.values()
+    )
     for name, tool in tools_by_name.items():
         if name == consumer_name:
             continue
@@ -511,7 +524,12 @@ def _contract_producer_candidates(
                 tier = 1 if sources.intersection(_AUTO_EVIDENCE) else 2
             else:
                 tier = 2 if sources.intersection(_AUTO_EVIDENCE) else 3
-            auto = tier <= 3 and sources != {EVIDENCE_NAME_BASED}
+            graph_allows = not has_scoped_graph_evidence or bool(
+                graph_candidate is not None
+                and graph_candidate.auto_selectable
+                and consume_keys.intersection(graph_candidate.matched_fields)
+            )
+            auto = tier <= 3 and sources != {EVIDENCE_NAME_BASED} and graph_allows
             evidence_text = (
                 f"contract:{'semantic_tag' if semantic_match else 'field_name'}:"
                 f"{consume.get('field_name') or consume.get('semantic_tag')}"
@@ -559,8 +577,11 @@ def _graph_dependency_candidates(
         )
         direct_required = relation in {"requires", "produces_for"}
         extracted = confidence == "EXTRACTED" or score >= 0.8
-        auto = direct_required and (manual_like or extracted)
+        typed_flow = relation == "produces_for" and extracted
+        auto = direct_required and (manual_like or typed_flow)
+        weak_required = direct_required and extracted and not auto
         optional = relation in {"complementary", "pairs_well_with", "precedes"}
+        optional = optional or weak_required
         if not auto and not optional:
             continue
         tier = 1 if auto and manual_like else 2 if auto else 4
@@ -569,7 +590,7 @@ def _graph_dependency_candidates(
                 name=producer,
                 tier=tier,
                 auto_selectable=auto,
-                matched_fields=tuple(),
+                matched_fields=_graph_matched_fields(attrs),
                 evidence_sources=sources or ((EVIDENCE_MANUAL,) if attrs.get("is_manual") else ()),
                 evidence=str(attrs.get("evidence") or f"graph:{relation}"),
                 type_compatible=True,
@@ -579,6 +600,22 @@ def _graph_dependency_candidates(
         )
     candidates.sort(key=lambda item: (item.tier, item.mutating, item.name))
     return candidates
+
+
+def _graph_matched_fields(attrs: dict[str, Any]) -> tuple[str, ...]:
+    data_flow = attrs.get("data_flow")
+    if not isinstance(data_flow, dict):
+        return tuple()
+    values = {
+        _field_key(data_flow.get("to_field")),
+        _field_key(data_flow.get("semantic_tag")),
+    }
+    parameters = data_flow.get("parameters")
+    if isinstance(parameters, list):
+        for parameter in parameters:
+            if isinstance(parameter, dict):
+                values.add(_field_key(parameter.get("field_name")))
+    return tuple(sorted(value for value in values if value))
 
 
 def _graph_edges_for_consumer(consumer: str, graph: Any | None) -> list[tuple[str, dict[str, Any]]]:

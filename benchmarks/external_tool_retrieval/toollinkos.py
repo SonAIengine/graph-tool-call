@@ -40,6 +40,7 @@ from benchmarks.paper_baselines.retrievers import (
 )
 from graph_tool_call.core.tool import ToolParameter, ToolSchema
 from graph_tool_call.graphify import complete_target_dependencies, select_target_candidate
+from graph_tool_call.graphify.edges import EVIDENCE_MANUAL
 from graph_tool_call.ontology.schema import Confidence, RelationType
 from graph_tool_call.tool_graph import ToolGraph
 
@@ -522,6 +523,17 @@ def _manual_dependency_graph(dataset: ToolLinkOSDataset) -> ToolGraph:
                 evidence=(
                     f"toolinkos:{dependency_type or 'dependency'}:{raw.get('parameter_name', '')}"
                 ),
+            )
+            attrs = graph.graph.get_edge_attrs(source, target)
+            evidence_sources = list(attrs.get("evidence_sources") or [])
+            if EVIDENCE_MANUAL not in evidence_sources:
+                evidence_sources.append(EVIDENCE_MANUAL)
+            graph.graph.add_edge(
+                source,
+                target,
+                **attrs,
+                evidence_sources=evidence_sources,
+                is_manual=True,
             )
     return graph
 
