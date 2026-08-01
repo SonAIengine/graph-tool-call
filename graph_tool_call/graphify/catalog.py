@@ -228,6 +228,9 @@ def build_candidate_set(
     max_producers_per_field: int = 3,
     max_hops: int = 1,
     action_priority: dict[str, int] | None = None,
+    use_dependency_closure: bool = False,
+    dependency_graph: Any | None = None,
+    available_fields: set[str] | list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Build a structured target/producers candidate set.
 
@@ -263,13 +266,34 @@ def build_candidate_set(
         build_tool_equivalence_groups(raw_targets, tools_by_name),
         selected_targets=selected_target_set,
     )
-    candidates = expand_candidates_with_producers(
-        seed,
-        tools_by_name,
-        max_producers_per_field=max_producers_per_field,
-        max_hops=max_hops,
-        action_priority=action_priority,
-    )
+    closure_payload: dict[str, Any] | None = None
+    if use_dependency_closure and seed:
+        from graph_tool_call.graphify.dependency_closure import complete_target_dependencies
+
+        closure = complete_target_dependencies(
+            seed[0],
+            tools_by_name,
+            graph=dependency_graph,
+            available_fields=available_fields,
+            max_hops=max_hops,
+            max_alternatives_per_field=max_producers_per_field,
+        )
+        candidates = _dedupe_names(
+            [
+                *seed,
+                *closure.required_dependencies,
+                *closure.optional_dependencies,
+            ]
+        )
+        closure_payload = closure.to_dict()
+    else:
+        candidates = expand_candidates_with_producers(
+            seed,
+            tools_by_name,
+            max_producers_per_field=max_producers_per_field,
+            max_hops=max_hops,
+            action_priority=action_priority,
+        )
     seed_set = set(seed)
     producers = [name for name in candidates if name not in seed_set]
     target_rank_signals = _target_rank_signals(
@@ -307,6 +331,8 @@ def build_candidate_set(
         "target_diversity_applied": bool(diversify_target_groups and max_target_candidates),
         "max_hops": max(0, max_hops),
         "max_producers_per_field": max(0, max_producers_per_field),
+        "dependency_closure_applied": bool(use_dependency_closure and seed),
+        "dependency_closure": closure_payload,
     }
 
 

@@ -210,6 +210,8 @@ class PathSynthesizer:
         self._candidate_signals: dict[str, dict[str, Any]] = {}
         self._selected_producers: list[dict[str, Any]] = []
         self._user_input_fallbacks: list[dict[str, Any]] = []
+        self._closure_preferences: dict[tuple[str, str], str] = {}
+        self._closure_metadata: dict[str, Any] | None = None
         self._index_workflow_edges(graph)
         self._build_producer_indexes()
 
@@ -224,6 +226,7 @@ class PathSynthesizer:
         entities: dict[str, Any] | None = None,
         goal: str = "",
         exclude_tools: set[str] | None = None,
+        dependency_closure: Any | None = None,
     ) -> Plan:
         """Build a Plan whose final step is ``target`` with required args
         filled by entities + prerequisite steps.
@@ -251,6 +254,8 @@ class PathSynthesizer:
         self._candidate_signals = {}
         self._selected_producers = []
         self._user_input_fallbacks = []
+        self._closure_metadata = self._closure_dict(dependency_closure)
+        self._closure_preferences = self._closure_preference_map(self._closure_metadata)
         steps_by_tool: dict[str, _PartialStep] = {}
         visiting: set[str] = set()
 
@@ -349,6 +354,7 @@ class PathSynthesizer:
                     "selected_producers": list(self._selected_producers),
                     "candidate_signals": dict(self._candidate_signals),
                     "fallbacks": list(self._user_input_fallbacks),
+                    "dependency_closure": dict(self._closure_metadata or {}),
                 },
             },
         )
@@ -725,6 +731,7 @@ class PathSynthesizer:
     # field-name overlap. ``semantic_exact`` requires LLM Pass 2 enrichment;
     # when present it's the strongest signal we have.
     _SIGNAL_WEIGHTS: dict[str, int] = {
+        "dependency_closure": 200,
         "semantic_exact": 100,
         "graph_EXTRACTED": 50,
         "field_exact": 40,
@@ -877,6 +884,13 @@ class PathSynthesizer:
             return sum(self._SIGNAL_WEIGHTS.get(s, 0) for s in signals)
 
         signal_key = f"{target_tool}.{field_name or semantic or '<unknown>'}"
+        preferred = self._preferred_closure_producer(
+            target_tool=target_tool,
+            field_name=field_name,
+            semantic=semantic,
+        )
+        if preferred in candidate_signals:
+            candidate_signals[preferred].add("dependency_closure")
         self._candidate_signals[signal_key] = {
             name: {
                 "signals": sorted(signals),
@@ -887,6 +901,14 @@ class PathSynthesizer:
 
         if not candidate_signals:
             return None
+
+        if (
+            preferred
+            and preferred in candidate_signals
+            and preferred not in excluded
+            and self._is_chain_eligible(preferred, target_tool=target_tool)
+        ):
+            return preferred
 
         scored = sorted(
             candidate_signals.items(),
@@ -909,6 +931,44 @@ class PathSynthesizer:
             if self._is_chain_eligible(cand, target_tool=target_tool):
                 return cand
         return None
+
+    @staticmethod
+    def _closure_dict(value: Any | None) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return dict(value)
+        to_dict = getattr(value, "to_dict", None)
+        if callable(to_dict):
+            return dict(to_dict())
+        return None
+
+    @staticmethod
+    def _closure_preference_map(value: dict[str, Any] | None) -> dict[tuple[str, str], str]:
+        preferences: dict[tuple[str, str], str] = {}
+        for row in (value or {}).get("resolved_fields") or []:
+            if not isinstance(row, dict) or row.get("source") != "producer":
+                continue
+            tool = str(row.get("tool") or "")
+            producer = str(row.get("producer") or "")
+            for field_value in (row.get("field"), row.get("field_key")):
+                key = _normalize_field_name(str(field_value or ""))
+                if tool and producer and key:
+                    preferences[(tool, key)] = producer
+        return preferences
+
+    def _preferred_closure_producer(
+        self,
+        *,
+        target_tool: str,
+        field_name: str,
+        semantic: str,
+    ) -> str:
+        for value in (semantic, field_name):
+            key = _normalize_field_name(value)
+            if key and (producer := self._closure_preferences.get((target_tool, key))):
+                return producer
+        return ""
 
     def _producer_action(self, producer_name: str) -> str:
         """Return the producer's ``ai_metadata.canonical_action`` (lowercased,

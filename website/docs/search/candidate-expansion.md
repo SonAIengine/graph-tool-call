@@ -12,6 +12,10 @@ the graph can include tools that produce that field.
 This keeps the LLM catalog compact while still giving plan synthesis enough
 tools to fill required inputs.
 
+For execution-oriented planning, prefer evidence-gated dependency completion
+after target selection. The legacy list helper remains useful for broad catalog
+expansion.
+
 ## Minimal Example
 
 ```python
@@ -27,6 +31,39 @@ expanded = expand_candidates_with_producers(
 
 If `cancelOrder` requires `orderNo` and another tool produces `orderNo`, the
 producer can be added to the candidate list before target selection or planning.
+
+## Target-Specific Dependency Closure
+
+```python
+from graph_tool_call.graphify import (
+    assemble_tool_bundle,
+    complete_target_dependencies,
+)
+
+closure = complete_target_dependencies(
+    selected_target,
+    tools_by_name,
+    graph=tool_graph,
+    available_fields={"tenant_id"},
+    max_hops=3,
+)
+
+bundle = assemble_tool_bundle(
+    query,
+    selected_target,
+    tools_by_name,
+    graph=tool_graph,
+    target_alternatives=target_shortlist,
+    token_budget=2048,
+    token_counter=tokenizer,
+)
+```
+
+The closure keeps `required_dependencies`, `optional_dependencies`, and target
+alternatives in separate roles. Field-level evidence explains every admitted
+producer. Weak name-only evidence is reported as ambiguity instead of being
+silently executed. If the target and required chain do not fit the token budget,
+the bundle returns `budget_insufficient`.
 
 ## Expansion Sources
 
@@ -77,6 +114,8 @@ Recommended defaults:
 | `max_producers_per_field` | `1` to `3` |
 | Manual edges | Use when deterministic contract evidence cannot express the relation |
 | Trace edges | Use only after promotion, not from a single observed run |
+| Required closure | Reserve before target alternatives and optional tools |
+| Schema form | Use projected schemas for selection; hydrate full schemas before execution |
 
 ## Failure Modes
 

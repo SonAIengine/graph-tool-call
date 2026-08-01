@@ -55,6 +55,7 @@ The paired run evaluates:
 - unweighted BM25+dense RRF;
 - Graph RAG-Tool Fusion Algorithm 1 using hybrid top-3 seeds and dependency DFS;
 - graph-tool-call's frozen typed/confidence-weighted graph traversal.
+- graph-tool-call B8 target-preserving evidence-gated dependency closure.
 
 Metrics are mAP, recall, nDCG, target hit, all-required coverage, and latency at
 K=10, 20, and 30.
@@ -127,6 +128,42 @@ often at K=10, but completes the full dependency set `-0.706` less often.
 
 Validated artifact: `exp-d044895ada9e083463083f6a`; full JSON SHA-256:
 `125929aa087d105bf17c79b8e01457ebef21d211cc287e5be4d9101531e433f5`.
+
+## B8 implementation candidate
+
+B8 adds a role-separated result after the same frozen retrieval surface:
+
+1. preserve a dense target shortlist;
+2. select one target without allowing dependency nodes to compete with it;
+3. complete direct required dependencies before indirect/optional dependencies;
+4. retain the remaining target alternatives as a separate surface; and
+5. emit field, path, confidence, cycle, and unresolved diagnostics.
+
+The validated 2,000-resample run over all 1,569 cases improved the previous
+typed traversal from `0.359` to `0.745` mAP@10, `0.635` to `0.869` Recall@10,
+and `0.091` to `0.567` all-required@10. Target hit also rose from `0.953` to
+`0.960`. The paired B8-minus-typed deltas were `+0.386` mAP@10
+(`95% CI +0.376 to +0.397`), `+0.234` Recall@10 (`+0.224 to +0.243`), and
+`+0.475` all-required@10 (`+0.451 to +0.502`). Target-hit non-regression was
+not statistically established because its interval was `-0.003 to +0.018`.
+
+The structured result reported target-shortlist hit `0.959`, selected-target
+accuracy `0.806`, closure recall `0.883`, and closure-complete rate `0.718`.
+This distinction matters: the flat Top-10 must divide ten slots between target
+alternatives and dependencies, while an execution adapter consumes the two
+roles separately.
+
+Flat Top-K and structured bundle metrics are both required. Flat Top-K remains
+the external parity comparison. Structured metrics report selected-target
+accuracy, target-shortlist hit, conditional closure recall, and closure-complete
+rate so a dependency-heavy result cannot hide a target miss, or vice versa.
+
+B8 remains an implementation candidate until automatic OpenAPI graph evaluation
+and the XGEN shadow gate pass. It is not yet a state-of-the-art claim and remains
+below Graph RAG-Tool Fusion's manual-graph mAP/Recall/all-required result.
+
+Validated artifact: `exp-a01dd53552226d1484ffcdaf`; full JSON SHA-256:
+`66ddbf39474bfe47c2b068775754c017e815764b0aa9eb61defd0bd491d15a9a`.
 
 ## Primary sources
 

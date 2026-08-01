@@ -39,6 +39,7 @@ from benchmarks.paper_baselines.retrievers import (
     reciprocal_rank_fusion,
 )
 from graph_tool_call.core.tool import ToolParameter, ToolSchema
+from graph_tool_call.graphify import complete_target_dependencies, select_target_candidate
 from graph_tool_call.ontology.schema import Confidence, RelationType
 from graph_tool_call.tool_graph import ToolGraph
 
@@ -52,8 +53,10 @@ PARITY_BASELINES = (
     "hybrid_rrf",
     "graph_rag_tool_fusion",
     "graph_tool_call_typed",
+    "graph_tool_call_closure",
 )
 GRTF_POLICY_REVISION = "toolinkos-grtf-algorithm-1-v1"
+DEPENDENCY_CLOSURE_BENCHMARK_POLICY = "b8-target-preserving-dependency-closure-v1"
 PARITY_METHODOLOGY = "toolinkos-paired-external-parity-v1"
 
 
@@ -199,6 +202,64 @@ def graph_rag_tool_fusion_rank(
     ]
 
 
+def graph_tool_call_closure_rank(
+    query: str,
+    seed_ranking: Sequence[RankedCandidate],
+    tools: list[ToolSchema],
+    graph: ToolGraph,
+    *,
+    target_ranking: Sequence[RankedCandidate] | None = None,
+    initial_k: int = 3,
+    target_shortlist_k: int = 4,
+    target_reserve: int = 2,
+    final_k: int = 10,
+    max_hops: int = 3,
+) -> tuple[list[RankedCandidate], dict[str, Any]]:
+    """Run B8 target selection followed by role-separated dependency closure."""
+
+    if initial_k <= 0 or final_k <= 0:
+        return [], {"reason": "empty_budget"}
+    tools_by_name = {tool.name: tool for tool in tools}
+    target_surface = list(target_ranking or seed_ranking)
+    shortlist = target_surface[: max(initial_k, target_shortlist_k)]
+    selection = select_target_candidate(
+        query,
+        [candidate.name for candidate in shortlist],
+        tools_by_name,
+        retrieval_results=[
+            {"name": candidate.name, "score": candidate.score} for candidate in shortlist
+        ],
+        llm_target=shortlist[0].name if shortlist else None,
+    )
+    target = str(selection.get("selected_target") or "")
+    closure = complete_target_dependencies(
+        target,
+        tools_by_name,
+        graph=graph,
+        max_hops=max_hops,
+    )
+    ordered = _dedupe_names(
+        [
+            target,
+            *closure.required_dependencies,
+            *(candidate.name for candidate in shortlist[:target_reserve]),
+            *closure.optional_dependencies,
+            *(candidate.name for candidate in shortlist[target_reserve:]),
+            *(candidate.name for candidate in seed_ranking),
+        ]
+    )[:final_k]
+    ranking = [
+        RankedCandidate(name=name, score=1.0 / rank) for rank, name in enumerate(ordered, start=1)
+    ]
+    return ranking, {
+        "policy_revision": DEPENDENCY_CLOSURE_BENCHMARK_POLICY,
+        "target_selector": selection,
+        "target_shortlist": [candidate.name for candidate in shortlist],
+        "target_reserve": target_reserve,
+        "dependency_closure": closure.to_dict(),
+    }
+
+
 def run_toollinkos_parity(
     dataset_root: str | Path,
     *,
@@ -272,6 +333,17 @@ def run_toollinkos_parity(
             top_k=maximum_k,
         )
         typed_ms = (time.perf_counter() - started) * 1000
+        started = time.perf_counter()
+        closure_ranking, closure_diagnostics = graph_tool_call_closure_rank(
+            raw_case["query"],
+            hybrid_ranking,
+            dataset.tools,
+            graph,
+            target_ranking=dense_ranking,
+            initial_k=initial_k,
+            final_k=maximum_k,
+        )
+        closure_ms = (time.perf_counter() - started) * 1000
 
         rankings = {
             "bm25": (bm25_ranking, bm25_ms),
@@ -284,6 +356,10 @@ def run_toollinkos_parity(
             "graph_tool_call_typed": (
                 typed_ranking,
                 bm25_ms + dense_ms + hybrid_ms + typed_ms,
+            ),
+            "graph_tool_call_closure": (
+                closure_ranking,
+                bm25_ms + dense_ms + hybrid_ms + closure_ms,
             ),
         }
         relevant = set(raw_case["relevant_tools"])
@@ -298,6 +374,20 @@ def run_toollinkos_parity(
             for name, (ranking, latency_ms) in rankings.items()
         }
         results["graph_tool_call_typed"]["diagnostics"] = typed_diagnostics
+        results["graph_tool_call_closure"]["diagnostics"] = closure_diagnostics
+        closure_payload = closure_diagnostics["dependency_closure"]
+        closure_names = {
+            closure_payload["target"],
+            *closure_payload["required_dependencies"],
+            *closure_payload["optional_dependencies"],
+        }
+        target_shortlist = set(closure_diagnostics["target_shortlist"])
+        results["graph_tool_call_closure"]["role_metrics"] = {
+            "selected_target_hit": float(closure_payload["target"] == raw_case["expected_target"]),
+            "target_shortlist_hit": float(raw_case["expected_target"] in target_shortlist),
+            "closure_recall": len(relevant.intersection(closure_names)) / len(relevant),
+            "closure_all_required": float(relevant.issubset(closure_names)),
+        }
         cases.append({**raw_case, "results": results})
 
     output = str(Path(output_path))
@@ -330,6 +420,9 @@ def run_toollinkos_parity(
             "seed_ranking": "unweighted_bm25_dense_rrf",
             "graph_rag_tool_fusion_policy_revision": GRTF_POLICY_REVISION,
             "graph_tool_call_profile": "typed_contract",
+            "graph_tool_call_closure_policy_revision": DEPENDENCY_CLOSURE_BENCHMARK_POLICY,
+            "graph_tool_call_closure_target_surface": "dense_top_4",
+            "graph_tool_call_closure_target_reserve": 2,
             "published_reference_is_not_directly_comparable": True,
             "published_reference_reason": (
                 "The paper used Azure AI Search and text-embedding-ada-002; this parity run "
@@ -457,6 +550,12 @@ def _case_metrics(
 
 
 def _summarize(cases: list[dict[str, Any]], top_k_values: tuple[int, ...]) -> dict[str, Any]:
+    if not cases:
+        return {
+            "case_count": 0,
+            "baselines": {},
+            "graph_tool_call_closure_role_metrics": {},
+        }
     metrics = [
         *(f"map_at_{top_k}" for top_k in top_k_values),
         *(f"recall_at_{top_k}" for top_k in top_k_values),
@@ -465,7 +564,7 @@ def _summarize(cases: list[dict[str, Any]], top_k_values: tuple[int, ...]) -> di
         *(f"all_required_at_{top_k}" for top_k in top_k_values),
         "latency_ms",
     ]
-    return {
+    summary = {
         "case_count": len(cases),
         "baselines": {
             baseline: {
@@ -475,6 +574,14 @@ def _summarize(cases: list[dict[str, Any]], top_k_values: tuple[int, ...]) -> di
             for baseline in PARITY_BASELINES
         },
     }
+    role_metrics = cases[0]["results"]["graph_tool_call_closure"].get("role_metrics", {})
+    summary["graph_tool_call_closure_role_metrics"] = {
+        metric: fmean(
+            case["results"]["graph_tool_call_closure"]["role_metrics"][metric] for case in cases
+        )
+        for metric in role_metrics
+    }
+    return summary
 
 
 def _paired_statistics(
@@ -496,6 +603,9 @@ def _paired_statistics(
         "grtf_minus_hybrid": ("hybrid_rrf", "graph_rag_tool_fusion"),
         "typed_minus_hybrid": ("hybrid_rrf", "graph_tool_call_typed"),
         "typed_minus_grtf": ("graph_rag_tool_fusion", "graph_tool_call_typed"),
+        "closure_minus_hybrid": ("hybrid_rrf", "graph_tool_call_closure"),
+        "closure_minus_typed": ("graph_tool_call_typed", "graph_tool_call_closure"),
+        "closure_minus_grtf": ("graph_rag_tool_fusion", "graph_tool_call_closure"),
     }
     return {
         "method": "paired_case_bootstrap",
@@ -550,6 +660,10 @@ def _append_unique(name: str, ordered: list[str], seen: set[str]) -> None:
     if name and name not in seen:
         ordered.append(name)
         seen.add(name)
+
+
+def _dedupe_names(names: Sequence[str]) -> list[str]:
+    return list(dict.fromkeys(str(name) for name in names if str(name)))
 
 
 def _read_list(path: Path) -> list[dict[str, Any]]:

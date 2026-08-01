@@ -6,7 +6,9 @@ from benchmarks.experiment.artifact import validate_artifact
 from benchmarks.external_tool_retrieval.toollinkos import (
     TOOLLINKOS_COMMIT,
     _manual_dependency_graph,
+    _summarize,
     graph_rag_tool_fusion_rank,
+    graph_tool_call_closure_rank,
     load_toollinkos,
     run_toollinkos_parity,
 )
@@ -112,6 +114,33 @@ def test_graph_rag_tool_fusion_preserves_seed_then_depth_first_dependencies():
     ]
 
 
+def test_graph_tool_call_closure_preserves_target_and_completes_dependencies(tmp_path):
+    _fixture(tmp_path)
+    dataset = load_toollinkos(tmp_path)
+    graph = _manual_dependency_graph(dataset)
+    seed_ranking = [
+        RankedCandidate(name="book_trip", score=1.0),
+        RankedCandidate(name="delete_file", score=0.5),
+    ]
+
+    ranking, diagnostics = graph_tool_call_closure_rank(
+        "book a trip",
+        seed_ranking,
+        dataset.tools,
+        graph,
+        initial_k=2,
+        final_k=4,
+    )
+
+    assert [candidate.name for candidate in ranking] == [
+        "book_trip",
+        "find_city",
+        "get_network",
+        "delete_file",
+    ]
+    assert diagnostics["dependency_closure"]["complete"] is True
+
+
 def test_load_toollinkos_normalizes_tools_dependencies_and_cases(tmp_path):
     _fixture(tmp_path)
 
@@ -175,7 +204,20 @@ def test_run_toollinkos_parity_writes_valid_paired_artifact(tmp_path):
         "hybrid_rrf",
         "graph_rag_tool_fusion",
         "graph_tool_call_typed",
+        "graph_tool_call_closure",
     }
     assert artifact.cases[0]["results"]["graph_rag_tool_fusion"]["recall_at_4"] == 1.0
+    role_metrics = artifact.summary["graph_tool_call_closure_role_metrics"]
+    assert role_metrics["selected_target_hit"] == 1.0
+    assert role_metrics["target_shortlist_hit"] == 1.0
+    assert role_metrics["closure_all_required"] == 1.0
     comparison = artifact.statistics["comparisons"]["grtf_minus_hybrid"]["recall_at_2"]
     assert comparison["mean_delta"] >= 0.0
+
+
+def test_toollinkos_summary_handles_empty_case_set():
+    assert _summarize([], (10,)) == {
+        "case_count": 0,
+        "baselines": {},
+        "graph_tool_call_closure_role_metrics": {},
+    }

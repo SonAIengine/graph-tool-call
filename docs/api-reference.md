@@ -644,6 +644,66 @@ groups = build_tool_equivalence_groups(target_candidates, graph_payload["tools"]
 
 ---
 
+## Evidence-gated dependency completion
+
+Target discovery and prerequisite completion are separate operations. Select a
+target first, then complete only that target's required data dependencies:
+
+```python
+from graph_tool_call.graphify import (
+    assemble_tool_bundle,
+    complete_target_dependencies,
+    select_target_candidate,
+)
+
+selection = select_target_candidate(query, candidates, graph_payload["tools"])
+closure = complete_target_dependencies(
+    selection["selected_target"],
+    graph_payload["tools"],
+    graph=graph_payload,
+    available_fields={"tenant_id"},
+    max_hops=3,
+)
+
+bundle = assemble_tool_bundle(
+    query,
+    selection["selected_target"],
+    graph_payload["tools"],
+    graph=graph_payload,
+    target_alternatives=selection_candidates,
+    token_budget=2048,
+    token_counter=model_tokenizer,
+)
+```
+
+`complete_target_dependencies()` returns separate required and optional tools,
+field-level evidence, alternatives, cycles, and stable unresolved reasons. It
+automatically selects producers only from manual, OpenAPI Link, promoted trace,
+or type-compatible contract evidence. Name-only edges remain diagnostic and do
+not silently alter a plan.
+
+`assemble_tool_bundle()` admits model-facing schemas by role: selected target,
+required dependencies, target alternatives, then optional dependencies. Every
+schema is a bounded required-input projection. The complete `ToolSchema` remains
+the source of truth and must be hydrated before argument generation or execution.
+If the budget cannot hold the selected target and required chain, the result is
+`closure_status="budget_insufficient"` instead of a silently incomplete bundle.
+
+Pass the closure into planning to preserve its evidence-gated producer choice:
+
+```python
+plan = PathSynthesizer(graph_payload).synthesize(
+    target=selection["selected_target"],
+    entities=entities,
+    dependency_closure=closure,
+)
+```
+
+Existing `build_candidate_set()` callers remain unchanged. Adapters can opt in
+incrementally with `use_dependency_closure=True` and `dependency_graph=...`.
+
+---
+
 ## Trace learning helpers
 
 Trace learning turns execution outcomes into collection-local evidence. It does

@@ -20,6 +20,7 @@ details.
 | Extract operation contracts | `extract_openapi_contract_index(...)` | operation contract rows with schemas and security | [IO Contracts](../build/io-contracts.md) |
 | Search a stored artifact with evidence | `ToolGraph.load(...)` plus `retrieve_graphify(...)` | response object with `results`, `subgraph_text`, `intent`, `stats` | [Tool Graph Search](../search/tool-graph-search.mdx) |
 | Select the final target | `select_target_candidate(...)` | `selected_target`, confidence, reason codes, candidate evidence | [Target Selection](../search/target-selection.md) |
+| Complete target dependencies | `complete_target_dependencies(...)` and `assemble_tool_bundle(...)` | evidence-gated closure and token-accounted role bundle | [Candidate Expansion](../search/candidate-expansion.md) |
 | Build a deterministic plan | `PathSynthesizer(...).synthesize(...)` | `Plan` with steps and synthesis metadata | [Plan Synthesis](../plan/plan-synthesis.md) |
 | Stream execution events | `PlanRunner(...).run_stream(...)` | typed runner events convertible with `asdict(event)` | [Runner Events](../plan/runner-events.md) |
 | Store trace learning evidence | `build_trace_learning_record(...)` and `derive_learning_suggestions(...)` | scrubbed attempt record and suggestions | [Trace Learning](../concepts/trace-learning.md) |
