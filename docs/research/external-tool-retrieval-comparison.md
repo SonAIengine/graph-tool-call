@@ -102,7 +102,7 @@ rows received the same complete BM25+dense RRF ranking.
 | Dense E5 | 0.224 | 0.278 | **0.985** | 0.036 |
 | Hybrid RRF | 0.206 | 0.271 | 0.968 | 0.032 |
 | Graph RAG-Tool Fusion protocol | **0.852** | **0.940** | 0.866 | **0.797** |
-| graph-tool-call typed traversal | 0.371 | 0.655 | 0.953 | 0.111 |
+| graph-tool-call typed traversal | 0.359 | 0.635 | 0.953 | 0.091 |
 
 This establishes two results. First, typed graph traversal materially improves
 dependency recall over the flat hybrid baseline. Second, the current frozen
@@ -117,6 +117,16 @@ target shortlist and a budgeted required-dependency closure, with direct/require
 edges admitted before indirect/optional edges. This must be evaluated on real
 OpenAPI contract graphs as well as ToolLinkOS so the library is not tuned to a
 fictional benchmark.
+
+The paired 2,000-resample bootstrap confirms both effects. Against hybrid RRF,
+typed traversal improves mAP@10 by `+0.153` (95% CI `+0.149` to `+0.157`) and
+Recall@10 by `+0.364` (`+0.355` to `+0.374`). Against the Graph RAG-Tool Fusion
+protocol, it trails by `-0.493` mAP@10 (`-0.504` to `-0.483`) and `-0.304`
+Recall@10 (`-0.313` to `-0.294`). It preserves the main target `+0.087` more
+often at K=10, but completes the full dependency set `-0.706` less often.
+
+Validated artifact: `exp-d044895ada9e083463083f6a`; full JSON SHA-256:
+`125929aa087d105bf17c79b8e01457ebef21d211cc287e5be4d9101531e433f5`.
 
 ## Primary sources
 
