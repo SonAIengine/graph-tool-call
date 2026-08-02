@@ -5,16 +5,17 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import tomllib
-
 from graph_tool_call import __version__
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_version_is_consistent_across_package_and_changelog() -> None:
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    package_version = pyproject["tool"]["poetry"]["version"]
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    poetry_section = pyproject.split("[tool.poetry]", 1)[1].split("\n[", 1)[0]
+    version_match = re.search(r'^version\s*=\s*"([^"]+)"', poetry_section, re.MULTILINE)
+    assert version_match is not None
+    package_version = version_match.group(1)
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
     assert package_version == __version__ == "0.36.0"
