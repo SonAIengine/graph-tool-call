@@ -4,7 +4,7 @@ xgen-workflow의 AgentXgenNode → AgentPreparer → _create_agent_graph 흐름�
 graph-tool-call을 적용해 대규모 tool set을 동적 필터링하는 3가지 패턴.
 
 사전 조건:
-    pip install "graph-tool-call[langchain]==0.19.0"
+    pip install "graph-tool-call[langchain]==0.36.0"
 
 핵심 포인트:
     - xgen-workflow는 langchain.agents.create_agent() 로 agent graph 생성
@@ -504,5 +504,5 @@ if __name__ == "__main__":
     │ 30~500개    │ 패턴 C     │ create_gateway_tools 1줄 추가     │
     └─────────────┴────────────┴──────────────────────────────────┘
 
-    pip install "graph-tool-call[langchain]==0.19.0"
+    pip install "graph-tool-call[langchain]==0.36.0"
     """)

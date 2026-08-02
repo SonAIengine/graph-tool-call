@@ -170,25 +170,21 @@ pip install graph-tool-call[langchain]
 ### 30 秒体验（无需安装）
 
 ```bash
-uvx graph-tool-call search "user authentication" \
-  --source https://petstore.swagger.io/v2/swagger.json
+uvx graph-tool-call demo dependency-chain
 ```
 
 ```text
-Query: "user authentication"
-Source: https://petstore.swagger.io/v2/swagger.json (19 tools)
-Results (5):
+Query: "Refund the order for alice@example.com"
 
-  1. getUserByName
-     Get user by user name
-  2. deleteUser
-     Delete user
-  3. createUser
-     Create user
-  4. loginUser
-     Logs user into the system
-  5. updateUser
-     Updated user
+Selected target:
+  refundOrder(order_id)
+
+Required producer:
+  findOrdersByEmail(email) -> order_id
+
+Execution order:
+  1. findOrdersByEmail
+  2. refundOrder
 ```
 
 ### Python API
@@ -442,6 +438,10 @@ graph-tool-call 验证两件事。
 * **+ embedding / + ontology**: 在 retrieve-k5 基础上添加语义检索和 LLM 本体增强
 
 模型使用 **qwen3:4b (4-bit, Ollama)**。
+
+> 此处的 qwen3:4b 表格是历史自托管结果。当前 release headline 仅使用
+> [可复现的 model-free artifact](https://github.com/SonAIengine/graph-tool-call/blob/v0.36.0/benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json)，
+> 因此这些历史数值不作为当前 release 或 leaderboard claim。
 
 ### 评价指标
 

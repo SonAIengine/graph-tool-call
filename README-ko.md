@@ -8,13 +8,13 @@
 
 <br>
 
-| | Retrieval 없음 | graph-tool-call |
+| 7-case commerce 회귀 검증 | Target only | graph-tool-call |
 |---|:---:|:---:|
-| **248 tools (K8s API)** | 12% 정확도 | **82% 정확도** |
-| **1068 tools (GitHub full API)** | context overflow | **78% Recall@5** |
-| **토큰 사용량** | 8,192 tok | **1,699 tok** (79% ↓) |
+| **필수 producer recall** | 14.3% | **100%** |
+| **후보 plan coverage** | 47.6% | **100%** |
+| **Target Recall@5** | - | **100%** |
 
-<sub>qwen3:4b (4-bit) 기준 — <a href="docs/benchmarks.md">전체 벤치마크</a></sub>
+<sub>모델을 사용하지 않는 deterministic engine benchmark. <a href="https://github.com/SonAIengine/graph-tool-call/blob/v0.36.0/benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json">Case별 원본 증거</a>와 <a href="docs/benchmarks.md">전체 방법론</a>.</sub>
 
 <br>
 
@@ -56,14 +56,14 @@
 
 LLM 에이전트는 tool이 필요하다. 하지만 tool 개수가 늘면 두 가지가 무너진다.
 
-1. **컨텍스트 오버플로** — Kubernetes API 248개 엔드포인트 = tool 정의 8,192 토큰. LLM이 막히고 정확도는 **12%**까지 떨어진다.
-2. **벡터 검색은 워크플로를 놓친다** — *"내 주문 취소해줘"*를 검색하면 `cancelOrder`가 나오지만, 실제 흐름은 `listOrders → getOrder → cancelOrder → processRefund`다. 벡터 검색은 tool 하나만 돌려주고, 정작 필요한 건 체인이다.
+1. **컨텍스트 오버플로** — 대형 catalog는 현재 요청에 필요하지 않은 tool로 모델 context를 소모한다.
+2. **Target-only 검색은 선행 도구를 놓친다** — *"주문 환불"*을 검색하면 `refundOrder`는 찾지만 이 tool에는 `order_id`가 필요하다. 실행 가능한 흐름은 그 ID를 만드는 tool부터 시작한다.
 
-**graph-tool-call**은 둘 다 해결한다. tool 관계를 그래프로 모델링하고, 하이브리드 검색(BM25 + 그래프 탐색 + 임베딩 + MCP annotation)으로 멀티스텝 워크플로를 검색하며, 토큰 사용량을 64–91% 줄이면서도 정확도를 유지하거나 개선한다.
+**graph-tool-call**은 둘 다 해결한다. tool 관계를 그래프로 모델링하고, 하이브리드 검색(BM25 + 그래프 탐색 + 임베딩 + MCP annotation)으로 멀티스텝 워크플로를 검색하며, 명시적인 planner 토큰 예산에 맞는 schema만 선별한다.
 
 | 시나리오 | Vector-only | graph-tool-call |
 |----------|------------|-----------------|
-| *"내 주문 취소"* | `cancelOrder` 반환 | `listOrders → getOrder → cancelOrder → processRefund` |
+| *"내 주문 환불"* | `refundOrder` 반환 | typed contract 근거로 `findOrdersByEmail` + `refundOrder` |
 | *"파일 읽고 저장"* | `read_file` 반환 | `read_file` + `write_file` (COMPLEMENTARY 관계) |
 | *"오래된 레코드 삭제"* | "delete" 매칭 tool 아무거나 | MCP annotation으로 destructive tool 우선 |
 | *"이제 그거 취소해"* (이전에 listing 함) | history 컨텍스트 없음 | 사용한 tool 강등, 다음 단계 tool 부스트 |
@@ -142,20 +142,22 @@ pip install graph-tool-call[all]           # 전부
 ### 30초 안에 시도 (설치 없이)
 
 ```bash
-uvx graph-tool-call search "user authentication" \
-  --source https://petstore.swagger.io/v2/swagger.json
+uvx graph-tool-call demo dependency-chain
 ```
 
 ```text
-Query: "user authentication"
-Source: https://petstore.swagger.io/v2/swagger.json (19 tools)
-Results (5):
+Query: "Refund the order for alice@example.com"
 
-  1. getUserByName  — Get user by user name
-  2. deleteUser     — Delete user
-  3. createUser     — Create user
-  4. loginUser      — Logs user into the system
-  5. updateUser     — Updated user
+Selected target:
+  refundOrder(order_id)
+
+Required producer:
+  findOrdersByEmail(email) -> order_id
+  evidence: api_contract, openapi_link
+
+Execution order:
+  1. findOrdersByEmail
+  2. refundOrder
 ```
 
 ### Python API
@@ -283,23 +285,28 @@ Anthropic도 `patch_anthropic`으로 동일하게 동작. [Middleware 가이드]
 
 ## 벤치마크
 
-두 가지 질문: (1) 검색된 부분만 LLM에 줘도 정확하게 tool을 고르는가? (2) Retriever 자체가 top K 안에 정답 tool을 넣는가?
+현재 release headline은 모델을 사용하지 않는 7-case commerce 회귀 검증을
+기준으로 한다. Target 선택 후 graph expansion이 필요한 producer를 모두
+추가하는지를 측정한다.
 
-| Dataset | Tools | Baseline acc | graph-tool-call | 토큰 절감 |
-|---|---:|---:|---:|---:|
-| Petstore | 19 | 100% | **95%** (k=5) | 64% |
-| GitHub | 50 | 100% | **88%** (k=5) | 88% |
-| Mixed MCP | 38 | 97% | **90%** (k=5) | 83% |
-| Kubernetes core/v1 | 248 | **12%** | **82%** (k=5 + ontology) | 79% |
+| Metric | Target only | Graph with producers |
+|---|---:|---:|
+| 필수 producer recall | 0.1429 | **1.0000** |
+| 후보 plan coverage | 0.4762 | **1.0000** |
+| 후보 binding support | 0.1429 | **1.0000** |
+| 불필요한 expansion case | 0 | **0** |
 
-**핵심 발견** — 248 tool에서 baseline은 컨텍스트 오버플로로 12%까지 무너지지만 graph-tool-call은 82%까지 회복한다. 작은 규모에서는 baseline 자체가 강하므로, graph-tool-call의 가치는 **정확도 손실 없이 토큰 절감**.
+[Case별 artifact](https://github.com/SonAIengine/graph-tool-call/blob/v0.36.0/benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json)에
+fixture hash, 정답 target과 producer, 후보 목록, 지표, 한계와 재현 명령이
+포함되어 있다. 과거 model-in-the-loop 결과는 전체 benchmark 문서에 남기되
+현재 release headline으로 사용하지 않는다.
 
 → 전체 결과 (pipeline / retrieval-only / competitive / 1068-scale / 200 tool LangChain agent — GPT, Claude 시리즈): **[docs/benchmarks.md](docs/benchmarks.md)**
 
 ```bash
-# 재현
-python -m benchmarks.run_benchmark                                # retrieval만
-python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b    # 전체 파이프라인
+# Release claim 재현
+make launch-evidence
+make launch-evidence-check
 ```
 
 ---

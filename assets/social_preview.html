@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>graph-tool-call social preview</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { width: 1200px; height: 630px; margin: 0; overflow: hidden; }
+      body {
+        background: #0b1020;
+        color: #f4f7fb;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        padding: 54px 68px 48px;
+      }
+      header { display: flex; align-items: center; justify-content: space-between; }
+      .brand { font: 700 30px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .version { color: #aeb8cb; font: 600 17px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      h1 { font-size: 52px; line-height: 1.08; letter-spacing: 0; margin: 48px 0 14px; max-width: 970px; }
+      .sub { color: #aeb8cb; font-size: 22px; line-height: 1.4; margin: 0; }
+      .flow { display: flex; align-items: stretch; gap: 14px; margin-top: 42px; }
+      .node {
+        border: 1px solid #34415a;
+        border-radius: 6px;
+        min-height: 116px;
+        padding: 22px 24px;
+        width: 318px;
+      }
+      .node.producer { border-color: #23b787; background: #102821; }
+      .node.target { border-color: #5c9dff; background: #10213a; }
+      .node small { color: #aeb8cb; display: block; font-size: 14px; font-weight: 700; margin-bottom: 10px; text-transform: uppercase; }
+      .node strong { font: 700 22px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .edge { color: #d8e0ee; display: flex; flex: 1; flex-direction: column; justify-content: center; text-align: center; }
+      .edge strong { color: #ffb454; font: 700 19px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .edge span { color: #71809a; font-size: 28px; margin-top: 7px; }
+      footer { align-items: flex-end; bottom: 42px; display: flex; gap: 38px; left: 68px; position: absolute; right: 68px; }
+      .metric { min-width: 210px; }
+      .metric strong { display: block; font-size: 25px; margin-bottom: 4px; }
+      .metric span { color: #8996ad; font-size: 15px; }
+      .metric .good { color: #4dd4a7; }
+      .method { color: #8996ad; font: 600 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin-left: auto; text-align: right; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">graph-tool-call</div>
+      <div class="version">v0.36</div>
+    </header>
+    <h1>Find the target. Bring the prerequisites.</h1>
+    <p class="sub">Graph-structured tool retrieval for execution-ready LLM plans.</p>
+    <section class="flow" aria-label="Dependency chain">
+      <div class="node producer">
+        <small>Required producer</small>
+        <strong>findOrdersByEmail</strong>
+      </div>
+      <div class="edge"><strong>order_id</strong><span>-></span></div>
+      <div class="node target">
+        <small>Selected target</small>
+        <strong>refundOrder</strong>
+      </div>
+    </section>
+    <footer>
+      <div class="metric"><strong>14.3% -> <span class="good">100%</span></strong><span>required-producer recall</span></div>
+      <div class="metric"><strong>47.6% -> <span class="good">100%</span></strong><span>candidate plan coverage</span></div>
+      <div class="method">7 cases<br />deterministic / model-free</div>
+    </footer>
+  </body>
+</html>

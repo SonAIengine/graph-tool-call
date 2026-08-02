@@ -21,6 +21,20 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command")
 
+    # --- demo ---
+    p_demo = sub.add_parser(
+        "demo",
+        help="Run an offline, reproducible dependency-chain demo",
+    )
+    p_demo.add_argument(
+        "scenario",
+        nargs="?",
+        choices=["dependency-chain"],
+        default="dependency-chain",
+    )
+    p_demo.add_argument("--query", help="Override the built-in demo query")
+    p_demo.add_argument("--json", action="store_true", dest="as_json", help="JSON output")
+
     # --- ingest ---
     p_ingest = sub.add_parser("ingest", help="Ingest OpenAPI spec and save graph")
     p_ingest.add_argument("source", help="OpenAPI spec URL or file path")
@@ -429,6 +443,21 @@ def cmd_ingest(args: argparse.Namespace) -> None:
 
     print(f"Ingested {len(tg.tools)} tools, {tg.graph.edge_count()} relations")
     print(f"Saved to {args.output}")
+
+
+def cmd_demo(args: argparse.Namespace) -> None:
+    from graph_tool_call.demo import (
+        DEPENDENCY_CHAIN_QUERY,
+        render_dependency_chain_demo,
+        run_dependency_chain_demo,
+    )
+
+    query = args.query or DEPENDENCY_CHAIN_QUERY
+    result = run_dependency_chain_demo(query)
+    if args.as_json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+    print(render_dependency_chain_demo(result))
 
 
 def cmd_analyze(args: argparse.Namespace) -> None:
@@ -898,6 +927,7 @@ def main() -> None:
         sys.exit(0)
 
     handlers = {
+        "demo": cmd_demo,
         "ingest": cmd_ingest,
         "analyze": cmd_analyze,
         "inspect-openapi": cmd_inspect_openapi,

@@ -18,6 +18,7 @@ graph-tool-call --help
 
 | Command | Use It For |
 | --- | --- |
+| `demo` | Run the offline target-plus-producer launch demonstration |
 | `search` | One-shot ingest plus retrieval from an OpenAPI source or graph file |
 | `ingest` | Build and save a reusable `ToolGraph` JSON file |
 | `retrieve` | Search an already-built graph |
@@ -30,6 +31,17 @@ graph-tool-call --help
 | `call` | Search and execute an OpenAPI tool through the built-in HTTP executor |
 | `serve` | Run graph-tool-call as an MCP server |
 | `proxy` | Aggregate and filter multiple MCP backends |
+
+## Run The Offline Demo
+
+The demo uses a fixed ecommerce contract and the real retrieval, target
+selection, and dependency-closure pipeline. It needs no network or optional
+dependency.
+
+```bash
+graph-tool-call demo dependency-chain
+graph-tool-call demo dependency-chain --json
+```
 
 ## Search Without A Build Step
 

@@ -40,3 +40,17 @@ jobs:
           poetry install --with dev ${{ matrix.python-version == '3.12' && '--all-extras' || '' }}
       - name: Run tests
         run: poetry run pytest -v
+
+  public-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Poetry
+        run: pip install poetry
+      - name: Build wheel and run public examples
+        run: scripts/public-smoke.sh
+      - name: Verify public benchmark evidence
+        run: poetry run python -m benchmarks.release_evidence --check
