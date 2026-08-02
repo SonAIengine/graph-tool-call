@@ -37,7 +37,10 @@ closure = complete_target_dependencies(
     selected_target,
     tools_by_name,
     graph=tool_graph,
+    query=query,
     available_fields={"tenant_id"},
+    context_field_names={"workspace_id"},
+    allow_mutation=False,
     max_hops=3,
 )
 ```
@@ -46,6 +49,18 @@ Closure는 target, required dependency, optional dependency를 별도 역할로 
 OpenAPI graph에서 consumer-aligned output promotion은 producer coverage를 높일 수 있지만,
 일치하는 모든 neighbor를 실행해도 된다는 뜻은 아닙니다. API contract edge는 required
 field별로 해석하고, 출처 없는 structural `requires` edge는 optional hint로 남깁니다.
+
+변경 dependency는 기본 차단됩니다. query의 생성·수정·삭제 의도와 adapter가 자체
+인증 및 사용자 확인 후 설정하는 `allow_mutation=True`가 모두 있어야 허용됩니다.
+둘 중 하나만으로는 부족하며, 차단된 tool은 model-facing alternative에도 노출하지
+않고 diagnostics에만 남깁니다. contract-only producer도
+`찾기/목록 -> 상세/실행` 형태의 탐색 흐름이 query에 있을 때만 자동 선택합니다.
+직접 전달된 ID, body field, scope 값은 추가 API 호출 대신 user input slot으로 남습니다.
+각 판단은 `closure.safety`, `closure.user_input_slots`, `closure.diagnostics`에서
+확인할 수 있습니다.
+
+하위 호환성을 위해 `query`를 생략한 기존 호출은 v1 admission 동작을 유지합니다.
+실행 adapter는 safety-aware admission을 위해 원본 query를 항상 전달해야 합니다.
 
 ```bash
 make paper-openapi-closure

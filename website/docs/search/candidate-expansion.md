@@ -44,7 +44,10 @@ closure = complete_target_dependencies(
     selected_target,
     tools_by_name,
     graph=tool_graph,
+    query=query,
     available_fields={"tenant_id"},
+    context_field_names={"workspace_id"},
+    allow_mutation=False,
     max_hops=3,
 )
 
@@ -56,6 +59,7 @@ bundle = assemble_tool_bundle(
     target_alternatives=target_shortlist,
     token_budget=2048,
     token_counter=tokenizer,
+    allow_mutation=False,
 )
 ```
 
@@ -64,6 +68,19 @@ alternatives in separate roles. Field-level evidence explains every admitted
 producer. Weak name-only evidence is reported as ambiguity instead of being
 silently executed. If the target and required chain do not fit the token budget,
 the bundle returns `budget_insufficient`.
+
+Mutation is deny-by-default. A matching `create`, `update`, or `delete` tool
+requires both write/delete intent in the query and `allow_mutation=True` after
+the adapter's own authorization and confirmation checks. Either signal alone is
+insufficient, and blocked tools stay out of model-facing alternatives.
+Contract-only producers also need
+a discovery-shaped query such as `find/list -> inspect/execute`; direct IDs,
+body fields, and scope values remain user-input slots instead of causing extra
+network calls. Inspect `closure.safety`, `closure.user_input_slots`, and
+`closure.diagnostics` to explain every decision.
+
+Callers that omit `query` retain the v1 admission behavior for backward
+compatibility. Execution adapters should always pass the original query.
 
 For OpenAPI graphs, consumer-aligned output promotion can improve producer
 coverage, but it is not a blanket license to execute every matching neighbor.

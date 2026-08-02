@@ -22,17 +22,21 @@ def _tool(
     consumes: list[dict] | None = None,
     produces: list[dict] | None = None,
     action: str = "read",
+    method: str | None = None,
     parameters: list[ToolParameter] | None = None,
 ) -> ToolSchema:
+    metadata = {
+        "consumes": consumes or [],
+        "produces": produces or [],
+        "ai_metadata": {"canonical_action": action},
+    }
+    if method:
+        metadata["openapi"] = {"method": method}
     return ToolSchema(
         name=name,
         description=f"{name} description",
         parameters=parameters or [],
-        metadata={
-            "consumes": consumes or [],
-            "produces": produces or [],
-            "ai_metadata": {"canonical_action": action},
-        },
+        metadata=metadata,
     )
 
 
@@ -153,7 +157,258 @@ def test_closure_prefers_read_producer_and_keeps_other_producer_as_alternative()
     result = complete_target_dependencies("getOrder", tools)
 
     assert result.required_dependencies == ["searchOrders"]
-    assert result.alternatives_by_field == {"getOrder.orderId": ["createOrder"]}
+    assert result.alternatives_by_field == {}
+    assert any(row["reason"] == "mutation_dependency_blocked" for row in result.diagnostics)
+
+
+def test_read_bundle_blocks_mutating_dependency_and_exposes_safe_input_slot():
+    tools = [
+        _tool("getSecret", consumes=[_field("secretName", "secret_name")]),
+        _tool(
+            "createSecret",
+            produces=[_field("secretName", "secret_name", required=False)],
+            action="create",
+            method="POST",
+        ),
+    ]
+
+    bundle = assemble_tool_bundle("Read the selected secret.", "getSecret", tools)
+
+    assert bundle.required_tools == []
+    assert bundle.optional_tools == []
+    assert bundle.closure_status == "incomplete"
+    assert bundle.user_input_slots == [
+        {
+            "tool": "getSecret",
+            "field": "secretName",
+            "field_key": "secret_name",
+            "reason": "mutation_not_allowed",
+            "blocked_producers": ["createSecret"],
+        }
+    ]
+    assert bundle.closure["safety"] == {
+        "allow_mutation": False,
+        "mutation_dependencies_allowed": False,
+        "query_intent": "read",
+    }
+
+
+def test_bundle_allows_mutating_dependency_only_with_explicit_opt_in():
+    tools = [
+        _tool("getSecret", consumes=[_field("secretName", "secret_name")]),
+        _tool(
+            "createSecret",
+            produces=[_field("secretName", "secret_name", required=False)],
+            action="create",
+            method="POST",
+        ),
+    ]
+
+    bundle = assemble_tool_bundle(
+        "Create a secret, then inspect it.",
+        "getSecret",
+        tools,
+        allow_mutation=True,
+    )
+
+    assert bundle.required_tools == ["createSecret"]
+    assert bundle.closure_status == "ready"
+    assert bundle.closure["safety"] == {
+        "allow_mutation": True,
+        "mutation_dependencies_allowed": True,
+        "query_intent": "write",
+    }
+
+
+def test_mutation_opt_in_does_not_override_read_only_query_intent():
+    tools = [
+        _tool("getSecret", consumes=[_field("secretName", "secret_name")]),
+        _tool(
+            "createSecret",
+            produces=[_field("secretName", "secret_name", required=False)],
+            action="create",
+            method="POST",
+        ),
+    ]
+
+    bundle = assemble_tool_bundle(
+        "Read the selected secret.",
+        "getSecret",
+        tools,
+        allow_mutation=True,
+    )
+
+    assert bundle.required_tools == []
+    assert bundle.closure["safety"] == {
+        "allow_mutation": True,
+        "mutation_dependencies_allowed": False,
+        "query_intent": "read",
+    }
+
+
+def test_scope_contract_is_user_input_instead_of_an_automatic_api_call():
+    scope_field = {
+        **_field("namespace", "namespace"),
+        "location": "path",
+        "description": "Object name and auth scope for the current request.",
+    }
+    tools = [
+        _tool("listSecrets", consumes=[scope_field]),
+        _tool(
+            "listNamespaces",
+            produces=[_field("namespace", "namespace", required=False)],
+            action="search",
+        ),
+    ]
+
+    result = complete_target_dependencies(
+        "listSecrets",
+        tools,
+        query="List secrets in a namespace.",
+    )
+
+    assert result.required_dependencies == []
+    assert result.complete is True
+    assert result.user_input_slots == [
+        {
+            "tool": "listSecrets",
+            "field": "namespace",
+            "field_key": "namespace",
+            "reason": "context_input_required",
+            "location": "path",
+        }
+    ]
+
+
+def test_generic_project_scope_description_does_not_force_context_classification():
+    field = {
+        **_field("projectId", "project_id"),
+        "description": "Identifier defining the project scope of the resource.",
+    }
+    tools = [
+        _tool("getBuild", consumes=[field]),
+        _tool(
+            "findProjects",
+            produces=[_field("projectId", "project_id", required=False)],
+            action="search",
+        ),
+    ]
+
+    result = complete_target_dependencies(
+        "getBuild",
+        tools,
+        query="Find a project and inspect its build.",
+    )
+
+    assert result.required_dependencies == ["findProjects"]
+    assert result.user_input_slots == []
+
+
+def test_post_search_semantics_are_not_treated_as_mutation():
+    tools = [
+        _tool("getOrder", consumes=[_field("orderId", "order_id")]),
+        _tool(
+            "searchOrders",
+            produces=[_field("orderId", "order_id", required=False)],
+            action="search",
+            method="POST",
+        ),
+    ]
+
+    result = complete_target_dependencies("getOrder", tools, query="Find an order.")
+
+    assert result.required_dependencies == ["searchOrders"]
+    assert result.complete is True
+
+
+def test_concrete_read_query_keeps_contract_field_as_input_instead_of_cross_resource_call():
+    tools = [
+        _tool("getPet", consumes=[_field("petId", "pet_id")]),
+        _tool(
+            "getOrder",
+            produces=[_field("petId", "pet_id", required=False)],
+            action="read",
+        ),
+    ]
+
+    result = complete_target_dependencies(
+        "getPet",
+        tools,
+        query="Get the pet with identifier 42.",
+    )
+
+    assert result.required_dependencies == []
+    assert result.complete is True
+    assert result.user_input_slots == [
+        {
+            "tool": "getPet",
+            "field": "petId",
+            "field_key": "pet_id",
+            "reason": "query_input_required",
+            "location": "",
+        }
+    ]
+
+
+def test_create_body_fields_are_inputs_without_explicit_discovery_flow():
+    tools = [
+        _tool("createPet", consumes=[_field("name", "name")], action="create"),
+        _tool(
+            "listPets",
+            produces=[_field("name", "name", required=False)],
+            action="search",
+        ),
+    ]
+
+    result = complete_target_dependencies(
+        "createPet",
+        tools,
+        query="Add a new dog to the pet store.",
+    )
+
+    assert result.required_dependencies == []
+    assert result.complete is True
+    assert result.user_input_slots[0]["reason"] == "query_input_required"
+
+
+def test_listing_noun_does_not_count_as_an_explicit_discovery_command():
+    tools = [
+        _tool("getListing", consumes=[_field("listingId", "listing_id")]),
+        _tool(
+            "searchListings",
+            produces=[_field("listingId", "listing_id", required=False)],
+            action="search",
+        ),
+    ]
+
+    result = complete_target_dependencies(
+        "getListing",
+        tools,
+        query="Get the listing details for identifier 42.",
+    )
+
+    assert result.required_dependencies == []
+    assert result.user_input_slots[0]["reason"] == "query_input_required"
+
+
+def test_omitted_query_keeps_v1_contract_admission_for_backward_compatibility():
+    tools = [
+        _tool("getOrder", consumes=[_field("orderId", "order_id")]),
+        _tool(
+            "searchOrders",
+            produces=[_field("orderId", "order_id", required=False)],
+            action="search",
+        ),
+    ]
+
+    result = complete_target_dependencies("getOrder", tools)
+
+    assert result.required_dependencies == ["searchOrders"]
+    assert result.safety == {
+        "allow_mutation": False,
+        "mutation_dependencies_allowed": False,
+        "query_intent": "unknown",
+    }
 
 
 def test_name_only_graph_evidence_is_optional_not_auto_selected():
@@ -250,6 +505,32 @@ def test_manual_requires_edge_remains_auto_selectable():
     assert result.required_dependencies == ["manualProducer"]
 
 
+def test_blocked_mutating_graph_hint_is_diagnostic_not_an_unresolved_contract():
+    tools = [_tool("target"), _tool("createResource", action="create", method="POST")]
+    graph = {"target": ["createResource"]}
+
+    result = complete_target_dependencies(
+        "target",
+        tools,
+        graph=graph,
+        query="Inspect the resource.",
+    )
+
+    assert result.required_dependencies == []
+    assert result.unresolved_fields == []
+    assert result.complete is True
+    assert result.diagnostics == [
+        {
+            "reason": "mutation_dependency_blocked",
+            "consumer": "target",
+            "producer": "createResource",
+            "field_key": "__graph__",
+            "query_intent": "read",
+            "evidence_tier": 1,
+        }
+    ]
+
+
 def test_contract_graph_evidence_is_scoped_to_its_required_field():
     tools = [
         _tool(
@@ -280,6 +561,44 @@ def test_contract_graph_evidence_is_scoped_to_its_required_field():
 
     assert result.required_dependencies == ["findCustomer", "findOrder"]
     assert result.complete is True
+
+
+def test_structural_merge_does_not_bypass_query_conditioned_contract_admission():
+    tools = [
+        _tool("deleteService", consumes=[_field("name", "service_name")], action="delete"),
+        _tool(
+            "listServices",
+            produces=[_field("name", "service_name", required=False)],
+            action="search",
+        ),
+    ]
+    graph = {
+        "edges": [
+            {
+                "source": "deleteService",
+                "target": "listServices",
+                "relation": "requires",
+                "confidence": "EXTRACTED",
+                "conf_score": 0.95,
+                "evidence_sources": ["api_contract", "structural"],
+                "data_flow": {
+                    "to_field": "name",
+                    "semantic_tag": "service_name",
+                },
+            }
+        ]
+    }
+
+    result = complete_target_dependencies(
+        "deleteService",
+        tools,
+        graph=graph,
+        query="Delete service alpha.",
+    )
+
+    assert result.required_dependencies == []
+    assert result.complete is True
+    assert result.user_input_slots[0]["reason"] == "query_input_required"
 
 
 def test_explicit_openapi_link_is_not_suppressed_when_merged_with_contract_evidence():
@@ -349,7 +668,7 @@ def test_bundle_reserves_budget_for_target_and_required_dependencies():
     ]
     counter = CharacterCounter()
     full = assemble_tool_bundle(
-        "order detail",
+        "Find an order and inspect its details.",
         "getOrder",
         tools,
         target_alternatives=["otherTarget"],
@@ -368,7 +687,7 @@ def test_bundle_reserves_budget_for_target_and_required_dependencies():
     )
 
     bundle = assemble_tool_bundle(
-        "order detail",
+        "Find an order and inspect its details.",
         "getOrder",
         tools,
         target_alternatives=["otherTarget"],
@@ -469,6 +788,57 @@ def test_candidate_set_can_opt_into_target_preserving_dependency_closure():
     assert result["producer_candidates"] == ["producer"]
     assert result["dependency_closure_applied"] is True
     assert result["dependency_closure"]["complete"] is True
+
+
+def test_candidate_set_keeps_mutating_dependency_out_without_explicit_opt_in():
+    tools = {
+        "target": _tool("target", consumes=[_field("id", "resource_id")]).to_dict(),
+        "createResource": _tool(
+            "createResource",
+            produces=[_field("id", "resource_id", required=False)],
+            action="create",
+            method="POST",
+        ).to_dict(),
+    }
+
+    result = build_candidate_set(
+        ["target"],
+        tools,
+        expansion_seed=["target"],
+        use_dependency_closure=True,
+        query="Read the resource.",
+    )
+
+    assert result["candidates"] == ["target"]
+    assert result["dependency_closure"]["safety"]["query_intent"] == "read"
+    assert result["dependency_closure"]["unresolved_fields"][0]["reason"] == (
+        "mutation_not_allowed"
+    )
+
+
+def test_candidate_set_propagates_context_field_names_to_dependency_closure():
+    tools = {
+        "target": _tool("target", consumes=[_field("workspaceId", "workspace_id")]).to_dict(),
+        "listWorkspaces": _tool(
+            "listWorkspaces",
+            produces=[_field("workspaceId", "workspace_id", required=False)],
+            action="search",
+        ).to_dict(),
+    }
+
+    result = build_candidate_set(
+        ["target"],
+        tools,
+        expansion_seed=["target"],
+        use_dependency_closure=True,
+        query="Find a workspace and inspect the target.",
+        context_field_names={"workspace_id"},
+    )
+
+    assert result["candidates"] == ["target"]
+    assert result["dependency_closure"]["user_input_slots"][0]["reason"] == (
+        "context_input_required"
+    )
 
 
 def test_path_synthesizer_honors_evidence_gated_closure_preference():

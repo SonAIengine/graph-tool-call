@@ -231,6 +231,9 @@ def build_candidate_set(
     use_dependency_closure: bool = False,
     dependency_graph: Any | None = None,
     available_fields: set[str] | list[str] | tuple[str, ...] | None = None,
+    query: str | None = None,
+    allow_mutation: bool = False,
+    context_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Build a structured target/producers candidate set.
 
@@ -277,6 +280,9 @@ def build_candidate_set(
             available_fields=available_fields,
             max_hops=max_hops,
             max_alternatives_per_field=max_producers_per_field,
+            query=query,
+            allow_mutation=allow_mutation,
+            context_field_names=context_field_names,
         )
         candidates = _dedupe_names(
             [

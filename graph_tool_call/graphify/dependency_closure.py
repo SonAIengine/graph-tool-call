@@ -17,9 +17,10 @@ from graph_tool_call.graphify.edges import (
     EVIDENCE_PROVEN,
     EVIDENCE_RUN,
 )
+from graph_tool_call.retrieval.intent import classify_intent
 
-DEPENDENCY_CLOSURE_POLICY_REVISION = "evidence-gated-dependency-closure-v1"
-TOOL_BUNDLE_POLICY_REVISION = "role-budgeted-contract-bundle-v1"
+DEPENDENCY_CLOSURE_POLICY_REVISION = "safety-aware-dependency-closure-v2"
+TOOL_BUNDLE_POLICY_REVISION = "safety-aware-contract-bundle-v2"
 _AUTO_EVIDENCE = frozenset(
     {
         EVIDENCE_API_CONTRACT,
@@ -30,7 +31,25 @@ _AUTO_EVIDENCE = frozenset(
     }
 )
 _MUTATING_ACTIONS = frozenset({"create", "update", "delete", "action", "mutation"})
+_READ_ONLY_ACTIONS = frozenset({"read", "search"})
 _DATA_KINDS = frozenset({"", "data"})
+_SAFE_HTTP_METHODS = frozenset({"get", "head", "options"})
+_MUTATING_HTTP_METHODS = frozenset({"post", "put", "patch", "delete"})
+_CONTEXT_SCOPE_PATTERN = re.compile(
+    r"\b(?:auth(?:entication|orization)?|request)\s+scope\b",
+    re.IGNORECASE,
+)
+_ENGLISH_DISCOVERY_TERMS = frozenset(
+    {
+        "search",
+        "find",
+        "lookup",
+        "list",
+        "browse",
+        "select",
+    }
+)
+_KOREAN_DISCOVERY_STEMS = frozenset({"검색", "찾", "목록", "리스트", "선택"})
 
 
 class TokenCounter(Protocol):
@@ -53,6 +72,8 @@ class DependencyClosureResult:
     dependency_paths: list[dict[str, Any]] = field(default_factory=list)
     cycles: list[list[str]] = field(default_factory=list)
     evidence: list[dict[str, Any]] = field(default_factory=list)
+    user_input_slots: list[dict[str, Any]] = field(default_factory=list)
+    safety: dict[str, Any] = field(default_factory=dict)
     diagnostics: list[dict[str, Any]] = field(default_factory=list)
     policy_revision: str = DEPENDENCY_CLOSURE_POLICY_REVISION
 
@@ -111,12 +132,18 @@ def complete_target_dependencies(
     max_alternatives_per_field: int = 2,
     policy: str = "evidence_gated",
     learning_suggestions: list[dict[str, Any]] | None = None,
+    query: str | None = None,
+    allow_mutation: bool = False,
+    context_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
 ) -> DependencyClosureResult:
     """Complete required producer paths after a target has been selected.
 
     The target never competes with its dependencies. Strong graph/contract
     evidence may select a producer automatically; name-only evidence is kept as
     an explainable alternative and never silently changes the plan surface.
+    Mutating dependencies require explicit opt-in even when the query contains
+    write intent. Scope-like context fields become user input slots instead of
+    triggering an unrelated discovery API.
     """
 
     if policy != "evidence_gated":
@@ -127,14 +154,25 @@ def complete_target_dependencies(
         raise ValueError("max_alternatives_per_field must be non-negative.")
 
     tools_by_name = _normalize_tools(tools)
+    safety = {
+        "allow_mutation": bool(allow_mutation),
+        "query_intent": _query_intent_label(query),
+    }
+    safety["mutation_dependencies_allowed"] = bool(allow_mutation) and (
+        query is None or safety["query_intent"] in {"write", "delete"}
+    )
     if target not in tools_by_name:
         return DependencyClosureResult(
             target=target,
             unresolved_fields=[{"tool": target, "reason": "unknown_target"}],
+            safety=safety,
             diagnostics=[{"reason": "unknown_target", "tool": target}],
         )
 
     available = {_field_key(value) for value in (available_fields or []) if _field_key(value)}
+    context_fields = {
+        _field_key(value) for value in (context_field_names or []) if _field_key(value)
+    }
     required: list[str] = []
     optional: list[str] = []
     alternatives: dict[str, list[str]] = {}
@@ -143,9 +181,14 @@ def complete_target_dependencies(
     paths: list[dict[str, Any]] = []
     cycles: list[list[str]] = []
     evidence: list[dict[str, Any]] = []
+    user_input_slots: list[dict[str, Any]] = []
     diagnostics: list[dict[str, Any]] = []
     selected = {target}
     learning = _promoted_learning_preferences(learning_suggestions or [])
+    query_requests_discovery = _query_requests_dependency_discovery(
+        query,
+        tools_by_name[target],
+    )
 
     def visit(tool_name: str, depth: int, ancestry: list[str]) -> None:
         if depth > max_hops:
@@ -158,7 +201,16 @@ def complete_target_dependencies(
             # _contract_producer_candidates below so only one producer is chosen
             # for a concrete required field instead of admitting every matching
             # graph neighbor.
-            if set(candidate.evidence_sources) == {EVIDENCE_API_CONTRACT}:
+            if _is_field_scoped_contract_candidate(candidate):
+                continue
+            if candidate.mutating and not safety["mutation_dependencies_allowed"]:
+                _record_blocked_mutation(
+                    diagnostics,
+                    candidate,
+                    consumer=tool_name,
+                    field_key="__graph__",
+                    query_intent=safety["query_intent"],
+                )
                 continue
             if not candidate.auto_selectable:
                 if candidate.name not in optional and candidate.name not in selected:
@@ -186,6 +238,17 @@ def complete_target_dependencies(
                     }
                 )
                 continue
+            if _is_context_input(consume, context_fields):
+                user_input_slots.append(
+                    {
+                        "tool": tool_name,
+                        "field": label,
+                        "field_key": key,
+                        "reason": "context_input_required",
+                        "location": str(consume.get("location") or ""),
+                    }
+                )
+                continue
             candidates = _contract_producer_candidates(
                 tool_name,
                 consume,
@@ -193,26 +256,101 @@ def complete_target_dependencies(
                 graph=graph,
                 learning=learning,
             )
-            auto = [candidate for candidate in candidates if candidate.auto_selectable]
-            weak = [candidate for candidate in candidates if not candidate.auto_selectable]
+            blocked = [
+                candidate
+                for candidate in candidates
+                if candidate.mutating
+                and not safety["mutation_dependencies_allowed"]
+                and candidate.auto_selectable
+            ]
+            for candidate in blocked:
+                _record_blocked_mutation(
+                    diagnostics,
+                    candidate,
+                    consumer=tool_name,
+                    field_key=key,
+                    query_intent=safety["query_intent"],
+                )
+            safe_candidates = [
+                candidate
+                for candidate in candidates
+                if safety["mutation_dependencies_allowed"] or not candidate.mutating
+            ]
+            auto = [candidate for candidate in safe_candidates if candidate.auto_selectable]
+            weak = [candidate for candidate in safe_candidates if not candidate.auto_selectable]
             alternative_names = [candidate.name for candidate in [*auto[1:], *weak]][
                 :max_alternatives_per_field
             ]
             if alternative_names:
                 alternatives[f"{tool_name}.{label}"] = alternative_names
-            if not auto:
-                reason = "ambiguous_producer" if candidates else "no_producer"
-                unresolved.append(
-                    {
+            explicit_auto = [
+                candidate for candidate in auto if _has_explicit_dependency_evidence(candidate)
+            ]
+            explicitly_allowed_mutations = [
+                candidate
+                for candidate in auto
+                if safety["mutation_dependencies_allowed"] and candidate.mutating
+            ]
+            if (
+                query is not None
+                and not query_requests_discovery
+                and not explicit_auto
+                and not explicitly_allowed_mutations
+            ):
+                if blocked and not safe_candidates:
+                    row = {
                         "tool": tool_name,
                         "field": label,
                         "field_key": key,
-                        "reason": reason,
+                        "reason": "mutation_not_allowed",
+                        "blocked_producers": [candidate.name for candidate in blocked],
+                    }
+                    unresolved.append(dict(row))
+                else:
+                    row = {
+                        "tool": tool_name,
+                        "field": label,
+                        "field_key": key,
+                        "reason": "query_input_required",
+                        "location": str(consume.get("location") or ""),
+                    }
+                    diagnostics.append(
+                        {
+                            "reason": "producer_not_requested_by_query",
+                            "consumer": tool_name,
+                            "field_key": key,
+                            "producer_candidates": [candidate.name for candidate in auto],
+                        }
+                    )
+                user_input_slots.append(dict(row))
+                continue
+            if not auto:
+                if blocked and not safe_candidates:
+                    row = {
+                        "tool": tool_name,
+                        "field": label,
+                        "field_key": key,
+                        "reason": "mutation_not_allowed",
+                        "blocked_producers": [candidate.name for candidate in blocked],
+                    }
+                    user_input_slots.append(dict(row))
+                else:
+                    row = {
+                        "tool": tool_name,
+                        "field": label,
+                        "field_key": key,
+                        "reason": "ambiguous_producer" if safe_candidates else "no_producer",
                         "alternatives": alternative_names,
                     }
-                )
+                unresolved.append(row)
                 continue
-            chosen = auto[0]
+            chosen = (
+                explicit_auto[0]
+                if explicit_auto
+                else explicitly_allowed_mutations[0]
+                if explicitly_allowed_mutations
+                else auto[0]
+            )
             resolved.append(
                 {
                     "tool": tool_name,
@@ -301,6 +439,8 @@ def complete_target_dependencies(
         dependency_paths=paths,
         cycles=cycles,
         evidence=evidence,
+        user_input_slots=_dedupe_dicts(user_input_slots),
+        safety=safety,
         diagnostics=_dedupe_dicts(diagnostics),
     )
 
@@ -318,10 +458,11 @@ def assemble_tool_bundle(
     token_budget: int | None = None,
     token_counter: TokenCounter | Any | None = None,
     learning_suggestions: list[dict[str, Any]] | None = None,
+    allow_mutation: bool = False,
+    context_field_names: set[str] | list[str] | tuple[str, ...] | None = None,
 ) -> ToolBundle:
     """Build a target-first, dependency-closed model-facing tool bundle."""
 
-    del query  # Reserved for future query-conditioned admission without changing the contract.
     tools_by_name = _normalize_tools(tools)
     closure = complete_target_dependencies(
         target,
@@ -331,6 +472,9 @@ def assemble_tool_bundle(
         max_hops=max_hops,
         max_alternatives_per_field=max_alternatives_per_field,
         learning_suggestions=learning_suggestions,
+        query=query,
+        allow_mutation=allow_mutation,
+        context_field_names=context_field_names,
     )
     alternatives = [
         name
@@ -372,11 +516,17 @@ def assemble_tool_bundle(
         status = "cycle"
     elif closure.unresolved_fields:
         status = "incomplete"
-    user_slots = [
-        row
-        for row in closure.unresolved_fields
-        if row.get("reason") in {"no_producer", "ambiguous_producer"}
-    ]
+    user_slots = _dedupe_dicts(
+        [
+            *closure.user_input_slots,
+            *[
+                row
+                for row in closure.unresolved_fields
+                if row.get("reason")
+                in {"no_producer", "ambiguous_producer", "mutation_not_allowed"}
+            ],
+        ]
+    )
     return ToolBundle(
         target=target,
         target_alternatives=alternatives,
@@ -766,17 +916,109 @@ def _field_key(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", "_", spaced.lower()).strip("_")
 
 
+def _query_intent_label(query: str | None) -> str:
+    if not query:
+        return "unknown"
+    intent = classify_intent(query)
+    if intent.delete_intent > 0 and intent.delete_intent >= max(
+        intent.read_intent,
+        intent.write_intent,
+    ):
+        return "delete"
+    if intent.write_intent > 0 and intent.write_intent >= intent.read_intent:
+        return "write"
+    if intent.read_intent > 0:
+        return "read"
+    return "unknown"
+
+
+def _query_requests_dependency_discovery(query: str | None, target: dict[str, Any]) -> bool:
+    if query is None:
+        return True
+    terms = {token for token in re.findall(r"[a-z0-9_]+|[가-힣]+", query.lower()) if token}
+    discovery_hits = {marker for marker in _ENGLISH_DISCOVERY_TERMS if marker in terms} | {
+        marker
+        for marker in _KOREAN_DISCOVERY_STEMS
+        if any(token.startswith(marker) for token in terms)
+    }
+    if not discovery_hits:
+        return False
+    metadata = target.get("metadata") if isinstance(target.get("metadata"), dict) else {}
+    ai = metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
+    target_action = str(ai.get("canonical_action") or "").lower()
+    if target_action != "search":
+        return True
+    return len(discovery_hits) >= 2
+
+
+def _has_explicit_dependency_evidence(candidate: _ProducerCandidate) -> bool:
+    return bool(
+        set(candidate.evidence_sources).intersection(
+            {EVIDENCE_MANUAL, EVIDENCE_OPENAPI_LINK, EVIDENCE_PROVEN, EVIDENCE_RUN}
+        )
+    )
+
+
+def _is_field_scoped_contract_candidate(candidate: _ProducerCandidate) -> bool:
+    sources = set(candidate.evidence_sources)
+    return EVIDENCE_API_CONTRACT in sources and not sources.intersection(
+        {EVIDENCE_MANUAL, EVIDENCE_OPENAPI_LINK, EVIDENCE_PROVEN, EVIDENCE_RUN}
+    )
+
+
+def _is_context_input(consume: dict[str, Any], context_fields: set[str]) -> bool:
+    kind = str(consume.get("kind") or "data").strip().lower()
+    if kind == "context":
+        return True
+    if str(consume.get("location") or "").strip().lower() in {"header", "cookie"}:
+        return True
+    keys = {
+        _field_key(consume.get("field_name")),
+        _field_key(consume.get("semantic_tag")),
+    }
+    if context_fields.intersection(keys):
+        return True
+    return bool(_CONTEXT_SCOPE_PATTERN.search(str(consume.get("description") or "")))
+
+
+def _record_blocked_mutation(
+    diagnostics: list[dict[str, Any]],
+    candidate: _ProducerCandidate,
+    *,
+    consumer: str,
+    field_key: str,
+    query_intent: str,
+) -> None:
+    diagnostics.append(
+        {
+            "reason": "mutation_dependency_blocked",
+            "consumer": consumer,
+            "producer": candidate.name,
+            "field_key": field_key,
+            "query_intent": query_intent,
+            "evidence_tier": candidate.tier,
+        }
+    )
+
+
 def _is_mutating(tool: dict[str, Any]) -> bool:
     metadata = tool.get("metadata") if isinstance(tool.get("metadata"), dict) else {}
     ai = metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
+    openapi = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
     action = str(ai.get("canonical_action") or "").lower()
-    method = str(metadata.get("method") or "").lower()
+    method = str(metadata.get("method") or openapi.get("method") or "").lower()
     annotations = tool.get("annotations") if isinstance(tool.get("annotations"), dict) else {}
-    return (
-        action in _MUTATING_ACTIONS
-        or method in {"post", "put", "patch", "delete"}
-        or bool(annotations.get("destructive_hint"))
-    )
+    destructive = bool(annotations.get("destructive_hint") or annotations.get("destructiveHint"))
+    read_only = bool(annotations.get("read_only_hint") or annotations.get("readOnlyHint"))
+    if destructive:
+        return True
+    if read_only or action in _READ_ONLY_ACTIONS:
+        return False
+    if action in _MUTATING_ACTIONS:
+        return True
+    if method in _SAFE_HTTP_METHODS:
+        return False
+    return method in _MUTATING_HTTP_METHODS
 
 
 def _promoted_learning_preferences(suggestions: list[dict[str, Any]]) -> set[tuple[str, str]]:
