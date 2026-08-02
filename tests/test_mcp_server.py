@@ -38,6 +38,36 @@ class TestCreateMcpServer:
         app = create_mcp_server(graph_file=str(graph_path))
         assert app is not None
 
+    @pytest.mark.asyncio
+    async def test_http_health_and_readiness_routes(self):
+        from graph_tool_call.mcp_server import create_mcp_server
+
+        app = create_mcp_server()
+        routes = {route.path: route for route in app._custom_starlette_routes}
+
+        health = await routes["/healthz"].endpoint(None)
+        ready = await routes["/readyz"].endpoint(None)
+
+        assert health.status_code == 200
+        assert health.body == b'{"status":"ok"}'
+        assert ready.status_code == 200
+        assert b'"status":"ready"' in ready.body
+        assert b'"catalog_ready":false' in ready.body
+        assert b'"startup_error_count":0' in ready.body
+
+    @pytest.mark.asyncio
+    async def test_readiness_fails_when_configured_catalog_does_not_load(self, tmp_path):
+        from graph_tool_call.mcp_server import create_mcp_server
+
+        app = create_mcp_server(sources=[str(tmp_path / "missing-openapi.json")])
+        routes = {route.path: route for route in app._custom_starlette_routes}
+
+        ready = await routes["/readyz"].endpoint(None)
+
+        assert ready.status_code == 503
+        assert b'"status":"not_ready"' in ready.body
+        assert b'"startup_error_count":1' in ready.body
+
 
 class TestMcpServerTools:
     """Test that the MCP server exposes the expected tools."""

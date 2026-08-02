@@ -10,6 +10,7 @@ import pytest
 from graph_tool_call import ToolGraph
 from graph_tool_call.middleware import (
     _extract_query_from_messages,
+    _extract_query_from_openai_input,
     patch_anthropic,
     patch_openai,
     unpatch_anthropic,
@@ -17,11 +18,12 @@ from graph_tool_call.middleware import (
 )
 
 
-def _make_openai_client(create_fn=None):
+def _make_openai_client(create_fn=None, responses_fn=None):
     """Build a fake OpenAI client using SimpleNamespace (no auto-attr like MagicMock)."""
     completions = SimpleNamespace(create=create_fn or (lambda **kw: MagicMock()))
     chat = SimpleNamespace(completions=completions)
-    return SimpleNamespace(chat=chat)
+    responses = SimpleNamespace(create=responses_fn or (lambda **kw: MagicMock()))
+    return SimpleNamespace(chat=chat, responses=responses)
 
 
 def _make_anthropic_client(create_fn=None):
@@ -171,6 +173,27 @@ class TestExtractQuery:
         ]
         assert _extract_query_from_messages(msgs) == "manage orders"
 
+    def test_openai_responses_string_input(self):
+        assert _extract_query_from_openai_input("delete user") == "delete user"
+
+    def test_openai_responses_message_input(self):
+        value = [{"role": "user", "content": "list customer orders"}]
+        assert _extract_query_from_openai_input(value) == "list customer orders"
+
+    def test_openai_responses_input_text_content(self):
+        value = [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "refund an order"}],
+            }
+        ]
+        assert _extract_query_from_openai_input(value) == "refund an order"
+
+    def test_openai_responses_direct_input_text(self):
+        value = [{"type": "input_text", "text": "delete a user"}]
+        assert _extract_query_from_openai_input(value) == "delete a user"
+
 
 # --- Patch/unpatch tests ---
 
@@ -204,6 +227,39 @@ class TestPatchOpenAI:
 
         # Should have filtered to top_k=2
         assert len(call_record["tools"]) <= 2
+
+    def test_responses_api_filters_tools_and_preserves_hosted_tools(self, tool_graph):
+        call_record = {}
+
+        def fake_responses_create(*args, **kwargs):
+            call_record["tools"] = kwargs.get("tools", [])
+            return MagicMock()
+
+        client = _make_openai_client(responses_fn=fake_responses_create)
+        patch_openai(client, graph=tool_graph, top_k=1)
+
+        hosted_tool = {"type": "web_search"}
+        client.responses.create(
+            model="gpt-5",
+            tools=[hosted_tool, *OPENAI_TOOLS],
+            input="delete a user account",
+        )
+
+        assert hosted_tool in call_record["tools"]
+        function_tools = [tool for tool in call_record["tools"] if tool.get("function")]
+        assert len(function_tools) == 1
+        assert function_tools[0]["function"]["name"] == "deleteUser"
+
+    def test_unpatch_restores_chat_and_responses(self, tool_graph):
+        client = _make_openai_client()
+        original_chat = client.chat.completions.create
+        original_responses = client.responses.create
+
+        patch_openai(client, graph=tool_graph)
+        unpatch_openai(client)
+
+        assert client.chat.completions.create is original_chat
+        assert client.responses.create is original_responses
 
     def test_skips_small_tool_list(self, tool_graph):
         call_record = {}

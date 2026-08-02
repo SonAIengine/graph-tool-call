@@ -4,13 +4,32 @@
 pip install graph-tool-call[langchain] langgraph
 ```
 
-Three integration patterns — pick the one that fits your architecture.
+Four integration patterns — pick the one that fits your architecture.
 
 | Pattern | Best for | How it works |
 |---|---|---|
+| **LangChain v1 middleware** | Current `create_agent` applications | Filters pre-registered tools per model call |
 | **Gateway** | 50+ tools, existing agents | LLM explicitly searches → calls |
 | **Auto-filter** | New agents, simple setup | Transparent per-turn tool swap |
 | **Manual** | Full control | You call `filter_tools()` yourself |
+
+---
+
+## 0. LangChain v1 Middleware (recommended current integration)
+
+```python
+from langchain.agents import create_agent
+from graph_tool_call.langchain import create_tool_selection_middleware
+
+agent = create_agent(
+    llm,
+    tools=all_tools,
+    middleware=[create_tool_selection_middleware(all_tools, top_k=5)],
+)
+```
+
+The middleware intersects retrieval results with tools still allowed on the
+request, so an earlier permission or runtime-context middleware is preserved.
 
 ---
 

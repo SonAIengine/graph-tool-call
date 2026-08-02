@@ -46,16 +46,18 @@ graph.add_tools(openai_tools)
 
 patch_openai(client, graph=graph, top_k=5, min_tools=10)
 
-response = client.chat.completions.create(
-    model="gpt-4o",
+response = client.responses.create(
+    model="gpt-5",
     tools=openai_tools,
-    messages=[{"role": "user", "content": "delete a user account"}],
+    input="delete a user account",
 )
 
 unpatch_openai(client)
 ```
 
 `min_tools`는 작은 catalog에서 불필요하게 filtering하지 않도록 합니다.
+같은 patch가 기존 `client.chat.completions.create`도 함께 지원합니다. Responses의
+`web_search` 같은 hosted tool은 유지하고 이름이 있는 function tool만 검색해 줄입니다.
 
 ## Anthropic Client Patch
 

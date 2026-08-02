@@ -261,8 +261,10 @@ graph-tool-call ships several integration patterns. Pick the one that matches yo
 |---|---|:---:|---|
 | Claude Code / Cursor / Windsurf | **MCP Proxy** (aggregate N MCP servers → 3 meta-tools) | ~1,200 tok/turn | [docs/integrations/mcp-proxy.md](docs/integrations/mcp-proxy.md) |
 | Any MCP-compatible client | **MCP Server** (single source as MCP) | varies | [docs/integrations/mcp-server.md](docs/integrations/mcp-server.md) |
-| LangChain / LangGraph (50+ tools) | **Gateway tools** (N tools → 2 meta-tools) | **92%** | [docs/integrations/langchain.md](docs/integrations/langchain.md) |
-| OpenAI / Anthropic SDK (existing code) | **Middleware** (1-line monkey-patch) | 76–91% | [docs/integrations/middleware.md](docs/integrations/middleware.md) |
+| LangChain v1 / LangGraph (50+ tools) | **Model-call middleware or gateway tools** | **92%** | [docs/integrations/langchain.md](docs/integrations/langchain.md) |
+| OpenAI Responses / Chat / Anthropic SDK | **Middleware** (1-line patch) | 76–91% | [docs/integrations/middleware.md](docs/integrations/middleware.md) |
+| OpenAI Agents / PydanticAI / Google ADK | **Remote MCP server** | varies | [compatibility matrix](https://sonaiengine.github.io/graph-tool-call/docs/integrations/ecosystem-compatibility) |
+| Docker / Kubernetes / AWS / Azure | **Private Streamable HTTP MCP service** | varies | [deployment guide](https://sonaiengine.github.io/graph-tool-call/docs/integrations/deployment) |
 | Direct control over retrieval | **Python API** (`retrieve()` + format adapter) | varies | [docs/integrations/direct-api.md](docs/integrations/direct-api.md) |
 
 ### MCP Proxy (most common)
@@ -300,14 +302,15 @@ from graph_tool_call.middleware import patch_openai
 patch_openai(client, graph=tg, top_k=5)  # ← add this one line
 
 # Existing code unchanged — 248 tools go in, only 5 relevant ones are sent
-response = client.chat.completions.create(
-    model="gpt-4o",
+response = client.responses.create(
+    model="gpt-5",
     tools=all_248_tools,
-    messages=messages,
+    input="delete a user account",
 )
 ```
 
-Also works with Anthropic via `patch_anthropic`. See [Middleware guide](docs/integrations/middleware.md).
+The patch also covers Chat Completions; Anthropic uses `patch_anthropic`. See
+[Middleware guide](docs/integrations/middleware.md).
 
 ---
 

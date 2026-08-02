@@ -38,7 +38,27 @@ def tools_for_turn(user_query: str):
 
 The underlying `toolkit.graph` can be inspected, saved, or reused in tests.
 
-## LangGraph Agent
+## LangChain v1 Middleware
+
+Use the official model-call middleware extension point:
+
+```python
+from langchain.agents import create_agent
+from graph_tool_call.langchain import create_tool_selection_middleware
+
+selection = create_tool_selection_middleware(langchain_tools, top_k=5)
+agent = create_agent(
+    model,
+    tools=langchain_tools,
+    middleware=[selection],
+)
+```
+
+The middleware filters pre-registered tools before each model call. It only
+intersects with tools still available on the request, so an earlier permission
+or feature-flag middleware cannot be bypassed.
+
+## Legacy LangGraph Agent
 
 For LangGraph ReAct agents:
 
@@ -80,6 +100,7 @@ execute the selected downstream tool according to its own policy.
 | --- | --- | --- |
 | `filter_tools()` | one-shot filtering before an agent call | rebuilds unless a graph is provided |
 | `GraphToolkit` | same catalog reused across many turns | simple and explicit |
+| LangChain v1 middleware | `create_agent` should filter every model turn | recommended current integration |
 | `create_agent()` | LangGraph ReAct flow should filter per turn | framework-specific |
 | gateway tools | model should call search explicitly | requires extra tool-call step |
 
@@ -103,7 +124,7 @@ execute the selected downstream tool according to its own policy.
 ## Validation
 
 ```bash
-poetry run pytest tests/test_langchain_toolkit.py tests/test_langchain_agent.py -q
+poetry run pytest tests/test_langchain_toolkit.py tests/test_langchain_middleware.py tests/test_langchain_agent.py -q
 ```
 
 ## Related Pages

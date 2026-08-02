@@ -91,6 +91,7 @@ def create_mcp_server(
     else:
         tg = ToolGraph()
 
+    startup_error_count = 0
     if sources:
         for source in sources:
             try:
@@ -110,7 +111,15 @@ def create_mcp_server(
                     )
                 logger.info("Ingested %s", source)
             except Exception as e:
+                startup_error_count += 1
                 logger.warning("Failed to ingest %s: %s", source, e)
+
+    _register_health_routes(
+        mcp_app,
+        tg,
+        catalog_expected=bool(sources or graph_file),
+        startup_error_count=startup_error_count,
+    )
 
     # Session history: track tool calls for history-aware retrieval
     _call_history: list[str] = []
@@ -357,6 +366,38 @@ def create_mcp_server(
             return json.dumps({"error": str(e)})
 
     return mcp_app
+
+
+def _register_health_routes(
+    mcp_app: Any,
+    tg: Any,
+    *,
+    catalog_expected: bool,
+    startup_error_count: int,
+) -> None:
+    """Add public liveness and readiness endpoints to HTTP transports."""
+    if not hasattr(mcp_app, "custom_route"):
+        return
+
+    from starlette.responses import JSONResponse
+
+    @mcp_app.custom_route("/healthz", methods=["GET"], include_in_schema=False)
+    async def healthz(request: Any) -> Any:
+        return JSONResponse({"status": "ok"})
+
+    @mcp_app.custom_route("/readyz", methods=["GET"], include_in_schema=False)
+    async def readyz(request: Any) -> Any:
+        catalog_ready = bool(tg.tools)
+        ready = startup_error_count == 0 and (catalog_ready or not catalog_expected)
+        return JSONResponse(
+            {
+                "status": "ready" if ready else "not_ready",
+                "tool_count": len(tg.tools),
+                "catalog_ready": catalog_ready,
+                "startup_error_count": startup_error_count,
+            },
+            status_code=200 if ready else 503,
+        )
 
 
 def run_server(

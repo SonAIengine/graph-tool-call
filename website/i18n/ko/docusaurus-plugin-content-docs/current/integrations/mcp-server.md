@@ -67,6 +67,27 @@ graph-tool-call serve \
 기본은 private interface에 bind하는 것이 안전합니다. 외부 노출은 별도 network
 및 auth control 뒤에 두세요.
 
+Streamable HTTP는 orchestration probe도 제공합니다.
+
+- `GET /healthz`: process liveness
+- `GET /readyz`: readiness와 catalog tool count
+
+## Docker
+
+repository image는 checked-out source를 build하고 non-root Streamable HTTP server를
+`0.0.0.0:8000`에서 실행합니다.
+
+```bash
+docker build -t graph-tool-call:local .
+docker run --rm -p 8000:8000 graph-tool-call:local \
+  --source https://petstore3.swagger.io/api/v3/openapi.json
+
+curl http://127.0.0.1:8000/healthz
+```
+
+MCP endpoint는 `http://127.0.0.1:8000/mcp`입니다. 외부 공개 전 private network 또는
+authenticated MCP gateway 뒤에 배치합니다.
+
 | Transport | 사용할 때 | 메모 |
 | --- | --- | --- |
 | `stdio` | desktop/agent client가 process를 직접 시작할 때 | 가장 단순한 local setup |
