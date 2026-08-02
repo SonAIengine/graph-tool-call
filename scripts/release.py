@@ -58,6 +58,22 @@ def unreleased_notes(text: str) -> str:
     return parse_changelog_sections(text).unreleased_body.strip()
 
 
+def notes_for_version(text: str, version: str) -> str:
+    """Return a frozen version section, or fall back to unreleased notes."""
+    pattern = (
+        rf"(?ms)^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}\n"
+        r"(?P<body>.*?)"
+        r"(?=^## \[.+?\] - \d{4}-\d{2}-\d{2}\n|^\[Unreleased\]:|\Z)"
+    )
+    match = re.search(pattern, text)
+    if match:
+        notes = match.group("body").strip()
+        if not notes:
+            raise ValueError(f"Changelog section for {version} is empty")
+        return notes
+    return unreleased_notes(text)
+
+
 def prepare_changelog_release(text: str, version: str, date: str) -> str:
     """Move the Unreleased section into a versioned release block."""
     sections = parse_changelog_sections(text)
@@ -125,7 +141,7 @@ def update_init_version(text: str, version: str) -> str:
 
 
 def cmd_notes(args: argparse.Namespace) -> int:
-    notes = unreleased_notes(_read(Path(args.changelog)))
+    notes = notes_for_version(_read(Path(args.changelog)), args.version)
     content = notes if args.format == "plain" else f"# Release {args.version}\n\n{notes}\n"
     if args.output:
         _write(Path(args.output), content)

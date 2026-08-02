@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.release import (
+    notes_for_version,
     prepare_changelog_release,
     unreleased_notes,
     update_init_version,
@@ -35,6 +36,12 @@ def test_unreleased_notes_extracts_body():
     assert "### Added" in notes
     assert "- New thing" in notes
     assert "0.5.0" not in notes
+
+
+def test_notes_for_version_prefers_frozen_release_section():
+    notes = notes_for_version(_sample_changelog(), "0.5.0")
+    assert "- Old thing" in notes
+    assert "- New thing" not in notes
 
 
 def test_prepare_changelog_release_inserts_version_block():
