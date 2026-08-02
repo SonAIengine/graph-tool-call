@@ -232,6 +232,7 @@ def evaluate_openapi_dependency_cases(
             graph.tools,
             graph=graph,
             max_hops=max_hops,
+            query=str(raw_case.get("query") or ""),
         )
         latency_ms = (time.perf_counter() - started) * 1000
         actual = list(closure.required_dependencies)
@@ -261,8 +262,11 @@ def evaluate_openapi_dependency_cases(
                     "missing_required_producers": missing,
                     "unexpected_dependencies": unexpected,
                     "unresolved_fields": closure.unresolved_fields,
+                    "user_input_slots": closure.user_input_slots,
                     "cycles": closure.cycles,
                     "evidence": closure.evidence,
+                    "closure_diagnostics": closure.diagnostics,
+                    "safety": closure.safety,
                     "policy_revision": closure.policy_revision,
                 },
             }

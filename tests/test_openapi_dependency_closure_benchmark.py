@@ -88,6 +88,11 @@ def test_automatic_openapi_closure_recovers_required_producer_without_label_leak
     assert cases[0]["automatic_required_dependencies"] == ["findCustomers"]
     assert cases[0]["metrics"]["required_producer_recall"] == 1.0
     assert cases[0]["diagnostics"]["missing_required_producers"] == []
+    assert cases[0]["diagnostics"]["safety"] == {
+        "allow_mutation": False,
+        "mutation_dependencies_allowed": False,
+        "query_intent": "read",
+    }
 
 
 def test_openapi_closure_methodology_is_frozen():

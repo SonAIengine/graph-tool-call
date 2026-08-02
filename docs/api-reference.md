@@ -661,7 +661,10 @@ closure = complete_target_dependencies(
     selection["selected_target"],
     graph_payload["tools"],
     graph=graph_payload,
+    query=query,
     available_fields={"tenant_id"},
+    context_field_names={"workspace_id"},
+    allow_mutation=False,
     max_hops=3,
 )
 
@@ -673,6 +676,7 @@ bundle = assemble_tool_bundle(
     target_alternatives=selection_candidates,
     token_budget=2048,
     token_counter=model_tokenizer,
+    allow_mutation=False,
 )
 ```
 
@@ -681,6 +685,22 @@ field-level evidence, alternatives, cycles, and stable unresolved reasons. It
 automatically selects producers only from manual, OpenAPI Link, promoted trace,
 or type-compatible contract evidence. Name-only edges remain diagnostic and do
 not silently alter a plan.
+
+Mutating dependencies are denied by default. Admission requires both explicit
+write/delete intent in `query` and `allow_mutation=True` after the adapter's own
+authorization and confirmation checks. Blocked mutation candidates stay out of
+the model-facing alternatives and remain visible in diagnostics. Contract-matched producers are admitted
+automatically only when the query asks for a discovery flow such as
+`find/list -> inspect/execute`; otherwise required values remain auditable
+`query_input_required` slots. Scope-like fields and configured
+`context_field_names` become `context_input_required` slots rather than causing
+an unrelated API call. The result records these decisions in `safety`,
+`user_input_slots`, and stable diagnostics.
+
+For backward compatibility, callers that omit `query` retain the v1 contract
+admission behavior. Planner-facing adapters should always pass the original
+query to enable safety-aware admission. Graph-level diagnostics use
+`field_key="__graph__"` when an edge is not tied to one contract field.
 
 `assemble_tool_bundle()` admits model-facing schemas by role: selected target,
 required dependencies, target alternatives, then optional dependencies. Every
