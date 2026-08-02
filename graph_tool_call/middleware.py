@@ -15,10 +15,10 @@ Usage::
     client = OpenAI()
     patch_openai(client, graph=tg)
     # Now all calls auto-filter tools based on the user message
-    response = client.chat.completions.create(
+    response = client.responses.create(
         model="gpt-4o",
         tools=all_248_tools,   # only ~5 relevant tools actually sent
-        messages=[{"role": "user", "content": "delete a user"}],
+        input="delete a user",
     )
 
     # Anthropic
@@ -58,12 +58,29 @@ def _extract_query_from_messages(messages: list[dict[str, Any]]) -> str | None:
         if isinstance(content, list):
             texts = []
             for part in content:
-                if isinstance(part, dict) and part.get("type") == "text":
+                if isinstance(part, dict) and part.get("type") in {"text", "input_text"}:
                     texts.append(part.get("text", ""))
                 elif isinstance(part, str):
                     texts.append(part)
             if texts:
                 return " ".join(texts)
+    return None
+
+
+def _extract_query_from_openai_input(value: Any) -> str | None:
+    """Extract a query from the Responses API ``input`` value."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        direct_texts = [
+            row.get("text", "")
+            for row in value
+            if isinstance(row, dict) and row.get("type") in {"text", "input_text"}
+        ]
+        if direct_texts:
+            return " ".join(text for text in direct_texts if text)
+        messages = [row for row in value if isinstance(row, dict)]
+        return _extract_query_from_messages(messages)
     return None
 
 
@@ -95,9 +112,8 @@ def _filter_tools(
         tg.add_tools(tools)
 
     results = tg.retrieve(query, top_k=top_k)
-    result_names = {r.name for r in results}
-
-    filtered = [t for name, t in input_tool_map.items() if name in result_names]
+    filtered = [input_tool_map[r.name] for r in results if r.name in input_tool_map]
+    passthrough = [tool for tool in tools if not _extract_tool_name(tool)]
 
     if filtered:
         logger.debug(
@@ -106,7 +122,7 @@ def _filter_tools(
             len(filtered),
             query[:50],
         )
-        return filtered
+        return [*passthrough, *filtered]
 
     logger.debug("Retrieval returned no results, passing all %d tools", len(tools))
     return tools
@@ -126,6 +142,9 @@ def patch_openai(
 ) -> None:
     """Patch an OpenAI client to auto-filter tools via graph-tool-call.
 
+    Both ``client.responses.create`` and the legacy
+    ``client.chat.completions.create`` surface are patched when present.
+
     Parameters
     ----------
     client:
@@ -138,37 +157,81 @@ def patch_openai(
     min_tools:
         Skip filtering if tool list has fewer than this many tools (default: 3).
     """
-    completions = client.chat.completions
+    endpoints: list[tuple[Any, str]] = []
+    responses = getattr(client, "responses", None)
+    if responses is not None and hasattr(responses, "create"):
+        endpoints.append((responses, "input"))
 
-    if hasattr(completions, _ORIGINAL_ATTR):
+    chat = getattr(client, "chat", None)
+    completions = getattr(chat, "completions", None)
+    if completions is not None and hasattr(completions, "create"):
+        endpoints.append((completions, "messages"))
+
+    if not endpoints:
+        raise TypeError("OpenAI client must expose responses.create or chat.completions.create")
+
+    patched = 0
+    for endpoint, query_key in endpoints:
+        if hasattr(endpoint, _ORIGINAL_ATTR):
+            continue
+        _patch_openai_endpoint(
+            endpoint,
+            query_key=query_key,
+            graph=graph,
+            top_k=top_k,
+            min_tools=min_tools,
+        )
+        patched += 1
+
+    if not patched:
         logger.warning("Client already patched — call unpatch_openai() first")
-        return
 
-    original_create = completions.create
+
+def _patch_openai_endpoint(
+    endpoint: Any,
+    *,
+    query_key: str,
+    graph: Any,
+    top_k: int,
+    min_tools: int,
+) -> None:
+    original_create = endpoint.create
 
     @functools.wraps(original_create)
     def patched_create(*args: Any, **kwargs: Any) -> Any:
         tools = kwargs.get("tools")
-        messages = kwargs.get("messages")
+        query_value = kwargs.get(query_key)
 
-        if tools and messages and len(tools) >= min_tools:
-            query = _extract_query_from_messages(messages)
+        if tools and query_value is not None and len(tools) >= min_tools:
+            if query_key == "input":
+                query = _extract_query_from_openai_input(query_value)
+            else:
+                query = _extract_query_from_messages(query_value)
             if query:
                 kwargs["tools"] = _filter_tools(tools, query, graph, top_k)
 
         return original_create(*args, **kwargs)
 
-    setattr(completions, _ORIGINAL_ATTR, original_create)
-    completions.create = patched_create
+    setattr(endpoint, _ORIGINAL_ATTR, original_create)
+    endpoint.create = patched_create
 
 
 def unpatch_openai(client: Any) -> None:
     """Remove the graph-tool-call patch from an OpenAI client."""
-    completions = client.chat.completions
-    original = getattr(completions, _ORIGINAL_ATTR, None)
-    if original is not None:
-        completions.create = original
-        delattr(completions, _ORIGINAL_ATTR)
+    endpoints = []
+    responses = getattr(client, "responses", None)
+    if responses is not None:
+        endpoints.append(responses)
+    chat = getattr(client, "chat", None)
+    completions = getattr(chat, "completions", None)
+    if completions is not None:
+        endpoints.append(completions)
+
+    for endpoint in endpoints:
+        original = getattr(endpoint, _ORIGINAL_ATTR, None)
+        if original is not None:
+            endpoint.create = original
+            delattr(endpoint, _ORIGINAL_ATTR)
 
 
 # ---------------------------------------------------------------------------

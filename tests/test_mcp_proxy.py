@@ -6,7 +6,13 @@ import json
 
 import pytest
 
-from graph_tool_call.mcp_proxy import BackendConfig, MCPProxy, load_proxy_config
+from graph_tool_call.mcp_proxy import (
+    BackendConfig,
+    MCPProxy,
+    _notify_tool_list_changed,
+    _resolve_header_values,
+    load_proxy_config,
+)
 
 # --- Config loading ---
 
@@ -60,6 +66,27 @@ def test_load_proxy_config_mcp_json_format(tmp_path):
     assert options == {}
 
 
+def test_load_proxy_config_remote_streamable_http(tmp_path):
+    config = {
+        "mcpServers": {
+            "remote": {
+                "url": "https://mcp.example.com/mcp",
+                "transport": "streamable-http",
+                "headers": {"Authorization": "Bearer ${MCP_TEST_TOKEN}"},
+            }
+        }
+    }
+    p = tmp_path / ".mcp.json"
+    p.write_text(json.dumps(config))
+
+    backends, options = load_proxy_config(str(p))
+    assert options == {}
+    assert backends[0].command is None
+    assert backends[0].url == "https://mcp.example.com/mcp"
+    assert backends[0].transport == "streamable-http"
+    assert backends[0].headers == {"Authorization": "Bearer ${MCP_TEST_TOKEN}"}
+
+
 def test_load_proxy_config_invalid(tmp_path):
     p = tmp_path / "bad.json"
     p.write_text(json.dumps({"foo": "bar"}))
@@ -88,6 +115,33 @@ def test_backend_config_full():
     assert cfg.command == "npx"
     assert cfg.args == ["-y", "pkg"]
     assert cfg.env == {"KEY": "val"}
+
+
+def test_backend_config_requires_exactly_one_endpoint():
+    with pytest.raises(ValueError, match="exactly one"):
+        BackendConfig(name="missing")
+    with pytest.raises(ValueError, match="exactly one"):
+        BackendConfig(name="both", command="python", url="https://example.com/mcp")
+
+
+def test_backend_config_rejects_transport_endpoint_mismatch():
+    with pytest.raises(ValueError, match="stdio"):
+        BackendConfig(name="local", command="python", transport="sse")
+    with pytest.raises(ValueError, match="Remote"):
+        BackendConfig(name="remote", url="https://example.com/mcp", transport="stdio")
+
+
+def test_resolve_remote_headers_from_environment(monkeypatch):
+    monkeypatch.setenv("MCP_TEST_TOKEN", "secret-value")
+    assert _resolve_header_values(
+        {"Authorization": "Bearer ${MCP_TEST_TOKEN}", "X-Mode": "readonly"}
+    ) == {"Authorization": "Bearer secret-value", "X-Mode": "readonly"}
+
+
+def test_missing_remote_header_environment_fails_without_value(monkeypatch):
+    monkeypatch.delenv("MCP_MISSING_TOKEN", raising=False)
+    with pytest.raises(ValueError, match="MCP_MISSING_TOKEN"):
+        _resolve_header_values({"Authorization": "Bearer ${MCP_MISSING_TOKEN}"})
 
 
 # --- MCPProxy unit tests (no real backends) ---
@@ -316,6 +370,43 @@ def test_create_passthrough_server():
     proxy._gateway_mode = False
     server = create_proxy_server(proxy)
     assert server is not None
+
+
+@pytest.mark.asyncio
+async def test_tool_list_changed_notification_uses_active_session():
+    calls = []
+
+    class FakeSession:
+        async def send_tool_list_changed(self):
+            calls.append("sent")
+
+    class FakeServer:
+        request_context = type("Context", (), {"session": FakeSession()})()
+
+    assert await _notify_tool_list_changed(FakeServer()) is True
+    assert calls == ["sent"]
+
+
+@pytest.mark.asyncio
+async def test_tool_list_changed_without_request_context_is_safe():
+    class FakeServer:
+        @property
+        def request_context(self):
+            raise LookupError
+
+    assert await _notify_tool_list_changed(FakeServer()) is False
+
+
+@pytest.mark.asyncio
+async def test_tool_list_changed_failure_does_not_break_search():
+    class FakeSession:
+        async def send_tool_list_changed(self):
+            raise OSError("client disconnected")
+
+    class FakeServer:
+        request_context = type("Context", (), {"session": FakeSession()})()
+
+    assert await _notify_tool_list_changed(FakeServer()) is False
 
 
 # --- Resilience / edge-case tests ---

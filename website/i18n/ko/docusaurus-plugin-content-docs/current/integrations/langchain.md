@@ -38,7 +38,26 @@ def tools_for_turn(user_query: str):
 
 `toolkit.graph`는 inspect, save, test reuse가 가능합니다.
 
-## LangGraph Agent
+## LangChain v1 Middleware
+
+최신 `create_agent`에서는 공식 model-call middleware 확장점을 사용합니다.
+
+```python
+from langchain.agents import create_agent
+from graph_tool_call.langchain import create_tool_selection_middleware
+
+selection = create_tool_selection_middleware(langchain_tools, top_k=5)
+agent = create_agent(
+    model,
+    tools=langchain_tools,
+    middleware=[selection],
+)
+```
+
+매 model call 전에 pre-registered tool을 검색 결과로 줄입니다. 앞선 권한 또는
+feature-flag middleware가 제거한 tool은 다시 추가하지 않습니다.
+
+## 기존 LangGraph Agent
 
 LangGraph ReAct agent에서는 다음처럼 사용합니다.
 
@@ -80,6 +99,7 @@ model은 gateway에 검색을 요청하고, application은 선택된 downstream 
 | --- | --- | --- |
 | `filter_tools()` | agent call 전 one-shot filtering | graph 미제공 시 rebuild |
 | `GraphToolkit` | 같은 catalog를 여러 turn에서 재사용 | 단순하고 명시적 |
+| LangChain v1 middleware | 최신 `create_agent`에서 turn별 filtering | 현재 권장 방식 |
 | `create_agent()` | LangGraph ReAct flow에서 turn별 filtering | framework-specific |
 | gateway tools | model이 search를 명시적으로 호출해야 함 | tool-call step이 하나 늘어남 |
 
@@ -103,7 +123,7 @@ model은 gateway에 검색을 요청하고, application은 선택된 downstream 
 ## 검증
 
 ```bash
-poetry run pytest tests/test_langchain_toolkit.py tests/test_langchain_agent.py -q
+poetry run pytest tests/test_langchain_toolkit.py tests/test_langchain_middleware.py tests/test_langchain_agent.py -q
 ```
 
 ## 관련 문서

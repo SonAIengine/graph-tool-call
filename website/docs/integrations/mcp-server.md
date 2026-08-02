@@ -68,6 +68,30 @@ graph-tool-call serve \
 Bind to a private interface by default. Put external exposure behind your own
 network and auth controls.
 
+Streamable HTTP also exposes orchestration probes:
+
+- `GET /healthz` for process liveness
+- `GET /readyz` for readiness and catalog tool count
+
+## Docker
+
+The repository image builds the checked-out source and starts a non-root
+Streamable HTTP server on `0.0.0.0:8000`:
+
+```bash
+docker build -t graph-tool-call:local .
+docker run --rm -p 8000:8000 graph-tool-call:local \
+  --source https://petstore3.swagger.io/api/v3/openapi.json
+
+curl http://127.0.0.1:8000/healthz
+```
+
+The MCP endpoint is `http://127.0.0.1:8000/mcp`. Keep it on a private network
+or place it behind an authenticated MCP gateway before external exposure.
+
+For Kubernetes, start with `deploy/kubernetes/mcp-server.yaml` and replace the
+image and `OPENAPI_SOURCE` value.
+
 | Transport | Use When | Notes |
 | --- | --- | --- |
 | `stdio` | A desktop or agent client starts the process directly | simplest local setup |

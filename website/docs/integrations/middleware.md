@@ -47,10 +47,10 @@ graph.add_tools(openai_tools)
 
 patch_openai(client, graph=graph, top_k=5, min_tools=10)
 
-response = client.chat.completions.create(
-    model="gpt-4o",
+response = client.responses.create(
+    model="gpt-5",
     tools=openai_tools,
-    messages=[{"role": "user", "content": "delete a user account"}],
+    input="delete a user account",
 )
 
 unpatch_openai(client)
@@ -58,6 +58,10 @@ unpatch_openai(client)
 
 `min_tools` prevents filtering very small catalogs where the extra retrieval
 step is not useful.
+
+The same patch also covers legacy `client.chat.completions.create` calls. Hosted
+Responses tools such as `web_search` are preserved; only named function tools
+are retrieved and reduced.
 
 ## Anthropic Client Patch
 

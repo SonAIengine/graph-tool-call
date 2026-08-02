@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- OpenAI Responses API filtering and LangChain v1 model-call middleware while
+  preserving legacy Chat Completions and LangGraph integrations.
+- Remote Streamable HTTP/SSE backends for the MCP proxy, environment-backed
+  request headers, and standard dynamic tool-list change notifications.
+- Non-root Docker and Kubernetes deployment surfaces with liveness/readiness
+  endpoints plus English and Korean ecosystem compatibility guidance.
+
+### Changed
+- The `langchain` extra now installs the packages required by both the current
+  LangChain middleware and the legacy LangGraph helper.
+- The `mcp` extra is bounded to the tested MCP 1.x API instead of accepting the
+  incompatible MCP 2.x package surface.
+- The Docker image builds the checked-out source and starts a remotely usable
+  Streamable HTTP MCP endpoint instead of installing an unrelated PyPI build.
+
 ## [0.36.0] - 2026-08-02
 
 ### Added

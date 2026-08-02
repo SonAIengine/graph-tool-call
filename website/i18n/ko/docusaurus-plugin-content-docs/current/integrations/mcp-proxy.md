@@ -53,12 +53,22 @@ proxy는 일반 `.mcp.json` 스타일 파일이나 graph-tool-call proxy config�
     "orders": {
       "command": "python",
       "args": ["orders_server.py"]
+    },
+    "remote-catalog": {
+      "url": "https://mcp.example.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "Authorization": "Bearer ${MCP_ACCESS_TOKEN}"
+      }
     }
   }
 }
 ```
 
 가능하면 backend credential은 runtime secret manager에 둡니다.
+backend는 local stdio process 또는 remote Streamable HTTP/SSE service가 될 수 있습니다.
+`${ENV_VAR}` header reference는 연결 시 resolve하며 credential 값은 proxy log에 남기지
+않습니다.
 
 여러 backend가 같은 tool name을 노출하면 proxy는 backend 이름을 prefix로 붙여
 충돌을 피합니다. 이렇게 하면 search 이후 direct tool call을 유지하면서 silent
@@ -88,6 +98,8 @@ tools/list
 
 `call_backend_tool`은 dynamically injected tool을 직접 호출하지 못하는 client를
 위한 fallback입니다. client가 지원한다면 direct call을 우선 사용합니다.
+visible tool set이 바뀌면 proxy는 `listChanged`를 advertise하고 표준
+`notifications/tools/list_changed` notification을 보냅니다.
 
 ## Tuning
 

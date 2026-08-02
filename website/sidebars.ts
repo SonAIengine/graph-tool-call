@@ -131,6 +131,8 @@ const sidebars: SidebarsConfig = {
         'integrations/langchain',
         'integrations/middleware',
         'integrations/direct-api',
+        'integrations/ecosystem-compatibility',
+        'integrations/deployment',
       ],
     },
     {

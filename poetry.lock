@@ -1067,7 +1067,7 @@ description = "Kiwi, the Korean Tokenizer for Python"
 optional = true
 python-versions = "*"
 groups = ["main"]
-markers = "extra == \"korean\""
+markers = "extra == \"korean\" or extra == \"all\""
 files = [
     {file = "kiwipiepy-0.23.2-cp314-cp314t-macosx_10_15_x86_64.whl", hash = "sha256:32801636f8adfbe4b1413839e294fe5aa9cbf62a47671555dfa91712ddd22b50"},
     {file = "kiwipiepy-0.23.2-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:e5e9aec332b683d6de1e3a7bf12617f87ff3ca51788a119971f586165d1bca74"},
@@ -1094,10 +1094,47 @@ description = "Model for kiwipiepy"
 optional = true
 python-versions = "*"
 groups = ["main"]
-markers = "extra == \"korean\""
+markers = "extra == \"korean\" or extra == \"all\""
 files = [
     {file = "kiwipiepy_model-0.23.0.tar.gz", hash = "sha256:498a22f5585e6c4a162423d7557eb3ee3f71cddc6e0aeb2650c50467e85933e2"},
 ]
+
+[[package]]
+name = "langchain"
+version = "1.2.14"
+description = "Building applications with LLMs through composability"
+optional = true
+python-versions = "<4.0.0,>=3.10.0"
+groups = ["main"]
+markers = "extra == \"langchain\" or extra == \"all\""
+files = [
+    {file = "langchain-1.2.14-py3-none-any.whl", hash = "sha256:96da6d7338d5a6fc41eb4ec0db83f7ef5d03bb5efd17bb269f34ba4378ebdb4d"},
+    {file = "langchain-1.2.14.tar.gz", hash = "sha256:fc5511e8f8af7efee9e5a144da4392d700d627b301d240470db97272940ad317"},
+]
+
+[package.dependencies]
+langchain-core = ">=1.2.10,<2.0.0"
+langgraph = ">=1.1.1,<1.2.0"
+pydantic = ">=2.7.4,<3.0.0"
+
+[package.extras]
+anthropic = ["langchain-anthropic"]
+aws = ["langchain-aws"]
+azure-ai = ["langchain-azure-ai"]
+baseten = ["langchain-baseten (>=0.2.0)"]
+community = ["langchain-community"]
+deepseek = ["langchain-deepseek"]
+fireworks = ["langchain-fireworks"]
+google-genai = ["langchain-google-genai"]
+google-vertexai = ["langchain-google-vertexai"]
+groq = ["langchain-groq"]
+huggingface = ["langchain-huggingface"]
+mistralai = ["langchain-mistralai"]
+ollama = ["langchain-ollama"]
+openai = ["langchain-openai"]
+perplexity = ["langchain-perplexity"]
+together = ["langchain-together"]
+xai = ["langchain-xai"]
 
 [[package]]
 name = "langchain-core"
@@ -1128,11 +1165,12 @@ version = "1.1.3"
 description = "Building stateful, multi-actor applications with LLMs"
 optional = false
 python-versions = ">=3.10"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "langgraph-1.1.3-py3-none-any.whl", hash = "sha256:57cd6964ebab41cbd211f222293a2352404e55f8b2312cecde05e8753739b546"},
     {file = "langgraph-1.1.3.tar.gz", hash = "sha256:ee496c297a9c93b38d8560be15cbb918110f49077d83abd14976cb13ac3b3370"},
 ]
+markers = {main = "extra == \"langchain\" or extra == \"all\""}
 
 [package.dependencies]
 langchain-core = ">=0.1"
@@ -1163,11 +1201,12 @@ version = "4.0.1"
 description = "Library with base interfaces for LangGraph checkpoint savers."
 optional = false
 python-versions = ">=3.10"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "langgraph_checkpoint-4.0.1-py3-none-any.whl", hash = "sha256:e3adcd7a0e0166f3b48b8cf508ce0ea366e7420b5a73aa81289888727769b034"},
     {file = "langgraph_checkpoint-4.0.1.tar.gz", hash = "sha256:b433123735df11ade28829e40ce25b9be614930cd50245ff2af60629234befd9"},
 ]
+markers = {main = "extra == \"langchain\" or extra == \"all\""}
 
 [package.dependencies]
 langchain-core = ">=0.2.38"
@@ -1179,11 +1218,12 @@ version = "1.0.8"
 description = "Library with high-level APIs for creating and executing LangGraph agents and tools."
 optional = false
 python-versions = ">=3.10"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "langgraph_prebuilt-1.0.8-py3-none-any.whl", hash = "sha256:d16a731e591ba4470f3e313a319c7eee7dbc40895bcf15c821f985a3522a7ce0"},
     {file = "langgraph_prebuilt-1.0.8.tar.gz", hash = "sha256:0cd3cf5473ced8a6cd687cc5294e08d3de57529d8dd14fdc6ae4899549efcf69"},
 ]
+markers = {main = "extra == \"langchain\" or extra == \"all\""}
 
 [package.dependencies]
 langchain-core = ">=1.0.0"
@@ -1195,11 +1235,12 @@ version = "0.3.12"
 description = "SDK for interacting with LangGraph API"
 optional = false
 python-versions = ">=3.10"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "langgraph_sdk-0.3.12-py3-none-any.whl", hash = "sha256:44323804965d6ec2a07127b3cf08a0428ea6deaeb172c2d478d5cd25540e3327"},
     {file = "langgraph_sdk-0.3.12.tar.gz", hash = "sha256:c9c9ec22b3c0fcd352e2b8f32a815164f69446b8648ca22606329f4ff4c59a71"},
 ]
+markers = {main = "extra == \"langchain\" or extra == \"all\""}
 
 [package.dependencies]
 httpx = ">=0.25.2"
@@ -1529,7 +1570,7 @@ description = "Fundamental package for array computing in Python"
 optional = true
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "extra == \"korean\" or extra == \"embedding\" or extra == \"embedding-local\" or extra == \"all\""
+markers = "extra == \"korean\" or extra == \"all\" or extra == \"embedding\" or extra == \"embedding-local\""
 files = [
     {file = "numpy-2.2.6-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:b412caa66f72040e6d268491a59f2c43bf03eb6c96dd8f0307829feb7fa2b6fb"},
     {file = "numpy-2.2.6-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:8e41fd67c52b86603a91c1a505ebaef50b3314de0213461c7a6e99c9a3beff90"},
@@ -1893,7 +1934,7 @@ files = [
     {file = "orjson-3.11.7-cp314-cp314-win_arm64.whl", hash = "sha256:4a2e9c5be347b937a2e0203866f12bba36082e89b402ddb9e927d5822e43088d"},
     {file = "orjson-3.11.7.tar.gz", hash = "sha256:9b1a67243945819ce55d24a30b59d6a168e86220452d2c96f4d1f093e71c0c49"},
 ]
-markers = {main = "(extra == \"langchain\" or extra == \"all\") and platform_python_implementation != \"PyPy\""}
+markers = {main = "extra == \"langchain\" or extra == \"all\""}
 
 [[package]]
 name = "ormsgpack"
@@ -1901,7 +1942,7 @@ version = "1.12.2"
 description = "Fast, correct Python msgpack library supporting dataclasses, datetimes, and numpy"
 optional = false
 python-versions = ">=3.10"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "ormsgpack-1.12.2-cp310-cp310-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:c1429217f8f4d7fcb053523bbbac6bed5e981af0b85ba616e6df7cce53c19657"},
     {file = "ormsgpack-1.12.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5f13034dc6c84a6280c6c33db7ac420253852ea233fc3ee27c8875f8dd651163"},
@@ -1953,6 +1994,7 @@ files = [
     {file = "ormsgpack-1.12.2-cp314-cp314t-win_amd64.whl", hash = "sha256:837dd316584485b72ef451d08dd3e96c4a11d12e4963aedb40e08f89685d8ec2"},
     {file = "ormsgpack-1.12.2.tar.gz", hash = "sha256:944a2233640273bee67521795a73cf1e959538e0dfb7ac635505010455e53b33"},
 ]
+markers = {main = "extra == \"langchain\" or extra == \"all\""}
 
 [[package]]
 name = "packaging"
@@ -4149,12 +4191,12 @@ markers = {main = "extra == \"langchain\" or extra == \"all\""}
 cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and python_version < \"3.14\"", "cffi (>=2.0.0b0) ; platform_python_implementation != \"PyPy\" and python_version >= \"3.14\""]
 
 [extras]
-all = ["ai-api-lint", "dash", "dash-cytoscape", "langchain-core", "mcp", "networkx", "numpy", "pyvis", "pyyaml", "rapidfuzz", "sentence-transformers"]
+all = ["ai-api-lint", "dash", "dash-cytoscape", "kiwipiepy", "langchain", "langchain-core", "langgraph", "mcp", "networkx", "numpy", "pyvis", "pyyaml", "rapidfuzz", "sentence-transformers"]
 dashboard = ["dash", "dash-cytoscape"]
 embedding = ["numpy"]
 embedding-local = ["numpy", "sentence-transformers"]
 korean = ["kiwipiepy"]
-langchain = ["langchain-core"]
+langchain = ["langchain", "langchain-core", "langgraph"]
 lint = ["ai-api-lint"]
 mcp = ["mcp"]
 openapi = ["pyyaml"]
@@ -4164,4 +4206,4 @@ visualization = ["networkx", "pyvis"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "9f1b15c587ce6c1b6ca51101da89f4b254c3a113fded3d709c05aed321932a4e"
+content-hash = "10f3bbfa16359fa334fd88bd21486f84369b407294876f1cc088cba1b6a6437b"

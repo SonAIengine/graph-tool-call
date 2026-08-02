@@ -53,10 +53,21 @@ config. Keep backend credentials in your runtime secret manager where possible.
     "orders": {
       "command": "python",
       "args": ["orders_server.py"]
+    },
+    "remote-catalog": {
+      "url": "https://mcp.example.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "Authorization": "Bearer ${MCP_ACCESS_TOKEN}"
+      }
     }
   }
 }
 ```
+
+Backends may be local stdio processes or remote Streamable HTTP/SSE services.
+`${ENV_VAR}` header references are resolved at connection time and credential
+values are not written to proxy logs.
 
 When multiple backends expose the same tool name, the proxy keeps names
 callable by prefixing duplicates with the backend name. That avoids silent
@@ -86,6 +97,8 @@ tools/list
 
 `call_backend_tool` is a fallback for clients that cannot call dynamically
 injected backend tools. Prefer direct calls when the client supports them.
+When the visible set changes, the proxy advertises `listChanged` and emits the
+standard `notifications/tools/list_changed` notification.
 
 ## Tuning
 

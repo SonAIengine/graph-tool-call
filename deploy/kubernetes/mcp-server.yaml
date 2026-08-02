@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graph-tool-call
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: graph-tool-call
+  template:
+    metadata:
+      labels:
+        app: graph-tool-call
+    spec:
+      containers:
+        - name: graph-tool-call
+          image: graph-tool-call:local
+          imagePullPolicy: IfNotPresent
+          args:
+            - --source
+            - $(OPENAPI_SOURCE)
+          env:
+            - name: OPENAPI_SOURCE
+              value: https://petstore3.swagger.io/api/v3/openapi.json
+          ports:
+            - name: mcp
+              containerPort: 8000
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: mcp
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: mcp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: graph-tool-call
+spec:
+  type: ClusterIP
+  selector:
+    app: graph-tool-call
+  ports:
+    - name: mcp
+      port: 8000
+      targetPort: mcp

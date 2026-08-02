@@ -61,6 +61,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import re
 import sys
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
@@ -92,9 +94,22 @@ class BackendConfig:
     """Configuration for one backend MCP server."""
 
     name: str
-    command: str
+    command: str | None = None
     args: list[str] = field(default_factory=list)
     env: dict[str, str] | None = None
+    url: str | None = None
+    transport: str | None = None
+    headers: dict[str, str] | None = None
+
+    def __post_init__(self) -> None:
+        if bool(self.command) == bool(self.url):
+            raise ValueError("BackendConfig requires exactly one of command or url")
+        if self.transport not in {None, "stdio", "sse", "streamable-http"}:
+            raise ValueError(f"Unsupported MCP backend transport: {self.transport}")
+        if self.command and self.transport not in {None, "stdio"}:
+            raise ValueError("Command MCP backends require stdio transport")
+        if self.url and self.transport == "stdio":
+            raise ValueError("Remote MCP backends require sse or streamable-http transport")
 
 
 @dataclass
@@ -162,23 +177,15 @@ class MCPProxy:
         return self._gateway_mode
 
     async def connect_backends(self) -> None:
-        """Connect to all backend MCP servers via stdio, collect tools."""
-        from mcp import ClientSession, StdioServerParameters
-        from mcp.client.stdio import stdio_client
+        """Connect to stdio or remote MCP backends and collect tools."""
+        from mcp import ClientSession
 
         self._exit_stack = AsyncExitStack()
         await self._exit_stack.__aenter__()
 
         for cfg in self._backends_config:
             try:
-                params = StdioServerParameters(
-                    command=cfg.command,
-                    args=cfg.args,
-                    env=cfg.env,
-                )
-                read_stream, write_stream = await self._exit_stack.enter_async_context(
-                    stdio_client(params)
-                )
+                read_stream, write_stream = await self._connect_backend(cfg)
                 session = await self._exit_stack.enter_async_context(
                     ClientSession(read_stream, write_stream)
                 )
@@ -221,6 +228,54 @@ class MCPProxy:
             total,
             mode,
         )
+
+    async def _connect_backend(self, cfg: BackendConfig) -> tuple[Any, Any]:
+        if self._exit_stack is None:
+            raise RuntimeError("Proxy connection stack is not initialized")
+
+        if cfg.url:
+            transport = cfg.transport or (
+                "sse" if cfg.url.rstrip("/").endswith("/sse") else "streamable-http"
+            )
+            headers = _resolve_header_values(cfg.headers)
+            if transport == "sse":
+                from mcp.client.sse import sse_client
+
+                connection = await self._exit_stack.enter_async_context(
+                    sse_client(cfg.url, headers=headers)
+                )
+                return connection[0], connection[1]
+            if transport != "streamable-http":
+                raise ValueError(f"Remote MCP backend requires sse or streamable-http: {cfg.name}")
+
+            from mcp.client import streamable_http
+
+            streamable_client = getattr(streamable_http, "streamable_http_client", None)
+            if streamable_client is None:
+                # MCP 1.13-1.28 used the unseparated public function name.
+                streamable_client = streamable_http.streamablehttp_client
+                client_context = streamable_client(cfg.url, headers=headers)
+            else:
+                http_client = None
+                if headers:
+                    import httpx
+
+                    http_client = await self._exit_stack.enter_async_context(
+                        httpx.AsyncClient(headers=headers)
+                    )
+                client_context = streamable_client(cfg.url, http_client=http_client)
+            connection = await self._exit_stack.enter_async_context(client_context)
+            return connection[0], connection[1]
+
+        from mcp import StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        params = StdioServerParameters(
+            command=cfg.command or "",
+            args=cfg.args,
+            env=cfg.env,
+        )
+        return await self._exit_stack.enter_async_context(stdio_client(params))
 
     def _tool_fingerprint(self) -> str:
         """Hash of all tool names — used for cache invalidation."""
@@ -409,7 +464,7 @@ def load_proxy_config(path: str) -> tuple[list[BackendConfig], dict[str, Any]]:
 
     Supports two formats:
     - Native: ``{"backends": {"name": {"command": ..., "args": [...]}}}``
-    - .mcp.json: ``{"mcpServers": {"name": {"command": ..., "args": [...]}}}``
+    - .mcp.json: stdio ``command`` or remote ``url`` server definitions
     """
     with open(path) as f:
         data = json.load(f)
@@ -417,32 +472,56 @@ def load_proxy_config(path: str) -> tuple[list[BackendConfig], dict[str, Any]]:
     if "mcpServers" in data:
         backends = []
         for name, server_def in data["mcpServers"].items():
-            backends.append(
-                BackendConfig(
-                    name=name,
-                    command=server_def["command"],
-                    args=server_def.get("args", []),
-                    env=server_def.get("env"),
-                )
-            )
+            backends.append(_parse_backend_config(name, server_def))
         return backends, {}
 
     if "backends" in data:
         backends = []
         for name, server_def in data["backends"].items():
-            backends.append(
-                BackendConfig(
-                    name=name,
-                    command=server_def["command"],
-                    args=server_def.get("args", []),
-                    env=server_def.get("env"),
-                )
-            )
+            backends.append(_parse_backend_config(name, server_def))
         options = {k: v for k, v in data.items() if k != "backends"}
         return backends, options
 
     msg = "Config must have 'backends' or 'mcpServers' key"
     raise ValueError(msg)
+
+
+def _parse_backend_config(name: str, server_def: dict[str, Any]) -> BackendConfig:
+    if not isinstance(server_def, dict):
+        raise ValueError(f"MCP backend {name!r} must be an object")
+    return BackendConfig(
+        name=name,
+        command=server_def.get("command"),
+        args=server_def.get("args", []),
+        env=server_def.get("env"),
+        url=server_def.get("url"),
+        transport=server_def.get("transport"),
+        headers=server_def.get("headers"),
+    )
+
+
+_ENV_REFERENCE_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _resolve_header_values(headers: dict[str, str] | None) -> dict[str, str] | None:
+    """Resolve ``${ENV_VAR}`` references without logging credential values."""
+    if not headers:
+        return None
+
+    resolved: dict[str, str] = {}
+    for name, raw_value in headers.items():
+        if not isinstance(raw_value, str):
+            raise ValueError(f"MCP header {name!r} must be a string")
+
+        def replace(match: re.Match[str]) -> str:
+            env_name = match.group(1)
+            value = os.getenv(env_name)
+            if value is None:
+                raise ValueError(f"Required MCP header environment variable is missing: {env_name}")
+            return value
+
+        resolved[name] = _ENV_REFERENCE_RE.sub(replace, raw_value)
+    return resolved
 
 
 def create_proxy_server(
@@ -593,7 +672,10 @@ def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
         if name == "search_tools":
             query = arguments.get("query", "")
             top_k = arguments.get("top_k", proxy._top_k)
+            previously_exposed = set(proxy._exposed_tools)
             results = proxy.search(query, top_k=top_k)
+            if set(proxy._exposed_tools) != previously_exposed:
+                await _notify_tool_list_changed(server)
 
             output_dict: dict[str, Any] = {
                 "query": query,
@@ -659,6 +741,31 @@ def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
     return server
 
 
+async def _notify_tool_list_changed(server: Any) -> bool:
+    """Notify capable MCP clients after the gateway's visible tools change."""
+    try:
+        session = server.request_context.session
+        notify = session.send_tool_list_changed
+    except (AttributeError, LookupError, RuntimeError):
+        logger.debug("No active MCP session for tools/list_changed notification")
+        return False
+
+    try:
+        await notify()
+    except Exception as exc:
+        logger.debug("MCP tools/list_changed notification failed: %s", type(exc).__name__)
+        return False
+    return True
+
+
+def _proxy_initialization_options(server: Any) -> Any:
+    from mcp.server.lowlevel import NotificationOptions
+
+    return server.create_initialization_options(
+        notification_options=NotificationOptions(tools_changed=True)
+    )
+
+
 def _create_passthrough_server(server: Any, proxy: MCPProxy) -> Any:
     """Passthrough mode: expose all backend tools directly."""
     import mcp.types as types
@@ -717,7 +824,7 @@ async def _run_proxy_async(
                 await server.run(
                     read_stream,
                     write_stream,
-                    server.create_initialization_options(),
+                    _proxy_initialization_options(server),
                 )
         elif transport == "sse":
             await _run_proxy_sse(server, host, port)
@@ -746,7 +853,7 @@ async def _run_proxy_sse(server: Any, host: str, port: int) -> None:
             await server.run(
                 read_stream,
                 write_stream,
-                server.create_initialization_options(),
+                _proxy_initialization_options(server),
             )
 
     app = Starlette(
@@ -781,7 +888,7 @@ async def _run_proxy_streamable_http(server: Any, host: str, port: int) -> None:
                     server.run,
                     read_stream,
                     write_stream,
-                    server.create_initialization_options(),
+                    _proxy_initialization_options(server),
                 )
                 yield
                 task.cancel_scope.cancel()
@@ -798,7 +905,7 @@ async def _run_proxy_streamable_http(server: Any, host: str, port: int) -> None:
                     server.run,
                     read_stream,
                     write_stream,
-                    server.create_initialization_options(),
+                    _proxy_initialization_options(server),
                 )
                 yield
                 tg.cancel_scope.cancel()

@@ -15,10 +15,10 @@ tg = ToolGraph.from_url("https://api.example.com/openapi.json")
 patch_openai(client, graph=tg, top_k=5)  # ← add this line
 
 # Existing code unchanged — 248 tools go in, only 5 relevant ones are sent
-response = client.chat.completions.create(
-    model="gpt-4o",
+response = client.responses.create(
+    model="gpt-5",
     tools=all_248_tools,
-    messages=messages,
+    input="delete a user account",
 )
 ```
 
@@ -45,7 +45,8 @@ response = client.messages.create(
 
 ## How it works
 
-The middleware monkey-patches `chat.completions.create` (OpenAI) or `messages.create` (Anthropic) so that whenever `tools=...` is passed, it:
+The middleware patches `responses.create` and legacy `chat.completions.create`
+(OpenAI) or `messages.create` (Anthropic) so that whenever `tools=...` is passed, it:
 
 1. Reads the latest user message
 2. Calls `graph.retrieve(query, top_k=top_k)`

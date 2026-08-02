@@ -1,0 +1,16 @@
+.git
+.github
+.pytest_cache
+.ruff_cache
+.venv
+.claude
+.playwright-mcp
+benchmarks
+docs
+tests
+viewer
+website
+*.html
+*.png
+*.pyc
+__pycache__
