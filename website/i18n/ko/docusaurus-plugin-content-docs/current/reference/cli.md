@@ -18,6 +18,7 @@ graph-tool-call --help
 
 | Command | 용도 |
 | --- | --- |
+| `demo` | Offline target-plus-producer launch demo 실행 |
 | `search` | build 없이 OpenAPI source나 graph file에서 one-shot 검색 |
 | `ingest` | 재사용 가능한 `ToolGraph` JSON 생성 |
 | `retrieve` | 이미 build된 graph 검색 |
@@ -30,6 +31,17 @@ graph-tool-call --help
 | `call` | OpenAPI tool search 후 built-in HTTP executor로 호출 |
 | `serve` | MCP server로 실행 |
 | `proxy` | 여러 MCP backend를 aggregate/filter |
+
+## Offline Demo 실행
+
+고정된 ecommerce contract를 실제 retrieval, target selection,
+dependency-closure pipeline으로 처리합니다. Network와 optional dependency가
+필요하지 않습니다.
+
+```bash
+graph-tool-call demo dependency-chain
+graph-tool-call demo dependency-chain --json
+```
 
 ## Build 없이 검색
 

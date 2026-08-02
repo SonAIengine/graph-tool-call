@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-08-02
+
+### Added
+- **Offline dependency-chain demo** — `graph-tool-call demo dependency-chain`
+  runs retrieval, deterministic target selection, typed dependency closure,
+  and token-accounted schema admission without network access or optional
+  dependencies.
+- **Reproducible release evidence** — the seven-case commerce claim now ships
+  with input hashes, case-level candidates and metrics, replay commands, and a
+  CI freshness check.
+- **Public wheel smoke gate** — CI builds the wheel in a clean environment and
+  runs the launch demo and dependency-free public examples.
+
+### Changed
+- **Safety-aware dependency closure** — mutating prerequisites require explicit
+  intent and opt-in, while context-like inputs become user-input slots instead
+  of triggering unrelated discovery calls.
+- **Evidence-first project surface** — README and quickstart lead with the
+  reproducible target-plus-producer workflow instead of an unsupported headline
+  model score.
+
+## [0.35.0] - 2026-08-01
+
+### Added
+- Evidence-gated dependency completion and token-accounted, contract-projected
+  tool bundles for planner-facing catalogs.
+- Public research harnesses for external baseline parity, budgeted LLM catalog
+  comparison, clustered statistics, and automatic OpenAPI closure evaluation.
+
+## [0.34.0] - 2026-07-26
+
+### Added
+- GraphQL introspection ingest with normalized execution and contract metadata.
+- Public heterogeneous research corpus, family-aware splits, provenance checks,
+  and paper-readiness protocol.
+
+## [0.33.0] - 2026-07-25
+
+### Added
+- Universal ingest adapter contracts for OpenAPI, GraphQL, MCP, Python tools,
+  and structured diagnostics for unsupported source capabilities.
+- English and Korean official documentation site based on Docusaurus.
+
+## [0.32.1] - 2026-07-23
+
+### Changed
+- Target selector preserves the LLM choice when deterministic evidence lacks a
+  sufficient margin and records the ambiguity instead of forcing an override.
+
+## [0.32.0] - 2026-07-23
+
+### Added
+- Generic identifier/detail target disambiguation without product-specific
+  operation or path rules.
+
+## [0.31.0] - 2026-07-23
+
+### Added
+- Privacy-scrubbed trace learning records, shadow suggestions, promotion gates,
+  and additive retrieval/selector learning evidence.
+
+## [0.30.0] - 2026-07-23
+
+### Added
+- Strong-evidence target selector with structured rank signals and LLM override
+  diagnostics.
+- Generic OpenAPI authentication readiness metadata for execution adapters.
+
+## [0.29.0] - 2026-07-23
+
+### Added
+- Stable OpenAPI contract index extraction across Swagger 2 and OpenAPI 3,
+  including request, response, security, content type, and IO contract rows.
+- Quality Lab contracts for search, plan, execute, assertion, and mutation
+  safety regression cases.
+
 ## [0.28.0] - 2026-07-21
 
 ### Added
@@ -521,7 +597,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.35.0...v0.36.0
+[0.35.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.34.0...v0.35.0
+[0.34.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.33.0...v0.34.0
+[0.33.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.32.1...v0.33.0
+[0.32.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.32.0...v0.32.1
+[0.32.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.31.0...v0.32.0
+[0.31.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.30.0...v0.31.0
+[0.30.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.29.0...v0.30.0
+[0.29.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.28.0...v0.29.0
 [0.25.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.22.0...v0.23.0

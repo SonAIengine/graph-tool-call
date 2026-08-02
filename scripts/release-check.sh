@@ -20,5 +20,7 @@ PY
 poetry run ruff check .
 poetry run ruff format --check .
 poetry run pytest tests/ -q
+poetry run python -m benchmarks.release_evidence --check
 poetry build
 uvx twine check "dist/graph_tool_call-${version}"*
+scripts/public-smoke.sh

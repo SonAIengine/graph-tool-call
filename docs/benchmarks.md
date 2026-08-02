@@ -16,6 +16,33 @@ expensive full model benchmarks.
 - **Pipelines compared**: `baseline` (all tools), `retrieve-k3 / k5 / k10`, plus `+ embedding`, `+ ontology`
 - **Reproduce**: see [Reproduce](#reproduce) at the bottom
 
+> **Release-claim policy:** the `v0.36.0` README headline uses the checked-in,
+> model-free [dependency-chain release artifact](../benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json).
+> The older `qwen3:4b` tables below document historical self-hosted runs. Their
+> original case-level output was not preserved in the current repository, so
+> they are not used as a current release or leaderboard claim.
+
+## Current reproducible release claim
+
+The seven-case commerce regression compares a selected target alone with the
+same target plus graph-expanded prerequisite producers.
+
+| Metric | Target only | Graph with producers |
+|---|---:|---:|
+| Required-producer recall | `0.142857` | **`1.000000`** |
+| Candidate plan coverage | `0.476190` | **`1.000000`** |
+| Candidate binding support | `0.142857` | **`1.000000`** |
+| Unneeded expansion cases | `0` | **`0`** |
+
+```bash
+make launch-evidence
+make launch-evidence-check
+```
+
+This is a deterministic regression suite with `model=none`. It demonstrates
+engine behavior and guards release claims; seven curated cases are not a
+population-level estimate of LLM tool-calling accuracy.
+
 ---
 
 ## What we measure

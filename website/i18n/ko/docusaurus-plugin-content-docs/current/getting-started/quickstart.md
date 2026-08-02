@@ -31,6 +31,27 @@ pip install "graph-tool-call[mcp]"
 pip install "graph-tool-call[all]"
 ```
 
+## 차이부터 확인하기
+
+Target tool만 찾는 것으로 충분하지 않은 이유를 offline demo로 확인합니다.
+실제 retriever, target selector, typed dependency closure를 사용합니다.
+
+```bash
+uvx graph-tool-call demo dependency-chain
+```
+
+```text
+Selected target:
+  refundOrder(order_id)
+
+Required producer:
+  findOrdersByEmail(email) -> order_id
+
+Execution order:
+  1. findOrdersByEmail
+  2. refundOrder
+```
+
 ## OpenAPI Spec 검색
 
 빠른 smoke test에는 CLI를 사용하고, application이나 test suite에 연결할 때는
@@ -40,7 +61,7 @@ Python API를 사용합니다.
   <TabItem value="cli" label="CLI" default>
 
 ```bash
-uvx graph-tool-call search "user authentication" \
+uvx graph-tool-call search "create a new pet" \
   --source https://petstore.swagger.io/v2/swagger.json \
   --top-k 5 \
   --scores
@@ -53,7 +74,7 @@ uvx graph-tool-call search "user authentication" \
 from graph_tool_call import ToolGraph
 
 graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
-results = graph.retrieve_with_scores("user authentication", top_k=5)
+results = graph.retrieve_with_scores("create a new pet", top_k=5)
 
 for result in results:
     print(result.tool.name, result.score, result.confidence)
@@ -69,7 +90,7 @@ from graph_tool_call.graphify import retrieve_graphify
 graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
 response = retrieve_graphify(
     graph,
-    "user authentication",
+    "create a new pet",
     top_k=5,
     include_evidence=True,
 )

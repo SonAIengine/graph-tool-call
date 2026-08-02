@@ -31,6 +31,27 @@ pip install "graph-tool-call[mcp]"
 pip install "graph-tool-call[all]"
 ```
 
+## See the Difference First
+
+Run the offline demo to see why finding only the target tool is insufficient.
+It uses the real retriever, target selector, and typed dependency closure.
+
+```bash
+uvx graph-tool-call demo dependency-chain
+```
+
+```text
+Selected target:
+  refundOrder(order_id)
+
+Required producer:
+  findOrdersByEmail(email) -> order_id
+
+Execution order:
+  1. findOrdersByEmail
+  2. refundOrder
+```
+
 ## Search an OpenAPI Spec
 
 Use the CLI when you want a fast smoke test. Use Python when you are wiring the
@@ -40,7 +61,7 @@ engine into an application or test suite.
   <TabItem value="cli" label="CLI" default>
 
 ```bash
-uvx graph-tool-call search "user authentication" \
+uvx graph-tool-call search "create a new pet" \
   --source https://petstore.swagger.io/v2/swagger.json \
   --top-k 5 \
   --scores
@@ -53,7 +74,7 @@ uvx graph-tool-call search "user authentication" \
 from graph_tool_call import ToolGraph
 
 graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
-results = graph.retrieve_with_scores("user authentication", top_k=5)
+results = graph.retrieve_with_scores("create a new pet", top_k=5)
 
 for result in results:
     print(result.tool.name, result.score, result.confidence)
@@ -69,7 +90,7 @@ from graph_tool_call.graphify import retrieve_graphify
 graph = ToolGraph.from_url("https://petstore3.swagger.io/api/v3/openapi.json")
 response = retrieve_graphify(
     graph,
-    "user authentication",
+    "create a new pet",
     top_k=5,
     include_evidence=True,
 )

@@ -14,6 +14,9 @@
 
 - `poetry run pytest -q`
 - `poetry run ruff check .`
+- `poetry run ruff format --check .`
+- `make public-smoke`
+- `make launch-evidence-check`
 - README 계열에 신규 공개 API 반영 확인
 - optional extras 변경 확인
 - `CHANGELOG.md` `Unreleased` 정리
@@ -26,16 +29,6 @@
 3. 비교 링크를 갱신한다.
 4. GitHub Release 본문도 같은 내용을 사용한다.
 
-## 자동화 범위
-
-현재 저장소에는 `CHANGELOG.md`를 자동 생성하거나 Git 태그로 자동 릴리즈 노트를 만드는 CI는 없다.
-즉, 지금 구조는 `알아서 관리된다`기보다 `놓치기 어렵게 관리된다`에 가깝다.
-
-원하면 다음 단계로는 아래 둘 중 하나를 추가할 수 있다.
-
-- `scripts/release.py`로 `Unreleased -> version section` 자동 정리
-- GitHub Actions로 태그 시 릴리즈 초안 생성
-
 ## 현재 자동화
 
 이제 아래 두 경로가 추가되었다.
@@ -47,6 +40,12 @@
   를 함께 갱신한다.
 - `.github/workflows/release-draft.yml`
   - `v*` 태그 푸시 시 `CHANGELOG.md`의 `Unreleased` 기준으로 draft release 본문을 생성한다.
+- `.github/workflows/publish.yml`
+  - published GitHub Release의 tag와 package version을 대조한다.
+  - 일치하는 wheel/sdist를 build한 뒤 trusted publishing으로 PyPI에 올린다.
+- `.github/workflows/ci.yml`
+  - clean wheel에서 public demo와 예제를 실행한다.
+  - 공개 benchmark artifact가 현재 engine/fixture와 같은지 검증한다.
 
-즉, 릴리즈 노트는 이제 `완전 자동 생성`은 아니지만,
-`Unreleased`만 제대로 유지하면 draft 생성과 버전 반영은 자동화할 수 있다.
+즉, `Unreleased`와 version metadata를 정확히 유지하면 draft, package build,
+public smoke, evidence check, PyPI publishing까지 같은 release chain으로 검증된다.

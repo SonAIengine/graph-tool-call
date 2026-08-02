@@ -8,13 +8,13 @@ Vector search finds *similar* tools, but misses the *workflow* they belong to.<b
 
 <br>
 
-| | Without retrieval | graph-tool-call |
+| 7-case commerce regression | Target only | graph-tool-call |
 |---|:---:|:---:|
-| **248 tools (K8s API)** | 12% accuracy | **82% accuracy** |
-| **1068 tools (GitHub full API)** | context overflow | **78% Recall@5** |
-| **Token usage** | 8,192 tok | **1,699 tok** (79% ↓) |
+| **Required-producer recall** | 14.3% | **100%** |
+| **Candidate plan coverage** | 47.6% | **100%** |
+| **Target Recall@5** | - | **100%** |
 
-<sub>Measured with qwen3:4b (4-bit) — <a href="docs/benchmarks.md">full benchmark</a></sub>
+<sub>Deterministic, model-free engine benchmark. <a href="https://github.com/SonAIengine/graph-tool-call/blob/v0.36.0/benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json">Case-level evidence</a> and <a href="docs/benchmarks.md">full methodology</a>.</sub>
 
 <br>
 
@@ -56,14 +56,14 @@ English · [한국어](README-ko.md) · [中文](README-zh_CN.md) · [日本語]
 
 LLM agents need tools. But as tool count grows, two things break:
 
-1. **Context overflow** — 248 Kubernetes API endpoints = 8,192 tokens of tool definitions. The LLM chokes and accuracy drops to **12%**.
-2. **Vector search misses workflows** — Searching *"cancel my order"* finds `cancelOrder`, but the actual flow is `listOrders → getOrder → cancelOrder → processRefund`. Vector search returns one tool; you need the chain.
+1. **Context overflow** — Large catalogs spend model context on tools that cannot help the current request.
+2. **Target-only retrieval misses prerequisites** — Searching *"refund my order"* finds `refundOrder`, but that tool requires an `order_id`. The usable flow starts with the tool that produces that ID.
 
-**graph-tool-call** solves both. It models tool relationships as a graph, retrieves multi-step workflows via hybrid search (BM25 + graph traversal + embedding + MCP annotations), and cuts token usage by 64–91% while maintaining or improving accuracy.
+**graph-tool-call** solves both. It models tool relationships as a graph, retrieves multi-step workflows via hybrid search (BM25 + graph traversal + embedding + MCP annotations), and admits only the schemas that fit an explicit planner token budget.
 
 | Scenario | Vector-only | graph-tool-call |
 |----------|------------|-----------------|
-| *"cancel my order"* | Returns `cancelOrder` | `listOrders → getOrder → cancelOrder → processRefund` |
+| *"refund my order"* | Returns `refundOrder` | `findOrdersByEmail` + `refundOrder` from typed contract evidence |
 | *"read and save file"* | Returns `read_file` | `read_file` + `write_file` (COMPLEMENTARY relation) |
 | *"delete old records"* | Returns any tool matching "delete" | Destructive tools ranked first via MCP annotations |
 | *"now cancel it"* (after listing orders) | No context from history | Demotes used tools, boosts next-step tools |
@@ -142,20 +142,22 @@ pip install graph-tool-call[all]           # everything
 ### Try it in 30 seconds (no install)
 
 ```bash
-uvx graph-tool-call search "user authentication" \
-  --source https://petstore.swagger.io/v2/swagger.json
+uvx graph-tool-call demo dependency-chain
 ```
 
 ```text
-Query: "user authentication"
-Source: https://petstore.swagger.io/v2/swagger.json (19 tools)
-Results (5):
+Query: "Refund the order for alice@example.com"
 
-  1. getUserByName  — Get user by user name
-  2. deleteUser     — Delete user
-  3. createUser     — Create user
-  4. loginUser      — Logs user into the system
-  5. updateUser     — Updated user
+Selected target:
+  refundOrder(order_id)
+
+Required producer:
+  findOrdersByEmail(email) -> order_id
+  evidence: api_contract, openapi_link
+
+Execution order:
+  1. findOrdersByEmail
+  2. refundOrder
 ```
 
 ### Python API
@@ -311,23 +313,28 @@ Also works with Anthropic via `patch_anthropic`. See [Middleware guide](docs/int
 
 ## Benchmark
 
-Two questions: (1) Does the LLM still pick the right tool when given only the retrieved subset? (2) Does the retriever itself rank correct tools in the top K?
+The release headline uses a deterministic seven-case commerce regression. It
+asks whether graph expansion adds every required producer after the target has
+been selected. No LLM or external API is involved.
 
-| Dataset | Tools | Baseline acc | graph-tool-call | Token reduction |
-|---|---:|---:|---:|---:|
-| Petstore | 19 | 100% | **95%** (k=5) | 64% |
-| GitHub | 50 | 100% | **88%** (k=5) | 88% |
-| Mixed MCP | 38 | 97% | **90%** (k=5) | 83% |
-| Kubernetes core/v1 | 248 | **12%** | **82%** (k=5 + ontology) | 79% |
+| Metric | Target only | Graph with producers |
+|---|---:|---:|
+| Required-producer recall | 0.1429 | **1.0000** |
+| Candidate plan coverage | 0.4762 | **1.0000** |
+| Candidate binding support | 0.1429 | **1.0000** |
+| Unneeded expansion cases | 0 | **0** |
 
-**Key finding** — at 248 tools, baseline collapses (context overflow) to 12% while graph-tool-call recovers to 82%. At smaller scales, baseline is already strong, so graph-tool-call's value is **token savings without accuracy loss**.
+The checked-in [case-level artifact](https://github.com/SonAIengine/graph-tool-call/blob/v0.36.0/benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json)
+contains input hashes, expected targets and producers, candidate lists, metrics,
+limitations, and replay commands. Historical model-in-the-loop results remain
+in the full benchmark document but are not used as the current release headline.
 
 → Full results (pipeline / retrieval-only / competitive / 1068-scale / 200-tool LangChain agent across GPT and Claude): **[docs/benchmarks.md](docs/benchmarks.md)**
 
 ```bash
-# Reproduce
-python -m benchmarks.run_benchmark                                # retrieval only
-python -m benchmarks.run_benchmark --mode pipeline -m qwen3:4b    # full pipeline
+# Reproduce the release claim
+make launch-evidence
+make launch-evidence-check
 ```
 
 ### Optional BFCL-derived retrieval check

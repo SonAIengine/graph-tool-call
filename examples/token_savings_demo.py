@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
-
-import tiktoken
 
 from graph_tool_call import ToolGraph
 from graph_tool_call.langchain.tools import tool_schema_to_openai_function
+
+try:
+    import tiktoken
+except ImportError:  # The public demo must also run with the zero-dependency core.
+    tiktoken = None
 
 # ANSI colors
 BOLD = "\033[1m"
@@ -23,8 +27,11 @@ BAR_EMPTY = "░"
 
 
 def count_tokens(tools_json: list[dict], model: str = "gpt-4o") -> int:
+    serialized = json.dumps(tools_json, ensure_ascii=False, separators=(",", ":"))
+    if tiktoken is None:
+        return math.ceil(len(serialized.encode("utf-8")) / 3)
     enc = tiktoken.encoding_for_model(model)
-    return len(enc.encode(json.dumps(tools_json)))
+    return len(enc.encode(serialized))
 
 
 def bar(ratio: float, width: int = 40) -> str:
@@ -56,11 +63,14 @@ def main() -> None:
     before_bar = bar(1.0)
     after_bar = bar(top_tokens / all_tokens)
     n_all = len(all_tools)
+    token_label = "tokens" if tiktoken is not None else "estimated tokens"
     before_line = (
-        f"  {DIM}Before{RESET}  {before_bar}  {RED}{all_tokens:,} tokens{RESET}  ({n_all} tools)"  # noqa: E501
+        f"  {DIM}Before{RESET}  {before_bar}  {RED}{all_tokens:,} {token_label}{RESET}  "
+        f"({n_all} tools)"
     )
     after_line = (
-        f"  {BOLD}After{RESET}   {after_bar}  {GREEN}{top_tokens:,} tokens{RESET}  ({top_k} tools)"  # noqa: E501
+        f"  {BOLD}After{RESET}   {after_bar}  {GREEN}{top_tokens:,} {token_label}{RESET}  "
+        f"({top_k} tools)"
     )
     print(before_line)
     print(after_line)
