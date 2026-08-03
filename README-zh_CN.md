@@ -440,7 +440,7 @@ graph-tool-call 验证两件事。
 模型使用 **qwen3:4b (4-bit, Ollama)**。
 
 > 此处的 qwen3:4b 表格是历史自托管结果。当前 release headline 仅使用
-> [可复现的 model-free artifact](https://github.com/SonAIengine/graph-tool-call/blob/v0.36.0/benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json)，
+> [可复现的 model-free artifact](https://github.com/SonAIengine/graph-tool-call/blob/v0.37.0/benchmarks/results/releases/v0.37.0/dependency-chain-evidence.json)，
 > 因此这些历史数值不作为当前 release 或 leaderboard claim。
 
 ### 评价指标

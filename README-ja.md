@@ -441,7 +441,7 @@ graph-tool-callは2つのことを検証します。
 モデルは **qwen3:4b (4-bit, Ollama)** を使用しました。
 
 > ここにある qwen3:4b の表は過去の self-hosted 結果です。現在の release
-> headline は [再現可能な model-free artifact](https://github.com/SonAIengine/graph-tool-call/blob/v0.36.0/benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json)
+> headline は [再現可能な model-free artifact](https://github.com/SonAIengine/graph-tool-call/blob/v0.37.0/benchmarks/results/releases/v0.37.0/dependency-chain-evidence.json)
 > のみを使用し、これらの過去値を現在の release や leaderboard claim には使用しません。
 
 ### 評価指標

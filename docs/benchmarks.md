@@ -16,8 +16,8 @@ expensive full model benchmarks.
 - **Pipelines compared**: `baseline` (all tools), `retrieve-k3 / k5 / k10`, plus `+ embedding`, `+ ontology`
 - **Reproduce**: see [Reproduce](#reproduce) at the bottom
 
-> **Release-claim policy:** the `v0.36.0` README headline uses the checked-in,
-> model-free [dependency-chain release artifact](../benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json).
+> **Release-claim policy:** the `v0.37.0` README headline uses the checked-in,
+> model-free [dependency-chain release artifact](../benchmarks/results/releases/v0.37.0/dependency-chain-evidence.json).
 > The older `qwen3:4b` tables below document historical self-hosted runs. Their
 > original case-level output was not preserved in the current repository, so
 > they are not used as a current release or leaderboard claim.

@@ -18,7 +18,7 @@ def test_release_version_is_consistent_across_package_and_changelog() -> None:
     package_version = version_match.group(1)
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert package_version == __version__ == "0.36.0"
+    assert package_version == __version__
     assert f"## [{package_version}]" in changelog
 
 
@@ -49,8 +49,15 @@ def test_quickstarts_use_the_reproducible_offline_demo() -> None:
 
 def test_readme_release_claim_links_to_checked_in_evidence() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    evidence = ROOT / "benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json"
+    evidence = (
+        ROOT
+        / "benchmarks"
+        / "results"
+        / "releases"
+        / f"v{__version__}"
+        / "dependency-chain-evidence.json"
+    )
 
     assert evidence.is_file()
-    assert "Required-producer recall** | 14.3% | **100%" in readme
+    assert "| Required-producer recall | 14.3% | **100%** |" in readme
     assert str(evidence.relative_to(ROOT)) in readme
