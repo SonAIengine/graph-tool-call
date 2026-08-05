@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 mcp = pytest.importorskip("mcp", reason="mcp SDK not installed")
@@ -82,6 +84,24 @@ class TestMcpServerTools:
         assert "list_categories" in tool_names
         assert "graph_info" in tool_names
         assert "load_source" in tool_names
+
+    @pytest.mark.asyncio
+    async def test_get_tool_schema_returns_ingested_parameter_contract(self):
+        from graph_tool_call.mcp_server import create_mcp_server
+
+        app = create_mcp_server(sources=["tests/fixtures/minimal_openapi30.json"])
+        tool = next(t for t in app._tool_manager.list_tools() if t.name == "get_tool_schema")
+
+        result = json.loads(await tool.run({"name": "getUser"}))
+
+        assert result["name"] == "getUser"
+        assert result["method"] == "get"
+        assert result["path"] == "/users/{userId}"
+        assert result["parameters"]["userId"] == {
+            "type": "string",
+            "description": "User ID",
+            "required": True,
+        }
 
 
 class TestSearchToolsFunctionality:

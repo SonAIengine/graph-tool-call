@@ -2,152 +2,65 @@
 
 # graph-tool-call
 
-**LLM agents can't fit thousands of tool definitions into context.**<br>
-Vector search finds *similar* tools, but misses the *workflow* they belong to.<br>
-**graph-tool-call** builds a tool graph and retrieves the right chain — not just one match.
+**Graph-structured retrieval for large LLM tool catalogs.**
 
-<br>
+Find the target tool, the prerequisite tools that produce its inputs, and the
+smallest schema bundle that fits the planner's token budget.
 
-| 7-case commerce regression | Target only | graph-tool-call |
-|---|:---:|:---:|
-| **Required-producer recall** | 14.3% | **100%** |
-| **Candidate plan coverage** | 47.6% | **100%** |
-| **Target Recall@5** | - | **100%** |
-
-<sub>Deterministic, model-free engine benchmark. <a href="https://github.com/SonAIengine/graph-tool-call/blob/v0.36.0/benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json">Case-level evidence</a> and <a href="docs/benchmarks.md">full methodology</a>.</sub>
-
-<br>
-
-<img src="assets/demo.gif" alt="graph-tool-call demo" width="800">
-
-<br>
+[Documentation](https://sonaiengine.github.io/graph-tool-call/) ·
+[Quickstart](https://sonaiengine.github.io/graph-tool-call/docs/getting-started/quickstart) ·
+[PyPI](https://pypi.org/project/graph-tool-call/) ·
+[Benchmarks](docs/benchmarks.md)
 
 [![PyPI](https://img.shields.io/pypi/v/graph-tool-call.svg)](https://pypi.org/project/graph-tool-call/)
-[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://sonaiengine.github.io/graph-tool-call/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![CI](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml/badge.svg)](https://github.com/SonAIengine/graph-tool-call/actions/workflows/ci.yml)
-[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](https://pypi.org/project/graph-tool-call/)
+[![Python](https://img.shields.io/pypi/pyversions/graph-tool-call.svg)](https://pypi.org/project/graph-tool-call/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![Core dependencies](https://img.shields.io/badge/core_dependencies-0-brightgreen.svg)](#installation)
 
-English · [한국어](README-ko.md) · [中文](README-zh_CN.md) · [日本語](README-ja.md)
+English · [한국어](README-ko.md)
 
 </div>
 
 ---
 
-<details>
-<summary><b>Table of Contents</b></summary>
+## The Problem
 
-- [Why](#why)
-- [How it works](#how-it-works)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Choose your integration](#choose-your-integration)
-- [Benchmark](#benchmark)
-- [Advanced Features](#advanced-features)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-
-</details>
-
----
-
-## Why
-
-LLM agents need tools. But as tool count grows, two things break:
-
-1. **Context overflow** — Large catalogs spend model context on tools that cannot help the current request.
-2. **Target-only retrieval misses prerequisites** — Searching *"refund my order"* finds `refundOrder`, but that tool requires an `order_id`. The usable flow starts with the tool that produces that ID.
-
-**graph-tool-call** solves both. It models tool relationships as a graph, retrieves multi-step workflows via hybrid search (BM25 + graph traversal + embedding + MCP annotations), and admits only the schemas that fit an explicit planner token budget.
-
-| Scenario | Vector-only | graph-tool-call |
-|----------|------------|-----------------|
-| *"refund my order"* | Returns `refundOrder` | `findOrdersByEmail` + `refundOrder` from typed contract evidence |
-| *"read and save file"* | Returns `read_file` | `read_file` + `write_file` (COMPLEMENTARY relation) |
-| *"delete old records"* | Returns any tool matching "delete" | Destructive tools ranked first via MCP annotations |
-| *"now cancel it"* (after listing orders) | No context from history | Demotes used tools, boosts next-step tools |
-| Multiple Swagger specs with overlapping tools | Duplicate tools in results | Cross-source auto-deduplication |
-| 1,200 API endpoints | Slow, noisy results | Categorized + graph traversal for precise retrieval |
-
----
-
-## How it works
+A semantic search for "refund an order" can find `refundOrder`. That is not
+enough when the operation requires an `order_id` that the user does not have.
+A usable candidate set also needs the operation that produces that field:
 
 ```text
-OpenAPI / MCP / Python functions → Ingest → Build tool graph → Hybrid retrieve → Agent
+findOrdersByEmail(email) -> order_id -> refundOrder(order_id)
 ```
 
-**Example** — User says *"cancel my order and process a refund"*
+Large catalogs create a second problem: sending every schema to the model wastes
+context and can lower selection quality. graph-tool-call treats retrieval as a
+contract-aware graph problem instead of flat similarity search.
 
-Vector search finds `cancelOrder`. But the actual workflow is:
+It provides:
 
-```text
-                    ┌──────────┐
-          PRECEDES  │listOrders│  PRECEDES
-         ┌─────────┤          ├──────────┐
-         ▼         └──────────┘          ▼
-   ┌──────────┐                    ┌───────────┐
-   │ getOrder │                    │cancelOrder│
-   └──────────┘                    └─────┬─────┘
-                                        │ COMPLEMENTARY
-                                        ▼
-                                 ┌──────────────┐
-                                 │processRefund │
-                                 └──────────────┘
-```
+- deterministic ingestion from OpenAPI, GraphQL introspection, MCP tools,
+  Python functions, and structured tool catalogs;
+- hybrid target retrieval with keyword, graph, optional embedding, and MCP
+  annotation signals;
+- evidence-backed target selection and typed prerequisite expansion;
+- token-budgeted, contract-projected schemas for the model-facing catalog;
+- readiness, failure, and trace metadata for application-side diagnostics;
+- adapters for OpenAI, Anthropic, LangChain v1, MCP, Docker, and Kubernetes.
 
-graph-tool-call returns the entire chain, not just one tool. Retrieval combines four signals via **weighted Reciprocal Rank Fusion (wRRF)**:
+Authentication, tenant policy, approval, and product-specific execution remain
+in the host application.
 
-* **BM25** — keyword matching
-* **Graph traversal** — relation-based expansion (PRECEDES, REQUIRES, COMPLEMENTARY)
-* **Embedding similarity** — semantic search (optional, any provider)
-* **MCP annotations** — read-only / destructive / idempotent hints
+## See It in 30 Seconds
 
----
-
-## Installation
-
-The core package has **zero dependencies** — just Python standard library. Install only what you need:
-
-```bash
-pip install graph-tool-call                # core (BM25 + graph) — no dependencies
-pip install graph-tool-call[embedding]     # + embedding, cross-encoder reranker
-pip install graph-tool-call[openapi]       # + YAML support for OpenAPI specs
-pip install graph-tool-call[mcp]           # + MCP server / proxy mode
-pip install graph-tool-call[all]           # everything
-```
-
-<details>
-<summary>All extras</summary>
-
-| Extra | Installs | When to use |
-|-------|----------|-------------|
-| `openapi` | pyyaml | YAML OpenAPI specs |
-| `embedding` | numpy | Semantic search (connect to Ollama/OpenAI/vLLM) |
-| `embedding-local` | numpy, sentence-transformers | Local sentence-transformers models |
-| `similarity` | rapidfuzz | Duplicate detection |
-| `langchain` | langchain-core | LangChain integration |
-| `visualization` | pyvis, networkx | HTML graph export, GraphML |
-| `dashboard` | dash, dash-cytoscape | Interactive dashboard |
-| `lint` | ai-api-lint | Auto-fix bad API specs |
-| `mcp` | mcp | MCP server / proxy mode |
-
-</details>
-
----
-
-## Quick Start
-
-### Try it in 30 seconds (no install)
+No model, API key, or network call is required:
 
 ```bash
 uvx graph-tool-call demo dependency-chain
 ```
 
 ```text
-Query: "Refund the order for alice@example.com"
-
 Selected target:
   refundOrder(order_id)
 
@@ -158,372 +71,219 @@ Required producer:
 Execution order:
   1. findOrdersByEmail
   2. refundOrder
+
+Planner context:
+  6 catalog tools -> 2 required tools
+  estimated tokens: 1476 -> 160 (89% fewer)
 ```
 
-### Python API
+This demo runs the real retriever, deterministic target selector, typed
+dependency closure, and schema admission pipeline.
+
+## Installation
+
+The core search and graph package uses only the Python standard library.
+Optional integrations are installed explicitly:
+
+```bash
+pip install graph-tool-call
+pip install "graph-tool-call[openapi]"       # YAML OpenAPI documents
+pip install "graph-tool-call[korean]"        # Kiwi tokenizer
+pip install "graph-tool-call[langchain]"     # LangChain v1 middleware
+pip install "graph-tool-call[mcp]"           # MCP server and proxy
+pip install "graph-tool-call[all]"           # all optional features
+```
+
+Python 3.10 through 3.14 are tested in CI.
+
+## Build and Search
+
+### OpenAPI
 
 ```python
 from graph_tool_call import ToolGraph
 
-# Build a tool graph from the official Petstore API
-tg = ToolGraph.from_url(
+graph = ToolGraph.from_url(
     "https://petstore3.swagger.io/api/v3/openapi.json",
-    cache="petstore.json",
+    cache="petstore.graph.json",
 )
-print(tg)
-# → ToolGraph(tools=19, nodes=22, edges=100)
 
-# Search for tools
-tools = tg.retrieve("create a new pet", top_k=5)
-for t in tools:
-    print(f"{t.name}: {t.description}")
-
-# Search with workflow guidance
-results = tg.retrieve_with_scores("process an order", top_k=5)
-for r in results:
-    print(f"{r.tool.name} [{r.confidence}]")
-    for rel in r.relations:
-        print(f"  → {rel.hint}")
-
-# Execute an OpenAPI tool directly
-result = tg.execute(
-    "addPet", {"name": "Buddy", "status": "available"},
-    base_url="https://petstore3.swagger.io/api/v3",
-)
+for result in graph.retrieve_with_scores("create a new pet", top_k=5):
+    print(result.tool.name, result.score, result.confidence)
 ```
 
-OpenAPI ingest keeps execution metadata such as parameter locations, content
-types, candidate request-body fields, examples, security schemes, response
-catalogs, and error responses under `tool.metadata["openapi"]`. The HTTP
-executor uses those facts for parameter serialization and JSON/form/multipart
-request bodies, and returns matched response metadata for success/error
-diagnostics. `HttpExecutor.validate_request()` provides missing-required,
-missing-security, invalid-argument, and unused-argument preflight diagnostics
-without network I/O; see [docs/api-reference.md](docs/api-reference.md#execution).
-Request contracts exclude OpenAPI `readOnly` fields and response contracts
-exclude `writeOnly` fields, keeping generated tool inputs and graph edges aligned
-with the direction in which each field can actually travel.
-OpenAPI `oneOf` / `anyOf` request and response schemas are read as a union of
-branch fields with branch evidence preserved, so graph construction and request
-validation do not silently drop every branch after the first one.
-Discriminator mappings and JSON Schema `const` values are preserved as branch
-selection evidence; if a request chooses a discriminator value, preflight
-diagnostics can report the missing fields for that selected branch only.
-When a Swagger/OpenAPI document declares only a weak `object` schema but
-provides concrete request or response examples, ingest derives additive
-`schema_inferred_from="example"` contract rows from those examples.
-Common response envelopes such as `code/message/data` also record wrapper,
-collection, and value-path aliases, so XGEN-style adapters can recover produced
-values from either raw OpenAPI bodies or normalized `body` wrappers.
-Retrieval indexes tool descriptions, tags, parameter names/descriptions, AI
-metadata, and curated/indexable IO fields. Promoted raw OpenAPI contract rows
-remain planning-first by default, so large Swagger specs do not flood BM25 with
-common identifier fields unless the caller explicitly opts in.
+OpenAPI ingestion preserves request and response schemas, parameter locations,
+content types, security requirements, links, examples, response envelopes, and
+typed `consumes`/`produces` contracts. Swagger 2.0, OpenAPI 3.0, and OpenAPI 3.1
+are supported.
 
-### Workflow planning
-
-`plan_workflow()` returns ordered execution chains with prerequisites — reducing agent round-trips from 3-4 to 1.
-
-```python
-plan = tg.plan_workflow("process a refund")
-for step in plan.steps:
-    print(f"{step.order}. {step.tool.name} — {step.reason}")
-# 1. getOrder      — prerequisite for requestRefund
-# 2. requestRefund — primary action
-
-plan.save("refund_workflow.json")
-```
-
-Edit, parameterize, and visualize workflows — see [Direct API guide](docs/integrations/direct-api.md#workflow-planning).
-
-### Other tool sources
-
-```python
-# From an MCP server (HTTP JSON-RPC tools/list)
-tg.ingest_mcp_server("https://mcp.example.com/mcp")
-
-# From an MCP tool list (annotations preserved)
-tg.ingest_mcp_tools(mcp_tools, server_name="filesystem")
-
-# From Python callables (type hints + docstrings)
-tg.ingest_functions([read_file, write_file])
-```
-
-MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are used as retrieval signals — query intent is automatically classified, and read queries prioritize read-only tools while delete queries prioritize destructive tools.
-
----
-
-## Choose your integration
-
-graph-tool-call ships several integration patterns. Pick the one that matches your stack:
-
-| You're using... | Pattern | Token win | Guide |
-|---|---|:---:|---|
-| Claude Code / Cursor / Windsurf | **MCP Proxy** (aggregate N MCP servers → 3 meta-tools) | ~1,200 tok/turn | [docs/integrations/mcp-proxy.md](docs/integrations/mcp-proxy.md) |
-| Any MCP-compatible client | **MCP Server** (single source as MCP) | varies | [docs/integrations/mcp-server.md](docs/integrations/mcp-server.md) |
-| LangChain v1 / LangGraph (50+ tools) | **Model-call middleware or gateway tools** | **92%** | [docs/integrations/langchain.md](docs/integrations/langchain.md) |
-| OpenAI Responses / Chat / Anthropic SDK | **Middleware** (1-line patch) | 76–91% | [docs/integrations/middleware.md](docs/integrations/middleware.md) |
-| OpenAI Agents / PydanticAI / Google ADK | **Remote MCP server** | varies | [compatibility matrix](https://sonaiengine.github.io/graph-tool-call/docs/integrations/ecosystem-compatibility) |
-| Docker / Kubernetes / AWS / Azure | **Private Streamable HTTP MCP service** | varies | [deployment guide](https://sonaiengine.github.io/graph-tool-call/docs/integrations/deployment) |
-| Direct control over retrieval | **Python API** (`retrieve()` + format adapter) | varies | [docs/integrations/direct-api.md](docs/integrations/direct-api.md) |
-
-### MCP Proxy (most common)
-
-When you have many MCP servers, their tool names pile up in every LLM turn. Bundle them behind one server: **172 tools → 3 meta-tools**.
+Inspect a collection before exposing it to an agent:
 
 ```bash
-# 1. Create ~/backends.json listing your MCP servers
-# 2. Register the proxy with Claude Code
-claude mcp add -s user tool-proxy -- \
-  uvx "graph-tool-call[mcp]" proxy --config ~/backends.json
+graph-tool-call inspect-openapi ./openapi.json --json
+graph-tool-call build-openapi-collection ./openapi.json -o collection.json
 ```
 
-Full setup, passthrough mode, remote transport → [MCP Proxy guide](docs/integrations/mcp-proxy.md).
+The report contains stable readiness issue codes, semantic coverage, and edge
+quality rather than a single opaque score.
 
-### LangChain Gateway
+### Other sources
 
 ```python
-from graph_tool_call.langchain import create_gateway_tools
+from graph_tool_call.ingest import ingest_source
 
-# 62 tools from Slack, GitHub, Jira, MS365...
-gateway = create_gateway_tools(all_tools, top_k=10)
-# → [search_tools, call_tool] — only 2 tools in context
-
-agent = create_react_agent(model=llm, tools=gateway)
+openapi_result = ingest_source(openapi_document)
+graphql_result = ingest_source(introspection_result)
+mcp_result = ingest_source({"tools": mcp_tools}, format_hint="mcp-tools")
+python_result = ingest_source([read_file, write_file])
 ```
 
-92% token reduction vs binding all 62 tools. See [LangChain guide](docs/integrations/langchain.md) for auto-filter and manual patterns.
+Every adapter returns normalized `ToolSchema` objects, capability metadata, and
+structured unsupported-feature diagnostics.
 
-### SDK middleware
+## Choose an Integration
+
+| Environment | Recommended surface | What graph-tool-call owns |
+| --- | --- | --- |
+| Python application | `ToolGraph` / graphify APIs | ingest, search, evidence, dependency closure |
+| OpenAI Responses or Chat Completions | `patch_openai` | per-request function-tool filtering |
+| Anthropic Messages | `patch_anthropic` | per-request tool filtering |
+| LangChain v1 | `create_tool_selection_middleware` | model-call tool selection |
+| Claude Code, Cursor, Windsurf | MCP proxy | many MCP backends behind 3 gateway tools |
+| OpenAI Agents, PydanticAI, Google ADK | remote MCP server | protocol-neutral search service |
+| Docker or Kubernetes | Streamable HTTP MCP | private deployable service |
+
+See the [compatibility matrix](https://sonaiengine.github.io/graph-tool-call/docs/integrations/ecosystem-compatibility)
+for validation boundaries. Protocol compatibility does not imply that every
+framework or cloud release is tested by this repository.
+
+### OpenAI Responses
 
 ```python
 from graph_tool_call.middleware import patch_openai
 
-patch_openai(client, graph=tg, top_k=5)  # ← add this one line
+patch_openai(client, graph=graph, top_k=5)
 
-# Existing code unchanged — 248 tools go in, only 5 relevant ones are sent
 response = client.responses.create(
-    model="gpt-5",
-    tools=all_248_tools,
+    model=model_name,
     input="delete a user account",
+    tools=all_function_tools,
 )
 ```
 
-The patch also covers Chat Completions; Anthropic uses `patch_anthropic`. See
-[Middleware guide](docs/integrations/middleware.md).
+Hosted tools such as web search pass through unchanged. The same patch keeps
+legacy Chat Completions support.
 
----
+### LangChain v1
 
-## Benchmark
+```python
+from langchain.agents import create_agent
+from graph_tool_call.langchain import create_tool_selection_middleware
 
-The release headline uses a deterministic seven-case commerce regression. It
-asks whether graph expansion adds every required producer after the target has
-been selected. No LLM or external API is involved.
+selection = create_tool_selection_middleware(langchain_tools, top_k=5)
+agent = create_agent(
+    model,
+    tools=langchain_tools,
+    middleware=[selection],
+)
+```
 
-| Metric | Target only | Graph with producers |
-|---|---:|---:|
-| Required-producer recall | 0.1429 | **1.0000** |
-| Candidate plan coverage | 0.4762 | **1.0000** |
-| Candidate binding support | 0.1429 | **1.0000** |
-| Unneeded expansion cases | 0 | **0** |
+The middleware intersects with tools still allowed by earlier permission or
+feature-flag middleware; it does not reintroduce filtered tools.
 
-The checked-in [case-level artifact](https://github.com/SonAIengine/graph-tool-call/blob/v0.36.0/benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json)
-contains input hashes, expected targets and producers, candidate lists, metrics,
-limitations, and replay commands. Historical model-in-the-loop results remain
-in the full benchmark document but are not used as the current release headline.
-
-→ Full results (pipeline / retrieval-only / competitive / 1068-scale / 200-tool LangChain agent across GPT and Claude): **[docs/benchmarks.md](docs/benchmarks.md)**
+### MCP server
 
 ```bash
-# Reproduce the release claim
+graph-tool-call ingest ./openapi.json -o graph.json
+graph-tool-call serve \
+  --graph graph.json \
+  --transport streamable-http \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+The MCP endpoint is `/mcp`; HTTP deployments also expose `/healthz` and
+`/readyz`. Keep remote endpoints private or behind an authenticated gateway.
+
+### MCP proxy
+
+```bash
+graph-tool-call proxy \
+  --config ./mcp-backends.json \
+  --transport streamable-http
+```
+
+The proxy accepts local stdio, SSE, and Streamable HTTP backends. In gateway
+mode it exposes `search_tools`, `get_tool_schema`, and `call_backend_tool`, then
+notifies capable clients when matching backend tools become visible.
+
+## Reproducible Evidence
+
+The release headline is deliberately model-free and small enough to replay in
+CI. On seven curated commerce cases, adding typed producer expansion to the same
+selected target produced:
+
+| Metric | Target only | Target + graph producers |
+| --- | ---: | ---: |
+| Required-producer recall | 14.3% | **100%** |
+| Candidate plan coverage | 47.6% | **100%** |
+| Candidate binding support | 14.3% | **100%** |
+| Target Recall@5 | - | **100%** |
+
+The [case-level v0.37.0 artifact](benchmarks/results/releases/v0.37.0/dependency-chain-evidence.json)
+records fixture hashes, every expected target and producer, and replay commands:
+
+```bash
 make launch-evidence
 make launch-evidence-check
 ```
 
-### Optional BFCL-derived retrieval check
+This is an engine regression suite, not a population-level estimate of LLM
+tool-calling accuracy and not a state-of-the-art claim. Larger external
+comparisons, model-loop experiments, confidence intervals, and known weak cases
+are reported in [Benchmark Results](docs/benchmarks.md) and the
+[paper protocol](docs/research/paper-readiness-design.md).
 
-For a public-data sanity check, graph-tool-call can also run a deterministic
-retrieval benchmark over the official BFCL v4 function-calling JSONL files. This
-is **not** the BFCL leaderboard model AST score; it only asks whether the
-ground-truth function names land in the retrieved top-K.
+## Production Boundary
 
-```bash
-make bfcl-benchmark
-```
+graph-tool-call is the retrieval and contract layer. A production adapter still
+owns:
 
-An experimental native tool-call loop is also available when you want to attach
-a real model to BFCL data through graph-tool-call retrieval:
+- user and service authentication;
+- tenant authorization and approval policy;
+- downstream secrets and cookie handling;
+- side-effect confirmation, cleanup, and audit retention;
+- provider/model lifecycle and final response policy.
 
-```bash
-make bfcl-llm-benchmark
-```
-
-It can optionally use the official `bfcl-eval` AST checker when that package is
-installed in an isolated benchmark environment, and a sweep runner is available
-for row-vs-retrieved / top-K comparisons. Full model-in-the-loop runs support
-case caching, repeat-safe cache namespaces, concurrency, progress output, and
-BFCL-compatible result JSONL export for local official-checker reruns. Current
-qwen3.6 full numbers are local BFCL-compatible evidence, not a BFCL leaderboard
-claim.
-Detailed methodology, commands, limitations, and current numbers live in
-[docs/benchmarks.md](docs/benchmarks.md#bfcl-official-tool-selection).
-
-### XGEN-style quality checks
-
-For API Collection / Planflow work, there are three focused checks: a deterministic
-engine benchmark, a live large-OpenAPI scale acceptance check, and a BFCL-style
-model-in-the-loop benchmark.
-
-| Benchmark | Model used | What it evaluates |
-|---|---|---|
-| `make paper-corpus-check` | none | public OpenAPI/GraphQL/MCP corpus hashes, licenses, family splits, annotations, and ingest conformance |
-| `make paper-corpus-claim-check` | none | stricter paper gate, including independent annotation-review coverage |
-| `make paper-adapter-conformance` | none | request/response/auth/execution/IO-contract preservation, deterministic replay, and structured unsupported diagnostics |
-| `make paper-baseline-run` | pinned E5 encoder | B-1 through B7 paired retrieval, token-budget, and confidence-interval artifact |
-| `make paper-graph-ablation` | pinned E5 encoder | B4→B5→B6→B7 topology, typed-contract, selector, and producer-expansion deltas |
-| `make paper-producer-coverage` | pinned E5 encoder | ground-truth-only producer contract, edge, path, seed, and failure-reason diagnostics |
-| `make paper-output-promotion` | pinned E5 encoder | B6→B6a required-consumer-aligned output promotion and producer-edge coverage delta |
-| `make xgen-benchmark` | none | graph-tool-call engine search, target selector exactness, producer expansion, plan synthesis across commerce/admin/workflow fixtures |
-| `make xgen-scale-acceptance` | none | X2BEE-scale Swagger UI discovery, dedupe, ingest, graph build, Korean product-case search |
-| `make xgen-scale-sweep` | none | one X2BEE-scale graph build, then top-K compression diagnostics for `k=3,5,10` |
-| `make xgen-scale-contract-ablation` | none | one X2BEE-scale spec load, then baseline vs promoted OpenAPI contract signal comparison |
-| `make xgen-scale-028-gate-check REPORT=...` | none | saved XGEN scale sweep artifact check for the stricter snapshot-provenance `xgen-scale-0.28` profile |
-| `make bfcl-028-gate-check REPORT=...` | none | saved BFCL sweep artifact check for the stricter paper-ready `xgen-0.28` profile |
-| `make xgen-llm-benchmark` | CLI `--model` value | whether that model actually calls `search_tools` and selects the right plan |
-
-```bash
-make xgen-benchmark
-make paper-corpus-check
-make paper-adapter-conformance
-make paper-graph-ablation
-make paper-producer-coverage
-make paper-output-promotion
-# Expected to fail until an independent reviewer signs the corpus annotations.
-make paper-corpus-claim-check
-make xgen-scale-acceptance
-make xgen-scale-sweep
-MANIFEST=/tmp/gtc-x2bee-openapi-snapshot/manifest.json \
-  GATE_PROFILE=xgen-scale-0.28 \
-  make xgen-scale-sweep
-make xgen-scale-028-gate-check REPORT=/tmp/gtc-x2bee-scale-snapshot-sweep.json
-make xgen-scale-contract-ablation
-make xgen-llm-benchmark
-poetry run python -m benchmarks.xgen_tool_graph.llm_loop \
-  --model qwen3.6-27b \
-  --llm-url http://127.0.0.1:8000/v1 \
-  --disable-thinking
-```
-
-Current scores, caveats, and model-specific notes are documented in
-[docs/benchmarks.md](docs/benchmarks.md#xgen-style-tool-graph-search).
-For the XGEN tool graph research direction, use
-[docs/research/xgen-tool-graph-goals.md](docs/research/xgen-tool-graph-goals.md)
-as the roadmap and [docs/research/validation-loop.md](docs/research/validation-loop.md)
-as the day-to-day validation loop instead of running full model benchmarks after
-every change. Claims, public datasets, baselines, ablations, and submission gates
-for a research paper are defined separately in the canonical
-[paper-readiness protocol](docs/research/paper-readiness-design.md).
-
----
-
-## Advanced Features
-
-### Embedding-based hybrid search
-
-Add semantic search on top of BM25 + graph. No heavy dependencies needed — connect to any external embedding server.
-
-```python
-tg.enable_embedding("ollama/qwen3-embedding:0.6b")        # Ollama (recommended)
-tg.enable_embedding("openai/text-embedding-3-large")      # OpenAI
-tg.enable_embedding("vllm/Qwen/Qwen3-Embedding-0.6B")     # vLLM
-tg.enable_embedding("sentence-transformers/all-MiniLM-L6-v2")  # local
-tg.enable_embedding(lambda texts: my_embed_fn(texts))     # custom callable
-```
-
-Weights are auto-rebalanced. See [API reference](docs/api-reference.md#embedding-provider-strings) for all provider forms.
-
-### Retrieval tuning
-
-```python
-tg.enable_reranker()                                      # cross-encoder rerank
-tg.enable_diversity(lambda_=0.7)                          # MMR diversity
-tg.set_weights(keyword=0.2, graph=0.5, embedding=0.3, annotation=0.2)
-```
-
-### History-aware retrieval
-
-Pass previously called tools to demote them and boost next-step candidates.
-
-```python
-tools = tg.retrieve("now cancel it", history=["listOrders", "getOrder"])
-# → [cancelOrder, processRefund, ...]
-```
-
-### Save / load (preserves embeddings + weights)
-
-```python
-tg.save("my_graph.json")
-tg = ToolGraph.load("my_graph.json")
-# Or use cache= in from_url() for automatic save/load
-tg = ToolGraph.from_url(url, cache="my_graph.json")
-```
-
-### LLM-enhanced ontology
-
-```python
-tg.auto_organize(llm="ollama/qwen2.5:7b")
-tg.auto_organize(llm="litellm/claude-sonnet-4-20250514")
-tg.auto_organize(llm=openai.OpenAI())
-```
-
-Builds richer categories, relations, and search keywords. Supports Ollama, OpenAI clients, litellm, and any callable. See [API reference](docs/api-reference.md#ontology-llm-inputs).
-
-### Other features
-
-| Feature | API | Docs |
-|---|---|---|
-| Duplicate detection across specs | `find_duplicates` / `merge_duplicates` | [API ref](docs/api-reference.md#analysis) |
-| Conflict detection | `apply_conflicts` | [API ref](docs/api-reference.md#analysis) |
-| Operational analysis | `analyze` | [API ref](docs/api-reference.md#analysis) |
-| Interactive dashboard | `dashboard()` | [API ref](docs/api-reference.md#export--visualization) |
-| HTML / GraphML / Cypher export | `export_html` / `export_graphml` / `export_cypher` | [API ref](docs/api-reference.md#export--visualization) |
-| Auto-fix bad OpenAPI specs | `from_url(url, lint=True)` | [ai-api-lint](https://github.com/SonAIengine/ai-api-lint) |
-
----
+Do not store raw credentials in graph artifacts, tool descriptions, trace
+records, or model-visible arguments.
 
 ## Documentation
 
-| Doc | Description |
-|---|---|
-| [CLI reference](docs/cli.md) | All `graph-tool-call` CLI commands |
-| [Python API reference](docs/api-reference.md) | `ToolGraph` methods, helpers, middleware, LangChain |
-| [Integrations](docs/integrations/) | MCP server / proxy, LangChain, middleware, direct API |
-| [Benchmark results](docs/benchmarks.md) | Full pipeline / retrieval / competitive / scale tables |
-| [Architecture](docs/architecture/overview.md) | System overview, pipeline layers, data model |
-| [Design notes](docs/design/) | Algorithm design — normalization, dependency detection, ontology |
-| [Research](docs/research/) | Competitive analysis, API scale data |
-| [Release checklist](docs/release-checklist.md) | Release process, changelog flow |
+| Start here | Purpose |
+| --- | --- |
+| [Quickstart](https://sonaiengine.github.io/graph-tool-call/docs/getting-started/quickstart) | first search, graph, readiness, and execution loop |
+| [Mental model](https://sonaiengine.github.io/graph-tool-call/docs/getting-started/mental-model) | understand the pipeline and boundaries |
+| [OpenAPI ingestion](https://sonaiengine.github.io/graph-tool-call/docs/build/openapi-ingestion) | contract extraction and collection build |
+| [Target selection](https://sonaiengine.github.io/graph-tool-call/docs/search/target-selection) | ranking evidence and deterministic guard |
+| [Integrations](https://sonaiengine.github.io/graph-tool-call/docs/integrations/ecosystem-compatibility) | frameworks, MCP, and deployment |
+| [API reference](https://sonaiengine.github.io/graph-tool-call/docs/reference/public-api) | stable public Python surface |
+| [Roadmap](docs/roadmap.md) | current product and research priorities |
 
----
-
-## Contributing
-
-Contributions are welcome.
+## Development
 
 ```bash
 git clone https://github.com/SonAIengine/graph-tool-call.git
 cd graph-tool-call
-pip install poetry pre-commit
 poetry install --with dev --all-extras
-pre-commit install   # auto-runs ruff on every commit
 
-# Test, lint, benchmark
-poetry run pytest -v
-poetry run ruff check . && poetry run ruff format --check .
-python -m benchmarks.run_benchmark -v
+poetry run ruff check .
+poetry run ruff format --check .
+poetry run pytest tests/ -q
 ```
 
----
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[release checklist](docs/release-checklist.md).
 
 ## License
 

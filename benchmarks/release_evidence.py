@@ -17,7 +17,8 @@ from benchmarks.xgen_tool_graph.run import (
 from graph_tool_call import __version__
 
 EVIDENCE_SCHEMA_VERSION = "launch-evidence-v1"
-DEFAULT_OUTPUT = Path("benchmarks/results/releases/v0.36.0/dependency-chain-evidence.json")
+RELEASE_REF = f"v{__version__}"
+DEFAULT_OUTPUT = Path(f"benchmarks/results/releases/{RELEASE_REF}/dependency-chain-evidence.json")
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -55,7 +56,7 @@ def build_release_evidence() -> dict[str, Any]:
 
     return {
         "schema_version": EVIDENCE_SCHEMA_VERSION,
-        "release_ref": "v0.36.0",
+        "release_ref": RELEASE_REF,
         "graph_tool_call_version": __version__,
         "benchmark": report["benchmark"],
         "methodology": report["methodology"],

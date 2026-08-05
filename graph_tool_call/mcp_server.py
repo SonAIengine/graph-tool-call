@@ -209,14 +209,16 @@ def create_mcp_server(
                     "description": p.description,
                     "required": p.required,
                     **({"enum": p.enum} if p.enum else {}),
-                    **({"default": p.default} if p.default is not None else {}),
                 }
                 for p in tool.parameters
             }
-        if tool.method:
-            schema["method"] = tool.method
-        if tool.path:
-            schema["path"] = tool.path
+        metadata = tool.metadata if isinstance(tool.metadata, dict) else {}
+        method = getattr(tool, "method", None) or metadata.get("method")
+        path = getattr(tool, "path", None) or metadata.get("path")
+        if method:
+            schema["method"] = method
+        if path:
+            schema["path"] = path
         if tool.domain:
             schema["category"] = tool.domain
         if tool.tags:

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-08-04
+
 ### Added
 - OpenAI Responses API filtering and LangChain v1 model-call middleware while
   preserving legacy Chat Completions and LangGraph integrations.
@@ -22,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   incompatible MCP 2.x package surface.
 - The Docker image builds the checked-out source and starts a remotely usable
   Streamable HTTP MCP endpoint instead of installing an unrelated PyPI build.
+- The English and Korean READMEs now lead with the offline dependency-chain
+  demo, current integration choices, explicit production boundaries, and
+  reproducible evidence instead of historical model claims and research logs.
+- The roadmap now reflects the implemented ingest/search/selection/planning/
+  learning stack and separates product adoption work from frozen paper gates.
+- Release evidence output is version-derived so package metadata, artifact
+  paths, and README claims cannot silently drift across releases.
+
+### Fixed
+- MCP `get_tool_schema` now reads HTTP method and path from current tool
+  metadata and no longer references removed `ToolSchema` or `ToolParameter`
+  attributes.
 
 ## [0.36.0] - 2026-08-02
 
@@ -613,7 +627,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.33.0...v0.34.0
