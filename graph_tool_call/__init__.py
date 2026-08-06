@@ -37,6 +37,9 @@ __all__ = [
     "ToolCallPolicy",
     "ToolGraph",
     "ToolSchema",
+    "TraceEnvelope",
+    "TraceRecorder",
+    "OpenTelemetryTraceExporter",
     "filter_tools",
     "detect_ingest_adapter",
     "get_default_ingest_registry",
@@ -46,6 +49,7 @@ __all__ = [
     "parse_tool",
     "register_ingest_adapter",
     "scrub_trace_payload",
+    "replay_trace",
     "unregister_ingest_adapter",
 ]
 
@@ -100,6 +104,13 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "build_trace_learning_record": ("graph_tool_call.learning", "build_trace_learning_record"),
     "derive_learning_suggestions": ("graph_tool_call.learning", "derive_learning_suggestions"),
     "scrub_trace_payload": ("graph_tool_call.learning", "scrub_trace_payload"),
+    "TraceEnvelope": ("graph_tool_call.observability", "TraceEnvelope"),
+    "TraceRecorder": ("graph_tool_call.observability", "TraceRecorder"),
+    "OpenTelemetryTraceExporter": (
+        "graph_tool_call.observability",
+        "OpenTelemetryTraceExporter",
+    ),
+    "replay_trace": ("graph_tool_call.observability", "replay_trace"),
 }
 
 

@@ -96,6 +96,7 @@ const sidebars: SidebarsConfig = {
         'learning/scrubbing',
         'learning/suggestions',
         'learning/shadow-promotion',
+        'learning/observability',
       ],
     },
     {

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A versioned, secret-scrubbed observability trace contract for retrieval,
+  target selection, dependency closure, token-budget schema admission, planning,
+  and runner events.
+- `TraceRecorder`, deterministic trace replay, the `graph-tool-call trace` CLI,
+  and an optional OpenTelemetry exporter available through the `observability`
+  extra.
+
 ## [0.37.0] - 2026-08-04
 
 ### Added
