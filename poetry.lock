@@ -1852,6 +1852,22 @@ files = [
 ]
 
 [[package]]
+name = "opentelemetry-api"
+version = "1.44.0"
+description = "OpenTelemetry Python API"
+optional = true
+python-versions = ">=3.10"
+groups = ["main"]
+markers = "extra == \"observability\" or extra == \"all\""
+files = [
+    {file = "opentelemetry_api-1.44.0-py3-none-any.whl", hash = "sha256:94b98c893a91b88657eaac1e3ba89618cdb85be6918196705354f34728b2cdef"},
+    {file = "opentelemetry_api-1.44.0.tar.gz", hash = "sha256:67647e5e9566edcf421166fdf022b3537f818635daa852b289e34604dc6fb33a"},
+]
+
+[package.dependencies]
+typing-extensions = ">=4.5.0"
+
+[[package]]
 name = "orjson"
 version = "3.11.7"
 description = "Fast, correct Python JSON library supporting dataclasses, datetimes, and numpy"
@@ -3763,7 +3779,7 @@ files = [
     {file = "typing_extensions-4.15.0-py3-none-any.whl", hash = "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548"},
     {file = "typing_extensions-4.15.0.tar.gz", hash = "sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466"},
 ]
-markers = {main = "extra == \"embedding-local\" or extra == \"all\" or extra == \"langchain\" or extra == \"mcp\" or extra == \"dashboard\" or (extra == \"embedding-local\" or extra == \"all\" or extra == \"langchain\" or extra == \"mcp\" or extra == \"dashboard\" or extra == \"visualization\") and python_version < \"3.12\""}
+markers = {main = "extra == \"embedding-local\" or extra == \"all\" or extra == \"langchain\" or extra == \"mcp\" or extra == \"dashboard\" or extra == \"observability\" or (extra == \"embedding-local\" or extra == \"all\" or extra == \"langchain\" or extra == \"mcp\" or extra == \"dashboard\" or extra == \"visualization\" or extra == \"observability\") and python_version < \"3.12\""}
 
 [[package]]
 name = "typing-inspection"
@@ -4191,7 +4207,7 @@ markers = {main = "extra == \"langchain\" or extra == \"all\""}
 cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and python_version < \"3.14\"", "cffi (>=2.0.0b0) ; platform_python_implementation != \"PyPy\" and python_version >= \"3.14\""]
 
 [extras]
-all = ["ai-api-lint", "dash", "dash-cytoscape", "kiwipiepy", "langchain", "langchain-core", "langgraph", "mcp", "networkx", "numpy", "pyvis", "pyyaml", "rapidfuzz", "sentence-transformers"]
+all = ["ai-api-lint", "dash", "dash-cytoscape", "kiwipiepy", "langchain", "langchain-core", "langgraph", "mcp", "networkx", "numpy", "opentelemetry-api", "pyvis", "pyyaml", "rapidfuzz", "sentence-transformers"]
 dashboard = ["dash", "dash-cytoscape"]
 embedding = ["numpy"]
 embedding-local = ["numpy", "sentence-transformers"]
@@ -4199,6 +4215,7 @@ korean = ["kiwipiepy"]
 langchain = ["langchain", "langchain-core", "langgraph"]
 lint = ["ai-api-lint"]
 mcp = ["mcp"]
+observability = ["opentelemetry-api"]
 openapi = ["pyyaml"]
 similarity = ["rapidfuzz"]
 visualization = ["networkx", "pyvis"]
@@ -4206,4 +4223,4 @@ visualization = ["networkx", "pyvis"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "10f3bbfa16359fa334fd88bd21486f84369b407294876f1cc088cba1b6a6437b"
+content-hash = "07fb9df9b6d2c440bde114a6ae1ddcf08fd435d226fa8dc25deaa755caeacee7"

@@ -58,6 +58,7 @@ dash = {version = ">=2.18.0", optional = true}
 dash-cytoscape = {version = ">=1.0.2", optional = true}
 mcp = {version = ">=1.13.0,<2.0.0", optional = true}
 kiwipiepy = {version = ">=0.17.0", optional = true}
+opentelemetry-api = {version = ">=1.25,<2.0", optional = true}
 
 [tool.poetry.extras]
 openapi = ["pyyaml"]
@@ -70,7 +71,8 @@ dashboard = ["dash", "dash-cytoscape"]
 lint = ["ai-api-lint"]
 mcp = ["mcp"]
 korean = ["kiwipiepy"]
-all = ["networkx", "pyyaml", "numpy", "sentence-transformers", "rapidfuzz", "langchain-core", "langchain", "langgraph", "pyvis", "ai-api-lint", "dash", "dash-cytoscape", "mcp", "kiwipiepy"]
+observability = ["opentelemetry-api"]
+all = ["networkx", "pyyaml", "numpy", "sentence-transformers", "rapidfuzz", "langchain-core", "langchain", "langgraph", "pyvis", "ai-api-lint", "dash", "dash-cytoscape", "mcp", "kiwipiepy", "opentelemetry-api"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"

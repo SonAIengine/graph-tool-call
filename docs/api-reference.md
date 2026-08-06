@@ -788,6 +788,56 @@ shadow mode by the adapter before promotion.
 
 ---
 
+## Observability trace
+
+`graph_tool_call.observability` turns the existing evidence-rich return values
+into a versioned, persistence-safe trace. It does not change retrieval or
+selection results and adds no core dependency.
+
+```python
+from graph_tool_call.graphify import retrieve_graphify
+from graph_tool_call.observability import (
+    STAGE_RETRIEVAL,
+    TraceRecorder,
+    record_retrieval_result,
+)
+
+trace = TraceRecorder("catalog_request", attributes={"query": query})
+with trace.start_span(STAGE_RETRIEVAL, "retrieve_graphify") as span:
+    retrieval = retrieve_graphify(graph, query, include_evidence=True)
+    record_retrieval_result(span, retrieval)
+
+trace.write("trace.json")
+```
+
+The stable public surface is:
+
+| API | Description |
+|---|---|
+| `TraceRecorder` | Records timed per-request spans and scrubbed decisions |
+| `TraceEnvelope` | Versioned JSON contract with fixed span, decision, and event fields |
+| `record_retrieval_result(...)` | Preserves rank, score channels, graph expansion, and semantic evidence |
+| `record_selector_result(...)` | Preserves every considered candidate, final target, margin, and reason codes |
+| `record_dependency_closure(...)` | Preserves required/optional producers, unresolved fields, cycles, and safety |
+| `record_tool_bundle(...)` | Preserves admitted/omitted schemas and token-budget reasons |
+| `record_plan(...)`, `record_runner_events(...)` | Adds bounded plan and execution diagnostics without raw arguments or payloads |
+| `replay_trace(...)` | Validates the schema and reconstructs ordered decisions without calling tools |
+| `OpenTelemetryTraceExporter` | Exports the same spans through a caller-configured OpenTelemetry provider |
+
+Install OpenTelemetry support only where it is needed:
+
+```bash
+pip install "graph-tool-call[observability]"
+graph-tool-call trace trace.json
+```
+
+Every `TraceDecision` requires at least one `reason_code`. The common scrubber
+redacts credential-like keys, raw body/payload/result fields, bearer/JWT-like
+values, email addresses, phone-like values, and long secret-shaped strings.
+Adapters should still avoid attaching arbitrary request or response objects.
+
+---
+
 ## Top-level helpers
 
 | Function | Description |

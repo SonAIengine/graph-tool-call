@@ -237,6 +237,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p_retrieve.add_argument("-k", "--top-k", type=int, default=5)
     p_retrieve.add_argument("--json", action="store_true", dest="as_json", help="JSON output")
 
+    # --- trace ---
+    p_trace = sub.add_parser(
+        "trace",
+        help="Validate and replay a scrubbed graph-tool-call trace",
+    )
+    p_trace.add_argument("trace_file", help="Trace JSON file")
+    p_trace.add_argument("--json", action="store_true", dest="as_json", help="JSON output")
+
     # --- visualize ---
     p_viz = sub.add_parser("visualize", help="Export graph visualization")
     p_viz.add_argument("graph_file", help="Graph JSON file")
@@ -918,6 +926,24 @@ def cmd_serve(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_trace(args: argparse.Namespace) -> None:
+    from graph_tool_call.observability import load_trace, replay_trace
+
+    replay = replay_trace(load_trace(args.trace_file))
+    if args.as_json:
+        print(json.dumps(replay, indent=2, ensure_ascii=False))
+        return
+    print(f"Trace {replay['trace_id']} · {replay['operation']} · {replay['status']}")
+    print(
+        f"Decisions {replay['decision_count']} · "
+        f"reason coverage {float(replay['reason_coverage']):.0%}"
+    )
+    for stage, duration in replay["stage_durations_ms"].items():
+        print(f"  {stage}: {float(duration):.2f} ms")
+    for outcome, subjects in replay["outcomes"].items():
+        print(f"  {outcome}: {', '.join(subjects)}")
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -934,6 +960,7 @@ def main() -> None:
         "build-openapi-collection": cmd_build_openapi_collection,
         "search": cmd_search,
         "retrieve": cmd_retrieve,
+        "trace": cmd_trace,
         "visualize": cmd_visualize,
         "info": cmd_info,
         "dashboard": cmd_dashboard,
