@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A versioned, secret-safe execution-flow contract that keeps planned and
+  observed step order separate from graph-inferred predecessor/successor
+  candidates.
+- `derive_execution_flow(...)` and `classify_execution_edge(...)` public
+  helpers with explicit direction, evidence provenance, binding transitions,
+  runner status, ambiguity diagnostics, and allowlisted data-flow metadata.
+- Optional compact execution-flow persistence in trace learning records.
+
 ## [0.38.0] - 2026-08-09
 
 ### Added

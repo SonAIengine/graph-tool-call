@@ -93,6 +93,7 @@ def build_trace_learning_record(
     latency_ms: int | float | None = None,
     target_selector: dict[str, Any] | None = None,
     trace_edges: list[dict[str, Any]] | None = None,
+    execution_flow: dict[str, Any] | None = None,
     created_at: str | None = None,
 ) -> dict[str, Any]:
     """Build a compact, persistence-ready execution learning record."""
@@ -122,6 +123,7 @@ def build_trace_learning_record(
         "latency_ms": int(latency_ms) if latency_ms is not None else None,
         "target_selector": clean_target_selector,
         "trace_edges": clean_trace_edges,
+        "execution_flow": scrub_trace_payload(execution_flow) if execution_flow else None,
         "created_at": created_at or datetime.now(timezone.utc).isoformat(),
     }
 

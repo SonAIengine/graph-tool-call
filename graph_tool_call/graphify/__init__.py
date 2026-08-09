@@ -43,6 +43,11 @@ from graph_tool_call.graphify.edges import (
     merge_graph_edges,
     normalize_graph_edge,
 )
+from graph_tool_call.graphify.execution_flow import (
+    EXECUTION_FLOW_SCHEMA_VERSION,
+    classify_execution_edge,
+    derive_execution_flow,
+)
 from graph_tool_call.graphify.ingest import (
     DEFAULT_CONF_AMBIGUOUS,
     DEFAULT_CONF_EXTRACTED,
@@ -88,6 +93,7 @@ __all__ = [
     "EVIDENCE_PROVEN",
     "EVIDENCE_RUN",
     "EVIDENCE_STRUCTURAL",
+    "EXECUTION_FLOW_SCHEMA_VERSION",
     "TOOL_BUNDLE_POLICY_REVISION",
     "DependencyClosureResult",
     "ToolBundle",
@@ -101,8 +107,10 @@ __all__ = [
     "build_io_contract",
     "build_tool_equivalence_groups",
     "complete_target_dependencies",
+    "classify_execution_edge",
     "contract_projected_tool_schema",
     "derive_plan_trace_edges",
+    "derive_execution_flow",
     "derive_openapi_tool_semantics",
     "detect_enrichment_status",
     "expand_candidates_with_producers",
