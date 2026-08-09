@@ -724,6 +724,36 @@ incrementally with `use_dependency_closure=True` and `dependency_graph=...`.
 
 ---
 
+## Execution-flow helpers
+
+Execution-flow helpers keep planned or observed step order separate from
+graph-inferred candidates. They preserve only structural binding metadata and
+never copy raw arguments, request bodies, responses, or authorization values.
+
+```python
+from graph_tool_call.graphify import derive_execution_flow
+
+flow = derive_execution_flow(
+    plan=plan,
+    runner_events=runner_events,
+    graph_edges=graph_edges,
+    selected_tool="cancelOrder",
+)
+```
+
+The returned schema is versioned by `EXECUTION_FLOW_SCHEMA_VERSION` and uses
+`mode=planned|observed|inferred`. Ordered plan steps live in `steps`, binding
+or sequence relationships in `transitions`, and graph-only evidence in
+`candidates.predecessors|successors|related|ambiguous`. An inferred candidate
+is never represented as an executed step.
+
+| Function | Description |
+|---|---|
+| `classify_execution_edge(edge, selected_tool=...)` | Normalizes an edge to an explicit direction and optional predecessor/successor/related role |
+| `derive_execution_flow(...)` | Builds a secret-safe planned, observed, or inferred execution-flow artifact |
+
+---
+
 ## Trace learning helpers
 
 Trace learning turns execution outcomes into collection-local evidence. It does
@@ -767,7 +797,7 @@ The stable public helpers are:
 | Function | Description |
 |---|---|
 | `scrub_trace_payload(value)` | Redacts auth/cookie/token/API-key-like keys, user IDs, emails, phone-like values, and raw body/payload/result fields before persistence |
-| `build_trace_learning_record(...)` | Builds a compact attempt record with query family, selected/LLM targets, plan tools, failure reason, latency, selector evidence, and trace-edge evidence |
+| `build_trace_learning_record(...)` | Builds a compact attempt record with query family, selected/LLM targets, plan tools, failure reason, latency, selector evidence, trace-edge evidence, and an optional execution-flow artifact |
 | `derive_learning_suggestions(record, history=...)` | Creates `target_preference`, `plan_path`, and `data_flow_edge` suggestions from successful attempts |
 | `merge_learning_suggestions(existing, incoming, history=...)` | Deduplicates suggestions, updates observation counts, and marks repeated successful evidence as `promotable` |
 | `apply_learning_suggestions(query, candidates, suggestions, mode=...)` | Computes shadow/promoted candidate boosts without mutating the graph |
