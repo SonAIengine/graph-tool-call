@@ -230,12 +230,22 @@ selected target produced:
 | Candidate binding support | 14.3% | **100%** |
 | Target Recall@5 | - | **100%** |
 
-The [case-level v0.37.0 artifact](benchmarks/results/releases/v0.37.0/dependency-chain-evidence.json)
+The [case-level v0.38.0 artifact](benchmarks/results/releases/v0.38.0/dependency-chain-evidence.json)
 records fixture hashes, every expected target and producer, and replay commands:
 
 ```bash
 make launch-evidence
 make launch-evidence-check
+```
+
+The separate
+[observability artifact](benchmarks/results/releases/v0.38.0/observability-evidence.json)
+checks that tracing leaves engine inputs unchanged, replays deterministically,
+scrubs secrets, explains every decision, and stays below the documented
+`5ms/span` p95 capture-cost gate:
+
+```bash
+make observability-evidence-check
 ```
 
 This is an engine regression suite, not a population-level estimate of LLM
