@@ -1,0 +1,328 @@
+{
+  "benchmark": "XGEN Commerce Tool Graph Search",
+  "cases": [
+    {
+      "case_id": "product_search_direct_ko",
+      "expanded_candidates": [
+        "searchProducts"
+      ],
+      "expected_producers": [],
+      "expected_target": "searchProducts",
+      "graph_with_producers": {
+        "candidate_binding_support": 1.0,
+        "candidate_plan_coverage": 1.0,
+        "producer_added_count": 0,
+        "producer_recall": 1.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "query": "상품 검색",
+      "retrieved": [
+        "searchProducts",
+        "findOrders",
+        "addCartItem",
+        "getOrderDetail",
+        "createProductReview"
+      ],
+      "selected_target": "searchProducts",
+      "target_only": {
+        "candidate_binding_support": 1.0,
+        "candidate_plan_coverage": 1.0,
+        "producer_added_count": 0,
+        "producer_recall": 1.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "target_only_candidates": [
+        "searchProducts"
+      ]
+    },
+    {
+      "case_id": "product_detail_ko",
+      "expanded_candidates": [
+        "getProductDetail",
+        "searchProducts"
+      ],
+      "expected_producers": [
+        "searchProducts"
+      ],
+      "expected_target": "getProductDetail",
+      "graph_with_producers": {
+        "candidate_binding_support": 1.0,
+        "candidate_plan_coverage": 1.0,
+        "producer_added_count": 1,
+        "producer_recall": 1.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "query": "상품명으로 검색해서 상품 상세를 보여줘",
+      "retrieved": [
+        "searchProducts",
+        "getProductDetail",
+        "addCartItem",
+        "getCart",
+        "createProductReview"
+      ],
+      "selected_target": "getProductDetail",
+      "target_only": {
+        "candidate_binding_support": 0.0,
+        "candidate_plan_coverage": 0.5,
+        "producer_added_count": 0,
+        "producer_recall": 0.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "target_only_candidates": [
+        "getProductDetail"
+      ]
+    },
+    {
+      "case_id": "inventory_chain_ko",
+      "expanded_candidates": [
+        "getInventory",
+        "searchProducts",
+        "getProductDetail",
+        "getCart"
+      ],
+      "expected_producers": [
+        "getProductDetail"
+      ],
+      "expected_target": "getInventory",
+      "graph_with_producers": {
+        "candidate_binding_support": 1.0,
+        "candidate_plan_coverage": 1.0,
+        "producer_added_count": 3,
+        "producer_recall": 1.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "query": "상품 sku 재고 수량 확인해줘",
+      "retrieved": [
+        "getInventory",
+        "addCartItem",
+        "getProductDetail",
+        "searchProducts",
+        "getCart"
+      ],
+      "selected_target": "getInventory",
+      "target_only": {
+        "candidate_binding_support": 0.0,
+        "candidate_plan_coverage": 0.3333333333333333,
+        "producer_added_count": 0,
+        "producer_recall": 0.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "target_only_candidates": [
+        "getInventory"
+      ]
+    },
+    {
+      "case_id": "add_cart_chain_ko",
+      "expanded_candidates": [
+        "addCartItem",
+        "searchProducts",
+        "getProductDetail",
+        "getCart"
+      ],
+      "expected_producers": [
+        "getProductDetail"
+      ],
+      "expected_target": "addCartItem",
+      "graph_with_producers": {
+        "candidate_binding_support": 1.0,
+        "candidate_plan_coverage": 1.0,
+        "producer_added_count": 3,
+        "producer_recall": 1.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "query": "장바구니에 상품 하나 담아줘",
+      "retrieved": [
+        "addCartItem",
+        "getCart",
+        "searchProducts",
+        "checkoutCart",
+        "getProductDetail"
+      ],
+      "selected_target": "addCartItem",
+      "target_only": {
+        "candidate_binding_support": 0.0,
+        "candidate_plan_coverage": 0.3333333333333333,
+        "producer_added_count": 0,
+        "producer_recall": 0.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "target_only_candidates": [
+        "addCartItem"
+      ]
+    },
+    {
+      "case_id": "coupon_checkout_ko",
+      "expanded_candidates": [
+        "checkoutCart",
+        "getCart",
+        "validateCoupon"
+      ],
+      "expected_producers": [
+        "getCart",
+        "validateCoupon"
+      ],
+      "expected_target": "checkoutCart",
+      "graph_with_producers": {
+        "candidate_binding_support": 1.0,
+        "candidate_plan_coverage": 1.0,
+        "producer_added_count": 2,
+        "producer_recall": 1.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "query": "쿠폰 적용해서 장바구니 결제 진행",
+      "retrieved": [
+        "checkoutCart",
+        "validateCoupon",
+        "getCart",
+        "addCartItem",
+        "getProductDetail"
+      ],
+      "selected_target": "checkoutCart",
+      "target_only": {
+        "candidate_binding_support": 0.0,
+        "candidate_plan_coverage": 0.3333333333333333,
+        "producer_added_count": 0,
+        "producer_recall": 0.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "target_only_candidates": [
+        "checkoutCart"
+      ]
+    },
+    {
+      "case_id": "shipment_tracking_ko",
+      "expanded_candidates": [
+        "getShipmentTracking",
+        "getOrderDetail",
+        "findOrders",
+        "checkoutCart"
+      ],
+      "expected_producers": [
+        "getOrderDetail"
+      ],
+      "expected_target": "getShipmentTracking",
+      "graph_with_producers": {
+        "candidate_binding_support": 1.0,
+        "candidate_plan_coverage": 1.0,
+        "producer_added_count": 3,
+        "producer_recall": 1.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "query": "주문한 상품 배송 추적 상태 알려줘",
+      "retrieved": [
+        "getShipmentTracking",
+        "getOrderDetail",
+        "searchProducts",
+        "findOrders",
+        "addCartItem"
+      ],
+      "selected_target": "getShipmentTracking",
+      "target_only": {
+        "candidate_binding_support": 0.0,
+        "candidate_plan_coverage": 0.3333333333333333,
+        "producer_added_count": 0,
+        "producer_recall": 0.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "target_only_candidates": [
+        "getShipmentTracking"
+      ]
+    },
+    {
+      "case_id": "review_user_slots_ko",
+      "expanded_candidates": [
+        "createProductReview",
+        "searchProducts"
+      ],
+      "expected_producers": [
+        "searchProducts"
+      ],
+      "expected_target": "createProductReview",
+      "graph_with_producers": {
+        "candidate_binding_support": 1.0,
+        "candidate_plan_coverage": 1.0,
+        "producer_added_count": 1,
+        "producer_recall": 1.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "query": "구매한 상품 리뷰 작성할래",
+      "retrieved": [
+        "createProductReview",
+        "getProductDetail",
+        "searchProducts",
+        "addCartItem",
+        "getInventory"
+      ],
+      "selected_target": "createProductReview",
+      "target_only": {
+        "candidate_binding_support": 0.0,
+        "candidate_plan_coverage": 0.5,
+        "producer_added_count": 0,
+        "producer_recall": 0.0,
+        "target_recall_at_k": 1.0,
+        "target_selector_exact": 1.0
+      },
+      "target_only_candidates": [
+        "createProductReview"
+      ]
+    }
+  ],
+  "claims": {
+    "candidate_binding_support": {
+      "after": 1.0,
+      "before": 0.142857,
+      "delta": 0.857143
+    },
+    "candidate_plan_coverage": {
+      "after": 1.0,
+      "before": 0.47619,
+      "delta": 0.52381
+    },
+    "expanded_pipeline_status": "pass",
+    "producer_needed_cases": 6,
+    "producer_recall": {
+      "after": 1.0,
+      "before": 0.142857,
+      "delta": 0.857143
+    },
+    "target_recall_at_5": 1.0,
+    "target_selector_exact": 1.0,
+    "unneeded_expansion_cases": 0
+  },
+  "dataset": {
+    "case_count": 7,
+    "cases_path": "benchmarks/xgen_tool_graph/cases.json",
+    "cases_sha256": "7db14a433a4c4e7637d4df566e0345cefcc193ecb6fcaefe553a432cba32a6af",
+    "edge_count": 13,
+    "spec_path": "benchmarks/xgen_tool_graph/commerce_openapi.json",
+    "spec_sha256": "06de6b2ff75f11000d5b415103348eab0bae6be9ec5584bf637491a96312651e",
+    "tool_count": 11
+  },
+  "graph_tool_call_version": "0.39.0",
+  "limitations": [
+    "Deterministic engine regression; no LLM is used.",
+    "Seven curated commerce cases; not a population-level accuracy estimate.",
+    "Measures retrieval, target selection, dependency expansion, and plan coverage."
+  ],
+  "methodology": "deterministic_engine_contract",
+  "model": "none",
+  "release_ref": "v0.39.0",
+  "replay": {
+    "check_command": "make launch-evidence-check",
+    "command": "make launch-evidence"
+  },
+  "schema_version": "launch-evidence-v1"
+}
