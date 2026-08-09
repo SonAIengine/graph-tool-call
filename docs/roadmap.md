@@ -1,7 +1,7 @@
 # graph-tool-call Roadmap
 
-> Updated: 2026-08-04
-> Baseline: `main` after the 0.37 adoption-readiness changes
+> Updated: 2026-08-09
+> Baseline: `main` after the 0.38 trace-observability changes
 > Scope: provider-neutral tool ingestion, retrieval, planning contracts, and
 > evidence. Product auth, model-provider lifecycle, and UI remain outside the
 > library.
@@ -158,11 +158,11 @@ isolated with shadow and promotion gates.
 | Release | Focus | Required evidence |
 | --- | --- | --- |
 | 0.37 | adoption readiness and public-surface cleanup | release evidence, framework adapter tests, Docker/MCP smoke |
-| 0.38 | trace schema and optional OpenTelemetry | replay test, secret scrub, latency overhead |
+| 0.38 | trace schema and optional OpenTelemetry | replay test, secret scrub, latency overhead (delivered) |
 | 0.39 | ecosystem smoke matrix and dynamic-catalog profiling | real framework runs, p50/p95 scale report |
 | 0.40 | cross-source dependency hardening | unseen-family paired evaluation and negative controls |
 
-Version numbers after 0.37 are planning targets, not commitments. A release is
+Version numbers after 0.38 are planning targets, not commitments. A release is
 cut only when its evidence gate passes.
 
 ## Working Rules

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-08-09
+
 ### Added
 - A versioned, secret-scrubbed observability trace contract for retrieval,
   target selection, dependency closure, token-budget schema admission, planning,
@@ -14,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TraceRecorder`, deterministic trace replay, the `graph-tool-call trace` CLI,
   and an optional OpenTelemetry exporter available through the `observability`
   extra.
+- A committed observability release artifact and live release gate covering
+  result invariance, deterministic replay, secret scrubbing, reason coverage,
+  serialized size, and per-span capture overhead.
 
 ## [0.37.0] - 2026-08-04
 
@@ -635,7 +640,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.34.0...v0.35.0

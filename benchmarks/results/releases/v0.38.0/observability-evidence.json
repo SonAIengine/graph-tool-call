@@ -1,0 +1,51 @@
+{
+  "captured_at_utc": "2026-08-09T04:19:00.752407+00:00",
+  "checks": {
+    "overhead_within_threshold": true,
+    "reason_coverage_complete": true,
+    "replay_deterministic": true,
+    "result_invariant": true,
+    "secret_scan_passed": true,
+    "serialized_size_bounded": true,
+    "stage_order_complete": true
+  },
+  "environment": {
+    "implementation": "CPython",
+    "platform": "linux",
+    "python": "3.12.3"
+  },
+  "graph_tool_call_version": "0.38.0",
+  "limitations": [
+    "Local deterministic adapter scenario; no external API or LLM is used.",
+    "Latency is a Python microbenchmark and not an end-to-end service SLO.",
+    "The gate measures trace capture cost, not backend exporter latency."
+  ],
+  "overhead": {
+    "iterations": 200,
+    "per_span_p50_ms": 0.091976,
+    "per_span_p95_ms": 0.09876,
+    "spans_per_trace": 6,
+    "threshold_p95_ms": 5.0
+  },
+  "release_ref": "v0.38.0",
+  "replay": {
+    "check_command": "make observability-evidence-check",
+    "generate_command": "make observability-evidence"
+  },
+  "scenario": {
+    "decision_count": 11,
+    "max_serialized_trace_bytes": 65536,
+    "reason_coverage": 1.0,
+    "serialized_trace_bytes": 5763,
+    "stage_order": [
+      "retrieval",
+      "target_selection",
+      "dependency_closure",
+      "schema_admission",
+      "plan",
+      "runner"
+    ]
+  },
+  "schema_version": "observability-release-evidence-v1",
+  "status": "pass"
+}

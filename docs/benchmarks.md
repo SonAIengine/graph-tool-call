@@ -16,8 +16,8 @@ expensive full model benchmarks.
 - **Pipelines compared**: `baseline` (all tools), `retrieve-k3 / k5 / k10`, plus `+ embedding`, `+ ontology`
 - **Reproduce**: see [Reproduce](#reproduce) at the bottom
 
-> **Release-claim policy:** the `v0.37.0` README headline uses the checked-in,
-> model-free [dependency-chain release artifact](../benchmarks/results/releases/v0.37.0/dependency-chain-evidence.json).
+> **Release-claim policy:** the `v0.38.0` README headline uses the checked-in,
+> model-free [dependency-chain release artifact](../benchmarks/results/releases/v0.38.0/dependency-chain-evidence.json).
 > The older `qwen3:4b` tables below document historical self-hosted runs. Their
 > original case-level output was not preserved in the current repository, so
 > they are not used as a current release or leaderboard claim.
@@ -42,6 +42,26 @@ make launch-evidence-check
 This is a deterministic regression suite with `model=none`. It demonstrates
 engine behavior and guards release claims; seven curated cases are not a
 population-level estimate of LLM tool-calling accuracy.
+
+## Observability release gate
+
+The 0.38 release adds a measured, replayable trace gate for retrieval, target
+selection, dependency closure, schema admission, planning, and runner events.
+The committed
+[observability artifact](../benchmarks/results/releases/v0.38.0/observability-evidence.json)
+records the environment and case-level checks. CI also runs a fresh local
+microbenchmark instead of trusting only the stored number.
+
+```bash
+make observability-evidence
+make observability-evidence-check
+```
+
+The gate requires unchanged source inputs, deterministic replay, complete
+reason coverage, no known secret markers in serialized JSON, a trace below
+64 KiB, and p95 capture overhead below `5ms/span`. This is a local Python
+adapter benchmark; it does not include an OpenTelemetry backend or service
+network latency.
 
 ---
 
