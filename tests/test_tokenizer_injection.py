@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from graph_tool_call.core.tool import ToolSchema
+from graph_tool_call.retrieval import tokenizer as tokenizer_module
 from graph_tool_call.retrieval.keyword import BM25Scorer
 from graph_tool_call.retrieval.tokenizer import KiwiTokenizer, wrap_tokenizer
 from graph_tool_call.tool_graph import ToolGraph
@@ -52,6 +53,28 @@ def test_wrap_tokenizer_unknown_string_raises():
 def test_wrap_tokenizer_non_callable_raises():
     with pytest.raises(TypeError):
         wrap_tokenizer(123)
+
+
+def test_kiwi_runtime_health_requires_stable_subprocess_output(monkeypatch):
+    monkeypatch.setattr(tokenizer_module, "_kiwi_runtime_health", None)
+    monkeypatch.setattr(
+        tokenizer_module,
+        "_run_kiwi_probe",
+        lambda seed: "이벤트/NNG|목록/NNG|조회/NNG" if seed == "1" else "목록/NNG",
+    )
+
+    assert tokenizer_module._kiwi_runtime_is_healthy() is False
+
+
+def test_kiwi_runtime_health_accepts_stable_subprocess_output(monkeypatch):
+    monkeypatch.setattr(tokenizer_module, "_kiwi_runtime_health", None)
+    monkeypatch.setattr(
+        tokenizer_module,
+        "_run_kiwi_probe",
+        lambda _seed: "이벤트/NNG|목록/NNG|조회/NNG",
+    )
+
+    assert tokenizer_module._kiwi_runtime_is_healthy() is True
 
 
 # --- BM25Scorer injection ---

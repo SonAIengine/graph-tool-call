@@ -13,6 +13,7 @@ from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.ontology.schema import NodeType, RelationType
 from graph_tool_call.retrieval.graph_search import GraphSearcher
 from graph_tool_call.retrieval.keyword import BM25Scorer
+from graph_tool_call.retrieval.ranking import stable_score_items
 
 _CLAUSE_ACTION_PATTERN = re.compile(
     r"\b("
@@ -98,6 +99,7 @@ class RetrievalResult:
     graph_score: float = 0.0
     embedding_score: float = 0.0
     annotation_score: float = 0.0
+    semantic_score: float = 0.0
     relations: list[ToolRelation] = field(default_factory=list)
     prerequisites: list[str] = field(default_factory=list)
 
@@ -133,6 +135,8 @@ class RetrievalResult:
         if include_score:
             d["score"] = round(self.score, 4)
             d["confidence"] = self.confidence
+            if self.semantic_score:
+                d["semantic_score"] = round(self.semantic_score, 4)
         if include_params and tool.parameters:
             d["parameters"] = {
                 p.name: {
@@ -345,6 +349,9 @@ class RetrievalEngine:
         annotation_scores = (
             compute_annotation_scores(query_intent, annotation_tools) if aw > 0 else {}
         )
+        from graph_tool_call.retrieval.semantic_scorer import compute_semantic_scores
+
+        semantic_channel_scores = compute_semantic_scores(query, annotation_tools)
 
         # Graph: independent retrieval channel (resource-first + BFS)
         graph_scores: dict[str, float] = {}
@@ -365,6 +372,9 @@ class RetrievalEngine:
             (clause_scores, kw * 0.6),
             (embedding_scores, ew),
             (annotation_scores, aw),
+            # Structured metadata is cleaner than long OpenAPI descriptions,
+            # but remains below the primary lexical channel.
+            (semantic_channel_scores, kw * 0.75),
         ]
 
         # ENHANCED/FULL: LLM-assisted expansion
@@ -391,6 +401,7 @@ class RetrievalEngine:
             top_k,
             allow_top_rank_promotion=not self._has_diverse_actionable_clauses(query),
         )
+        semantic_scores = self._boost_structured_semantics(query, final_scores)
         if history:
             for tool_name in history:
                 if tool_name in final_scores:
@@ -403,6 +414,7 @@ class RetrievalEngine:
             graph_scores,
             embedding_scores,
             annotation_scores,
+            semantic_scores,
             top_k,
         )
         candidates = self._post_process(candidates, query, final_scores, top_k)
@@ -444,9 +456,7 @@ class RetrievalEngine:
             scores = bm25.score(clause)
             if not scores:
                 scores = self._keyword_match(clause)
-            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[
-                :clause_candidate_depth
-            ]
+            ranked = stable_score_items(scores)[:clause_candidate_depth]
             if not ranked:
                 continue
             top_clause_score = ranked[0][1]
@@ -526,7 +536,7 @@ class RetrievalEngine:
     ) -> list[str]:
         """Build multi-layer seed list: BM25 + annotation + history."""
         # Layer 1: BM25 top-10
-        sorted_by_score = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
+        sorted_by_score = stable_score_items(keyword_scores)
         seeds = [name for name, _ in sorted_by_score[:10]]
 
         # Layer 2: Annotation-based seeds (intent-matching tools)
@@ -537,7 +547,7 @@ class RetrievalEngine:
             intent = classify_intent(query)
             if not intent.is_neutral:
                 ann_scores = compute_annotation_scores(intent, self._tools)
-                ann_top = sorted(ann_scores.items(), key=lambda x: x[1], reverse=True)
+                ann_top = stable_score_items(ann_scores)
                 for name, score in ann_top[:3]:
                     if score > 0.7 and name not in seeds:
                         seeds.append(name)
@@ -609,7 +619,7 @@ class RetrievalEngine:
             )
         if not self._prefilter_enabled or n < 500:
             return None
-        ranked_kw = sorted(keyword_scores.items(), key=lambda x: x[1], reverse=True)
+        ranked_kw = stable_score_items(keyword_scores)
         bm25_top = [name for name, _ in ranked_kw[:50]]
         return self._get_prefilter().candidate_pool(
             effective_query, query_intent, bm25_top, resource_scored=resource_scores
@@ -626,7 +636,7 @@ class RetrievalEngine:
         """Add top embedding hits as extra graph seeds for semantic coverage."""
         if not embedding_scores:
             return graph_scores
-        emb_top = sorted(embedding_scores.items(), key=lambda x: x[1], reverse=True)
+        emb_top = stable_score_items(embedding_scores)
         for name, _ in emb_top[:5]:
             if name not in seed_tools:
                 seed_tools.append(name)
@@ -772,7 +782,7 @@ class RetrievalEngine:
             return
 
         # Filter to high-confidence: top graph candidates only
-        g_ranked = sorted(new_candidates.items(), key=lambda x: x[1], reverse=True)
+        g_ranked = stable_score_items(new_candidates)
         top_g_score = g_ranked[0][1] if g_ranked else 0
         if top_g_score <= 0:
             return
@@ -801,7 +811,7 @@ class RetrievalEngine:
         if not clause_scores or not final_scores:
             return
 
-        ranked_clause = sorted(clause_scores.items(), key=lambda x: x[1], reverse=True)
+        ranked_clause = stable_score_items(clause_scores)
         if not ranked_clause:
             return
 
@@ -852,7 +862,7 @@ class RetrievalEngine:
             scores = bm25.score(clause)
             if not scores:
                 scores = self._keyword_match(clause)
-            for name, _score in sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]:
+            for name, _score in stable_score_items(scores)[:3]:
                 if name not in self._tools:
                     continue
                 signatures.append(self._tool_signature(name))
@@ -907,12 +917,28 @@ class RetrievalEngine:
             elif query_intent.delete_intent > 0.5 and method == "DELETE":
                 scores[name] *= 1.15
 
+    def _boost_structured_semantics(self, query: str, scores: dict[str, float]) -> dict[str, float]:
+        """Use action/result-shape metadata as a conservative tie breaker."""
+        from graph_tool_call.retrieval.semantic_scorer import semantic_rank_multiplier
+
+        semantic_scores: dict[str, float] = {}
+        for name in list(scores):
+            tool = self._tools.get(name)
+            if tool is None:
+                continue
+            multiplier, _evidence = semantic_rank_multiplier(tool, query)
+            if multiplier == 1.0:
+                continue
+            scores[name] *= multiplier
+            semantic_scores[name] = round(multiplier - 1.0, 6)
+        return semantic_scores
+
     def _boost_embedding_rerank(self, query: str, scores: dict[str, float]) -> None:
         """Rerank top candidates using embedding description similarity."""
         if self._embedding_index is None or self._embedding_index._provider is None:
             return
         try:
-            top_n = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:10]
+            top_n = stable_score_items(scores)[:10]
             if not top_n:
                 return
             descs, desc_names = [], []
@@ -965,9 +991,7 @@ class RetrievalEngine:
 
         ranked_keyword = [
             (name, score)
-            for name, score in sorted(
-                keyword_scores.items(), key=lambda item: item[1], reverse=True
-            )
+            for name, score in stable_score_items(keyword_scores)
             if name in final_scores and score > 0
         ]
         if not ranked_keyword:
@@ -977,7 +1001,7 @@ class RetrievalEngine:
         if top_keyword_score < 6.0:
             return
 
-        ranked_final = sorted(final_scores.items(), key=lambda item: item[1], reverse=True)
+        ranked_final = stable_score_items(final_scores)
         if not ranked_final:
             return
 
@@ -1027,10 +1051,11 @@ class RetrievalEngine:
         graph_scores: dict[str, float],
         embedding_scores: dict[str, float],
         annotation_scores: dict[str, float],
+        semantic_scores: dict[str, float],
         top_k: int,
     ) -> list[RetrievalResult]:
         """Build RetrievalResult list from fused scores."""
-        ranked = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)
+        ranked = stable_score_items(final_scores)
         pool = top_k * 3 if (self._reranker or self._diversity_lambda) else top_k
         return [
             RetrievalResult(
@@ -1040,6 +1065,7 @@ class RetrievalEngine:
                 graph_score=graph_scores.get(name, 0.0),
                 embedding_score=embedding_scores.get(name, 0.0),
                 annotation_score=annotation_scores.get(name, 0.0),
+                semantic_score=semantic_scores.get(name, 0.0),
             )
             for name, score in ranked[:pool]
             if name in self._tools
@@ -1348,7 +1374,7 @@ class RetrievalEngine:
         """
         fused: dict[str, float] = {}
         for scores in score_dicts:
-            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            ranked = stable_score_items(scores)
             for rank, (name, _) in enumerate(ranked, start=1):
                 fused[name] = fused.get(name, 0.0) + 1.0 / (k + rank)
         return fused
@@ -1369,7 +1395,7 @@ class RetrievalEngine:
         """
         fused: dict[str, float] = {}
         for scores, weight in weighted_sources:
-            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            ranked = stable_score_items(scores)
             if not ranked:
                 continue
 
