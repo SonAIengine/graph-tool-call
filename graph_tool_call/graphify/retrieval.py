@@ -36,6 +36,7 @@ from graph_tool_call.ontology.schema import (
     RelationType,
 )
 from graph_tool_call.retrieval.intent import classify_intent
+from graph_tool_call.retrieval.semantic_scorer import semantic_match_evidence
 from graph_tool_call.tool_graph import ToolGraph
 
 # Score multiplier per confidence bucket. EXTRACTED edges are deterministic
@@ -499,7 +500,7 @@ def retrieve_graphify(
             learning_score = float((learning_by_name.get(name) or {}).get("score") or 0.0)
             base_score = max(0.0, float(score) - learning_score)
             graph_score = 0.0 if prov.get("seed") else round(base_score, 6)
-            semantic = _semantic_match_evidence(tg.tools[name], query)
+            semantic = semantic_match_evidence(tg.tools[name], query)
             row["score_breakdown"] = {
                 "seed": round(seed_score, 6),
                 "graph": graph_score,
@@ -539,92 +540,6 @@ def retrieve_graphify(
             learning_applied=bool(learning_by_name),
         ),
     }
-
-
-def _semantic_match_evidence(tool: ToolSchema, query: str) -> dict[str, Any]:
-    metadata = tool.metadata if isinstance(tool.metadata, dict) else {}
-    openapi = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
-    ai = metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
-    query_terms = _semantic_terms(query)
-
-    action = str(ai.get("canonical_action") or "").strip().lower()
-    resource = str(ai.get("primary_resource") or "").strip().lower()
-    result_shape = str(ai.get("result_shape") or "").strip().lower()
-    module = str(openapi.get("path_module") or "").strip().lower()
-    contract_rows = [
-        row
-        for key in ("produces", "consumes")
-        for row in (metadata.get(key) or [])
-        if isinstance(row, dict)
-    ]
-    if not contract_rows:
-        contract = (
-            metadata.get("api_contract") if isinstance(metadata.get("api_contract"), dict) else {}
-        )
-        contract_rows = [
-            row
-            for key in ("produces", "consumes")
-            for row in (contract.get(key) or [])
-            if isinstance(row, dict)
-        ]
-
-    action_terms = _semantic_terms(action) | _canonical_action_terms(action)
-    resource_terms = _semantic_terms(resource.replace("/", " "))
-    module_terms = _semantic_terms(module.replace("/", " "))
-    shape_terms = _result_shape_terms(result_shape)
-    contract_terms = {
-        term
-        for row in contract_rows
-        for value in (
-            row.get("field_name"),
-            row.get("semantic_tag"),
-            row.get("description"),
-            row.get("json_path"),
-        )
-        for term in _semantic_terms(str(value or ""))
-    }
-
-    return {
-        "canonical_action": action,
-        "primary_resource": resource,
-        "result_shape": result_shape,
-        "path_module": module,
-        "action_match": bool(query_terms & action_terms),
-        "resource_match": bool(query_terms & resource_terms),
-        "module_match": bool(query_terms & module_terms),
-        "shape_match": bool(query_terms & shape_terms),
-        "contract_match": bool(query_terms & contract_terms),
-        "matched_terms": sorted(
-            query_terms
-            & (action_terms | resource_terms | module_terms | shape_terms | contract_terms)
-        ),
-    }
-
-
-def _semantic_terms(value: str) -> set[str]:
-    normalized = unicodedata.normalize("NFKC", str(value or "")).lower()
-    normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", normalized)
-    return {term for term in re.split(r"[\s_\-/.,;:!?()[\]{}$#]+", normalized) if len(term) > 1}
-
-
-def _canonical_action_terms(action: str) -> set[str]:
-    return {
-        "search": {"search", "list", "query", "검색", "목록", "조회"},
-        "read": {"read", "get", "detail", "조회", "상세", "정보"},
-        "create": {"create", "add", "등록", "생성", "추가"},
-        "update": {"update", "save", "수정", "저장", "변경"},
-        "delete": {"delete", "remove", "삭제", "제거"},
-        "action": {"action", "process", "처리", "실행", "승인", "취소"},
-    }.get(str(action or "").lower(), set())
-
-
-def _result_shape_terms(shape: str) -> set[str]:
-    return {
-        "single": {"single", "detail", "details", "info", "상세", "정보", "단건"},
-        "list": {"list", "lists", "search", "query", "목록", "리스트", "검색"},
-        "count": {"count", "total", "cnt", "건수", "개수", "카운트"},
-        "mutation": {"create", "update", "delete", "action", "등록", "수정", "삭제", "처리"},
-    }.get(str(shape or "").lower(), set())
 
 
 def _stats(

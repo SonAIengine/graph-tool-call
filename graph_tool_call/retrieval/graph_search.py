@@ -8,6 +8,7 @@ from typing import Any
 
 from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.ontology.schema import DEFAULT_RELATION_WEIGHTS, NodeType, RelationType
+from graph_tool_call.retrieval.ranking import stable_score_items
 
 
 class GraphSearcher:
@@ -147,7 +148,7 @@ class GraphSearcher:
 
         # Step 1: Find matching categories (try multiple token variants)
         matched_categories: dict[str, float] = {}
-        for token in query_tokens:
+        for token in sorted(query_tokens):
             # Try: original, stemmed, and common suffixes stripped
             variants = [token, self._stem_simple(token)]
             # Handle -ed, -ing, -er suffixes more aggressively
@@ -173,7 +174,7 @@ class GraphSearcher:
         scores: dict[str, float] = {}
         for cat_node, cat_score in matched_categories.items():
             cat_tools = self._graph.get_neighbors(cat_node, direction="in")
-            for tool_node in cat_tools:
+            for tool_node in sorted(cat_tools):
                 t_attrs = self._graph.get_node_attrs(tool_node)
                 if t_attrs.get("node_type") != NodeType.TOOL:
                     continue
@@ -201,7 +202,7 @@ class GraphSearcher:
             scores[name] = max(scores.get(name, 0), score)
 
         # Sort and limit
-        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        ranked = stable_score_items(scores)
         return dict(ranked[:max_results])
 
     @staticmethod
@@ -293,7 +294,7 @@ class GraphSearcher:
             return {}
 
         # Only expand from top-scored tools to avoid noise
-        top_tools = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:5]
+        top_tools = stable_score_items(scores)[:5]
         chain_scores: dict[str, float] = {}
 
         for tool_name, base_score in top_tools:
@@ -309,7 +310,10 @@ class GraphSearcher:
                 if depth >= max_chain_depth:
                     continue
 
-                for edge in self._graph.get_edges_from(node, direction="both"):
+                for edge in sorted(
+                    self._graph.get_edges_from(node, direction="both"),
+                    key=lambda item: (item[0], item[1], str(item[2].get("relation", ""))),
+                ):
                     src, tgt, attrs = edge
                     neighbor = tgt if src == node else src
                     relation = str(attrs.get("relation", ""))
@@ -367,7 +371,10 @@ class GraphSearcher:
             if depth >= max_depth:
                 continue
 
-            for edge in self._graph.get_edges_from(node, direction="both"):
+            for edge in sorted(
+                self._graph.get_edges_from(node, direction="both"),
+                key=lambda item: (item[0], item[1], str(item[2].get("relation", ""))),
+            ):
                 src, tgt, attrs = edge
                 neighbor = tgt if src == node else src
 
@@ -392,7 +399,7 @@ class GraphSearcher:
                     queue.append((neighbor, depth + 1))
 
         # Sort by score descending, filter to top_k
-        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        ranked = stable_score_items(scores)
         return ranked[:max_results]
 
     def get_category_siblings(self, tool_name: str) -> list[str]:
@@ -409,4 +416,4 @@ class GraphSearcher:
                 n_attrs = self._graph.get_node_attrs(neighbor)
                 if n_attrs.get("node_type") == NodeType.TOOL and neighbor != tool_name:
                     siblings.add(neighbor)
-        return list(siblings)
+        return sorted(siblings, key=lambda name: (name.casefold(), name))

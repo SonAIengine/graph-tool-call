@@ -30,6 +30,7 @@ from typing import Any
 
 from graph_tool_call.ontology.schema import NodeType
 from graph_tool_call.retrieval.graph_search import GraphSearcher
+from graph_tool_call.retrieval.ranking import stable_score_items
 
 __all__ = ["CategoryPrefilter"]
 
@@ -129,9 +130,9 @@ class CategoryPrefilter:
         annotation-only relevant tools nearby aren't excluded. Best-effort — if
         the graph is sparse the pool may stay below ``min_pool``.
         """
-        seeds = [n for n, _ in sorted(cat_scored.items(), key=lambda x: -x[1])[:20]]
+        seeds = [n for n, _ in stable_score_items(cat_scored)[:20]]
         if not seeds:
-            seeds = list(bm25_set)[:20]
+            seeds = sorted(bm25_set, key=lambda name: (name.casefold(), name))[:20]
         if not seeds:
             return
         for name, _ in self._searcher.expand_from_seeds(
@@ -154,11 +155,11 @@ class CategoryPrefilter:
         category tools, then any embedding members, until the cap is hit.
         """
         keep = set(bm25_set)
-        for name, _ in sorted(cat_scored.items(), key=lambda x: -x[1]):
+        for name, _ in stable_score_items(cat_scored):
             if len(keep) >= self._max_pool:
                 break
             keep.add(name)
-        for name in emb_tools:
+        for name in sorted(emb_tools, key=lambda value: (value.casefold(), value)):
             if len(keep) >= self._max_pool:
                 break
             keep.add(name)
@@ -188,10 +189,7 @@ class CategoryPrefilter:
             if qn == 0.0:
                 return set()
             q = q / qn
-            scored = sorted(
-                ((cat, float(q @ vec)) for cat, vec in centroids.items()),
-                key=lambda x: -x[1],
-            )
+            scored = stable_score_items((cat, float(q @ vec)) for cat, vec in centroids.items())
             members = self._get_category_members()
             out: set[str] = set()
             for cat, sim in scored[:3]:
