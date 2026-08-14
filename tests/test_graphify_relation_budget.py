@@ -9,7 +9,7 @@ def _dense_tools(count: int) -> list[ToolSchema]:
             metadata={
                 "method": "get",
                 "path": f"/items/{index}",
-                "response_schema": {"$ref": "#/components/schemas/CommonEnvelope"},
+                "response_schema": {"$ref": f"#/components/schemas/Group{index // 8}Envelope"},
             },
         )
         for index in range(count)
@@ -28,8 +28,19 @@ def test_graphify_reports_relation_budget_reached():
 
 
 def test_graphify_small_catalog_does_not_report_truncation():
+    tools = [
+        ToolSchema(
+            name=f"getItem{index}",
+            metadata={
+                "method": "get",
+                "path": f"/items/{index}",
+                "response_schema": {"$ref": "#/components/schemas/CommonEnvelope"},
+            },
+        )
+        for index in range(3)
+    ]
     _graph, stats = ingest_openapi_graphify(
-        _dense_tools(3),
+        tools,
         max_detected_relations=25,
     )
 

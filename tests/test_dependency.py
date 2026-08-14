@@ -171,7 +171,7 @@ def test_min_confidence_filter():
     assert len(max_threshold) == 0, "Threshold 1.0 should exclude all relations"
 
 
-def test_relation_budget_bounds_dense_shared_schema_catalog():
+def test_ubiquitous_shared_schema_is_not_dependency_evidence():
     tools = [
         ToolSchema(
             name=f"getItem{index}",
@@ -184,10 +184,49 @@ def test_relation_budget_bounds_dense_shared_schema_catalog():
         for index in range(40)
     ]
 
-    relations = detect_dependencies(tools, min_confidence=0.0, max_relations=25)
+    relations = detect_dependencies(tools, min_confidence=0.0)
 
-    assert len(relations) == 25
-    assert all(relation.source != relation.target for relation in relations)
+    shared_schema_relations = [
+        relation for relation in relations if "share schema refs" in relation.evidence
+    ]
+    assert shared_schema_relations == []
+
+
+def test_selective_shared_schema_remains_dependency_evidence():
+    tools = [
+        ToolSchema(
+            name="getUser",
+            metadata={
+                "method": "get",
+                "path": "/users/{id}",
+                "response_schema": {"$ref": "#/components/schemas/User"},
+            },
+        ),
+        ToolSchema(
+            name="listUsers",
+            metadata={
+                "method": "get",
+                "path": "/users",
+                "response_schema": {"$ref": "#/components/schemas/User"},
+            },
+        ),
+        *[
+            ToolSchema(
+                name=f"getItem{index}",
+                metadata={"method": "get", "path": f"/items/{index}"},
+            )
+            for index in range(40)
+        ],
+    ]
+
+    relations = detect_dependencies(tools, min_confidence=0.0)
+
+    assert any(
+        relation.source == "getUser"
+        and relation.target == "listUsers"
+        and relation.relation_type == RelationType.COMPLEMENTARY
+        for relation in relations
+    )
 
 
 def test_relation_budget_none_keeps_exhaustive_behavior():

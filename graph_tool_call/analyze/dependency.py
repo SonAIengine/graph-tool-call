@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
+from math import ceil
 from typing import Any
 
 from graph_tool_call.core.tool import ToolSchema
@@ -448,6 +450,30 @@ def _detect_shared_schemas(
         req_refs = _collect_refs(req_meta)
         if req_refs:
             tool_request_refs[tool.name] = req_refs
+
+    # Shared response envelopes (for example ``ResponseString``) often occur in
+    # hundreds of otherwise unrelated operations. Treating those refs as pairwise
+    # evidence creates O(n^2) false-positive edges and can fill the relation budget
+    # before selective domain schemas are considered. Keep refs whose document
+    # frequency is selective for this catalog; the floor preserves small catalogs
+    # and the hard ceiling prevents large common wrappers from becoming hubs.
+    ref_frequency: Counter[str] = Counter()
+    for refs in tool_refs.values():
+        ref_frequency.update(refs)
+    selective_fanout = min(25, max(8, ceil(len(tools) * 0.05)))
+    noisy_refs = {ref for ref, frequency in ref_frequency.items() if frequency > selective_fanout}
+    if noisy_refs:
+        tool_refs = {
+            name: refs - noisy_refs for name, refs in tool_refs.items() if refs - noisy_refs
+        }
+        tool_response_refs = {
+            name: refs - noisy_refs
+            for name, refs in tool_response_refs.items()
+            if refs - noisy_refs
+        }
+        tool_request_refs = {
+            name: refs - noisy_refs for name, refs in tool_request_refs.items() if refs - noisy_refs
+        }
 
     # Shared schema refs → COMPLEMENTARY
     names = list(tool_refs.keys())
