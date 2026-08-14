@@ -10,7 +10,10 @@ Mirrors the ``wrap_embedding`` / ``wrap_llm`` auto-detection pattern.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
 import threading
 from collections.abc import Callable
 
@@ -39,6 +42,55 @@ _KEEP_POS = frozenset(
     }
 )
 
+_KIWI_PROBE_CODE = """
+from kiwipiepy import Kiwi
+tokens = Kiwi().tokenize('이벤트 목록 조회')
+print('|'.join(f'{token.form}/{token.tag}' for token in tokens))
+"""
+_kiwi_runtime_health: bool | None = None
+_kiwi_runtime_health_lock = threading.Lock()
+
+
+def _run_kiwi_probe(hash_seed: str) -> str | None:
+    """Run native Kiwi analysis outside the application process."""
+    env = os.environ.copy()
+    env["PYTHONHASHSEED"] = hash_seed
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", _KIWI_PROBE_CODE],
+            capture_output=True,
+            check=False,
+            env=env,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    output = completed.stdout.strip()
+    return output or None
+
+
+def _kiwi_runtime_is_healthy() -> bool:
+    """Verify that the optional native tokenizer is safe and deterministic."""
+    global _kiwi_runtime_health
+    if os.environ.get("GRAPH_TOOL_CALL_KIWI_RUNTIME_CHECK", "true").lower() in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        return True
+    if _kiwi_runtime_health is not None:
+        return _kiwi_runtime_health
+    with _kiwi_runtime_health_lock:
+        if _kiwi_runtime_health is None:
+            first = _run_kiwi_probe("1")
+            second = _run_kiwi_probe("2")
+            _kiwi_runtime_health = bool(first and first == second)
+    return bool(_kiwi_runtime_health)
+
 
 class KiwiTokenizer:
     """Hybrid tokenizer: English pipeline preserved, Korean spans → Kiwi morphemes.
@@ -59,6 +111,13 @@ class KiwiTokenizer:
                 "Install with: pip install graph-tool-call[korean]"
             )
             raise ImportError(msg) from exc
+        if not _kiwi_runtime_is_healthy():
+            msg = (
+                "kiwipiepy failed the isolated runtime health check. "
+                "Use the built-in deterministic tokenizer or install a compatible "
+                "kiwipiepy/Python build."
+            )
+            raise RuntimeError(msg)
         self._kiwi = Kiwi()
         # kiwipiepy analysis is not guaranteed reentrant across threads; the
         # retrieval engine may call tokenization from an executor pool.
