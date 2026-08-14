@@ -849,6 +849,7 @@ def ingest_openapi_graphify(
     promote_contract_signals: bool = False,
     contract_signal_options: dict[str, Any] | None = None,
     max_contract_producers_per_field: int = 3,
+    max_detected_relations: int | None = 100_000,
     derive_semantic_metadata: bool = True,
     semantic_options: dict[str, Any] | None = None,
     overwrite_ai_metadata: bool = False,
@@ -888,6 +889,11 @@ def ingest_openapi_graphify(
         ingest conservative on very large, noisy Swagger specs.
     contract_signal_options:
         Optional keyword overrides forwarded to ``promote_api_contract_signals``.
+    max_detected_relations:
+        Hard budget for dependency candidates created by structural, name,
+        cross-resource, and RPC detectors. The default bounds memory for dense
+        enterprise catalogs; pass ``None`` to request exhaustive legacy
+        detection.
     derive_semantic_metadata:
         When True, fill missing OpenAPI semantic metadata before building
         graph/search artifacts. Existing ``ai_metadata`` values are preserved
@@ -956,6 +962,8 @@ def ingest_openapi_graphify(
         "openapi_link_signals": openapi_link_signal_stats,
         "openapi_link_edges": {},
         "semantic_metadata": semantic_summary,
+        "relation_budget": max_detected_relations,
+        "relation_budget_reached": False,
     }
 
     if len(schemas) < 2:
@@ -978,7 +986,15 @@ def ingest_openapi_graphify(
         stats["refs_preserved"] = preserve_refs_for_detection(schemas, raw_spec)
 
     # min_confidence=0.0 so we see every candidate; we re-bucket here.
-    relations: list[DetectedRelation] = detect_dependencies(schemas, spec, min_confidence=0.0)
+    relations: list[DetectedRelation] = detect_dependencies(
+        schemas,
+        spec,
+        min_confidence=0.0,
+        max_relations=max_detected_relations,
+    )
+    stats["relation_budget_reached"] = bool(
+        max_detected_relations is not None and len(relations) >= max_detected_relations
+    )
 
     seen: set[tuple[str, str, str]] = set()  # (src, tgt, relation_value)
     for rel in relations:

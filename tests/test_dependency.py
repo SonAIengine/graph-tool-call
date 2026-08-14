@@ -171,6 +171,31 @@ def test_min_confidence_filter():
     assert len(max_threshold) == 0, "Threshold 1.0 should exclude all relations"
 
 
+def test_relation_budget_bounds_dense_shared_schema_catalog():
+    tools = [
+        ToolSchema(
+            name=f"getItem{index}",
+            metadata={
+                "method": "get",
+                "path": f"/items/{index}",
+                "response_schema": {"$ref": "#/components/schemas/CommonEnvelope"},
+            },
+        )
+        for index in range(40)
+    ]
+
+    relations = detect_dependencies(tools, min_confidence=0.0, max_relations=25)
+
+    assert len(relations) == 25
+    assert all(relation.source != relation.target for relation in relations)
+
+
+def test_relation_budget_none_keeps_exhaustive_behavior():
+    tools = _pet_tools()
+
+    assert detect_dependencies(tools, max_relations=None) == detect_dependencies(tools)
+
+
 def test_no_self_reference():
     """Same tool should not relate to itself."""
     tools = _pet_tools()
