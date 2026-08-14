@@ -51,6 +51,22 @@ def test_data_flow_requires_is_producer_to_consumer() -> None:
     assert edge["evidence_type"] == "contract"
 
 
+def test_structural_requires_is_consumer_to_prerequisite() -> None:
+    edge = classify_execution_edge(
+        {
+            "source": "createRefund",
+            "target": "getOrderDetail",
+            "relation": "requires",
+            "evidence_sources": ["structural"],
+        },
+        selected_tool="createRefund",
+    )
+
+    assert edge["direction"] == "target_to_source"
+    assert edge["role"] == "predecessor"
+    assert edge["counterpart"] == "getOrderDetail"
+
+
 def test_semantic_pair_stays_unordered() -> None:
     edge = classify_execution_edge(
         {
@@ -139,6 +155,7 @@ def test_inferred_candidates_separate_ordered_related_and_conflicting_edges() ->
                 "target": "cancelOrder",
                 "relation": "requires",
                 "evidence_sources": ["structural"],
+                "execution_direction": "source_to_target",
             },
             {
                 "source": "cancelOrder",
