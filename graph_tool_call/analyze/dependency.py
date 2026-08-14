@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
+from math import ceil
 from typing import Any
 
 from graph_tool_call.core.tool import ToolSchema
@@ -57,6 +59,7 @@ def detect_dependencies(
     spec: dict[str, Any] | None = None,
     *,
     min_confidence: float = 0.7,
+    max_relations: int | None = None,
 ) -> list[DetectedRelation]:
     """Detect dependency relations between *tools*.
 
@@ -69,17 +72,31 @@ def detect_dependencies(
         preferred).
     min_confidence:
         Only return relations whose confidence >= this threshold.
+    max_relations:
+        Optional hard budget for generated relation candidates. Detection stops
+        at layer boundaries and inside dense pair loops once the budget is
+        reached. ``None`` preserves the exhaustive legacy behaviour.
 
     Returns
     -------
     list[DetectedRelation]
         De-duplicated list of detected relations sorted by confidence desc.
     """
+    if max_relations is not None and max_relations < 1:
+        return []
+
     relations: list[DetectedRelation] = []
-    relations.extend(_detect_structural(tools, spec))
-    relations.extend(_detect_name_based(tools))
-    relations.extend(_detect_cross_resource(tools))
-    relations.extend(_detect_rpc_patterns(tools))
+    detectors = (
+        lambda limit: _detect_structural(tools, spec, max_relations=limit),
+        lambda limit: _detect_name_based(tools, max_relations=limit),
+        lambda limit: _detect_cross_resource(tools, max_relations=limit),
+        lambda limit: _detect_rpc_patterns(tools, max_relations=limit),
+    )
+    for detector in detectors:
+        remaining = None if max_relations is None else max_relations - len(relations)
+        if remaining is not None and remaining <= 0:
+            break
+        relations.extend(detector(remaining))
     relations = _deduplicate(relations)
     relations = [r for r in relations if r.confidence >= min_confidence]
     relations.sort(key=lambda r: r.confidence, reverse=True)
@@ -194,6 +211,8 @@ def _group_by_resource(tools: list[ToolSchema]) -> dict[str, list[ToolSchema]]:
 def _detect_structural(
     tools: list[ToolSchema],
     spec: dict[str, Any] | None,
+    *,
+    max_relations: int | None = None,
 ) -> list[DetectedRelation]:
     """Detect relations based on HTTP method + path metadata (Layer 1)."""
     relations: list[DetectedRelation] = []
@@ -204,20 +223,28 @@ def _detect_structural(
         return relations
 
     # --- Path hierarchy ---
-    relations.extend(_detect_path_hierarchy(api_tools))
+    relations.extend(_detect_path_hierarchy(api_tools, max_relations=max_relations))
+    if _relation_limit_reached(relations, max_relations):
+        return relations
 
     # --- CRUD patterns per resource group ---
     groups = _group_by_resource(api_tools)
     for _resource, group in groups.items():
-        relations.extend(_detect_crud_patterns(group))
+        remaining = _remaining_relation_budget(relations, max_relations)
+        relations.extend(_detect_crud_patterns(group, max_relations=remaining))
+        if _relation_limit_reached(relations, max_relations):
+            return relations
 
     # --- Shared schema references ---
-    relations.extend(_detect_shared_schemas(api_tools))
+    remaining = _remaining_relation_budget(relations, max_relations)
+    relations.extend(_detect_shared_schemas(api_tools, max_relations=remaining))
 
     return relations
 
 
-def _detect_path_hierarchy(tools: list[ToolSchema]) -> list[DetectedRelation]:
+def _detect_path_hierarchy(
+    tools: list[ToolSchema], *, max_relations: int | None = None
+) -> list[DetectedRelation]:
     """Nested paths imply REQUIRES — but only direct parent-child, not grandparent.
 
     /orders/{id}/refund REQUIRES /orders/{id} (direct parent)
@@ -271,13 +298,17 @@ def _detect_path_hierarchy(tools: list[ToolSchema]) -> list[DetectedRelation]:
                         layer=1,
                     )
                 )
+                if _relation_limit_reached(relations, max_relations):
+                    return relations
                 found_parent = True
             if found_parent:
                 break  # stop at closest parent
     return relations
 
 
-def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
+def _detect_crud_patterns(
+    group: list[ToolSchema], *, max_relations: int | None = None
+) -> list[DetectedRelation]:
     """Detect CRUD-based relations within a resource group."""
     relations: list[DetectedRelation] = []
 
@@ -323,6 +354,8 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
                     layer=1,
                 )
             )
+            if _relation_limit_reached(relations, max_relations):
+                return relations
 
     # GET (single) ↔ GET (list): SIMILAR_TO (these are alternative views)
     for get_c in gets_collection:
@@ -342,6 +375,8 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
                     layer=1,
                 )
             )
+            if _relation_limit_reached(relations, max_relations):
+                return relations
 
     # POST → DELETE: create before delete (lifecycle endpoints only)
     for post in posts:
@@ -365,11 +400,15 @@ def _detect_crud_patterns(group: list[ToolSchema]) -> list[DetectedRelation]:
                     layer=1,
                 )
             )
+            if _relation_limit_reached(relations, max_relations):
+                return relations
 
     return relations
 
 
-def _detect_shared_schemas(tools: list[ToolSchema]) -> list[DetectedRelation]:
+def _detect_shared_schemas(
+    tools: list[ToolSchema], *, max_relations: int | None = None
+) -> list[DetectedRelation]:
     """Detect COMPLEMENTARY/PRECEDES relations from shared schema references.
 
     Checks both request body and response schemas:
@@ -412,6 +451,30 @@ def _detect_shared_schemas(tools: list[ToolSchema]) -> list[DetectedRelation]:
         if req_refs:
             tool_request_refs[tool.name] = req_refs
 
+    # Shared response envelopes (for example ``ResponseString``) often occur in
+    # hundreds of otherwise unrelated operations. Treating those refs as pairwise
+    # evidence creates O(n^2) false-positive edges and can fill the relation budget
+    # before selective domain schemas are considered. Keep refs whose document
+    # frequency is selective for this catalog; the floor preserves small catalogs
+    # and the hard ceiling prevents large common wrappers from becoming hubs.
+    ref_frequency: Counter[str] = Counter()
+    for refs in tool_refs.values():
+        ref_frequency.update(refs)
+    selective_fanout = min(25, max(8, ceil(len(tools) * 0.05)))
+    noisy_refs = {ref for ref, frequency in ref_frequency.items() if frequency > selective_fanout}
+    if noisy_refs:
+        tool_refs = {
+            name: refs - noisy_refs for name, refs in tool_refs.items() if refs - noisy_refs
+        }
+        tool_response_refs = {
+            name: refs - noisy_refs
+            for name, refs in tool_response_refs.items()
+            if refs - noisy_refs
+        }
+        tool_request_refs = {
+            name: refs - noisy_refs for name, refs in tool_request_refs.items() if refs - noisy_refs
+        }
+
     # Shared schema refs → COMPLEMENTARY
     names = list(tool_refs.keys())
     for i, name_a in enumerate(names):
@@ -430,6 +493,8 @@ def _detect_shared_schemas(tools: list[ToolSchema]) -> list[DetectedRelation]:
                         layer=1,
                     )
                 )
+                if _relation_limit_reached(relations, max_relations):
+                    return relations
 
     # Response→Request data flow → PRECEDES
     for producer, resp_refs in tool_response_refs.items():
@@ -451,6 +516,8 @@ def _detect_shared_schemas(tools: list[ToolSchema]) -> list[DetectedRelation]:
                         layer=1,
                     )
                 )
+                if _relation_limit_reached(relations, max_relations):
+                    return relations
 
     return relations
 
@@ -460,7 +527,9 @@ def _detect_shared_schemas(tools: list[ToolSchema]) -> list[DetectedRelation]:
 # ---------------------------------------------------------------------------
 
 
-def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
+def _detect_name_based(
+    tools: list[ToolSchema], *, max_relations: int | None = None
+) -> list[DetectedRelation]:
     """Detect relations from tool name / parameter name overlap (Layer 2)."""
     relations: list[DetectedRelation] = []
 
@@ -540,6 +609,8 @@ def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
                         layer=2,
                     )
                 )
+                if _relation_limit_reached(relations, max_relations):
+                    return relations
 
     return relations
 
@@ -549,7 +620,9 @@ def _detect_name_based(tools: list[ToolSchema]) -> list[DetectedRelation]:
 # ---------------------------------------------------------------------------
 
 
-def _detect_cross_resource(tools: list[ToolSchema]) -> list[DetectedRelation]:
+def _detect_cross_resource(
+    tools: list[ToolSchema], *, max_relations: int | None = None
+) -> list[DetectedRelation]:
     """Detect cross-resource dependencies from parameter names.
 
     When tool B has a parameter like ``orderId``, it needs data from the
@@ -643,6 +716,8 @@ def _detect_cross_resource(tools: list[ToolSchema]) -> list[DetectedRelation]:
                         layer=3,
                     )
                 )
+                if _relation_limit_reached(relations, max_relations):
+                    return relations
 
     return relations
 
@@ -785,7 +860,9 @@ def _extract_dto_resource(type_name: str | None) -> str:
     return "".join(t for t in tokens if t not in _DTO_SUFFIXES)
 
 
-def _detect_rpc_patterns(tools: list[ToolSchema]) -> list[DetectedRelation]:
+def _detect_rpc_patterns(
+    tools: list[ToolSchema], *, max_relations: int | None = None
+) -> list[DetectedRelation]:
     """Detect relations for RPC-style APIs (Layer 4).
 
     Handles non-RESTful endpoints (e.g. ``/v1/goods/goodsMgmtApi/getGoodsList``)
@@ -798,12 +875,17 @@ def _detect_rpc_patterns(tools: list[ToolSchema]) -> list[DetectedRelation]:
          controllers are marked COMPLEMENTARY.
     """
     relations: list[DetectedRelation] = []
-    relations.extend(_detect_rpc_crud_workflows(tools))
-    relations.extend(_detect_rpc_dto_links(tools))
+    relations.extend(_detect_rpc_crud_workflows(tools, max_relations=max_relations))
+    if _relation_limit_reached(relations, max_relations):
+        return relations
+    remaining = _remaining_relation_budget(relations, max_relations)
+    relations.extend(_detect_rpc_dto_links(tools, max_relations=remaining))
     return relations
 
 
-def _detect_rpc_crud_workflows(tools: list[ToolSchema]) -> list[DetectedRelation]:
+def _detect_rpc_crud_workflows(
+    tools: list[ToolSchema], *, max_relations: int | None = None
+) -> list[DetectedRelation]:
     """Build CRUD workflow relations from verb-resource analysis."""
     relations: list[DetectedRelation] = []
 
@@ -846,6 +928,8 @@ def _detect_rpc_crud_workflows(tools: list[ToolSchema]) -> list[DetectedRelation
                             layer=4,
                         )
                     )
+                    if _relation_limit_reached(relations, max_relations):
+                        return relations
 
         # Readers within same controller are SIMILAR_TO.
         readers = by_intent.get("read", [])
@@ -862,11 +946,15 @@ def _detect_rpc_crud_workflows(tools: list[ToolSchema]) -> list[DetectedRelation
                             layer=4,
                         )
                     )
+                    if _relation_limit_reached(relations, max_relations):
+                        return relations
 
     return relations
 
 
-def _detect_rpc_dto_links(tools: list[ToolSchema]) -> list[DetectedRelation]:
+def _detect_rpc_dto_links(
+    tools: list[ToolSchema], *, max_relations: int | None = None
+) -> list[DetectedRelation]:
     """Link tools that share a DTO type across controllers (COMPLEMENTARY)."""
     relations: list[DetectedRelation] = []
 
@@ -894,6 +982,8 @@ def _detect_rpc_dto_links(tools: list[ToolSchema]) -> list[DetectedRelation]:
                             layer=4,
                         )
                     )
+                    if _relation_limit_reached(relations, max_relations):
+                        return relations
 
     return relations
 
@@ -901,6 +991,18 @@ def _detect_rpc_dto_links(tools: list[ToolSchema]) -> list[DetectedRelation]:
 # ---------------------------------------------------------------------------
 # De-duplication
 # ---------------------------------------------------------------------------
+
+
+def _relation_limit_reached(relations: list[DetectedRelation], max_relations: int | None) -> bool:
+    return max_relations is not None and len(relations) >= max_relations
+
+
+def _remaining_relation_budget(
+    relations: list[DetectedRelation], max_relations: int | None
+) -> int | None:
+    if max_relations is None:
+        return None
+    return max(max_relations - len(relations), 0)
 
 
 def _deduplicate(relations: list[DetectedRelation]) -> list[DetectedRelation]:

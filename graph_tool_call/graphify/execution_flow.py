@@ -37,7 +37,6 @@ _FORWARD_RELATIONS = frozenset(
         "prerequisite_for",
         "produces_consumes",
         "produces_for",
-        "requires",
         "run_observed",
     }
 )
@@ -199,6 +198,17 @@ def _edge_direction(
         return aliases[explicit]
     if relation in _UNDIRECTED_RELATIONS:
         return DIRECTION_UNDIRECTED
+    if relation == "requires":
+        # ``requires`` exists in two historical graph contracts. Contract
+        # matching emits producer -> consumer, while structural/manual edges
+        # express consumer -> prerequisite. Keep both readable without making
+        # adapters rewrite stored graphs.
+        if isinstance(edge.get("data_flow"), dict) or {
+            "api_contract",
+            "openapi_link",
+        }.intersection(evidence_sources):
+            return DIRECTION_SOURCE_TO_TARGET
+        return DIRECTION_TARGET_TO_SOURCE
     if relation in _REVERSE_RELATIONS:
         return DIRECTION_TARGET_TO_SOURCE
     if relation in _FORWARD_RELATIONS:

@@ -171,6 +171,70 @@ def test_min_confidence_filter():
     assert len(max_threshold) == 0, "Threshold 1.0 should exclude all relations"
 
 
+def test_ubiquitous_shared_schema_is_not_dependency_evidence():
+    tools = [
+        ToolSchema(
+            name=f"getItem{index}",
+            metadata={
+                "method": "get",
+                "path": f"/items/{index}",
+                "response_schema": {"$ref": "#/components/schemas/CommonEnvelope"},
+            },
+        )
+        for index in range(40)
+    ]
+
+    relations = detect_dependencies(tools, min_confidence=0.0)
+
+    shared_schema_relations = [
+        relation for relation in relations if "share schema refs" in relation.evidence
+    ]
+    assert shared_schema_relations == []
+
+
+def test_selective_shared_schema_remains_dependency_evidence():
+    tools = [
+        ToolSchema(
+            name="getUser",
+            metadata={
+                "method": "get",
+                "path": "/users/{id}",
+                "response_schema": {"$ref": "#/components/schemas/User"},
+            },
+        ),
+        ToolSchema(
+            name="listUsers",
+            metadata={
+                "method": "get",
+                "path": "/users",
+                "response_schema": {"$ref": "#/components/schemas/User"},
+            },
+        ),
+        *[
+            ToolSchema(
+                name=f"getItem{index}",
+                metadata={"method": "get", "path": f"/items/{index}"},
+            )
+            for index in range(40)
+        ],
+    ]
+
+    relations = detect_dependencies(tools, min_confidence=0.0)
+
+    assert any(
+        relation.source == "getUser"
+        and relation.target == "listUsers"
+        and relation.relation_type == RelationType.COMPLEMENTARY
+        for relation in relations
+    )
+
+
+def test_relation_budget_none_keeps_exhaustive_behavior():
+    tools = _pet_tools()
+
+    assert detect_dependencies(tools, max_relations=None) == detect_dependencies(tools)
+
+
 def test_no_self_reference():
     """Same tool should not relate to itself."""
     tools = _pet_tools()
