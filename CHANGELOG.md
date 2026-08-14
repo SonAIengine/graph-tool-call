@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-08-15
+
+### Added
+- Structured semantic retrieval signals for action, resource, result shape,
+  module, contract, and concise summary evidence in metadata-rich catalogs.
+- Deterministic score tie-breaking and graph traversal across insertion order
+  and Python hash seeds.
+
+### Changed
+- Dense dependency-graph construction now bounds ubiquitous structural fields
+  so large OpenAPI catalogs avoid low-value edge explosions.
+
+### Fixed
+- Optional Kiwi tokenization now runs an isolated runtime health check and
+  falls back safely when the native extension is unstable or nondeterministic.
+
 ## [0.39.0] - 2026-08-09
 
 ### Added
@@ -651,7 +667,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.39.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.40.0...HEAD
 [0.39.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.36.0...v0.37.0
@@ -689,3 +705,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.0]: https://github.com/SonAIengine/graph-tool-call/releases/tag/v0.1.0
 [0.8.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.5.0...v0.8.0
 [0.28.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.27.0...v0.28.0
+[0.40.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.39.0...v0.40.0
