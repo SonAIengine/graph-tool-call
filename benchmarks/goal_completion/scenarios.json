@@ -1,0 +1,267 @@
+{
+  "name": "Goal Completion Commerce Baseline",
+  "description": "Natural-language retrieval, planning, binding, execution, and goal-state checks.",
+  "top_k": 5,
+  "token_budget": 2048,
+  "context_defaults": {
+    "siteNo": "100",
+    "userId": "user-1"
+  },
+  "initial_state": {
+    "cart": {
+      "cartId": "cart-1",
+      "items": []
+    },
+    "orders": {
+      "O100": {
+        "orderNo": "O100",
+        "shipmentId": "S100",
+        "status": "shipped",
+        "totalAmount": 120.0
+      }
+    },
+    "reviews": []
+  },
+  "cases": [
+    {
+      "id": "product_detail",
+      "query": "셔츠를 검색해서 상품 상세를 보여줘",
+      "target": "getProductDetail",
+      "entities": {"q": "셔츠"},
+      "milestones": [
+        {"id": "find_product", "tools": ["searchProducts"]},
+        {"id": "read_product", "tools": ["getProductDetail"], "target": true}
+      ],
+      "dependency_constraints": [
+        {"before": "find_product", "after": "read_product"}
+      ],
+      "binding_constraints": [
+        {
+          "source_milestone": "find_product",
+          "source_path": "items[0].productId",
+          "target_milestone": "read_product",
+          "target_arg": "productId"
+        }
+      ],
+      "final_state_assertions": [
+        {"scope": "output", "path": "productId", "operator": "eq", "value": "P100"}
+      ],
+      "forbidden_tools": ["checkoutCart", "createProductReview"],
+      "max_calls": 3,
+      "max_replans": 1,
+      "timeout_sec": 5
+    },
+    {
+      "id": "inventory_lookup",
+      "query": "후드 상품을 찾아서 실제 SKU 재고와 구매 가능 여부를 확인해줘",
+      "target": "getInventory",
+      "entities": {"q": "후드"},
+      "milestones": [
+        {"id": "find_product", "tools": ["searchProducts"]},
+        {"id": "read_product", "tools": ["getProductDetail"]},
+        {"id": "read_inventory", "tools": ["getInventory"], "target": true}
+      ],
+      "dependency_constraints": [
+        {"before": "find_product", "after": "read_product"},
+        {"before": "read_product", "after": "read_inventory"}
+      ],
+      "binding_constraints": [
+        {
+          "source_milestone": "find_product",
+          "source_path": "items[0].productId",
+          "target_milestone": "read_product",
+          "target_arg": "productId"
+        },
+        {
+          "source_milestone": "read_product",
+          "source_path": "skuOptions[0].skuId",
+          "target_milestone": "read_inventory",
+          "target_arg": "skuId"
+        }
+      ],
+      "final_state_assertions": [
+        {"scope": "output", "path": "stockQty", "operator": "gte", "value": 1},
+        {"scope": "output", "path": "available", "operator": "eq", "value": true}
+      ],
+      "forbidden_tools": ["addCartItem", "checkoutCart"],
+      "max_calls": 4,
+      "max_replans": 1,
+      "timeout_sec": 5
+    },
+    {
+      "id": "add_cart_item",
+      "query": "운동화를 찾아서 첫 번째 옵션 한 개를 내 장바구니에 담아줘",
+      "target": "addCartItem",
+      "entities": {"q": "운동화", "quantity": 1},
+      "milestones": [
+        {"id": "find_product", "tools": ["searchProducts"]},
+        {"id": "read_product", "tools": ["getProductDetail"]},
+        {"id": "add_item", "tools": ["addCartItem"], "target": true}
+      ],
+      "dependency_constraints": [
+        {"before": "find_product", "after": "read_product"},
+        {"before": "read_product", "after": "add_item"}
+      ],
+      "binding_constraints": [
+        {
+          "source_milestone": "find_product",
+          "source_path": "items[0].productId",
+          "target_milestone": "read_product",
+          "target_arg": "productId"
+        },
+        {
+          "source_milestone": "read_product",
+          "source_path": "skuOptions[0].skuId",
+          "target_milestone": "add_item",
+          "target_arg": "skuId"
+        }
+      ],
+      "final_state_assertions": [
+        {
+          "scope": "final_state",
+          "path": "cart.items[0].skuId",
+          "operator": "eq",
+          "value": "SKU100"
+        },
+        {
+          "scope": "final_state",
+          "path": "cart.items[0].quantity",
+          "operator": "eq",
+          "value": 1
+        }
+      ],
+      "forbidden_tools": ["checkoutCart"],
+      "max_calls": 4,
+      "max_replans": 1,
+      "timeout_sec": 5
+    },
+    {
+      "id": "coupon_checkout",
+      "query": "현재 장바구니에 WELCOME20 쿠폰을 검증해서 카드로 결제해줘",
+      "target": "checkoutCart",
+      "entities": {"couponCode": "WELCOME20", "paymentMethod": "card"},
+      "milestones": [
+        {"id": "read_cart", "tools": ["getCart"]},
+        {"id": "validate_coupon", "tools": ["validateCoupon"]},
+        {"id": "checkout", "tools": ["checkoutCart"], "target": true}
+      ],
+      "dependency_constraints": [
+        {"before": "read_cart", "after": "checkout"},
+        {"before": "validate_coupon", "after": "checkout"}
+      ],
+      "binding_constraints": [
+        {
+          "source_milestone": "read_cart",
+          "source_path": "cartId",
+          "target_milestone": "checkout",
+          "target_arg": "cartId"
+        },
+        {
+          "source_milestone": "validate_coupon",
+          "source_path": "couponValidationId",
+          "target_milestone": "checkout",
+          "target_arg": "couponValidationId"
+        }
+      ],
+      "final_state_assertions": [
+        {
+          "scope": "final_state",
+          "path": "orders.O200.status",
+          "operator": "eq",
+          "value": "paid"
+        },
+        {
+          "scope": "final_state",
+          "path": "orders.O200.paymentMethod",
+          "operator": "eq",
+          "value": "card"
+        }
+      ],
+      "forbidden_tools": ["createProductReview"],
+      "max_calls": 4,
+      "max_replans": 1,
+      "timeout_sec": 5
+    },
+    {
+      "id": "shipment_tracking",
+      "query": "buyer@example.com 고객 주문을 찾아 배송 추적 상태와 도착 예정일을 알려줘",
+      "target": "getShipmentTracking",
+      "entities": {"customerEmail": "buyer@example.com"},
+      "milestones": [
+        {"id": "find_order", "tools": ["findOrders"]},
+        {"id": "read_order", "tools": ["getOrderDetail"]},
+        {"id": "track_shipment", "tools": ["getShipmentTracking"], "target": true}
+      ],
+      "dependency_constraints": [
+        {"before": "find_order", "after": "read_order"},
+        {"before": "read_order", "after": "track_shipment"}
+      ],
+      "binding_constraints": [
+        {
+          "source_milestone": "find_order",
+          "source_path": "orders[0].orderNo",
+          "target_milestone": "read_order",
+          "target_arg": "orderNo"
+        },
+        {
+          "source_milestone": "read_order",
+          "source_path": "shipmentId",
+          "target_milestone": "track_shipment",
+          "target_arg": "shipmentId"
+        }
+      ],
+      "final_state_assertions": [
+        {
+          "scope": "output",
+          "path": "trackingStatus",
+          "operator": "eq",
+          "value": "in_transit"
+        },
+        {"scope": "output", "path": "eta", "operator": "exists"}
+      ],
+      "forbidden_tools": ["checkoutCart"],
+      "max_calls": 4,
+      "max_replans": 1,
+      "timeout_sec": 5
+    },
+    {
+      "id": "create_review",
+      "query": "백팩을 찾아서 별점 5점과 '튼튼해요'라는 리뷰를 작성해줘",
+      "target": "createProductReview",
+      "entities": {"q": "백팩", "rating": 5, "comment": "튼튼해요"},
+      "milestones": [
+        {"id": "find_product", "tools": ["searchProducts"]},
+        {"id": "create_review", "tools": ["createProductReview"], "target": true}
+      ],
+      "dependency_constraints": [
+        {"before": "find_product", "after": "create_review"}
+      ],
+      "binding_constraints": [
+        {
+          "source_milestone": "find_product",
+          "source_path": "items[0].productId",
+          "target_milestone": "create_review",
+          "target_arg": "productId"
+        }
+      ],
+      "final_state_assertions": [
+        {
+          "scope": "final_state",
+          "path": "reviews[0].rating",
+          "operator": "eq",
+          "value": 5
+        },
+        {
+          "scope": "final_state",
+          "path": "reviews[0].comment",
+          "operator": "eq",
+          "value": "튼튼해요"
+        }
+      ],
+      "forbidden_tools": ["checkoutCart"],
+      "max_calls": 3,
+      "max_replans": 1,
+      "timeout_sec": 5
+    }
+  ]
+}
