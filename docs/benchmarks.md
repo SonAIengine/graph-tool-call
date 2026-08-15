@@ -1110,3 +1110,49 @@ One case (`inventory_chain_ko`) selects the correct final target but omits
 upstream producer steps because the wording can be read as "the SKU is already
 known." This is counted in `final_plan_exact_match`, while graph-tool-call's
 own retrieval and candidate-plan coverage remain `1.00`.
+
+## Goal-completion benchmark
+
+Target retrieval alone does not prove that an agent can finish a multi-API
+request. The goal-completion harness runs this complete deterministic path:
+
+```text
+natural language -> retrieval -> target selection -> dependency plan
+                 -> resolved calls -> sandbox execution -> goal-state checks
+```
+
+Run it with:
+
+```bash
+make goal-completion-benchmark
+```
+
+The scenario contract does not require one exact plan. It declares allowed
+tool alternatives, required milestones, dependency constraints, output-to-arg
+bindings, forbidden tools, budgets, and assertions against the final state or
+final output. Gold constraints are only read by the evaluator after execution;
+they are never passed to retrieval or planning.
+
+The first graph-tool-call `0.40.0` baseline contains six 2-3 step commerce
+requests. It is intentionally recorded as a failing baseline:
+
+| Metric | Baseline |
+|---|---:|
+| Goal completion | `3/6` (`0.50`) |
+| Candidate required-tool recall | `0.611111` |
+| Plan required-tool recall | `0.611111` |
+| Dependency order accuracy | `0.50` |
+| Binding accuracy | `0.50` |
+| Final-state accuracy | `0.50` |
+| Schema-valid call rate | `1.00` |
+
+All three failures retrieved the intended target inside Top-K, but target
+selection chose an upstream search/read tool and produced a one-step plan.
+This demonstrates why `hit@K` and schema-valid calls are insufficient evidence
+for end-to-end tool-use quality. The saved replayable report is
+[`benchmarks/results/goal_completion_baseline_0.40.json`](../benchmarks/results/goal_completion_baseline_0.40.json).
+
+This first fixture validates the harness, not long-horizon or model quality.
+The next gates add 5-8, 9-15, and 16-30 step scenarios, repeated model runs,
+failure recovery, and XGEN dev API assertions. See
+[`docs/research/long-horizon-goal-evaluation.md`](research/long-horizon-goal-evaluation.md).
