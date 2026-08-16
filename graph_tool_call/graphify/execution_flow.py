@@ -58,14 +58,18 @@ _SAFE_DATA_FLOW_FIELDS = frozenset(
         "from_path",
         "input_field",
         "link_name",
+        "dependency_kind",
         "observed_count",
         "output_field",
+        "source_step_id",
         "source_field",
         "source_field_path",
         "target_field",
         "target_field_path",
         "to_field",
+        "target_step_id",
         "value_type",
+        "workflow_id",
     }
 )
 
@@ -227,6 +231,8 @@ def _evidence_type(sources: list[str]) -> str:
         return "observed"
     if values.intersection({"api_contract", "openapi_link"}):
         return "contract"
+    if "arazzo" in values:
+        return "workflow"
     if values.intersection({"manual", "llm_curated", "llm_validated"}):
         return "curated"
     return "inferred"

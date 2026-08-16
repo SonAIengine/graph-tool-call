@@ -125,6 +125,153 @@ class TestIngestArazzoDict:
         assert any(r.source == "op1" and r.target == "op2" for r in relations)
         assert any(r.source == "op2" and r.target == "op3" for r in relations)
 
+    def test_runtime_output_reference_is_implicit_dependency_with_binding(self):
+        spec = {
+            "arazzo": "1.1.0",
+            "info": {"title": "Runtime binding", "version": "1.0.0"},
+            "sourceDescriptions": [],
+            "workflows": [
+                {
+                    "workflowId": "profileFlow",
+                    "steps": [
+                        {
+                            "stepId": "createStep",
+                            "operationId": "createProfile",
+                            "outputs": {"profileId": "$response.body#/id"},
+                        },
+                        {
+                            "stepId": "readStep",
+                            "operationId": "getProfile",
+                            "parameters": [
+                                {
+                                    "name": "userId",
+                                    "in": "path",
+                                    "value": "$steps.createStep.outputs.profileId",
+                                }
+                            ],
+                        },
+                    ],
+                }
+            ],
+        }
+
+        relations = ingest_arazzo(spec)
+
+        assert len(relations) == 1
+        relation = relations[0]
+        assert relation.source == "createProfile"
+        assert relation.target == "getProfile"
+        assert relation.dependency_kind == "runtime_reference"
+        assert relation.bindings == (
+            {
+                "source_step_id": "createStep",
+                "source_output": "profileId",
+                "source_path": "$.id",
+                "target_field": "userId",
+                "target_location": "path",
+                "expression": "$steps.createStep.outputs.profileId",
+            },
+        )
+
+    def test_qualified_operation_id_uses_registered_operation_tail(self):
+        spec = {
+            "arazzo": "1.1.0",
+            "info": {"title": "Qualified operations", "version": "1.0.0"},
+            "sourceDescriptions": [],
+            "workflows": [
+                {
+                    "workflowId": "flow",
+                    "steps": [
+                        {
+                            "stepId": "first",
+                            "operationId": "$sourceDescriptions.store.createItem",
+                        },
+                        {
+                            "stepId": "second",
+                            "operationId": "$sourceDescriptions.store.getItem",
+                        },
+                    ],
+                }
+            ],
+        }
+
+        relations = ingest_arazzo(spec, registered_tools={"createItem", "getItem"})
+
+        assert [(row.source, row.target) for row in relations] == [("createItem", "getItem")]
+
+    def test_nested_request_body_binding_preserves_leaf_and_target_path(self):
+        spec = {
+            "arazzo": "1.1.0",
+            "info": {"title": "Body binding", "version": "1.0.0"},
+            "sourceDescriptions": [],
+            "workflows": [
+                {
+                    "workflowId": "bodyFlow",
+                    "steps": [
+                        {
+                            "stepId": "lookup",
+                            "operationId": "lookupOrder",
+                            "outputs": {"orderId": "$response.body#/items/0/id"},
+                        },
+                        {
+                            "stepId": "submit",
+                            "operationId": "submitOrder",
+                            "requestBody": {
+                                "contentType": "application/json",
+                                "payload": {
+                                    "order": {
+                                        "orderId": "$steps.lookup.outputs.orderId",
+                                    }
+                                },
+                            },
+                        },
+                    ],
+                }
+            ],
+        }
+
+        relations = ingest_arazzo(spec)
+
+        assert relations[0].bindings[0]["target_field"] == "orderId"
+        assert relations[0].bindings[0]["target_location"] == "request_body"
+        assert relations[0].bindings[0]["target_path"] == "requestBody.payload.order.orderId"
+
+    def test_runtime_binding_does_not_persist_surrounding_literal_text(self):
+        spec = {
+            "arazzo": "1.1.0",
+            "info": {"title": "Safe binding", "version": "1.0.0"},
+            "sourceDescriptions": [],
+            "workflows": [
+                {
+                    "workflowId": "safeFlow",
+                    "steps": [
+                        {
+                            "stepId": "lookup",
+                            "operationId": "lookupOrder",
+                            "outputs": {"orderId": "$response.body#/id"},
+                        },
+                        {
+                            "stepId": "read",
+                            "operationId": "readOrder",
+                            "parameters": [
+                                {
+                                    "name": "orderId",
+                                    "in": "path",
+                                    "value": "Bearer $steps.lookup.outputs.orderId trailing-secret",
+                                }
+                            ],
+                        },
+                    ],
+                }
+            ],
+        }
+
+        relation = ingest_arazzo(spec)[0]
+
+        assert relation.bindings[0]["expression"] == "$steps.lookup.outputs.orderId"
+        assert "Bearer" not in str(relation.bindings)
+        assert "trailing-secret" not in str(relation.bindings)
+
 
 class TestIngestArazzoFile:
     def test_yaml_file(self):
@@ -155,6 +302,32 @@ class TestRemoteSafety:
                 allow_private_hosts=True,
             )
         assert len(relations) >= 2
+
+    def test_remote_yaml_is_supported(self):
+        pytest.importorskip("yaml")
+        yaml_text = """
+arazzo: 1.1.0
+info: {title: Remote, version: 1.0.0}
+sourceDescriptions: []
+workflows:
+  - workflowId: remote
+    steps:
+      - {stepId: first, operationId: firstOperation}
+      - {stepId: second, operationId: secondOperation}
+"""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = yaml_text.encode()
+        mock_resp.headers = {"Content-Type": "application/yaml"}
+        mock_resp.geturl.return_value = "https://example.com/arazzo.yaml"
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("graph_tool_call.net._open_url", return_value=mock_resp):
+            relations = ingest_arazzo("https://example.com/arazzo.yaml")
+
+        assert [(row.source, row.target) for row in relations] == [
+            ("firstOperation", "secondOperation")
+        ]
 
 
 class TestToolGraphIntegration:

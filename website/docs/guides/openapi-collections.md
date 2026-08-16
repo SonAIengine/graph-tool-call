@@ -87,6 +87,7 @@ from graph_tool_call.graphify import (
 
 artifact = build_openapi_collection_artifact(
     "openapi.json",
+    workflow_sources=["arazzo.yaml"],
     derive_semantic_metadata=True,
     promote_contract_signals=True,
     context_field_names={"tenantId", "siteNo"},
@@ -129,6 +130,7 @@ dictionaries to the library.
 | `metadata` | build options, source identity, version, summary copies |
 | `semantic_summary` | action/resource/module/result-shape coverage |
 | `edge_quality_summary` | evidence distribution for graph edges |
+| `workflow_summary` | Arazzo workflow, step, relation, and binding counts |
 | `readiness_report` | deterministic OpenAPI readiness diagnostics |
 | `source_snapshot_manifest` | source labels, URLs, hashes, operation counts |
 | `ingest_summary` | duplicate handling and operation counts |
@@ -137,6 +139,27 @@ dictionaries to the library.
 
 Store the whole artifact. If you persist only `graph`, the product loses the
 diagnostics needed to explain readiness and rebuild behavior.
+
+## Add Explicit Call Order
+
+OpenAPI describes operations and contracts but often does not describe the
+business call order. Pass an Arazzo document when that evidence exists.
+
+```bash
+graph-tool-call build-openapi-collection openapi.json \
+  --workflow arazzo.yaml \
+  -o collection.json
+```
+
+The engine merges `dependsOn`, sequential steps, and runtime output references
+as `arazzo` evidence. A reference such as
+`$steps.lookup.outputs.orderId` records both the execution order and the
+response path used for the next request field. The artifact stores operation,
+step, and binding metadata, not literal request values or credentials.
+
+Without Arazzo, the existing structural and contract inference remains
+unchanged. Treat inferred edges as hypotheses and explicit Arazzo edges as
+strong deterministic evidence.
 
 ## Contract Index
 
