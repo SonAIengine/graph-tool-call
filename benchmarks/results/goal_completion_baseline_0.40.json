@@ -1,0 +1,1045 @@
+{
+  "benchmark": "Goal Completion Commerce Baseline",
+  "description": "Natural-language retrieval, planning, binding, execution, and goal-state checks.",
+  "methodology": "natural_language_retrieve_plan_execute_goal_state",
+  "model": "none",
+  "graph_tool_call_version": "0.40.0",
+  "scenario_count": 6,
+  "tool_count": 11,
+  "edge_count": 13,
+  "summary": {
+    "status": "fail",
+    "goal_completion_rate": 0.5,
+    "completed": 3,
+    "cases": 6,
+    "uncaught_error_count": 0,
+    "candidate_required_tool_recall": 0.611111,
+    "plan_required_tool_recall": 0.611111,
+    "execution_required_tool_recall": 0.611111,
+    "dependency_order_accuracy": 0.5,
+    "binding_accuracy": 0.5,
+    "final_state_accuracy": 0.5,
+    "schema_valid_call_rate": 1.0,
+    "extraneous_call_rate": 0.166667
+  },
+  "cases": [
+    {
+      "id": "product_detail",
+      "query": "셔츠를 검색해서 상품 상세를 보여줘",
+      "expected_targets": [
+        "getProductDetail"
+      ],
+      "retrieved_tools": [
+        "searchProducts",
+        "getProductDetail",
+        "addCartItem",
+        "createProductReview",
+        "findOrders"
+      ],
+      "selected_target": "getProductDetail",
+      "candidate_tools": [
+        "getProductDetail",
+        "searchProducts"
+      ],
+      "planned_tools": [
+        "searchProducts",
+        "getProductDetail"
+      ],
+      "executed_tools": [
+        "searchProducts",
+        "getProductDetail"
+      ],
+      "runner_success": true,
+      "failure": {},
+      "evaluation": {
+        "scenario_id": "product_detail",
+        "goal_completed": true,
+        "metrics": {
+          "candidate_required_tool_recall": 1.0,
+          "plan_required_tool_recall": 1.0,
+          "execution_required_tool_recall": 1.0,
+          "required_tool_recall": 1.0,
+          "milestone_completion": 1.0,
+          "dependency_order_accuracy": 1.0,
+          "binding_accuracy": 1.0,
+          "final_state_accuracy": 1.0,
+          "schema_valid_call_rate": 1.0,
+          "extraneous_call_rate": 0.0,
+          "policy_violation_count": 0,
+          "call_count": 2,
+          "replan_count": 0,
+          "latency_ms": 0,
+          "recovery_attempted": 0,
+          "recovery_success": null,
+          "goal_completion": 1.0
+        },
+        "matched_milestones": {
+          "find_product": 1,
+          "read_product": 2
+        },
+        "checks": [
+          {
+            "category": "milestone",
+            "code": "milestone_completed",
+            "passed": true,
+            "subject": "find_product",
+            "expected": [
+              "searchProducts"
+            ],
+            "observed": "searchProducts"
+          },
+          {
+            "category": "milestone",
+            "code": "milestone_completed",
+            "passed": true,
+            "subject": "read_product",
+            "expected": [
+              "getProductDetail"
+            ],
+            "observed": "getProductDetail"
+          },
+          {
+            "category": "dependency",
+            "code": "dependency_order_valid",
+            "passed": true,
+            "subject": "find_product->read_product",
+            "expected": "before",
+            "observed": {
+              "before_sequence": 1,
+              "after_sequence": 2
+            }
+          },
+          {
+            "category": "binding",
+            "code": "binding_valid",
+            "passed": true,
+            "subject": "find_product.items[0].productId->read_product.productId",
+            "expected": "P100",
+            "observed": "P100"
+          },
+          {
+            "category": "state",
+            "code": "state_assertion_valid",
+            "passed": true,
+            "subject": "output.productId",
+            "expected": {
+              "operator": "eq",
+              "value": "P100"
+            },
+            "observed": "P100"
+          },
+          {
+            "category": "budget",
+            "code": "call_budget_valid",
+            "passed": true,
+            "subject": "max_calls",
+            "expected": 3,
+            "observed": 2
+          },
+          {
+            "category": "budget",
+            "code": "replan_budget_valid",
+            "passed": true,
+            "subject": "max_replans",
+            "expected": 1,
+            "observed": 0
+          },
+          {
+            "category": "budget",
+            "code": "latency_budget_valid",
+            "passed": true,
+            "subject": "timeout_sec",
+            "expected": 5.0,
+            "observed": 0.0
+          },
+          {
+            "category": "schema",
+            "code": "schema_valid",
+            "passed": true,
+            "subject": "tool_calls",
+            "expected": 2,
+            "observed": 2
+          }
+        ],
+        "failure_reason_codes": []
+      }
+    },
+    {
+      "id": "inventory_lookup",
+      "query": "후드 상품을 찾아서 실제 SKU 재고와 구매 가능 여부를 확인해줘",
+      "expected_targets": [
+        "getInventory"
+      ],
+      "retrieved_tools": [
+        "getInventory",
+        "addCartItem",
+        "searchProducts",
+        "getCart",
+        "getProductDetail"
+      ],
+      "selected_target": "searchProducts",
+      "candidate_tools": [
+        "searchProducts"
+      ],
+      "planned_tools": [
+        "searchProducts"
+      ],
+      "executed_tools": [
+        "searchProducts"
+      ],
+      "runner_success": true,
+      "failure": {},
+      "evaluation": {
+        "scenario_id": "inventory_lookup",
+        "goal_completed": false,
+        "metrics": {
+          "candidate_required_tool_recall": 0.333333,
+          "plan_required_tool_recall": 0.333333,
+          "execution_required_tool_recall": 0.333333,
+          "required_tool_recall": 0.333333,
+          "milestone_completion": 0.333333,
+          "dependency_order_accuracy": 0.0,
+          "binding_accuracy": 0.0,
+          "final_state_accuracy": 0.0,
+          "schema_valid_call_rate": 1.0,
+          "extraneous_call_rate": 0.0,
+          "policy_violation_count": 0,
+          "call_count": 1,
+          "replan_count": 0,
+          "latency_ms": 0,
+          "recovery_attempted": 0,
+          "recovery_success": null,
+          "goal_completion": 0.0
+        },
+        "matched_milestones": {
+          "find_product": 1
+        },
+        "checks": [
+          {
+            "category": "milestone",
+            "code": "milestone_completed",
+            "passed": true,
+            "subject": "find_product",
+            "expected": [
+              "searchProducts"
+            ],
+            "observed": "searchProducts"
+          },
+          {
+            "category": "milestone",
+            "code": "missing_milestone",
+            "passed": false,
+            "subject": "read_product",
+            "expected": [
+              "getProductDetail"
+            ],
+            "observed": ""
+          },
+          {
+            "category": "milestone",
+            "code": "missing_milestone",
+            "passed": false,
+            "subject": "read_inventory",
+            "expected": [
+              "getInventory"
+            ],
+            "observed": ""
+          },
+          {
+            "category": "dependency",
+            "code": "invalid_dependency_order",
+            "passed": false,
+            "subject": "find_product->read_product",
+            "expected": "before",
+            "observed": {
+              "before_sequence": 1,
+              "after_sequence": null
+            }
+          },
+          {
+            "category": "dependency",
+            "code": "invalid_dependency_order",
+            "passed": false,
+            "subject": "read_product->read_inventory",
+            "expected": "before",
+            "observed": {
+              "before_sequence": null,
+              "after_sequence": null
+            }
+          },
+          {
+            "category": "binding",
+            "code": "binding_mismatch",
+            "passed": false,
+            "subject": "find_product.items[0].productId->read_product.productId",
+            "expected": "P100",
+            "observed": "<missing>"
+          },
+          {
+            "category": "binding",
+            "code": "binding_mismatch",
+            "passed": false,
+            "subject": "read_product.skuOptions[0].skuId->read_inventory.skuId",
+            "expected": "<missing>",
+            "observed": "<missing>"
+          },
+          {
+            "category": "state",
+            "code": "goal_state_mismatch",
+            "passed": false,
+            "subject": "output.stockQty",
+            "expected": {
+              "operator": "gte",
+              "value": 1
+            },
+            "observed": "<missing>"
+          },
+          {
+            "category": "state",
+            "code": "goal_state_mismatch",
+            "passed": false,
+            "subject": "output.available",
+            "expected": {
+              "operator": "eq",
+              "value": true
+            },
+            "observed": "<missing>"
+          },
+          {
+            "category": "budget",
+            "code": "call_budget_valid",
+            "passed": true,
+            "subject": "max_calls",
+            "expected": 4,
+            "observed": 1
+          },
+          {
+            "category": "budget",
+            "code": "replan_budget_valid",
+            "passed": true,
+            "subject": "max_replans",
+            "expected": 1,
+            "observed": 0
+          },
+          {
+            "category": "budget",
+            "code": "latency_budget_valid",
+            "passed": true,
+            "subject": "timeout_sec",
+            "expected": 5.0,
+            "observed": 0.0
+          },
+          {
+            "category": "schema",
+            "code": "schema_valid",
+            "passed": true,
+            "subject": "tool_calls",
+            "expected": 1,
+            "observed": 1
+          }
+        ],
+        "failure_reason_codes": [
+          "missing_milestone",
+          "invalid_dependency_order",
+          "binding_mismatch",
+          "goal_state_mismatch"
+        ]
+      }
+    },
+    {
+      "id": "add_cart_item",
+      "query": "운동화를 찾아서 첫 번째 옵션 한 개를 내 장바구니에 담아줘",
+      "expected_targets": [
+        "addCartItem"
+      ],
+      "retrieved_tools": [
+        "addCartItem",
+        "getCart",
+        "checkoutCart",
+        "getProductDetail",
+        "getInventory"
+      ],
+      "selected_target": "getCart",
+      "candidate_tools": [
+        "getCart"
+      ],
+      "planned_tools": [
+        "getCart"
+      ],
+      "executed_tools": [
+        "getCart"
+      ],
+      "runner_success": true,
+      "failure": {},
+      "evaluation": {
+        "scenario_id": "add_cart_item",
+        "goal_completed": false,
+        "metrics": {
+          "candidate_required_tool_recall": 0.0,
+          "plan_required_tool_recall": 0.0,
+          "execution_required_tool_recall": 0.0,
+          "required_tool_recall": 0.0,
+          "milestone_completion": 0.0,
+          "dependency_order_accuracy": 0.0,
+          "binding_accuracy": 0.0,
+          "final_state_accuracy": 0.0,
+          "schema_valid_call_rate": 1.0,
+          "extraneous_call_rate": 1.0,
+          "policy_violation_count": 0,
+          "call_count": 1,
+          "replan_count": 0,
+          "latency_ms": 0,
+          "recovery_attempted": 0,
+          "recovery_success": null,
+          "goal_completion": 0.0
+        },
+        "matched_milestones": {},
+        "checks": [
+          {
+            "category": "milestone",
+            "code": "missing_milestone",
+            "passed": false,
+            "subject": "find_product",
+            "expected": [
+              "searchProducts"
+            ],
+            "observed": ""
+          },
+          {
+            "category": "milestone",
+            "code": "missing_milestone",
+            "passed": false,
+            "subject": "read_product",
+            "expected": [
+              "getProductDetail"
+            ],
+            "observed": ""
+          },
+          {
+            "category": "milestone",
+            "code": "missing_milestone",
+            "passed": false,
+            "subject": "add_item",
+            "expected": [
+              "addCartItem"
+            ],
+            "observed": ""
+          },
+          {
+            "category": "dependency",
+            "code": "invalid_dependency_order",
+            "passed": false,
+            "subject": "find_product->read_product",
+            "expected": "before",
+            "observed": {
+              "before_sequence": null,
+              "after_sequence": null
+            }
+          },
+          {
+            "category": "dependency",
+            "code": "invalid_dependency_order",
+            "passed": false,
+            "subject": "read_product->add_item",
+            "expected": "before",
+            "observed": {
+              "before_sequence": null,
+              "after_sequence": null
+            }
+          },
+          {
+            "category": "binding",
+            "code": "binding_mismatch",
+            "passed": false,
+            "subject": "find_product.items[0].productId->read_product.productId",
+            "expected": "<missing>",
+            "observed": "<missing>"
+          },
+          {
+            "category": "binding",
+            "code": "binding_mismatch",
+            "passed": false,
+            "subject": "read_product.skuOptions[0].skuId->add_item.skuId",
+            "expected": "<missing>",
+            "observed": "<missing>"
+          },
+          {
+            "category": "state",
+            "code": "goal_state_mismatch",
+            "passed": false,
+            "subject": "final_state.cart.items[0].skuId",
+            "expected": {
+              "operator": "eq",
+              "value": "SKU100"
+            },
+            "observed": "<missing>"
+          },
+          {
+            "category": "state",
+            "code": "goal_state_mismatch",
+            "passed": false,
+            "subject": "final_state.cart.items[0].quantity",
+            "expected": {
+              "operator": "eq",
+              "value": 1
+            },
+            "observed": "<missing>"
+          },
+          {
+            "category": "budget",
+            "code": "call_budget_valid",
+            "passed": true,
+            "subject": "max_calls",
+            "expected": 4,
+            "observed": 1
+          },
+          {
+            "category": "budget",
+            "code": "replan_budget_valid",
+            "passed": true,
+            "subject": "max_replans",
+            "expected": 1,
+            "observed": 0
+          },
+          {
+            "category": "budget",
+            "code": "latency_budget_valid",
+            "passed": true,
+            "subject": "timeout_sec",
+            "expected": 5.0,
+            "observed": 0.0
+          },
+          {
+            "category": "schema",
+            "code": "schema_valid",
+            "passed": true,
+            "subject": "tool_calls",
+            "expected": 1,
+            "observed": 1
+          }
+        ],
+        "failure_reason_codes": [
+          "missing_milestone",
+          "invalid_dependency_order",
+          "binding_mismatch",
+          "goal_state_mismatch"
+        ]
+      }
+    },
+    {
+      "id": "coupon_checkout",
+      "query": "현재 장바구니에 WELCOME20 쿠폰을 검증해서 카드로 결제해줘",
+      "expected_targets": [
+        "checkoutCart"
+      ],
+      "retrieved_tools": [
+        "checkoutCart",
+        "getCart",
+        "validateCoupon",
+        "addCartItem",
+        "searchProducts"
+      ],
+      "selected_target": "checkoutCart",
+      "candidate_tools": [
+        "checkoutCart",
+        "getCart",
+        "validateCoupon"
+      ],
+      "planned_tools": [
+        "getCart",
+        "validateCoupon",
+        "checkoutCart"
+      ],
+      "executed_tools": [
+        "getCart",
+        "validateCoupon",
+        "checkoutCart"
+      ],
+      "runner_success": true,
+      "failure": {},
+      "evaluation": {
+        "scenario_id": "coupon_checkout",
+        "goal_completed": true,
+        "metrics": {
+          "candidate_required_tool_recall": 1.0,
+          "plan_required_tool_recall": 1.0,
+          "execution_required_tool_recall": 1.0,
+          "required_tool_recall": 1.0,
+          "milestone_completion": 1.0,
+          "dependency_order_accuracy": 1.0,
+          "binding_accuracy": 1.0,
+          "final_state_accuracy": 1.0,
+          "schema_valid_call_rate": 1.0,
+          "extraneous_call_rate": 0.0,
+          "policy_violation_count": 0,
+          "call_count": 3,
+          "replan_count": 0,
+          "latency_ms": 0,
+          "recovery_attempted": 0,
+          "recovery_success": null,
+          "goal_completion": 1.0
+        },
+        "matched_milestones": {
+          "read_cart": 1,
+          "validate_coupon": 2,
+          "checkout": 3
+        },
+        "checks": [
+          {
+            "category": "milestone",
+            "code": "milestone_completed",
+            "passed": true,
+            "subject": "read_cart",
+            "expected": [
+              "getCart"
+            ],
+            "observed": "getCart"
+          },
+          {
+            "category": "milestone",
+            "code": "milestone_completed",
+            "passed": true,
+            "subject": "validate_coupon",
+            "expected": [
+              "validateCoupon"
+            ],
+            "observed": "validateCoupon"
+          },
+          {
+            "category": "milestone",
+            "code": "milestone_completed",
+            "passed": true,
+            "subject": "checkout",
+            "expected": [
+              "checkoutCart"
+            ],
+            "observed": "checkoutCart"
+          },
+          {
+            "category": "dependency",
+            "code": "dependency_order_valid",
+            "passed": true,
+            "subject": "read_cart->checkout",
+            "expected": "before",
+            "observed": {
+              "before_sequence": 1,
+              "after_sequence": 3
+            }
+          },
+          {
+            "category": "dependency",
+            "code": "dependency_order_valid",
+            "passed": true,
+            "subject": "validate_coupon->checkout",
+            "expected": "before",
+            "observed": {
+              "before_sequence": 2,
+              "after_sequence": 3
+            }
+          },
+          {
+            "category": "binding",
+            "code": "binding_valid",
+            "passed": true,
+            "subject": "read_cart.cartId->checkout.cartId",
+            "expected": "cart-1",
+            "observed": "cart-1"
+          },
+          {
+            "category": "binding",
+            "code": "binding_valid",
+            "passed": true,
+            "subject": "validate_coupon.couponValidationId->checkout.couponValidationId",
+            "expected": "CV100",
+            "observed": "CV100"
+          },
+          {
+            "category": "state",
+            "code": "state_assertion_valid",
+            "passed": true,
+            "subject": "final_state.orders.O200.status",
+            "expected": {
+              "operator": "eq",
+              "value": "paid"
+            },
+            "observed": "paid"
+          },
+          {
+            "category": "state",
+            "code": "state_assertion_valid",
+            "passed": true,
+            "subject": "final_state.orders.O200.paymentMethod",
+            "expected": {
+              "operator": "eq",
+              "value": "card"
+            },
+            "observed": "card"
+          },
+          {
+            "category": "budget",
+            "code": "call_budget_valid",
+            "passed": true,
+            "subject": "max_calls",
+            "expected": 4,
+            "observed": 3
+          },
+          {
+            "category": "budget",
+            "code": "replan_budget_valid",
+            "passed": true,
+            "subject": "max_replans",
+            "expected": 1,
+            "observed": 0
+          },
+          {
+            "category": "budget",
+            "code": "latency_budget_valid",
+            "passed": true,
+            "subject": "timeout_sec",
+            "expected": 5.0,
+            "observed": 0.0
+          },
+          {
+            "category": "schema",
+            "code": "schema_valid",
+            "passed": true,
+            "subject": "tool_calls",
+            "expected": 3,
+            "observed": 3
+          }
+        ],
+        "failure_reason_codes": []
+      }
+    },
+    {
+      "id": "shipment_tracking",
+      "query": "buyer@example.com 고객 주문을 찾아 배송 추적 상태와 도착 예정일을 알려줘",
+      "expected_targets": [
+        "getShipmentTracking"
+      ],
+      "retrieved_tools": [
+        "getShipmentTracking",
+        "getOrderDetail",
+        "findOrders",
+        "createProductReview",
+        "getCart"
+      ],
+      "selected_target": "findOrders",
+      "candidate_tools": [
+        "findOrders"
+      ],
+      "planned_tools": [
+        "findOrders"
+      ],
+      "executed_tools": [
+        "findOrders"
+      ],
+      "runner_success": true,
+      "failure": {},
+      "evaluation": {
+        "scenario_id": "shipment_tracking",
+        "goal_completed": false,
+        "metrics": {
+          "candidate_required_tool_recall": 0.333333,
+          "plan_required_tool_recall": 0.333333,
+          "execution_required_tool_recall": 0.333333,
+          "required_tool_recall": 0.333333,
+          "milestone_completion": 0.333333,
+          "dependency_order_accuracy": 0.0,
+          "binding_accuracy": 0.0,
+          "final_state_accuracy": 0.0,
+          "schema_valid_call_rate": 1.0,
+          "extraneous_call_rate": 0.0,
+          "policy_violation_count": 0,
+          "call_count": 1,
+          "replan_count": 0,
+          "latency_ms": 0,
+          "recovery_attempted": 0,
+          "recovery_success": null,
+          "goal_completion": 0.0
+        },
+        "matched_milestones": {
+          "find_order": 1
+        },
+        "checks": [
+          {
+            "category": "milestone",
+            "code": "milestone_completed",
+            "passed": true,
+            "subject": "find_order",
+            "expected": [
+              "findOrders"
+            ],
+            "observed": "findOrders"
+          },
+          {
+            "category": "milestone",
+            "code": "missing_milestone",
+            "passed": false,
+            "subject": "read_order",
+            "expected": [
+              "getOrderDetail"
+            ],
+            "observed": ""
+          },
+          {
+            "category": "milestone",
+            "code": "missing_milestone",
+            "passed": false,
+            "subject": "track_shipment",
+            "expected": [
+              "getShipmentTracking"
+            ],
+            "observed": ""
+          },
+          {
+            "category": "dependency",
+            "code": "invalid_dependency_order",
+            "passed": false,
+            "subject": "find_order->read_order",
+            "expected": "before",
+            "observed": {
+              "before_sequence": 1,
+              "after_sequence": null
+            }
+          },
+          {
+            "category": "dependency",
+            "code": "invalid_dependency_order",
+            "passed": false,
+            "subject": "read_order->track_shipment",
+            "expected": "before",
+            "observed": {
+              "before_sequence": null,
+              "after_sequence": null
+            }
+          },
+          {
+            "category": "binding",
+            "code": "binding_mismatch",
+            "passed": false,
+            "subject": "find_order.orders[0].orderNo->read_order.orderNo",
+            "expected": "O100",
+            "observed": "<missing>"
+          },
+          {
+            "category": "binding",
+            "code": "binding_mismatch",
+            "passed": false,
+            "subject": "read_order.shipmentId->track_shipment.shipmentId",
+            "expected": "<missing>",
+            "observed": "<missing>"
+          },
+          {
+            "category": "state",
+            "code": "goal_state_mismatch",
+            "passed": false,
+            "subject": "output.trackingStatus",
+            "expected": {
+              "operator": "eq",
+              "value": "in_transit"
+            },
+            "observed": "<missing>"
+          },
+          {
+            "category": "state",
+            "code": "goal_state_mismatch",
+            "passed": false,
+            "subject": "output.eta",
+            "expected": {
+              "operator": "exists",
+              "value": null
+            },
+            "observed": "<missing>"
+          },
+          {
+            "category": "budget",
+            "code": "call_budget_valid",
+            "passed": true,
+            "subject": "max_calls",
+            "expected": 4,
+            "observed": 1
+          },
+          {
+            "category": "budget",
+            "code": "replan_budget_valid",
+            "passed": true,
+            "subject": "max_replans",
+            "expected": 1,
+            "observed": 0
+          },
+          {
+            "category": "budget",
+            "code": "latency_budget_valid",
+            "passed": true,
+            "subject": "timeout_sec",
+            "expected": 5.0,
+            "observed": 0.0
+          },
+          {
+            "category": "schema",
+            "code": "schema_valid",
+            "passed": true,
+            "subject": "tool_calls",
+            "expected": 1,
+            "observed": 1
+          }
+        ],
+        "failure_reason_codes": [
+          "missing_milestone",
+          "invalid_dependency_order",
+          "binding_mismatch",
+          "goal_state_mismatch"
+        ]
+      }
+    },
+    {
+      "id": "create_review",
+      "query": "백팩을 찾아서 별점 5점과 '튼튼해요'라는 리뷰를 작성해줘",
+      "expected_targets": [
+        "createProductReview"
+      ],
+      "retrieved_tools": [
+        "createProductReview"
+      ],
+      "selected_target": "createProductReview",
+      "candidate_tools": [
+        "createProductReview",
+        "searchProducts"
+      ],
+      "planned_tools": [
+        "searchProducts",
+        "createProductReview"
+      ],
+      "executed_tools": [
+        "searchProducts",
+        "createProductReview"
+      ],
+      "runner_success": true,
+      "failure": {},
+      "evaluation": {
+        "scenario_id": "create_review",
+        "goal_completed": true,
+        "metrics": {
+          "candidate_required_tool_recall": 1.0,
+          "plan_required_tool_recall": 1.0,
+          "execution_required_tool_recall": 1.0,
+          "required_tool_recall": 1.0,
+          "milestone_completion": 1.0,
+          "dependency_order_accuracy": 1.0,
+          "binding_accuracy": 1.0,
+          "final_state_accuracy": 1.0,
+          "schema_valid_call_rate": 1.0,
+          "extraneous_call_rate": 0.0,
+          "policy_violation_count": 0,
+          "call_count": 2,
+          "replan_count": 0,
+          "latency_ms": 0,
+          "recovery_attempted": 0,
+          "recovery_success": null,
+          "goal_completion": 1.0
+        },
+        "matched_milestones": {
+          "find_product": 1,
+          "create_review": 2
+        },
+        "checks": [
+          {
+            "category": "milestone",
+            "code": "milestone_completed",
+            "passed": true,
+            "subject": "find_product",
+            "expected": [
+              "searchProducts"
+            ],
+            "observed": "searchProducts"
+          },
+          {
+            "category": "milestone",
+            "code": "milestone_completed",
+            "passed": true,
+            "subject": "create_review",
+            "expected": [
+              "createProductReview"
+            ],
+            "observed": "createProductReview"
+          },
+          {
+            "category": "dependency",
+            "code": "dependency_order_valid",
+            "passed": true,
+            "subject": "find_product->create_review",
+            "expected": "before",
+            "observed": {
+              "before_sequence": 1,
+              "after_sequence": 2
+            }
+          },
+          {
+            "category": "binding",
+            "code": "binding_valid",
+            "passed": true,
+            "subject": "find_product.items[0].productId->create_review.productId",
+            "expected": "P100",
+            "observed": "P100"
+          },
+          {
+            "category": "state",
+            "code": "state_assertion_valid",
+            "passed": true,
+            "subject": "final_state.reviews[0].rating",
+            "expected": {
+              "operator": "eq",
+              "value": 5
+            },
+            "observed": 5
+          },
+          {
+            "category": "state",
+            "code": "state_assertion_valid",
+            "passed": true,
+            "subject": "final_state.reviews[0].comment",
+            "expected": {
+              "operator": "eq",
+              "value": "튼튼해요"
+            },
+            "observed": "튼튼해요"
+          },
+          {
+            "category": "budget",
+            "code": "call_budget_valid",
+            "passed": true,
+            "subject": "max_calls",
+            "expected": 3,
+            "observed": 2
+          },
+          {
+            "category": "budget",
+            "code": "replan_budget_valid",
+            "passed": true,
+            "subject": "max_replans",
+            "expected": 1,
+            "observed": 0
+          },
+          {
+            "category": "budget",
+            "code": "latency_budget_valid",
+            "passed": true,
+            "subject": "timeout_sec",
+            "expected": 5.0,
+            "observed": 0.0
+          },
+          {
+            "category": "schema",
+            "code": "schema_valid",
+            "passed": true,
+            "subject": "tool_calls",
+            "expected": 2,
+            "observed": 2
+          }
+        ],
+        "failure_reason_codes": []
+      }
+    }
+  ]
+}
