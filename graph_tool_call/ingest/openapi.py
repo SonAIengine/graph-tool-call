@@ -87,19 +87,32 @@ def _load_spec(
 # ---------------------------------------------------------------------------
 
 
-def _resolve_refs(spec: dict[str, Any]) -> dict[str, Any]:
+def _resolve_refs(
+    spec: dict[str, Any],
+    *,
+    root: dict[str, Any] | None = None,
+    ref_cache: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Recursively resolve internal ``$ref`` pointers.
 
     Handles ``#/definitions/...`` (Swagger 2.0) and ``#/components/schemas/...``
-    (OpenAPI 3.x).  Circular references are detected and left as-is.
+    (OpenAPI 3.x). Circular references are replaced with serializable stubs.
+
+    Resolved components are memoized and shared. Large specifications commonly
+    reference the same response schema from hundreds of operations; expanding a
+    fresh deep copy for every occurrence can otherwise multiply memory usage by
+    several orders of magnitude.
     """
-    resolved = copy.deepcopy(spec)
+    resolution_root = root or spec
+    shared_ref_cache = ref_cache if ref_cache is not None else {}
+    object_cache: dict[int, Any] = {}
+    active_objects: set[int] = set()
 
     def _lookup(ref: str, root: dict[str, Any]) -> Any:
         """Walk the ref path and return the referenced object."""
         if not ref.startswith("#/"):
             return None
-        parts = ref.lstrip("#/").split("/")
+        parts = [part.replace("~1", "/").replace("~0", "~") for part in ref.lstrip("#/").split("/")]
         node: Any = root
         for part in parts:
             if isinstance(node, dict):
@@ -110,25 +123,64 @@ def _resolve_refs(spec: dict[str, Any]) -> dict[str, Any]:
 
     def _walk(node: Any, root: dict[str, Any], seen: set[str]) -> Any:
         if isinstance(node, dict):
-            if "$ref" in node:
-                ref = node["$ref"]
+            ref = node.get("$ref")
+            # A schema may legitimately define a property named "$ref", for
+            # example ``properties: {"$ref": {"type": "string"}}``. Only a
+            # string value is an OpenAPI Reference Object.
+            if isinstance(ref, str):
                 if ref in seen:
                     # Circular — return a stub
                     return {"type": "object", "description": f"(circular ref: {ref})"}
+                if ref in shared_ref_cache:
+                    return shared_ref_cache[ref]
                 target = _lookup(ref, root)
                 if target is not None:
+                    if id(target) in active_objects:
+                        return {
+                            "type": "object",
+                            "description": f"(circular ref: {ref})",
+                        }
                     seen_copy = seen | {ref}
-                    resolved_target = _walk(copy.deepcopy(target), root, seen_copy)
+                    resolved_target = _walk(target, root, seen_copy)
                     if isinstance(resolved_target, dict):
+                        # Keep the cached base component immutable for callers
+                        # resolving a different pointer to the same object.
+                        resolved_target = dict(resolved_target)
                         resolved_target.setdefault("x-graph-tool-call-ref", ref)
+                    shared_ref_cache[ref] = resolved_target
                     return resolved_target
-                return node  # unresolvable ref, leave as-is
-            return {k: _walk(v, root, seen) for k, v in node.items()}
+                # Unresolvable reference: preserve it and still normalize any
+                # sibling metadata instead of returning the original object.
+
+            object_id = id(node)
+            cached = object_cache.get(object_id)
+            if cached is not None:
+                return cached
+            resolved_dict: dict[str, Any] = {}
+            object_cache[object_id] = resolved_dict
+            active_objects.add(object_id)
+            try:
+                for key, value in node.items():
+                    resolved_dict[key] = _walk(value, root, seen)
+            finally:
+                active_objects.discard(object_id)
+            return resolved_dict
         if isinstance(node, list):
-            return [_walk(item, root, seen) for item in node]
+            object_id = id(node)
+            cached = object_cache.get(object_id)
+            if cached is not None:
+                return cached
+            resolved_list: list[Any] = []
+            object_cache[object_id] = resolved_list
+            active_objects.add(object_id)
+            try:
+                resolved_list.extend(_walk(item, root, seen) for item in node)
+            finally:
+                active_objects.discard(object_id)
+            return resolved_list
         return node
 
-    return _walk(resolved, resolved, set())
+    return _walk(spec, resolution_root, set())
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +197,10 @@ _TYPE_MAP: dict[str, str] = {
 _MAX_EXAMPLES_PER_BLOCK = 5
 _MAX_EXAMPLE_CHARS = 2_000
 _ROOT_REQUEST_BODY_FIELD_NAME = "body"
+_SchemaFieldCache = dict[
+    tuple[int, str],
+    tuple[dict[str, Any], list[dict[str, Any]]],
+]
 _SCHEMA_HINT_KEYS: tuple[tuple[str, str], ...] = (
     ("format", "format"),
     ("default", "default"),
@@ -330,6 +386,7 @@ def _content_type_rows(
     location: str,
     status: str | None = None,
     request_required: bool = False,
+    schema_field_cache: _SchemaFieldCache | None = None,
 ) -> list[dict[str, Any]]:
     """Summarize every declared OpenAPI media type without duplicating schemas."""
     if not isinstance(content, dict) or not content:
@@ -376,7 +433,13 @@ def _content_type_rows(
                 root_row = _request_body_root_row(schema, required=request_required)
                 if root_row and not top_level_fields:
                     top_level_fields = [root_row]
-                fields = _schema_field_rows(schema, location="body")
+                fields = _schema_field_rows(
+                    schema,
+                    location="body",
+                    cache=schema_field_cache,
+                )
+                if encoding_rows:
+                    fields = copy.deepcopy(fields)
                 top_level_fields = _merge_field_rows(top_level_fields, inferred_top_level_fields)
                 fields = _merge_field_rows(fields, inferred_fields)
                 if encoding_rows:
@@ -388,7 +451,11 @@ def _content_type_rows(
                     row["fields"] = fields
                 row["field_count"] = len(fields)
             else:
-                fields = _schema_field_rows(schema, location=location)
+                fields = _schema_field_rows(
+                    schema,
+                    location=location,
+                    cache=schema_field_cache,
+                )
                 row["field_count"] = len(fields)
         elif location == "request_body":
             if encoding_rows:
@@ -964,6 +1031,7 @@ def _extract_params_openapi3(
     *,
     required_only: bool = False,
     path_item: dict[str, Any] | None = None,
+    schema_field_cache: _SchemaFieldCache | None = None,
 ) -> list[ToolParameter]:
     """Extract parameters from an OpenAPI 3.x operation.
 
@@ -1088,6 +1156,7 @@ def _extract_params_openapi3(
         content,
         location="request_body",
         request_required=request_required,
+        schema_field_cache=schema_field_cache,
     ):
         for row in content_row.get("top_level_fields") or []:
             if not isinstance(row, dict):
@@ -1177,6 +1246,7 @@ def _request_body_content_types(
     *,
     is_swagger2: bool = False,
     path_item: dict[str, Any] | None = None,
+    schema_field_cache: _SchemaFieldCache | None = None,
 ) -> list[dict[str, Any]]:
     if is_swagger2:
         consumes = (
@@ -1200,6 +1270,7 @@ def _request_body_content_types(
         request_body.get("content") or {},
         location="request_body",
         request_required=bool(request_body.get("required", False)),
+        schema_field_cache=schema_field_cache,
     )
 
 
@@ -1209,6 +1280,7 @@ def _openapi_response_rows(
     *,
     is_swagger2: bool = False,
     path_item: dict[str, Any] | None = None,
+    schema_field_cache: _SchemaFieldCache | None = None,
 ) -> list[dict[str, Any]]:
     """Summarize all declared responses, including error bodies."""
     produces = (
@@ -1268,7 +1340,12 @@ def _openapi_response_rows(
             examples = _swagger_response_examples(response, status=status_text)
         else:
             content = response.get("content") or {}
-            content_types = _content_type_rows(content, location="response", status=status_text)
+            content_types = _content_type_rows(
+                content,
+                location="response",
+                status=status_text,
+                schema_field_cache=schema_field_cache,
+            )
             if content_types:
                 row["content_types"] = content_types
             schema, content_type = _pick_content_schema_with_type(content)
@@ -1283,7 +1360,13 @@ def _openapi_response_rows(
         if schema:
             row["content_type"] = content_type
             row["schema_type"] = _schema_type(schema)
-            row["field_count"] = len(extract_leaves(schema, base_path="$"))
+            row["field_count"] = len(
+                _schema_field_rows(
+                    schema,
+                    location="response",
+                    cache=schema_field_cache,
+                )
+            )
         if example_fields:
             row["example_fields"] = example_fields
             row["example_field_count"] = len(example_fields)
@@ -1664,16 +1747,25 @@ def _schema_field_rows(
     schema: dict[str, Any],
     *,
     location: str,
+    cache: _SchemaFieldCache | None = None,
 ) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
     if not isinstance(schema, dict) or not schema:
-        return rows
+        return []
+    cache_key = (id(schema), location)
+    cached = cache.get(cache_key) if cache is not None else None
+    if cached is not None and cached[0] is schema:
+        return cached[1]
+    rows: list[dict[str, Any]] = []
     for leaf in extract_leaves(schema, base_path="$"):
         if location in {"body", "request_body"} and leaf.read_only:
             continue
         if location == "response" and leaf.write_only:
             continue
         rows.append(_leaf_row(leaf, location=location))
+    if cache is not None:
+        # Retain the schema object with its rows. This prevents CPython from
+        # reusing an object id for a later inline schema during a long ingest.
+        cache[cache_key] = (schema, rows)
     return rows
 
 
@@ -2640,6 +2732,7 @@ def _operation_to_tool(
     operation_id_duplicate_count: int = 1,
     operation_id_duplicate_index: int = 0,
     operation_id_generated: bool = False,
+    schema_field_cache: _SchemaFieldCache | None = None,
 ) -> ToolSchema:
     """Convert a single OpenAPI operation into a ToolSchema."""
     tool_name = tool_name or operation_id
@@ -2669,6 +2762,7 @@ def _operation_to_tool(
             resolved_spec,
             required_only=required_only,
             path_item=path_item,
+            schema_field_cache=schema_field_cache,
         )
 
     request_body_schema, request_content_type, request_required = (
@@ -2684,6 +2778,7 @@ def _operation_to_tool(
         resolved_spec,
         is_swagger2=is_swagger2,
         path_item=path_item,
+        schema_field_cache=schema_field_cache,
     )
     response_schema, response_status, response_content_type = (
         _pick_response_schema_with_status_and_type(
@@ -2698,6 +2793,7 @@ def _operation_to_tool(
         resolved_spec,
         is_swagger2=is_swagger2,
         path_item=path_item,
+        schema_field_cache=schema_field_cache,
     )
     for row in request_body_content_type_rows:
         if row.get("content_type") == request_content_type:
@@ -2730,7 +2826,11 @@ def _operation_to_tool(
     if request_body_root and not body_top_level_rows:
         body_top_level_rows = [request_body_root]
     body_leaf_rows = _merge_body_field_rows(
-        _schema_field_rows(request_body_schema, location="body"),
+        _schema_field_rows(
+            request_body_schema,
+            location="body",
+            cache=schema_field_cache,
+        ),
         selected_body_content_type_rows,
         field_key="fields",
     )
@@ -2764,7 +2864,11 @@ def _operation_to_tool(
         ),
     )
     response_leaf_rows = _merge_field_rows(
-        _schema_field_rows(response_schema, location="response"),
+        _schema_field_rows(
+            response_schema,
+            location="response",
+            cache=schema_field_cache,
+        ),
         response_example_rows,
     )
     if not response_leaf_rows:
@@ -3015,19 +3119,25 @@ def ingest_openapi(
     )
     spec = normalize(raw_spec)
 
-    # Resolve refs on the raw spec so all $ref pointers are expanded
+    # Resolve references lazily per path item. Resolving the entire document and
+    # then normalizing it again turns shared component references into a giant
+    # expanded tree on large catalogs (Stripe is a representative case).
     from graph_tool_call.ingest.normalizer import SpecVersion
 
     is_swagger2 = spec.version == SpecVersion.SWAGGER_2_0
-    resolved_raw = _resolve_refs(raw_spec)
-
-    # We need resolved paths — re-normalize the resolved spec to get
-    # auto-generated operationIds, then use the spec's paths for iteration
-    resolved_spec = normalize(resolved_raw)
+    resolution_root = dict(raw_spec)
+    if is_swagger2:
+        resolution_root["definitions"] = spec.schemas
+    else:
+        components = dict(raw_spec.get("components") or {})
+        components["schemas"] = spec.schemas
+        resolution_root["components"] = components
+    ref_cache: dict[str, Any] = {}
+    schema_field_cache: _SchemaFieldCache = {}
 
     tools: list[ToolSchema] = []
     operation_counts = _operation_id_counts(
-        resolved_spec.paths,
+        spec.paths,
         skip_deprecated=skip_deprecated,
     )
     generated_operation_ids = _missing_operation_id_keys(
@@ -3036,7 +3146,14 @@ def ingest_openapi(
     )
     operation_seen: dict[str, int] = {}
     used_tool_names: set[str] = set()
-    for path, path_item in resolved_spec.paths.items():
+    for path, unresolved_path_item in spec.paths.items():
+        if not isinstance(unresolved_path_item, dict):
+            continue
+        path_item = _resolve_refs(
+            unresolved_path_item,
+            root=resolution_root,
+            ref_cache=ref_cache,
+        )
         if not isinstance(path_item, dict):
             continue
         for method in _METHODS:
@@ -3063,7 +3180,7 @@ def ingest_openapi(
                 operation,
                 method,
                 path,
-                resolved_raw,
+                resolution_root,
                 is_swagger2=is_swagger2,
                 required_only=required_only,
                 path_item=path_item,
@@ -3071,6 +3188,7 @@ def ingest_openapi(
                 operation_id_duplicate_count=operation_counts.get(operation_id, 1),
                 operation_id_duplicate_index=duplicate_index,
                 operation_id_generated=(path, method) in generated_operation_ids,
+                schema_field_cache=schema_field_cache,
             )
             tools.append(tool)
 

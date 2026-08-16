@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -12,7 +13,7 @@ import pytest
 from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.execute import HttpExecutor
 from graph_tool_call.graphify import extract_openapi_contract_index
-from graph_tool_call.ingest.openapi import ingest_openapi
+from graph_tool_call.ingest.openapi import _resolve_refs, ingest_openapi
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -2056,6 +2057,173 @@ class TestResolveRefs:
         resp_schema = get_pet.metadata.get("response_schema", {})
         assert "$ref" not in resp_schema
         assert resp_schema.get("type") == "object"
+
+    def test_schema_property_named_ref_is_not_treated_as_reference_object(self) -> None:
+        """Kubernetes defines a literal JSONSchemaProps property named ``$ref``."""
+        spec = {
+            "swagger": "2.0",
+            "info": {"title": "Schema API", "version": "1.0"},
+            "paths": {
+                "/schemas": {
+                    "get": {
+                        "operationId": "getSchema",
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "schema": {"$ref": "#/definitions/JSONSchemaProps"},
+                            }
+                        },
+                    }
+                }
+            },
+            "definitions": {
+                "JSONSchemaProps": {
+                    "type": "object",
+                    "properties": {
+                        "$ref": {"type": "string"},
+                        "type": {"type": "string"},
+                    },
+                }
+            },
+        }
+
+        tools, _ = ingest_openapi(spec)
+
+        schema = tools[0].metadata["response_schema"]
+        assert schema["properties"]["$ref"] == {"type": "string"}
+
+    def test_repeated_refs_share_one_resolved_component(self) -> None:
+        shared = {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+        }
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Shared", "version": "1.0"},
+            "paths": {
+                "/one": {"get": {"responses": {"200": {"$ref": "#/components/responses/Item"}}}},
+                "/two": {"get": {"responses": {"200": {"$ref": "#/components/responses/Item"}}}},
+            },
+            "components": {
+                "responses": {
+                    "Item": {
+                        "description": "Shared response",
+                        "content": {"application/json": {"schema": shared}},
+                    }
+                }
+            },
+        }
+
+        resolved = _resolve_refs(spec)
+
+        first = resolved["paths"]["/one"]["get"]["responses"]["200"]
+        second = resolved["paths"]["/two"]["get"]["responses"]["200"]
+        assert first is second
+        assert "x-graph-tool-call-ref" not in spec["components"]["responses"]["Item"]
+
+    def test_lazy_subtree_resolution_uses_root_and_shared_cache(self) -> None:
+        root = {
+            "components": {
+                "schemas": {
+                    "Item": {
+                        "type": "object",
+                        "properties": {"id": {"type": "string"}},
+                    }
+                }
+            }
+        }
+        first_path = {
+            "get": {
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {"schema": {"$ref": "#/components/schemas/Item"}}
+                        }
+                    }
+                }
+            }
+        }
+        second_path = copy.deepcopy(first_path)
+        ref_cache: dict[str, object] = {}
+
+        first = _resolve_refs(first_path, root=root, ref_cache=ref_cache)
+        second = _resolve_refs(second_path, root=root, ref_cache=ref_cache)
+
+        first_schema = first["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        second_schema = second["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert first_schema is second_schema
+        assert first_schema["properties"]["id"]["type"] == "string"
+
+    def test_ingest_extracts_shared_response_schema_fields_once(self, monkeypatch) -> None:
+        from graph_tool_call.ingest import openapi as openapi_module
+
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Shared", "version": "1.0"},
+            "paths": {
+                path: {
+                    "get": {
+                        "operationId": operation_id,
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"$ref": "#/components/schemas/Item"}
+                                    }
+                                },
+                            }
+                        },
+                    }
+                }
+                for path, operation_id in (("/one", "getOne"), ("/two", "getTwo"))
+            },
+            "components": {
+                "schemas": {
+                    "Item": {
+                        "type": "object",
+                        "properties": {"id": {"type": "string"}},
+                    }
+                }
+            },
+        }
+        original = openapi_module.extract_leaves
+        calls = 0
+
+        def counted_extract_leaves(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(openapi_module, "extract_leaves", counted_extract_leaves)
+
+        tools, _ = ingest_openapi(spec)
+
+        assert len(tools) == 2
+        assert calls == 1
+
+    def test_circular_ref_remains_json_serializable(self) -> None:
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Recursive", "version": "1.0"},
+            "paths": {},
+            "components": {
+                "schemas": {
+                    "Node": {
+                        "type": "object",
+                        "properties": {
+                            "child": {"$ref": "#/components/schemas/Node"},
+                        },
+                    }
+                }
+            },
+        }
+
+        resolved = _resolve_refs(spec)
+
+        json.dumps(resolved)
+        child = resolved["components"]["schemas"]["Node"]["properties"]["child"]
+        assert "circular ref" in child["description"]
 
 
 class TestIngestFromDict:
