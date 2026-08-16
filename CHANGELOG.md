@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-08-16
+
+### Added
+- Public goal-completion evaluation contracts for multi-tool executions,
+  including milestone, dependency-order, binding, final-state, policy, and
+  recovery checks.
+- Reproducible Arazzo long-horizon evaluation across 1,000-tool catalogs and
+  3-, 10-, and 30-call workflows, with paired OpenAPI-only and
+  OpenAPI-plus-Arazzo evidence.
+
+### Changed
+- OpenAPI ingestion now resolves component references per path with shared
+  reference and schema-field caches, avoiding whole-document expansion for
+  large specifications.
+
+### Fixed
+- OpenAPI ingestion preserves literal `$ref` properties, decodes escaped JSON
+  Pointer segments, and emits serializable stubs for circular references.
+
 ## [0.41.0] - 2026-08-16
 
 ### Added
@@ -682,7 +701,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.42.0...HEAD
 [0.39.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.36.0...v0.37.0
@@ -721,3 +740,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.8.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.5.0...v0.8.0
 [0.28.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.27.0...v0.28.0
 [0.40.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.39.0...v0.40.0
+[0.41.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.40.0...v0.41.0
+[0.42.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.41.0...v0.42.0

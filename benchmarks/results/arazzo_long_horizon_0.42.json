@@ -2,7 +2,7 @@
   "benchmark": "Arazzo Long-Horizon Paired Evaluation",
   "methodology": "paired_deterministic_retrieve_plan_execute_goal_state",
   "model": "none",
-  "graph_tool_call_version": "0.41.0",
+  "graph_tool_call_version": "0.42.0",
   "catalog_size": 1000,
   "workflow_lengths": [
     3,
@@ -30,16 +30,16 @@
       },
       "latency_ms": {
         "build": {
-          "p50": 455.804,
-          "p95": 481.3
+          "p50": 394.394,
+          "p95": 404.765
         },
         "retrieve": {
-          "p50": 97.714,
-          "p95": 100.802
+          "p50": 93.644,
+          "p95": 97.273
         },
         "plan_execute": {
-          "p50": 6.079,
-          "p95": 7.683
+          "p50": 6.277,
+          "p95": 7.275
         }
       }
     },
@@ -333,9 +333,9 @@
           ]
         },
         "latency_ms": {
-          "build": 465.411,
-          "retrieve": 102.285,
-          "plan_execute": 5.312
+          "build": 409.959,
+          "retrieve": 99.292,
+          "plan_execute": 5.352
         },
         "token_budget_used": 73
       },
@@ -632,9 +632,9 @@
           "failure_reason_codes": []
         },
         "latency_ms": {
-          "build": 455.804,
-          "retrieve": 97.714,
-          "plan_execute": 6.033
+          "build": 388.415,
+          "retrieve": 91.597,
+          "plan_execute": 6.277
         },
         "token_budget_used": 190
       },
@@ -1122,9 +1122,9 @@
           ]
         },
         "latency_ms": {
-          "build": 475.985,
-          "retrieve": 97.232,
-          "plan_execute": 5.541
+          "build": 393.437,
+          "retrieve": 94.572,
+          "plan_execute": 5.458
         },
         "token_budget_used": 118
       },
@@ -1646,9 +1646,9 @@
           "failure_reason_codes": []
         },
         "latency_ms": {
-          "build": 452.269,
-          "retrieve": 95.358,
-          "plan_execute": 6.079
+          "build": 394.394,
+          "retrieve": 93.644,
+          "plan_execute": 5.975
         },
         "token_budget_used": 291
       },
@@ -2716,9 +2716,9 @@
           ]
         },
         "latency_ms": {
-          "build": 458.637,
-          "retrieve": 98.179,
-          "plan_execute": 6.067
+          "build": 393.102,
+          "retrieve": 99.029,
+          "plan_execute": 5.531
         },
         "token_budget_used": 125
       },
@@ -3880,9 +3880,9 @@
           "failure_reason_codes": []
         },
         "latency_ms": {
-          "build": 484.133,
-          "retrieve": 101.145,
-          "plan_execute": 7.861
+          "build": 405.917,
+          "retrieve": 97.676,
+          "plan_execute": 7.386
         },
         "token_budget_used": 301
       },
