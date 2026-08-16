@@ -230,7 +230,7 @@ selected target produced:
 | Candidate binding support | 14.3% | **100%** |
 | Target Recall@5 | - | **100%** |
 
-The [case-level v0.40.0 artifact](benchmarks/results/releases/v0.40.0/dependency-chain-evidence.json)
+The [case-level v0.41.0 artifact](benchmarks/results/releases/v0.41.0/dependency-chain-evidence.json)
 records fixture hashes, every expected target and producer, and replay commands:
 
 ```bash
@@ -239,7 +239,7 @@ make launch-evidence-check
 ```
 
 The separate
-[observability artifact](benchmarks/results/releases/v0.40.0/observability-evidence.json)
+[observability artifact](benchmarks/results/releases/v0.41.0/observability-evidence.json)
 checks that tracing leaves engine inputs unchanged, replays deterministically,
 scrubs secrets, explains every decision, and stays below the documented
 `5ms/span` p95 capture-cost gate:

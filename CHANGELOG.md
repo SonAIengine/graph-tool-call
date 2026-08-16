@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-08-16
+
+### Added
+- Arazzo 1.0/1.1 workflow evidence ingestion for explicit call ordering,
+  cross-workflow dependencies, and response-to-request runtime bindings.
+- Public workflow evidence helpers and optional OpenAPI collection artifact
+  sources with deterministic provenance, source hashing, and summary metrics.
+- CLI and English/Korean documentation for applying workflow specifications
+  without changing existing OpenAPI-only collection behavior.
+
+### Changed
+- Execution-flow diagnostics and graph quality summaries now classify Arazzo
+  relations as strong workflow evidence.
+- Planning interprets explicit `precedes` edges in producer-to-consumer order.
+
 ## [0.40.0] - 2026-08-15
 
 ### Added
