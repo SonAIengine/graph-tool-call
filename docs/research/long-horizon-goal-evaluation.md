@@ -81,3 +81,42 @@ After the L1 selector gate passes, work proceeds in this order:
 
 README or paper claims may use only versioned scenario files and saved reports
 that can be reproduced by the documented command.
+
+## Arazzo paired long-horizon gate
+
+The Arazzo gate isolates one causal question: does an explicit workflow
+description improve execution when OpenAPI request and response field names do
+not reveal the runtime handoff by themselves?
+
+Three generated, contract-distinct domains use separate Korean requests and
+English operation IDs. Each catalog contains 1,000 tools. The required horizons
+are 3, 10, and 30 calls; all other tools are read-only distractors. Gold
+milestones, order constraints, bindings, and final-state assertions are read
+only after execution.
+
+```bash
+make arazzo-long-horizon-benchmark
+```
+
+The paired 0.41 engine result is:
+
+| Metric | OpenAPI only | OpenAPI + Arazzo |
+|---|---:|---:|
+| Target hit@8 | `1.0` | `1.0` |
+| Final target exact | `1.0` | `1.0` |
+| Goal completion | `0.0` | `1.0` |
+| Exact plan order | `0.0` | `1.0` |
+| Exact execution order | `0.0` | `1.0` |
+| Runtime binding accuracy | `0.0` | `1.0` |
+
+The Arazzo condition executes exactly 3, 10, and 30 calls. It extracts 2, 9,
+and 29 runtime-reference relations respectively, then promotes only the
+declared response-path to request-field aliases. The saved case-level artifact
+is
+[`arazzo_long_horizon_0.42.json`](../../benchmarks/results/arazzo_long_horizon_0.42.json).
+
+This is deterministic engine evidence, not an LLM reasoning score and not a
+claim about arbitrary production workflows. The next release-candidate gate
+runs model target selection above the same sealed catalogs, followed by a
+read-only XGEN dev replay. Production API names and payloads remain outside the
+public artifact.

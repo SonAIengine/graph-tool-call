@@ -1156,3 +1156,23 @@ This first fixture validates the harness, not long-horizon or model quality.
 The next gates add 5-8, 9-15, and 16-30 step scenarios, repeated model runs,
 failure recovery, and XGEN dev API assertions. See
 [`docs/research/long-horizon-goal-evaluation.md`](research/long-horizon-goal-evaluation.md).
+
+### Arazzo 3/10/30-step paired evaluation
+
+The deterministic Arazzo gate compares the same 1,000-tool catalog before and
+after explicit workflow evidence is applied. It uses three distinct workflow
+families and requires exact response-to-request value handoffs across 3, 10,
+and 30 calls.
+
+```bash
+make arazzo-long-horizon-benchmark
+```
+
+On the frozen artifact, OpenAPI-only planning reaches `0.0` goal completion
+because the opaque handoff fields cannot be justified. Adding Arazzo reaches
+`1.0` target hit@8, target selection, exact plan order, exact execution order,
+binding accuracy, and final goal completion. The result is recorded in
+[`benchmarks/results/arazzo_long_horizon_0.42.json`](../benchmarks/results/arazzo_long_horizon_0.42.json).
+
+This benchmark measures graph-tool-call's deterministic middleware. It does
+not claim that a model independently discovered the 30-step workflow.
