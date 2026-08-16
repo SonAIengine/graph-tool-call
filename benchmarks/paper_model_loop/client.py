@@ -7,6 +7,7 @@ import os
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 from typing import Any, Protocol
@@ -59,6 +60,7 @@ class HTTPModelClient:
         disable_thinking: bool = True,
         include_seed: bool = True,
         api_key_env: str = "OPENAI_API_KEY",
+        extra_body: dict[str, Any] | None = None,
     ) -> None:
         if not model.strip() or not url.strip():
             raise ValueError("model and url must be non-empty.")
@@ -70,6 +72,7 @@ class HTTPModelClient:
         self.disable_thinking = disable_thinking
         self.include_seed = include_seed
         self.api_key_env = api_key_env
+        self.extra_body = dict(extra_body or {})
 
     def complete(
         self,
@@ -111,8 +114,9 @@ class HTTPModelClient:
         }
         if self.include_seed:
             payload["seed"] = seed
-        if self.disable_thinking:
+        if self.disable_thinking and "thinking" not in self.extra_body:
             payload["chat_template_kwargs"] = {"enable_thinking": False}
+        payload.update(self.extra_body)
         headers = {"Content-Type": "application/json"}
         api_key = os.environ.get(self.api_key_env)
         if api_key:
@@ -189,8 +193,29 @@ class HTTPModelClient:
 
 
 def redacted_url(url: str) -> str:
-    """Remove embedded credentials before a URL enters an artifact."""
-    return re.sub(r"://([^/@]+)@", "://***@", url)
+    """Remove embedded credentials and sensitive query values from artifact URLs."""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        netloc = parsed.netloc
+        if "@" in netloc:
+            netloc = f"***@{netloc.rsplit('@', 1)[1]}"
+        query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        scrubbed_query = urllib.parse.urlencode(
+            [(key, "***" if _is_sensitive_query_key(key) else value) for key, value in query]
+        )
+        return urllib.parse.urlunsplit(
+            (parsed.scheme, netloc, parsed.path, scrubbed_query, parsed.fragment)
+        )
+    except ValueError:
+        return re.sub(r"://([^/@]+)@", "://***@", url)
+
+
+def _is_sensitive_query_key(key: str) -> bool:
+    normalized = re.sub(r"[^a-z]", "", key.lower())
+    return any(
+        marker in normalized
+        for marker in ("apikey", "token", "authorization", "password", "secret", "signature")
+    )
 
 
 def _post_json(
