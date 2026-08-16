@@ -85,6 +85,7 @@ from graph_tool_call.graphify import (
 
 artifact = build_openapi_collection_artifact(
     "openapi.json",
+    workflow_sources=["arazzo.yaml"],
     derive_semantic_metadata=True,
     promote_contract_signals=True,
     context_field_names={"tenantId", "siteNo"},
@@ -127,6 +128,7 @@ library에 넣지 않습니다.
 | `metadata` | build option, source identity, version, summary copy |
 | `semantic_summary` | action/resource/module/result-shape coverage |
 | `edge_quality_summary` | graph edge의 evidence 분포 |
+| `workflow_summary` | Arazzo workflow, step, relation, binding 수 |
 | `readiness_report` | deterministic OpenAPI readiness diagnostics |
 | `source_snapshot_manifest` | source label, URL, hash, operation count |
 | `ingest_summary` | duplicate 처리와 operation count |
@@ -135,6 +137,25 @@ library에 넣지 않습니다.
 
 artifact 전체를 저장하는 것을 권장합니다. `graph`만 저장하면 readiness와 rebuild behavior를
 설명하는 diagnostics를 잃게 됩니다.
+
+## 명시적 호출 순서 추가
+
+OpenAPI는 operation과 contract를 설명하지만 비즈니스 호출 순서는 생략하는 경우가 많습니다.
+해당 근거가 있다면 Arazzo 문서를 함께 전달합니다.
+
+```bash
+graph-tool-call build-openapi-collection openapi.json \
+  --workflow arazzo.yaml \
+  -o collection.json
+```
+
+엔진은 `dependsOn`, 순차 step, runtime output reference를 `arazzo` 근거로 병합합니다.
+`$steps.lookup.outputs.orderId` 같은 참조는 실행 순서뿐 아니라 다음 요청 필드가 사용할
+response path도 기록합니다. artifact에는 operation, step, binding metadata만 저장하고
+literal request 값이나 credential은 저장하지 않습니다.
+
+Arazzo가 없으면 기존 structural/contract 추론은 그대로 동작합니다. 추론 edge는 가설로,
+명시된 Arazzo edge는 강한 deterministic evidence로 취급합니다.
 
 ## Contract Index
 

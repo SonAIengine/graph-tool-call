@@ -32,6 +32,7 @@ from graph_tool_call.graphify.dependency_closure import (
 )
 from graph_tool_call.graphify.edges import (
     EVIDENCE_API_CONTRACT,
+    EVIDENCE_ARAZZO,
     EVIDENCE_LLM_CURATED,
     EVIDENCE_MANUAL,
     EVIDENCE_NAME_BASED,
@@ -77,6 +78,10 @@ from graph_tool_call.graphify.semantics import (
     summarize_edge_quality,
     summarize_openapi_semantics,
 )
+from graph_tool_call.graphify.workflow_evidence import (
+    apply_arazzo_relations,
+    apply_arazzo_workflows,
+)
 
 __all__ = [
     "COLLECTION_GRAPH_VERSION",
@@ -85,6 +90,7 @@ __all__ = [
     "DEFAULT_CONF_AMBIGUOUS",
     "DEFAULT_CONF_EXTRACTED",
     "DEFAULT_CONF_INFERRED",
+    "EVIDENCE_ARAZZO",
     "EVIDENCE_API_CONTRACT",
     "EVIDENCE_LLM_CURATED",
     "EVIDENCE_MANUAL",
@@ -100,6 +106,8 @@ __all__ = [
     "_apply_pair_hints",
     "annotate_graphify_metadata",
     "annotate_openapi_tool_semantics",
+    "apply_arazzo_relations",
+    "apply_arazzo_workflows",
     "assemble_tool_bundle",
     "bucket_confidence",
     "build_candidate_set",

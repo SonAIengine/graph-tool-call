@@ -116,8 +116,11 @@ workflows:
         dependsOn: find-pet
 ```
 
-Arazzo spec이 있으면 완벽한 순서 관계를 추출할 수 있다.
-없으면 Layer 1+2의 휴리스틱으로 추론.
+Arazzo spec이 있으면 명시된 `dependsOn`, step 순서, runtime output 참조를
+`arazzo` 근거로 추출한다. `$steps.<step>.outputs.<field>` 참조는 호출 순서뿐
+아니라 producer 응답 경로와 consumer 입력 필드의 binding에도 사용한다.
+명세에 기록되지 않은 분기나 비즈니스 규칙은 보장하지 않으며, 해당 부분은
+OpenAPI Link, 실행 trace, 수동 근거와 함께 보완한다.
 
 ## 커머스 도메인 특화 패턴
 

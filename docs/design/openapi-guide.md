@@ -204,23 +204,32 @@ API 간 호출 순서가 중요하면 Arazzo spec 추가:
 
 ```yaml
 # arazzo.yaml
-arazzo: 1.0.0
+arazzo: 1.1.0
 info:
   title: Order Workflow
+  version: 1.0.0
+sourceDescriptions: []
 workflows:
   - workflowId: order-cancel
     steps:
       - stepId: list
         operationId: listOrders
+        outputs:
+          orderId: $response.body#/items/0/orderId
       - stepId: get
         operationId: getOrder
         dependsOn: list
+        parameters:
+          - name: orderId
+            in: path
+            value: $steps.list.outputs.orderId
       - stepId: cancel
         operationId: cancelOrder
         dependsOn: get
 ```
 
-**효과**: 완벽한 호출 순서 관계 추출 (confidence 1.0)
+**효과**: 명시된 호출 순서와 response-to-request binding을 deterministic하게
+추출한다. 명세 밖의 경로는 별도 계약/trace 근거가 필요하다.
 
 ## 체크리스트
 

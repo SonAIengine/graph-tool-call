@@ -16,6 +16,7 @@ from graph_tool_call.core.protocol import GraphEngine
 from graph_tool_call.core.tool import ToolSchema
 from graph_tool_call.graphify.edges import (
     EVIDENCE_API_CONTRACT,
+    EVIDENCE_ARAZZO,
     EVIDENCE_MANUAL,
     EVIDENCE_OPENAPI_LINK,
     EVIDENCE_PROVEN,
@@ -439,6 +440,8 @@ def summarize_edge_quality(graph: GraphEngine | None) -> dict[str, Any]:
             counters["name_based"] += 1
         if EVIDENCE_MANUAL in evidence_sources or attrs.get("is_manual"):
             counters["manual"] += 1
+        if EVIDENCE_ARAZZO in evidence_sources:
+            counters["workflow"] += 1
         if EVIDENCE_RUN in evidence_sources or EVIDENCE_PROVEN in evidence_sources:
             counters["trace"] += 1
         if _has_strong_deterministic_evidence(evidence_sources, confidence, conf_score):
@@ -902,6 +905,7 @@ def _edge_quality_payload(
         "structural": counters.get("structural", 0),
         "name_based": counters.get("name_based", 0),
         "manual": counters.get("manual", 0),
+        "workflow": counters.get("workflow", 0),
         "trace": counters.get("trace", 0),
         "strong_deterministic_evidence": counters.get("strong_deterministic_evidence", 0),
         "visual_edge_candidate_count": visual_candidate_count,
@@ -925,7 +929,12 @@ def _has_strong_deterministic_evidence(
     confidence: str,
     conf_score: float,
 ) -> bool:
-    if evidence_sources & {EVIDENCE_API_CONTRACT, EVIDENCE_OPENAPI_LINK, EVIDENCE_STRUCTURAL}:
+    if evidence_sources & {
+        EVIDENCE_API_CONTRACT,
+        EVIDENCE_ARAZZO,
+        EVIDENCE_OPENAPI_LINK,
+        EVIDENCE_STRUCTURAL,
+    }:
         return True
     return confidence == "EXTRACTED" and conf_score >= 0.85
 
@@ -937,7 +946,12 @@ def _is_visual_edge_candidate(
     conf_score: float,
     attrs: Mapping[str, Any],
 ) -> bool:
-    if evidence_sources & {EVIDENCE_API_CONTRACT, EVIDENCE_OPENAPI_LINK, EVIDENCE_MANUAL}:
+    if evidence_sources & {
+        EVIDENCE_API_CONTRACT,
+        EVIDENCE_ARAZZO,
+        EVIDENCE_OPENAPI_LINK,
+        EVIDENCE_MANUAL,
+    }:
         return True
     if evidence_sources & {EVIDENCE_RUN, EVIDENCE_PROVEN}:
         return True

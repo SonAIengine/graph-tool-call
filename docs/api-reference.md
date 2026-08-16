@@ -32,7 +32,7 @@ tools = tg.retrieve("create a pet", top_k=5)
 | `ingest_mcp_tools(tools)` | Ingest from MCP tool list |
 | `ingest_mcp_server(url)` | Fetch and ingest from an MCP HTTP server |
 | `ingest_functions(fns)` | Ingest from Python callables (uses type hints + docstrings) |
-| `ingest_arazzo(source)` | Ingest Arazzo 1.0.0 workflow spec |
+| `ingest_arazzo(source)` | Ingest Arazzo 1.0/1.1 workflow evidence |
 | `add_relation(src, tgt, type)` | Add a manual relation between two tools |
 
 ### Source-agnostic ingest adapters
@@ -531,6 +531,7 @@ from graph_tool_call.graphify import build_openapi_collection_artifact
 
 artifact = build_openapi_collection_artifact(
     "https://api.example.com/swagger-ui/index.html",
+    workflow_sources=["./arazzo.yaml"],
     allow_private_hosts=True,
     context_field_names={"siteNo", "tenantId"},
     paging_field_names={"pageNo", "pageSize"},
@@ -550,11 +551,22 @@ The artifact includes:
 - `edge_stats`: graphify edge and contract-promotion statistics
 - `semantic_summary`: action/resource/module coverage and unknown samples
 - `edge_quality_summary`: deterministic/manual/run/name-based edge provenance
+- `workflow_summary`: Arazzo source/workflow/step/relation counts, dependency
+  kinds, edge merge counts, and source snapshot hashes
+
+When `workflow_sources` is supplied, Arazzo `dependsOn`, ordered steps, and
+runtime output references are merged as `arazzo` evidence. A runtime binding
+such as `$steps.lookup.outputs.itemId` also creates a producer alias with the
+concrete response path, allowing `PathSynthesizer` to bind the consumer input
+without guessing from similarly named response leaves. Explicit Arazzo and
+OpenAPI Link bindings outrank generic schema-derived paths. Existing manual,
+trace, and OpenAPI contract metadata remains additive.
 
 The CLI equivalent is:
 
 ```bash
 graph-tool-call build-openapi-collection openapi.json -o collection.json \
+  --workflow arazzo.yaml \
   --resource-alias goods=product \
   --module-alias goodsCommonApi=goods_common
 ```

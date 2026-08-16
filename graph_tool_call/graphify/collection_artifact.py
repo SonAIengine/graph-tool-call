@@ -27,6 +27,7 @@ from graph_tool_call.graphify.semantics import (
     summarize_edge_quality,
     summarize_openapi_semantics,
 )
+from graph_tool_call.graphify.workflow_evidence import apply_arazzo_workflows
 from graph_tool_call.ingest.openapi import _load_spec, ingest_openapi
 from graph_tool_call.tool_graph import _discover_spec_urls
 
@@ -44,6 +45,7 @@ class _LoadedOpenAPISpec:
 def build_openapi_collection_artifact(
     source: dict[str, Any] | str | Sequence[dict[str, Any] | str],
     *,
+    workflow_sources: dict[str, Any] | str | Sequence[dict[str, Any] | str] | None = None,
     required_only: bool = False,
     skip_deprecated: bool = True,
     allow_private_hosts: bool = False,
@@ -104,6 +106,16 @@ def build_openapi_collection_artifact(
         paging_field_names=paging_field_names,
         search_filter_field_names=search_filter_field_names,
     )
+    workflow_summary = _empty_workflow_summary()
+    if workflow_sources is not None:
+        workflow_summary = apply_arazzo_workflows(
+            tg,
+            workflow_sources,
+            allow_private_hosts=allow_private_hosts,
+            max_response_bytes=max_response_bytes,
+        )
+        edge_stats["edge_count"] = tg.graph.edge_count()
+    edge_stats["arazzo_workflows"] = workflow_summary["edge_stats"]
     semantic_summary = summarize_openapi_semantics(unique_tools, options=semantic_options)
     edge_quality_summary = summarize_edge_quality(tg.graph)
     readiness_report = analyze_openapi_tools(
@@ -129,6 +141,7 @@ def build_openapi_collection_artifact(
         "search_filter_field_names": _sorted_names(search_filter_field_names),
         "auth_field_names": _sorted_names(auth_field_names),
         "user_input_field_names": _sorted_names(user_input_field_names),
+        "workflow_source_count": int(workflow_summary["source_count"]),
     }
     if contract_signal_options:
         build_options["contract_signal_options"] = dict(contract_signal_options)
@@ -147,6 +160,7 @@ def build_openapi_collection_artifact(
         "edge_stats": edge_stats,
         "semantic_summary": semantic_summary,
         "edge_quality_summary": edge_quality_summary,
+        "workflow_summary": workflow_summary,
         "build_options": build_options,
     }
     if metadata:
@@ -166,12 +180,25 @@ def build_openapi_collection_artifact(
         "edge_stats": edge_stats,
         "semantic_summary": semantic_summary,
         "edge_quality_summary": edge_quality_summary,
+        "workflow_summary": workflow_summary,
     }
     return annotate_graphify_metadata(
         graph_payload,
         collection_graph_version=collection_graph_version,
         in_place=True,
     )
+
+
+def _empty_workflow_summary() -> dict[str, Any]:
+    return {
+        "source_count": 0,
+        "workflow_count": 0,
+        "step_count": 0,
+        "relation_count": 0,
+        "by_dependency_kind": {},
+        "edge_stats": {"added": 0, "merged": 0, "binding_aliases_added": 0},
+        "source_snapshot_manifest": {"spec_count": 0, "specs": []},
+    }
 
 
 def _load_openapi_collection_sources(

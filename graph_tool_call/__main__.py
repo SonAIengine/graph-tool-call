@@ -121,6 +121,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default="collection.json",
         help="Output artifact path, or '-' for stdout",
     )
+    p_build_collection.add_argument(
+        "--workflow",
+        action="append",
+        dest="workflow_sources",
+        default=[],
+        help="Arazzo workflow URL or file path (repeatable)",
+    )
     p_build_collection.add_argument("--required-only", action="store_true")
     p_build_collection.add_argument("--include-deprecated", action="store_true")
     p_build_collection.add_argument(
@@ -619,6 +626,7 @@ def cmd_build_openapi_collection(args: argparse.Namespace) -> None:
 
     artifact = build_openapi_collection_artifact(
         args.source,
+        workflow_sources=args.workflow_sources or None,
         required_only=args.required_only,
         skip_deprecated=not args.include_deprecated,
         allow_private_hosts=args.allow_private_hosts,

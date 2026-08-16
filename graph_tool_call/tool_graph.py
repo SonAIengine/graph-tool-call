@@ -501,7 +501,7 @@ class ToolGraph:
         allow_private_hosts: bool = False,
         max_response_bytes: int = 5_000_000,
     ) -> list:
-        """Ingest an Arazzo 1.0.0 workflow spec, adding PRECEDES relations.
+        """Ingest an Arazzo workflow spec, adding PRECEDES relations.
 
         Only adds relations between tools already registered in the graph.
 
@@ -518,8 +518,9 @@ class ToolGraph:
             allow_private_hosts=allow_private_hosts,
             max_response_bytes=max_response_bytes,
         )
-        for rel in relations:
-            self._builder.add_relation(rel.source, rel.target, rel.relation_type)
+        from graph_tool_call.graphify.workflow_evidence import apply_arazzo_relations
+
+        apply_arazzo_relations(self, relations)
         self._invalidate_retrieval()
         return relations
 

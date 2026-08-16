@@ -713,9 +713,13 @@ class PathSynthesizer:
             ).lower()
             if not src or not tgt or rel_str not in self._WORKFLOW_RELATIONS:
                 continue
-            self._workflow_edges_out.setdefault(src, []).append(
+            # REQUIRES is stored consumer -> producer. PRECEDES follows
+            # execution order (producer -> consumer), so invert it for the
+            # planner's consumer -> producer dependency index.
+            planning_source, planning_target = (tgt, src) if rel_str == "precedes" else (src, tgt)
+            self._workflow_edges_out.setdefault(planning_source, []).append(
                 {
-                    "target": tgt,
+                    "target": planning_target,
                     "relation": rel_str,
                     "confidence": e.get("confidence"),
                     "conf_score": float(e.get("conf_score") or 0.0),
