@@ -1176,3 +1176,52 @@ binding accuracy, and final goal completion. The result is recorded in
 
 This benchmark measures graph-tool-call's deterministic middleware. It does
 not claim that a model independently discovered the 30-step workflow.
+
+### Model-in-the-loop 3/10/30-step evaluation
+
+The model gate adds one real chat-model decision above the same sealed
+catalogs. graph-tool-call retrieves eight candidates from 1,000 tools, the
+model selects the final target from that frozen candidate catalog, the
+strong-evidence selector guard records any override, and Arazzo-backed
+planning executes the complete 3, 10, or 30-call workflow in the sandbox.
+
+```bash
+MODEL=deepseek-chat \
+MODEL_REVISION=provider-reported-revision \
+LLM_URL=https://api.deepseek.com/v1 \
+API_KEY_ENV=DEEPSEEK_API_KEY \
+PROVIDER_PROFILE=deepseek \
+make arazzo-long-horizon-model-benchmark
+```
+
+The artifact reports `llm_target_exact` separately from
+`selected_target_exact`, so deterministic guard recovery is never counted as
+model accuracy. It also records exact plan/execution order, binding accuracy,
+final-state goal completion, latency, token usage, and model/provider
+provenance without storing API credentials.
+
+This is a target-selection plus graph-execution benchmark. Arazzo supplies the
+prerequisite order and runtime bindings after target selection; it does not
+claim that the model independently enumerated all 30 calls.
+
+The 2026-08-16 DeepSeek V4 Flash run used three repeats (nine executions):
+
+| Metric | Result |
+|---|---:|
+| Retrieval target hit@8 | `1.00` |
+| Raw LLM target exact | `1.00` |
+| Final selected target exact | `1.00` |
+| Plan/execution required-tool recall | `1.00 / 1.00` |
+| Exact plan/execution order | `1.00 / 1.00` |
+| Binding accuracy | `1.00` |
+| Goal completion | `1.00` |
+| Retrieval p95 | `116.312 ms` |
+| Model selection p95 | `1252.382 ms` |
+| Plan and sandbox execution p95 | `11.277 ms` |
+
+The case-level artifact is
+[`arazzo_long_horizon_deepseek_v4_flash_20260816.json`](../benchmarks/results/arazzo_long_horizon_deepseek_v4_flash_20260816.json).
+DeepSeek thinking was explicitly disabled with the provider's documented
+[`thinking.type=disabled`](https://api-docs.deepseek.com/guides/thinking_mode)
+control so the bounded JSON selector output was not consumed by hidden
+reasoning tokens.

@@ -476,6 +476,9 @@ def test_pairing_rejects_duplicate_model_loop_conditions() -> None:
 
 def test_redacted_url_removes_embedded_credentials() -> None:
     assert redacted_url("https://user:secret@example.com/v1") == "https://***@example.com/v1"
+    assert redacted_url("https://example.com/v1?api_key=secret&region=kr") == (
+        "https://example.com/v1?api_key=%2A%2A%2A&region=kr"
+    )
 
 
 def _analysis_cases(deltas_by_case: dict[str, list[float]]) -> list[dict[str, Any]]:

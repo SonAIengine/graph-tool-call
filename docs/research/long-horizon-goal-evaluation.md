@@ -120,3 +120,31 @@ claim about arbitrary production workflows. The next release-candidate gate
 runs model target selection above the same sealed catalogs, followed by a
 read-only XGEN dev replay. Production API names and payloads remain outside the
 public artifact.
+
+## Model target-selection gate
+
+The release-candidate model gate is now executable with any OpenAI-compatible
+or Ollama endpoint:
+
+```bash
+MODEL=deepseek-chat \
+MODEL_REVISION=provider-reported-revision \
+LLM_URL=https://api.deepseek.com/v1 \
+API_KEY_ENV=DEEPSEEK_API_KEY \
+PROVIDER_PROFILE=deepseek \
+REPEATS=3 \
+make arazzo-long-horizon-model-benchmark
+```
+
+The model sees the natural-language request and only the retrieved Top-8
+catalog. Evaluator gold remains sealed until execution finishes. The report
+separates raw model target accuracy, selector-guard accuracy, exact plan and
+execution order, runtime binding accuracy, and final-state goal completion.
+API keys are read only from the named environment variable and are not written
+to the result artifact.
+
+The first frozen model artifact uses DeepSeek V4 Flash with three repeats over
+all three horizons. All nine executions achieved exact raw model target
+selection, exact graph plan and execution order, valid cross-step bindings,
+and final-state goal completion. See
+[`arazzo_long_horizon_deepseek_v4_flash_20260816.json`](../../benchmarks/results/arazzo_long_horizon_deepseek_v4_flash_20260816.json).
