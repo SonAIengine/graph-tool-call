@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-08-17
+
+### Added
+- Adaptive target-candidate admission with a configurable recall floor, token-aware
+  projected-schema budgeting, semantic diversity controls, and structured drop reasons.
+- Admission and selector observability records that expose policy revisions, expansion
+  recommendations, override assessments, and candidate-level evidence.
+
+### Changed
+- Risk-limiting target selection now preserves the LLM target when evidence is ambiguous
+  and overrides it only when winner, runner-up, and contract/detail margins are decisive.
+- Candidate admission reports when retrieval expansion or a larger schema budget is needed
+  instead of silently truncating a potentially relevant tool set.
+
 ## [0.43.0] - 2026-08-17
 
 ### Added
@@ -718,7 +732,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.44.0...HEAD
 [0.39.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.36.0...v0.37.0
@@ -760,3 +774,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.41.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.40.0...v0.41.0
 [0.42.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.41.0...v0.42.0
 [0.43.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.42.0...v0.43.0
+[0.44.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.43.0...v0.44.0
