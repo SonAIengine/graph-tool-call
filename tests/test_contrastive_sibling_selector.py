@@ -185,6 +185,130 @@ def test_unrequested_specialization_is_decisive_negative_evidence():
     )
 
 
+def test_korean_generic_ui_terms_do_not_override_correct_llm_target():
+    tools = {
+        "getPartnerDetail": _tool(
+            "partner",
+            {
+                "name": "getPartnerDetail",
+                "summary": "협력사 상세 정보",
+                "action": "search",
+                "shape": "list",
+            },
+        ),
+        "getPartnerSearchList": _tool(
+            "partner",
+            {
+                "name": "getPartnerSearchList",
+                "summary": "협력사 검색 목록",
+                "action": "search",
+                "shape": "list",
+            },
+        ),
+    }
+    retrieval = [
+        {"name": "getPartnerDetail", "score": 0.05},
+        {"name": "getPartnerSearchList", "score": 0.02},
+    ]
+
+    result = select_target_candidate(
+        "협력사 정보 관리 화면에서 조건에 맞는 협력사 정보를 검색해줘",
+        retrieval,
+        tools,
+        retrieval_results=retrieval,
+        llm_target="getPartnerSearchList",
+        policy="risk_limited",
+    )
+
+    assert result["selected_target"] == "getPartnerSearchList"
+    assert result["overrode_llm"] is False
+    detail = next(row for row in result["rank_signals"] if row["name"] == "getPartnerDetail")
+    qualifier_evidence = [
+        row
+        for row in detail["contrastive_evidence"]
+        if row["source"] == "contrastive_qualifier_match"
+    ]
+    assert not qualifier_evidence
+
+
+def test_contrastive_qualifiers_ignore_long_openapi_description_noise():
+    correct = _tool(
+        "campaign",
+        {
+            "name": "getCampaignBaseDetail",
+            "summary": "Get campaign base detail",
+            "action": "read",
+            "shape": "single",
+        },
+    )
+    correct["description"] = (
+        "Get campaign base detail. Release sprint fix query defect where clause revision migration."
+    )
+    correct["metadata"]["openapi"]["description"] = correct["description"]
+    tools = {
+        "getCampaignImageDetail": _tool(
+            "campaign",
+            {
+                "name": "getCampaignImageDetail",
+                "summary": "Get campaign image detail",
+                "action": "read",
+                "shape": "single",
+            },
+        ),
+        "getCampaignBaseDetail": correct,
+    }
+
+    contrast = contrast_target_candidates(
+        "show campaign base detail",
+        list(tools),
+        tools,
+    )
+
+    by_name = {row["name"]: row for row in contrast["candidate_contrasts"]}
+    noisy_terms = set(by_name["getCampaignBaseDetail"]["unrequested_qualifiers"])
+    assert not noisy_terms & {"release", "sprint", "defect", "revision", "migration"}
+
+
+def test_single_unrequested_qualifier_cannot_override_better_surface_match():
+    tools = {
+        "getCampaignDetail": _tool(
+            "campaign",
+            {
+                "name": "getCampaignDetail",
+                "summary": "Campaign detail",
+                "action": "read",
+                "shape": "single",
+            },
+        ),
+        "getCampaignPopupDetail": _tool(
+            "campaign",
+            {
+                "name": "getCampaignPopupDetail",
+                "summary": "Campaign detail 조건 화면 팝업",
+                "action": "read",
+                "shape": "list",
+            },
+        ),
+    }
+    retrieval = [
+        {"name": "getCampaignDetail", "score": 0.05},
+        {"name": "getCampaignPopupDetail", "score": 0.02},
+    ]
+
+    result = select_target_candidate(
+        "campaign detail 조건 화면 조회",
+        retrieval,
+        tools,
+        retrieval_results=retrieval,
+        llm_target="getCampaignPopupDetail",
+        policy="risk_limited",
+    )
+
+    assert result["selected_target"] == "getCampaignPopupDetail"
+    assert result["overrode_llm"] is False
+    assert "negative_only_override_blocked" in result["reason_codes"]
+
+
 def test_audit_query_with_identifier_prefers_single_result_shape():
     tools = {
         "listAuditLogs": _tool(

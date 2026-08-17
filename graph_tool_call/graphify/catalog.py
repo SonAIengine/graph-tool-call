@@ -22,7 +22,7 @@ _SELECTOR_OVERRIDE_MARGIN = 0.12
 _SELECTOR_STRONG_SCORE = 0.45
 _CONTRASTIVE_AMBIGUITY_MARGIN = 0.04
 TARGET_ADMISSION_POLICY_REVISION = "adaptive-target-admission-v1"
-TARGET_SELECTOR_POLICY_REVISION = "contrastive-risk-limiting-selector-v2"
+TARGET_SELECTOR_POLICY_REVISION = "contrastive-risk-limiting-selector-v3"
 _DECISIVE_OVERRIDE_SOURCES = frozenset(
     {
         "api_contract",
@@ -96,6 +96,7 @@ _KOREAN_QUERY_SUFFIXES = (
     "으로",
     "에서",
     "에게",
+    "에",
     "까지",
     "부터",
     "처럼",
@@ -197,6 +198,8 @@ _SURFACE_STOPWORDS = frozenset(
         "using",
         "value",
         "with",
+        "조건",
+        "화면",
     }
 )
 
@@ -905,13 +908,21 @@ def contrast_target_candidates(
         grouped.setdefault(context["semantic_group"], []).append(name)
 
     qualifier_terms: dict[str, set[str]] = {}
+    penalty_qualifier_terms: dict[str, set[str]] = {}
     for members in grouped.values():
-        surfaces = [contexts[name]["surface_terms"] for name in members]
+        surfaces = [contexts[name]["qualifier_surface_terms"] for name in members]
         shared = set.intersection(*surfaces) if surfaces else set()
+        penalty_surfaces = [contexts[name]["penalty_qualifier_surface_terms"] for name in members]
+        shared_penalty = set.intersection(*penalty_surfaces) if penalty_surfaces else set()
         for name in members:
             qualifier_terms[name] = _contrastive_qualifier_terms(
                 contexts[name],
                 shared_terms=shared,
+            )
+            penalty_qualifier_terms[name] = _contrastive_qualifier_terms(
+                contexts[name],
+                shared_terms=shared_penalty,
+                surface_key="penalty_qualifier_surface_terms",
             )
 
     rows: list[dict[str, Any]] = []
@@ -920,8 +931,9 @@ def contrast_target_candidates(
         peers = grouped[context["semantic_group"]]
         qualifiers = qualifier_terms[name]
         matched_qualifiers = _matching_contrast_terms(query_terms, qualifiers)
+        penalty_qualifiers = penalty_qualifier_terms[name]
         minimum_qualifier_count = min(len(qualifier_terms[peer]) for peer in peers)
-        specialization_terms = qualifiers - matched_qualifiers
+        specialization_terms = penalty_qualifiers - matched_qualifiers
         penalized_qualifiers = (
             specialization_terms
             if len(peers) > 1
@@ -1394,6 +1406,19 @@ def _contrastive_candidate_context(name: str, tool: dict[str, Any]) -> dict[str,
             ai.get("when_to_use"),
         )
     )
+    # Full descriptions remain eligible as positive query matches: workflow
+    # goals and domain intent are often documented only there. Negative
+    # specialization penalties use compact identity fields, however, because
+    # changelogs and implementation notes must not make a well-documented LLM
+    # target look like an unrequested specialization.
+    penalty_qualifier_surface = " ".join(
+        str(value or "")
+        for value in (
+            openapi.get("summary"),
+            ai.get("one_line_summary"),
+            resource,
+        )
+    )
     return {
         "resource": resource,
         "action": action,
@@ -1401,6 +1426,10 @@ def _contrastive_candidate_context(name: str, tool: dict[str, Any]) -> dict[str,
         "module": module,
         "semantic_group": (resource or module or "unknown", "siblings", "all"),
         "surface_terms": _contrastive_normalize_terms(_selector_terms(surface)),
+        "qualifier_surface_terms": _contrastive_normalize_terms(_selector_terms(surface)),
+        "penalty_qualifier_surface_terms": _contrastive_normalize_terms(
+            _selector_terms(penalty_qualifier_surface)
+        ),
         "consumes_terms": _contrastive_normalize_terms(
             _contract_terms_for_direction(metadata, "consumes")
         ),
@@ -1414,6 +1443,7 @@ def _contrastive_qualifier_terms(
     context: dict[str, Any],
     *,
     shared_terms: set[str],
+    surface_key: str = "qualifier_surface_terms",
 ) -> set[str]:
     generic_terms = {
         "api",
@@ -1454,7 +1484,7 @@ def _contrastive_qualifier_terms(
 
     return {
         term
-        for term in context.get("surface_terms") or set()
+        for term in context.get(surface_key) or set()
         if term not in shared_terms
         and term not in generic_terms
         and not _is_version_or_numeric_term(term)
@@ -1492,6 +1522,12 @@ def _contrastive_normalize_terms(terms: set[str]) -> set[str]:
 
 def _contrastive_term_key(term: str) -> str:
     value = str(term or "").lower()
+    if re.fullmatch(r"[가-힣]+", value):
+        previous = ""
+        while value != previous:
+            previous = value
+            value = _strip_korean_suffix(value)
+        return value
     if not value.isascii() or len(value) <= 3:
         return value
     if value.endswith("ies") and len(value) > 4:
@@ -1697,6 +1733,15 @@ def _risk_limited_override_assessment(
     if not supporting:
         reasons.append("non_discriminative_override_blocked")
         needs_expansion = True
+    if supporting == ["contrastive_unrequested_qualifier"]:
+        incumbent_penalty = abs(
+            _evidence_source_score(llm_row, "contrastive_unrequested_qualifier")
+        )
+        winner_surface = _evidence_source_score(winner, "surface_terms")
+        incumbent_surface = _evidence_source_score(llm_row, "surface_terms")
+        if incumbent_penalty < 0.12 or incumbent_surface > winner_surface + 0.015:
+            reasons.append("negative_only_override_blocked")
+            needs_expansion = True
     if contradicting:
         reasons.append("contradictory_evidence_override_blocked")
         needs_expansion = True
@@ -1770,6 +1815,10 @@ def _evidence_by_source(row: dict[str, Any]) -> dict[str, dict[str, Any]]:
         if source and (source not in out or abs(score) > abs(current_score)):
             out[source] = evidence
     return out
+
+
+def _evidence_source_score(row: dict[str, Any], source: str) -> float:
+    return float((_evidence_by_source(row).get(source) or {}).get("score") or 0.0)
 
 
 def _evidence_signature(evidence: dict[str, Any] | None) -> tuple[str, ...]:
