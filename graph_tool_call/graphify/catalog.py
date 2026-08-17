@@ -20,14 +20,19 @@ _ACTION_PRIORITY_DELETE = {"delete": 6, "action": 5, "update": 3, "read": 1, "se
 _ACTION_PRIORITY_NOTIFICATION = {"create": 7, "action": 6, "update": 3, "read": 2, "search": 1}
 _SELECTOR_OVERRIDE_MARGIN = 0.12
 _SELECTOR_STRONG_SCORE = 0.45
+_CONTRASTIVE_AMBIGUITY_MARGIN = 0.04
 TARGET_ADMISSION_POLICY_REVISION = "adaptive-target-admission-v1"
-TARGET_SELECTOR_POLICY_REVISION = "risk-limiting-selector-v1"
+TARGET_SELECTOR_POLICY_REVISION = "contrastive-risk-limiting-selector-v2"
 _DECISIVE_OVERRIDE_SOURCES = frozenset(
     {
         "api_contract",
+        "contrastive_qualifier_match",
+        "contrastive_unrequested_qualifier",
         "detail_surface",
         "identifier_detail_contract",
         "identifier_detail_surface",
+        "request_contract_fit",
+        "response_contract_fit",
     }
 )
 
@@ -35,7 +40,21 @@ _SEARCH_TERMS = frozenset(
     {"search", "find", "query", "lookup", "list", "browse", "검색", "찾", "목록", "리스트"}
 )
 _READ_TERMS = frozenset(
-    {"get", "read", "detail", "view", "show", "check", "retrieve", "조회", "상세", "보기", "확인"}
+    {
+        "get",
+        "read",
+        "detail",
+        "view",
+        "show",
+        "check",
+        "retrieve",
+        "조회",
+        "상세",
+        "보기",
+        "보여",
+        "알려",
+        "확인",
+    }
 )
 _DETAIL_READ_TERMS = frozenset({"detail", "details", "상세", "단건"})
 _SINGLE_TERMS = frozenset({"detail", "details", "info", "view", "single", "상세", "정보", "단건"})
@@ -100,6 +119,9 @@ _GENERAL_SURFACE_TERMS = frozenset(
 )
 _AUDIT_READ_TERMS = frozenset(
     {"audit", "log", "logs", "history", "event", "events", "감사", "로그", "이력", "기록"}
+)
+_AUDIT_COLLECTION_TERMS = frozenset(
+    {"audit", "log", "logs", "history", "events", "감사", "로그", "이력", "기록"}
 )
 _CREATE_TERMS = frozenset(
     {"create", "add", "register", "insert", "submit", "write", "생성", "추가", "등록", "작성"}
@@ -655,6 +677,20 @@ def select_target_candidate(
             "decision": "expand_candidates",
             "recommended_action": "expand_candidates",
             "reason_codes": ["no_candidates"],
+            "ambiguity_set": [],
+            "why_selected": {
+                "name": llm_name or "",
+                "reason_codes": ["no_candidates"],
+                "evidence_sources": [],
+                "selector_score": 0.0,
+            },
+            "why_rejected": [],
+            "query_facets": {
+                "canonical_action": "",
+                "result_shape": "",
+                "identifier_present": False,
+                "content_term_count": 0,
+            },
             "rank_signals": [],
             "candidate_evidence": [],
             "llm_target": llm_name or None,
@@ -687,6 +723,30 @@ def select_target_candidate(
         )
         for name in candidate_names
     ]
+    contrastive = contrast_target_candidates(
+        query,
+        candidate_names,
+        tools_by_name,
+        retrieval_results=retrieval_results,
+    )
+    contrasts_by_name = {
+        str(row.get("name") or ""): row
+        for row in contrastive["candidate_contrasts"]
+        if str(row.get("name") or "")
+    }
+    for row in scored:
+        contrast = contrasts_by_name.get(str(row["name"])) or {}
+        adjustment = float(contrast.get("score_adjustment") or 0.0)
+        row["base_selector_score"] = row["selector_score"]
+        row["contrastive_score"] = round(adjustment, 6)
+        row["contrastive_evidence"] = list(contrast.get("evidence") or [])
+        row["selector_score"] = round(
+            max(0.0, min(1.0, float(row["selector_score"]) + adjustment)),
+            6,
+        )
+        row["evidence"].extend(row["contrastive_evidence"])
+        if any(float(item.get("score") or 0.0) >= 0.08 for item in row["contrastive_evidence"]):
+            row["strong_evidence"] = True
     scored.sort(key=lambda row: (-float(row["selector_score"]), int(row["original_rank"] or 9999)))
 
     winner = scored[0]
@@ -739,6 +799,18 @@ def select_target_candidate(
             if "ambiguous_target" not in reason_codes:
                 reason_codes.append("ambiguous_target")
             needs_expansion = True
+    ambiguity_set = [
+        str(row["name"])
+        for row in scored
+        if float(winner["selector_score"]) - float(row["selector_score"])
+        <= _CONTRASTIVE_AMBIGUITY_MARGIN
+    ]
+    if ambiguous and str(selected.get("name") or "") not in ambiguity_set:
+        ambiguity_set.append(str(selected["name"]))
+    if len(ambiguity_set) > 1 and not overrode:
+        ambiguous = True
+        if "insufficient_contrastive_evidence" not in reason_codes:
+            reason_codes.append("insufficient_contrastive_evidence")
     if selected["name"] != winner["name"] and not overrode:
         reason_codes.append("llm_target_preserved")
     if not reason_codes:
@@ -765,6 +837,12 @@ def select_target_candidate(
         }
         for row in scored
     ]
+    why_selected = _why_selected(selected, winner=winner, llm_name=llm_name, overrode=overrode)
+    why_rejected = [
+        _why_rejected(row, selected=selected, ambiguity_set=ambiguity_set)
+        for row in scored
+        if row["name"] != selected_name
+    ]
     return {
         "selected_target": selected_name,
         "llm_target": llm_name or None,
@@ -775,6 +853,10 @@ def select_target_candidate(
         "decision": decision,
         "recommended_action": recommended_action,
         "reason_codes": reason_codes,
+        "ambiguity_set": ambiguity_set,
+        "why_selected": why_selected,
+        "why_rejected": why_rejected,
+        "query_facets": contrastive["query_facets"],
         "margin": margin,
         "llm_margin": llm_margin,
         "policy": policy,
@@ -792,6 +874,132 @@ def select_target_candidate(
         "target_action_priority": action_priority,
         "result_shape_priority": shape_priority,
         "learning_applied": bool(learning_by_name),
+    }
+
+
+def contrast_target_candidates(
+    query: str,
+    candidates: list[str] | list[dict[str, Any]],
+    tools: dict[str, Any],
+    *,
+    retrieval_results: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Compare sibling targets using query-specific, product-neutral evidence.
+
+    Absolute lexical scores often leave near-identical OpenAPI operations tied.
+    This helper removes the terms shared by semantic siblings, then evaluates
+    only their distinguishing qualifiers and request/response contract fields.
+    It never selects a target by itself; the bounded score adjustments and
+    evidence are consumed by :func:`select_target_candidate`.
+    """
+
+    names = _candidate_names(candidates)
+    tools_by_name = {name: _tool_dict(tool) for name, tool in (tools or {}).items()}
+    names = [name for name in names if name in tools_by_name]
+    query_terms = _contrastive_normalize_terms(_selector_terms(query))
+    action_priority = target_action_priority_for_query(query)
+    shape_priority = _result_shape_priority_for_query(query)
+    contexts = {name: _contrastive_candidate_context(name, tools_by_name[name]) for name in names}
+    grouped: dict[tuple[str, str, str], list[str]] = {}
+    for name, context in contexts.items():
+        grouped.setdefault(context["semantic_group"], []).append(name)
+
+    qualifier_terms: dict[str, set[str]] = {}
+    for members in grouped.values():
+        surfaces = [contexts[name]["surface_terms"] for name in members]
+        shared = set.intersection(*surfaces) if surfaces else set()
+        for name in members:
+            qualifier_terms[name] = _contrastive_qualifier_terms(
+                contexts[name],
+                shared_terms=shared,
+            )
+
+    rows: list[dict[str, Any]] = []
+    for name in names:
+        context = contexts[name]
+        peers = grouped[context["semantic_group"]]
+        qualifiers = qualifier_terms[name]
+        matched_qualifiers = _matching_contrast_terms(query_terms, qualifiers)
+        minimum_qualifier_count = min(len(qualifier_terms[peer]) for peer in peers)
+        specialization_terms = qualifiers - matched_qualifiers
+        penalized_qualifiers = (
+            specialization_terms
+            if len(peers) > 1
+            and len(qualifiers) > minimum_qualifier_count
+            and not matched_qualifiers
+            else set()
+        )
+        request_matches = _matching_contrast_terms(query_terms, context["consumes_terms"])
+        response_matches = _matching_contrast_terms(query_terms, context["produces_terms"])
+
+        evidence: list[dict[str, Any]] = []
+        adjustment = 0.0
+        if matched_qualifiers:
+            value = min(0.24, 0.06 * len(matched_qualifiers))
+            adjustment += value
+            evidence.append(
+                {
+                    "source": "contrastive_qualifier_match",
+                    "matched_terms": sorted(matched_qualifiers)[:12],
+                    "score": round(value, 6),
+                }
+            )
+        if penalized_qualifiers:
+            value = -min(0.14, 0.07 * len(penalized_qualifiers))
+            adjustment += value
+            evidence.append(
+                {
+                    "source": "contrastive_unrequested_qualifier",
+                    "terms": sorted(penalized_qualifiers)[:12],
+                    "score": round(value, 6),
+                }
+            )
+        if request_matches:
+            value = min(0.1, 0.05 * len(request_matches))
+            adjustment += value
+            evidence.append(
+                {
+                    "source": "request_contract_fit",
+                    "matched_terms": sorted(request_matches)[:12],
+                    "score": round(value, 6),
+                }
+            )
+        if response_matches:
+            value = min(0.12, 0.06 * len(response_matches))
+            adjustment += value
+            evidence.append(
+                {
+                    "source": "response_contract_fit",
+                    "matched_terms": sorted(response_matches)[:12],
+                    "score": round(value, 6),
+                }
+            )
+
+        rows.append(
+            {
+                "name": name,
+                "semantic_group": ":".join(context["semantic_group"]),
+                "matched_qualifiers": sorted(matched_qualifiers),
+                "unrequested_qualifiers": sorted(penalized_qualifiers),
+                "request_contract_matches": sorted(request_matches),
+                "response_contract_matches": sorted(response_matches),
+                "score_adjustment": round(max(-0.2, min(0.28, adjustment)), 6),
+                "evidence": evidence,
+            }
+        )
+
+    retrieval_by_name = _retrieval_signal_map(candidates, retrieval_results)
+    rows.sort(key=lambda row: int((retrieval_by_name.get(row["name"]) or {}).get("rank") or 9999))
+    return {
+        "query_facets": {
+            "canonical_action": _preferred_taxonomy_value(action_priority),
+            "result_shape": _preferred_taxonomy_value(shape_priority),
+            "identifier_present": _query_has_identifier(query_terms),
+            "content_term_count": len(_contrastive_query_content_terms(query_terms)),
+        },
+        "candidate_contrasts": rows,
+        "candidate_count": len(rows),
+        "policy_revision": TARGET_SELECTOR_POLICY_REVISION,
     }
 
 
@@ -1164,7 +1372,250 @@ def _score_target_candidate(
     }
 
 
+def _contrastive_candidate_context(name: str, tool: dict[str, Any]) -> dict[str, Any]:
+    metadata = tool.get("metadata") if isinstance(tool.get("metadata"), dict) else {}
+    openapi = metadata.get("openapi") if isinstance(metadata.get("openapi"), dict) else {}
+    ai = metadata.get("ai_metadata") if isinstance(metadata.get("ai_metadata"), dict) else {}
+    resource = str(ai.get("primary_resource") or "").strip().lower()
+    action = str(ai.get("canonical_action") or "").strip().lower()
+    shape = str(ai.get("result_shape") or "").strip().lower()
+    module = str(openapi.get("path_module") or "").strip().lower()
+    surface = " ".join(
+        str(value or "")
+        for value in (
+            name,
+            tool.get("name"),
+            tool.get("description"),
+            openapi.get("operation_id"),
+            openapi.get("summary"),
+            openapi.get("description"),
+            openapi.get("path"),
+            ai.get("one_line_summary"),
+            ai.get("when_to_use"),
+        )
+    )
+    return {
+        "resource": resource,
+        "action": action,
+        "shape": shape,
+        "module": module,
+        "semantic_group": (resource or module or "unknown", "siblings", "all"),
+        "surface_terms": _contrastive_normalize_terms(_selector_terms(surface)),
+        "consumes_terms": _contrastive_normalize_terms(
+            _contract_terms_for_direction(metadata, "consumes")
+        ),
+        "produces_terms": _contrastive_normalize_terms(
+            _contract_terms_for_direction(metadata, "produces")
+        ),
+    }
+
+
+def _contrastive_qualifier_terms(
+    context: dict[str, Any],
+    *,
+    shared_terms: set[str],
+) -> set[str]:
+    generic_terms = {
+        "api",
+        "by",
+        "data",
+        "get",
+        "info",
+        "information",
+        "manage",
+        "management",
+        "mgmt",
+        "operation",
+        "record",
+        "records",
+        "tool",
+        "관리",
+        "도구",
+    }
+    generic_terms.update(_SURFACE_STOPWORDS)
+    generic_terms.update(_IDENTIFIER_TERMS)
+    generic_terms.update(
+        term
+        for terms in (
+            _SEARCH_TERMS,
+            _READ_TERMS,
+            _SINGLE_TERMS,
+            _LIST_TERMS,
+            _COUNT_TERMS,
+            _CREATE_TERMS,
+            _UPDATE_TERMS,
+            _ACTION_TERMS,
+            _DELETE_TERMS,
+        )
+        for term in terms
+    )
+    for value in (context.get("resource"), context.get("module")):
+        generic_terms.update(_selector_terms(str(value or "")))
+
+    return {
+        term
+        for term in context.get("surface_terms") or set()
+        if term not in shared_terms
+        and term not in generic_terms
+        and not _is_version_or_numeric_term(term)
+    }
+
+
+def _contrastive_query_content_terms(query_terms: set[str]) -> set[str]:
+    generic_terms = {
+        "api",
+        "please",
+        "show",
+        "__numeric__",
+        *_SURFACE_STOPWORDS,
+        *_IDENTIFIER_TERMS,
+        *_SEARCH_TERMS,
+        *_READ_TERMS,
+        *_SINGLE_TERMS,
+        *_LIST_TERMS,
+        *_COUNT_TERMS,
+        *_CREATE_TERMS,
+        *_UPDATE_TERMS,
+        *_ACTION_TERMS,
+        *_DELETE_TERMS,
+    }
+    return {
+        term
+        for term in query_terms
+        if term not in generic_terms and not _is_version_or_numeric_term(term)
+    }
+
+
+def _contrastive_normalize_terms(terms: set[str]) -> set[str]:
+    return {_contrastive_term_key(term) for term in terms if term}
+
+
+def _contrastive_term_key(term: str) -> str:
+    value = str(term or "").lower()
+    if not value.isascii() or len(value) <= 3:
+        return value
+    if value.endswith("ies") and len(value) > 4:
+        return f"{value[:-3]}y"
+    if value.endswith(("sses", "xes", "zes", "ches", "shes")):
+        return value[:-2]
+    if value.endswith("s") and not value.endswith(("ss", "us", "is")):
+        return value[:-1]
+    return value
+
+
+def _contract_terms_for_direction(metadata: dict[str, Any], direction: str) -> set[str]:
+    rows = [row for row in (metadata.get(direction) or []) if isinstance(row, dict)]
+    if not rows:
+        contract = (
+            metadata.get("api_contract") if isinstance(metadata.get("api_contract"), dict) else {}
+        )
+        rows = [row for row in (contract.get(direction) or []) if isinstance(row, dict)]
+    return {
+        term
+        for row in rows
+        for value in (
+            row.get("field_name"),
+            row.get("semantic_tag"),
+            row.get("description"),
+            row.get("json_path"),
+        )
+        for term in _selector_terms(str(value or ""))
+        if not _is_version_or_numeric_term(term)
+    }
+
+
+def _matching_contrast_terms(left: set[str], right: set[str]) -> set[str]:
+    matches = left & right
+    for left_term in left - matches:
+        if not re.fullmatch(r"[가-힣]+", left_term) or len(left_term) < 2:
+            continue
+        if any(
+            re.fullmatch(r"[가-힣]+", right_term)
+            and len(right_term) >= 2
+            and (left_term in right_term or right_term in left_term)
+            for right_term in right
+        ):
+            matches.add(left_term)
+    return matches
+
+
+def _is_version_or_numeric_term(term: str) -> bool:
+    value = str(term or "").lower()
+    return value == "__numeric__" or bool(re.fullmatch(r"v?\d+(?:\.\d+)*", value))
+
+
+def _preferred_taxonomy_value(priority: dict[str, int]) -> str:
+    if not priority:
+        return ""
+    best = max(priority.values(), default=0)
+    winners = sorted(key for key, value in priority.items() if value == best)
+    return winners[0] if len(winners) == 1 else ""
+
+
+def _why_selected(
+    selected: dict[str, Any],
+    *,
+    winner: dict[str, Any],
+    llm_name: str,
+    overrode: bool,
+) -> dict[str, Any]:
+    positive_sources = _evidence_sources_by_polarity(selected, positive=True)
+    reason_codes = list(positive_sources)
+    if overrode:
+        reason_codes.append("llm_target_overridden")
+    elif llm_name and selected.get("name") == llm_name:
+        reason_codes.append("llm_target_preserved")
+    elif selected.get("name") == winner.get("name"):
+        reason_codes.append("highest_selector_score")
+    return {
+        "name": selected.get("name"),
+        "reason_codes": _dedupe_names(reason_codes) or ["retrieval_rank"],
+        "evidence_sources": positive_sources,
+        "selector_score": selected.get("selector_score"),
+    }
+
+
+def _why_rejected(
+    row: dict[str, Any],
+    *,
+    selected: dict[str, Any],
+    ambiguity_set: list[str],
+) -> dict[str, Any]:
+    negative_sources = _evidence_sources_by_polarity(row, positive=False)
+    reason_codes = list(negative_sources)
+    score_delta = round(
+        float(selected.get("selector_score") or 0.0) - float(row.get("selector_score") or 0.0),
+        6,
+    )
+    if row.get("name") in ambiguity_set:
+        reason_codes.append("equivalent_or_unresolved_sibling")
+    elif score_delta < 0:
+        reason_codes.append("llm_guard_preserved_target")
+    else:
+        reason_codes.append("lower_selector_score")
+    return {
+        "name": row.get("name"),
+        "reason_codes": _dedupe_names(reason_codes),
+        "evidence_sources": negative_sources,
+        "score_delta": score_delta,
+    }
+
+
+def _evidence_sources_by_polarity(row: dict[str, Any], *, positive: bool) -> list[str]:
+    sources: list[str] = []
+    for evidence in row.get("evidence") or []:
+        if not isinstance(evidence, dict):
+            continue
+        score = float(evidence.get("score") or 0.0)
+        if (positive and score > 0) or (not positive and score < 0):
+            source = str(evidence.get("source") or "")
+            if source:
+                sources.append(source)
+    return _dedupe_names(sources)
+
+
 def _result_shape_priority_for_query(query: str) -> dict[str, int]:
+    query_terms = _selector_terms(query)
     last_shape = _last_explicit_shape(query)
     if last_shape == "count":
         return {"count": 6, "list": 3, "single": 1}
@@ -1172,6 +1623,14 @@ def _result_shape_priority_for_query(query: str) -> dict[str, int]:
         return {"single": 6, "list": 2, "count": 1}
     if last_shape == "list":
         return {"list": 6, "count": 3, "single": 1}
+    if _has_action_term(query_terms, _AUDIT_COLLECTION_TERMS) and _query_has_identifier(
+        query_terms
+    ):
+        return {"single": 6, "list": 2, "count": 1}
+    if _has_action_term(query_terms, _AUDIT_COLLECTION_TERMS):
+        return {"list": 6, "single": 2, "count": 1}
+    if _last_explicit_action(query) == "read" and _query_has_identifier(query_terms):
+        return {"single": 6, "list": 2, "count": 1}
     if _last_explicit_action(query) in {"create", "update", "delete", "action"}:
         return {"mutation": 5, "single": 1}
     return {}
@@ -1285,9 +1744,17 @@ def _pairwise_decisive_evidence(
         winner_signature = _evidence_signature(winner_row)
         incumbent_signature = _evidence_signature(incumbent_row)
         distinct = winner_signature != incumbent_signature
-        if winner_score >= 0.06 and distinct and winner_score - incumbent_score >= 0.04:
+        if (
+            distinct
+            and winner_score - incumbent_score >= 0.04
+            and (winner_score >= 0.06 or incumbent_score <= -0.06)
+        ):
             supporting.append(source)
-        if incumbent_score >= 0.06 and distinct and incumbent_score - winner_score >= 0.04:
+        if (
+            distinct
+            and incumbent_score - winner_score >= 0.04
+            and (incumbent_score >= 0.06 or winner_score <= -0.06)
+        ):
             contradicting.append(source)
     return supporting, contradicting
 
@@ -1298,9 +1765,9 @@ def _evidence_by_source(row: dict[str, Any]) -> dict[str, dict[str, Any]]:
         if not isinstance(evidence, dict):
             continue
         source = str(evidence.get("source") or "")
-        if source and float(evidence.get("score") or 0.0) > float(
-            (out.get(source) or {}).get("score") or 0.0
-        ):
+        score = float(evidence.get("score") or 0.0)
+        current_score = float((out.get(source) or {}).get("score") or 0.0)
+        if source and (source not in out or abs(score) > abs(current_score)):
             out[source] = evidence
     return out
 
@@ -1309,7 +1776,7 @@ def _evidence_signature(evidence: dict[str, Any] | None) -> tuple[str, ...]:
     if not evidence:
         return ()
     values: list[str] = []
-    for key in ("matched_terms", "value"):
+    for key in ("matched_terms", "terms", "value"):
         raw = evidence.get(key)
         if isinstance(raw, (list, tuple, set)):
             values.extend(str(item) for item in raw)
@@ -2038,8 +2505,10 @@ def _producer_score(tool: dict[str, Any], priority: dict[str, int]) -> int:
 
 
 __all__ = [
+    "admit_target_candidates",
     "build_candidate_set",
     "build_tool_equivalence_groups",
+    "contrast_target_candidates",
     "expand_candidates_with_producers",
     "select_target_candidate",
     "target_action_priority_for_query",

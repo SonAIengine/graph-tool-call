@@ -14,6 +14,7 @@ from graph_tool_call.graphify import (
     build_candidate_set,
     build_io_contract,
     build_tool_equivalence_groups,
+    contrast_target_candidates,
     derive_plan_trace_edges,
     expand_candidates_with_producers,
     ingest_openapi_graphify,
@@ -42,6 +43,7 @@ def test_graphify_public_contract_imports():
     assert callable(build_candidate_set)
     assert callable(build_io_contract)
     assert callable(build_tool_equivalence_groups)
+    assert callable(contrast_target_candidates)
     assert callable(expand_candidates_with_producers)
     assert callable(target_action_priority_for_query)
     assert callable(normalize_graph_edge)

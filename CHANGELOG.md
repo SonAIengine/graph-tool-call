@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Product-neutral contrastive sibling analysis for target candidates, including
+  query facets, distinguishing qualifiers, directional request/response contract
+  matches, ambiguity sets, and stable selection/rejection explanations.
+
+### Changed
+- Risk-limiting target selection now compares sibling differences instead of
+  relying only on absolute candidate scores, while preserving the LLM target
+  when equivalent operations cannot be distinguished safely.
+
 ## [0.44.0] - 2026-08-17
 
 ### Added

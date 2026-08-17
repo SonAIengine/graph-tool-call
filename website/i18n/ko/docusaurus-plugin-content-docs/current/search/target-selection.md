@@ -54,7 +54,9 @@ build, alias, contract extraction, graph edge를 먼저 개선합니다.
 ## Public API
 
 `select_target_candidate()`는 product-neutral API입니다. generic tool metadata,
-retrieval evidence, optional promoted learning suggestion만 읽습니다.
+retrieval evidence, optional promoted learning suggestion만 읽습니다. 또한 sibling
+후보가 공통으로 가진 용어는 제외하고, 후보마다 다른 qualifier와 request/response
+contract match를 bounded evidence로 비교합니다.
 
 <Tabs>
   <TabItem value="basic" label="기본" default>
@@ -171,6 +173,10 @@ Quality Lab result, trace record에 그대로 저장할 수 있습니다.
 | `confidence` | final target의 selector score |
 | `overrode_llm` | deterministic evidence가 LLM target을 바꿨는지 |
 | `ambiguous` | margin이 약하거나 candidate가 너무 가까웠는지 |
+| `ambiguity_set` | 동등하거나 아직 구분되지 않은 sibling 후보 |
+| `why_selected` | final target의 안정 reason code와 evidence source |
+| `why_rejected` | sibling별 score delta와 제외 이유 |
+| `query_facets` | 원문 값이 없는 action, result shape, identifier 존재 여부 요약 |
 | `reason_codes` | stable diagnostic reason code |
 | `margin` | top two selector score 차이 |
 | `llm_margin` | deterministic winner와 LLM target의 score 차이 |
@@ -182,6 +188,26 @@ Quality Lab result, trace record에 그대로 저장할 수 있습니다.
 
 숫자 score는 한 번의 selector run 안에서 상대 비교에 유용합니다. absolute score 값을
 public compatibility contract로 취급하지 마세요.
+
+## Sibling 차이 확인
+
+UI, benchmark, LLM prompt에서 선택 전에 후보 차이만 확인하려면
+`contrast_target_candidates()`를 직접 호출합니다.
+
+```python
+from graph_tool_call.graphify import contrast_target_candidates
+
+contrast = contrast_target_candidates(query, candidates, tools_by_name)
+for row in contrast["candidate_contrasts"]:
+    print(row["name"])
+    print(row["matched_qualifiers"])
+    print(row["unrequested_qualifiers"])
+    print(row["request_contract_matches"])
+    print(row["response_contract_matches"])
+```
+
+이 helper는 raw query나 identifier 원문을 반환하지 않습니다. 두 operation을 근거로
+구분할 수 없으면 selector는 억지로 override하지 않고 둘 다 `ambiguity_set`에 남깁니다.
 
 ## Ranking Signals
 
