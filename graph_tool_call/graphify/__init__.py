@@ -13,6 +13,9 @@ Public API:
 """
 
 from graph_tool_call.graphify.catalog import (
+    TARGET_ADMISSION_POLICY_REVISION,
+    TARGET_SELECTOR_POLICY_REVISION,
+    admit_target_candidates,
     build_candidate_set,
     build_tool_equivalence_groups,
     expand_candidates_with_producers,
@@ -101,9 +104,12 @@ __all__ = [
     "EVIDENCE_STRUCTURAL",
     "EXECUTION_FLOW_SCHEMA_VERSION",
     "TOOL_BUNDLE_POLICY_REVISION",
+    "TARGET_ADMISSION_POLICY_REVISION",
+    "TARGET_SELECTOR_POLICY_REVISION",
     "DependencyClosureResult",
     "ToolBundle",
     "_apply_pair_hints",
+    "admit_target_candidates",
     "annotate_graphify_metadata",
     "annotate_openapi_tool_semantics",
     "apply_arazzo_relations",

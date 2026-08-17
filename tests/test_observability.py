@@ -13,6 +13,7 @@ from graph_tool_call.observability import (
     record_retrieval_result,
     record_runner_events,
     record_selector_result,
+    record_target_admission,
     record_tool_bundle,
 )
 
@@ -163,6 +164,67 @@ def test_stage_adapters_explain_every_candidate_and_admission_decision():
     assert replay["outcomes"]["expanded"] == ["listOrders"]
     assert replay["outcomes"]["omitted"] == ["searchCustomers"]
     assert all(decision["reason_codes"] for decision in replay["decisions"])
+
+
+def test_target_admission_and_risk_selector_diagnostics_are_traceable():
+    recorder = TraceRecorder("adaptive_select", trace_id="trace-adaptive-selector")
+    with recorder.start_span("target_admission") as span:
+        record_target_admission(
+            span,
+            {
+                "policy_revision": "adaptive-target-admission-v1",
+                "needs_expansion": True,
+                "recommended_action": "expand_candidates",
+                "reason_codes": ["ambiguous_admission_boundary"],
+                "raw_candidate_count": 2,
+                "admitted_candidate_count": 1,
+                "dropped_candidate_count": 1,
+                "token_budget": {"limit": 256, "used": 120},
+                "admission_signals": [
+                    {
+                        "name": "getOrder",
+                        "rank": 1,
+                        "retrieval_rank": 1,
+                        "selector_score": 0.8,
+                        "admitted": True,
+                        "decision_reason": "admitted",
+                    },
+                    {
+                        "name": "getOrderVariant",
+                        "rank": 2,
+                        "retrieval_rank": 2,
+                        "selector_score": 0.79,
+                        "admitted": False,
+                        "decision_reason": "candidate_limit",
+                    },
+                ],
+            },
+        )
+    with recorder.start_span("target_selection") as span:
+        record_selector_result(
+            span,
+            {
+                "selected_target": "getOrder",
+                "llm_target": "getOrder",
+                "overrode_llm": False,
+                "ambiguous": True,
+                "needs_expansion": True,
+                "decision": "preserve_llm",
+                "recommended_action": "expand_candidates",
+                "policy": "risk_limited",
+                "policy_revision": "risk-limiting-selector-v1",
+                "override_assessment": {"allowed": False, "risk_level": "medium"},
+                "reason_codes": ["ambiguous_target"],
+                "rank_signals": [{"name": "getOrder", "selected": True}],
+            },
+        )
+
+    trace = recorder.finish().to_dict()
+    admission_span, selector_span = trace["spans"]
+    assert admission_span["attributes"]["recommended_action"] == "expand_candidates"
+    assert admission_span["decisions"][1]["reason_codes"] == ["target_admission.candidate_limit"]
+    assert selector_span["attributes"]["policy_revision"] == "risk-limiting-selector-v1"
+    assert selector_span["attributes"]["override_assessment"]["risk_level"] == "medium"
 
 
 def test_plan_and_runner_adapters_do_not_persist_raw_arguments():

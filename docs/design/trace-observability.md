@@ -16,6 +16,7 @@ machine-readable reason code.
 Stable stages are:
 
 - `retrieval`
+- `target_admission`
 - `target_selection`
 - `dependency_closure`
 - `schema_admission`
@@ -28,6 +29,7 @@ the engine:
 | Engine output | Trace adapter |
 |---|---|
 | `retrieve_graphify(..., include_evidence=True)` | `record_retrieval_result` |
+| `admit_target_candidates(...)` | `record_target_admission` |
 | `select_target_candidate(...)` | `record_selector_result` |
 | `DependencyClosureResult` | `record_dependency_closure` |
 | `ToolBundle` | `record_tool_bundle` |
