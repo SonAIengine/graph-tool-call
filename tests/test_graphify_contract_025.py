@@ -1977,6 +1977,155 @@ def test_select_target_candidate_preserves_llm_target_when_margin_is_weak():
     assert "ambiguous_target" in result["reason_codes"]
 
 
+def test_target_action_priority_uses_final_requested_action():
+    assert target_action_priority_for_query("이미지 생성 작업의 현재 상태를 확인해줘") == {
+        "read": 6,
+        "search": 4,
+        "action": 2,
+    }
+    assert target_action_priority_for_query(
+        "처리내역을 등록할 때 필요한 기초 데이터를 조회해줘"
+    ) == {"read": 6, "search": 4, "action": 2}
+    assert target_action_priority_for_query("현재 목록을 조회한 후 선택한 항목을 수정해줘") == {
+        "update": 6,
+        "action": 5,
+        "create": 3,
+        "read": 2,
+        "search": 1,
+    }
+    assert target_action_priority_for_query("발송된 메시지 정보를 목록으로 조회해줘") == {
+        "search": 6,
+        "read": 4,
+        "action": 2,
+    }
+
+
+def test_select_target_candidate_does_not_override_read_with_mutation():
+    tools = {
+        "getImageJob": {
+            "description": "이미지 생성 작업 상태 조회",
+            "metadata": {
+                "ai_metadata": {
+                    "canonical_action": "read",
+                    "primary_resource": "image_job",
+                    "result_shape": "single",
+                },
+                "openapi": {"summary": "이미지 생성 잡 상태 조회"},
+            },
+        },
+        "startImageJob": {
+            "description": "이미지 생성 작업 시작",
+            "metadata": {
+                "ai_metadata": {
+                    "canonical_action": "create",
+                    "primary_resource": "image_job",
+                    "result_shape": "mutation",
+                },
+                "openapi": {"summary": "이미지 생성 잡 시작"},
+            },
+        },
+    }
+
+    result = select_target_candidate(
+        "이미지 생성 작업의 현재 상태를 확인해줘",
+        ["startImageJob", "getImageJob"],
+        tools,
+        retrieval_results=[
+            {"name": "startImageJob", "score": 0.9},
+            {"name": "getImageJob", "score": 0.01},
+        ],
+        llm_target="getImageJob",
+    )
+
+    assert result["selected_target"] == "getImageJob"
+    assert result["overrode_llm"] is False
+    assert "llm_target_overridden" not in result["reason_codes"]
+    mutation = next(row for row in result["rank_signals"] if row["name"] == "startImageJob")
+    assert any(row["source"] == "action_mismatch" for row in mutation["evidence"])
+
+
+def test_select_target_candidate_blocks_lower_rank_surface_only_override():
+    tools = {
+        "getBusinessProcessingStatus": {
+            "description": "CS processing status by business type",
+            "metadata": {
+                "ai_metadata": {
+                    "canonical_action": "search",
+                    "primary_resource": "customer_service_statistics",
+                    "result_shape": "list",
+                }
+            },
+        },
+        "getAssigneeAllocationStatus": {
+            "description": "업무유형별 고객상담 처리 현황 목록",
+            "metadata": {
+                "ai_metadata": {
+                    "canonical_action": "search",
+                    "primary_resource": "counsel_assignment",
+                    "result_shape": "list",
+                }
+            },
+        },
+    }
+
+    result = select_target_candidate(
+        "업무유형별 고객상담 처리 현황 목록을 보여줘",
+        ["getBusinessProcessingStatus", "getAssigneeAllocationStatus"],
+        tools,
+        retrieval_results=[
+            {"name": "getBusinessProcessingStatus", "score": 0.03},
+            {"name": "getAssigneeAllocationStatus", "score": 0.02},
+        ],
+        llm_target="getBusinessProcessingStatus",
+    )
+
+    assert result["selected_target"] == "getBusinessProcessingStatus"
+    assert result["overrode_llm"] is False
+    assert "lower_rank_surface_override_blocked" in result["reason_codes"]
+    assert "llm_target_preserved" in result["reason_codes"]
+
+
+def test_select_target_candidate_prefers_explicit_list_shape_over_info_term():
+    tools = {
+        "getMessageBaseInfo": {
+            "description": "메시지 기본 정보 조회",
+            "metadata": {
+                "ai_metadata": {
+                    "canonical_action": "read",
+                    "primary_resource": "message",
+                    "result_shape": "single",
+                }
+            },
+        },
+        "getMessageList": {
+            "description": "메시지 정보 목록 조회",
+            "metadata": {
+                "ai_metadata": {
+                    "canonical_action": "search",
+                    "primary_resource": "message",
+                    "result_shape": "list",
+                }
+            },
+        },
+    }
+
+    result = select_target_candidate(
+        "발송된 메시지 정보를 목록으로 조회해줘",
+        ["getMessageBaseInfo", "getMessageList"],
+        tools,
+        retrieval_results=[
+            {"name": "getMessageBaseInfo", "score": 0.03},
+            {"name": "getMessageList", "score": 0.02},
+        ],
+        llm_target="getMessageList",
+    )
+
+    assert result["selected_target"] == "getMessageList"
+    assert result["overrode_llm"] is False
+    single = next(row for row in result["rank_signals"] if row["name"] == "getMessageBaseInfo")
+    assert any(row["source"] == "result_shape_mismatch" for row in single["evidence"])
+
+
 def test_edge_normalize_merge_and_trace_derivation_contract():
     structural = normalize_graph_edge(
         {

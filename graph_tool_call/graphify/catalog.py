@@ -25,7 +25,7 @@ _SEARCH_TERMS = frozenset(
 _READ_TERMS = frozenset(
     {"get", "read", "detail", "view", "show", "check", "retrieve", "조회", "상세", "보기", "확인"}
 )
-_DETAIL_READ_TERMS = frozenset({"detail", "details", "view", "show", "상세", "보기", "보여"})
+_DETAIL_READ_TERMS = frozenset({"detail", "details", "상세", "단건"})
 _SINGLE_TERMS = frozenset({"detail", "details", "info", "view", "single", "상세", "정보", "단건"})
 _LIST_TERMS = frozenset({"list", "lists", "search", "find", "query", "목록", "리스트", "검색"})
 _COUNT_TERMS = frozenset({"count", "total", "cnt", "건수", "개수", "카운트"})
@@ -184,8 +184,33 @@ def target_action_priority_for_query(query: str) -> dict[str, int]:
     has_search = _has_action_term(terms, _SEARCH_TERMS)
     has_read = _has_action_term(terms, _READ_TERMS)
 
+    last_action = _last_explicit_action(query)
+    directive_query = _query_has_directive_cue(query)
+
     if has_read and _has_action_term(terms, _AUDIT_READ_TERMS):
         return dict(_ACTION_PRIORITY_READ)
+    if (
+        directive_query
+        and last_action == "action"
+        and _has_action_term(terms, _NOTIFICATION_TERMS)
+        and _has_action_term(terms, _NOTIFICATION_SEND_TERMS)
+    ):
+        return dict(_ACTION_PRIORITY_NOTIFICATION)
+    if directive_query:
+        if last_action == "delete":
+            return dict(_ACTION_PRIORITY_DELETE)
+        if last_action == "action":
+            return dict(_ACTION_PRIORITY_ACTION)
+        if last_action == "update":
+            return dict(_ACTION_PRIORITY_UPDATE)
+        if last_action == "create":
+            return dict(_ACTION_PRIORITY_CREATE)
+        if last_action == "search":
+            return dict(_ACTION_PRIORITY_SEARCH)
+        if last_action == "read":
+            if has_search and not _query_has_strict_detail(terms):
+                return dict(_ACTION_PRIORITY_SEARCH)
+            return dict(_ACTION_PRIORITY_READ)
     if _has_action_term(terms, _NOTIFICATION_TERMS) and _has_action_term(
         terms,
         _NOTIFICATION_SEND_TERMS,
@@ -418,17 +443,36 @@ def select_target_candidate(
     overrode = False
     ambiguous = False
     reason_codes: list[str] = []
+    override_block_reason = ""
 
     if llm_name and llm_row and llm_row["name"] != winner["name"]:
+        winner_action_compatible = _action_priority_compatible(
+            action_priority,
+            str(winner.get("canonical_action") or ""),
+        )
+        llm_action_compatible = _action_priority_compatible(
+            action_priority,
+            str(llm_row.get("canonical_action") or ""),
+        )
         strong = (
             bool(winner["strong_evidence"])
             and llm_margin is not None
             and llm_margin >= _SELECTOR_OVERRIDE_MARGIN
         )
+        if strong and llm_action_compatible and not winner_action_compatible:
+            strong = False
+            override_block_reason = "action_incompatible_override_blocked"
+        winner_rank = int(winner.get("original_rank") or 9999)
+        llm_rank = int(llm_row.get("original_rank") or 9999)
+        if strong and winner_rank > llm_rank and not _has_decisive_override_evidence(winner):
+            strong = False
+            override_block_reason = "lower_rank_surface_override_blocked"
         if policy == "strong_evidence" and strong:
             selected = winner
             overrode = True
             reason_codes.append("llm_target_overridden")
+        elif override_block_reason:
+            reason_codes.append(override_block_reason)
         else:
             ambiguous = True
             reason_codes.append("ambiguous_target")
@@ -751,18 +795,26 @@ def _score_target_candidate(
     effective_result_shape = result_shape or _infer_result_shape_from_surface(surface_terms, action)
 
     action_score = _normalized_priority(action_priority, action)
-    if action_score:
+    if action_score >= 0.5:
         value = 0.2 * action_score
         score += value
         evidence.append({"source": "canonical_action", "value": action, "score": round(value, 6)})
+    elif action_priority and action:
+        score -= 0.18
+        evidence.append({"source": "action_mismatch", "value": action, "score": -0.18})
 
     shape_score = _normalized_priority(shape_priority, effective_result_shape)
-    if shape_score:
+    if shape_score >= 0.5:
         source = "result_shape" if result_shape else "inferred_result_shape"
         value = 0.18 * shape_score
         score += value
         evidence.append(
             {"source": source, "value": effective_result_shape, "score": round(value, 6)}
+        )
+    elif shape_priority and effective_result_shape:
+        score -= 0.14
+        evidence.append(
+            {"source": "result_shape_mismatch", "value": effective_result_shape, "score": -0.14}
         )
 
     overlap = query_terms & surface_terms
@@ -845,14 +897,14 @@ def _score_target_candidate(
 
 
 def _result_shape_priority_for_query(query: str) -> dict[str, int]:
-    terms = _query_terms(query)
-    if _has_action_term(terms, _COUNT_TERMS):
+    last_shape = _last_explicit_shape(query)
+    if last_shape == "count":
         return {"count": 6, "list": 3, "single": 1}
-    if _query_has_detail(terms):
+    if last_shape == "single":
         return {"single": 6, "list": 2, "count": 1}
-    if _has_action_term(terms, _LIST_TERMS):
+    if last_shape == "list":
         return {"list": 6, "count": 3, "single": 1}
-    if _has_action_term(terms, _CREATE_TERMS | _UPDATE_TERMS | _DELETE_TERMS | _ACTION_TERMS):
+    if _last_explicit_action(query) in {"create", "update", "delete", "action"}:
         return {"mutation": 5, "single": 1}
     return {}
 
@@ -864,6 +916,95 @@ def _normalized_priority(priority: dict[str, int], key: str) -> float:
     if max_value <= 0:
         return 0.0
     return max(0.0, float(priority.get(key, 0)) / max_value)
+
+
+def _action_priority_compatible(priority: dict[str, int], action: str) -> bool:
+    if not priority or not action:
+        return True
+    return _normalized_priority(priority, action) >= 0.5
+
+
+def _has_decisive_override_evidence(row: dict[str, Any]) -> bool:
+    decisive_sources = {
+        "api_contract",
+        "detail_surface",
+        "identifier_detail_contract",
+        "identifier_detail_surface",
+    }
+    return any(
+        evidence.get("source") in decisive_sources
+        for evidence in row.get("evidence") or []
+        if isinstance(evidence, dict)
+    )
+
+
+def _last_explicit_action(query: str) -> str:
+    text = str(query or "").strip().lower()
+    if not text:
+        return ""
+    groups = {
+        "delete": _DELETE_TERMS,
+        "action": _ACTION_TERMS | _NOTIFICATION_SEND_TERMS,
+        "update": _UPDATE_TERMS,
+        "create": _CREATE_TERMS,
+        "search": _SEARCH_TERMS,
+        "read": _READ_TERMS,
+    }
+    matches: list[tuple[int, int, str]] = []
+    for action, action_terms in groups.items():
+        for term in action_terms:
+            index = text.rfind(term)
+            if index >= 0:
+                matches.append((index, len(term), action))
+    if not matches:
+        return ""
+    return max(matches)[2]
+
+
+def _last_explicit_shape(query: str) -> str:
+    text = str(query or "").strip().lower()
+    if not text:
+        return ""
+    groups = {
+        "count": _COUNT_TERMS,
+        "single": _SINGLE_TERMS,
+        "list": _LIST_TERMS,
+    }
+    matches: list[tuple[int, int, str]] = []
+    for shape, shape_terms in groups.items():
+        for term in shape_terms:
+            index = text.rfind(term)
+            if index >= 0:
+                matches.append((index, len(term), shape))
+    if not matches:
+        return ""
+    return max(matches)[2]
+
+
+def _query_has_directive_cue(query: str) -> bool:
+    text = str(query or "").strip().lower()
+    if not text:
+        return False
+    if any(
+        cue in text
+        for cue in (
+            "해줘",
+            "해주세요",
+            "해 줘",
+            "해 주",
+            "줘",
+            "주세요",
+            "줄래",
+            "please",
+        )
+    ):
+        return True
+    return bool(
+        re.match(
+            r"^(show|get|read|list|search|find|create|add|update|edit|delete|remove|send|run)\b",
+            text,
+        )
+    )
 
 
 def _selector_terms(text: str) -> set[str]:
