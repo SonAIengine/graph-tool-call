@@ -1811,7 +1811,7 @@ def test_select_target_candidate_prefers_identifier_detail_when_shape_metadata_i
     assert any(row["source"] == "identifier_detail_contract" for row in selected["evidence"])
 
 
-def test_select_target_candidate_overrides_llm_when_winner_beats_llm_despite_candidate_tie():
+def test_select_target_candidate_preserves_llm_when_deterministic_winners_are_tied():
     detail_tool = {
         "description": "Invoice detail lookup by invoice id",
         "metadata": {
@@ -1873,12 +1873,13 @@ def test_select_target_candidate_overrides_llm_when_winner_beats_llm_despite_can
         llm_target="getInvoiceInfo",
     )
 
-    assert result["selected_target"] == "getInvoiceDetail"
-    assert result["overrode_llm"] is True
-    assert "llm_target_overridden" in result["reason_codes"]
-    assert "candidate_tie" in result["reason_codes"]
+    assert result["selected_target"] == "getInvoiceInfo"
+    assert result["overrode_llm"] is False
+    assert "candidate_tie_override_blocked" in result["reason_codes"]
+    assert "llm_target_preserved" in result["reason_codes"]
     assert result["margin"] < 0.12
     assert result["llm_margin"] >= 0.12
+    assert result["needs_expansion"] is True
 
 
 def test_select_target_candidate_preserves_general_target_for_non_detail_query():

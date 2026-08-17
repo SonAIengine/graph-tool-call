@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 import re
 from typing import Any
 
@@ -18,6 +20,16 @@ _ACTION_PRIORITY_DELETE = {"delete": 6, "action": 5, "update": 3, "read": 1, "se
 _ACTION_PRIORITY_NOTIFICATION = {"create": 7, "action": 6, "update": 3, "read": 2, "search": 1}
 _SELECTOR_OVERRIDE_MARGIN = 0.12
 _SELECTOR_STRONG_SCORE = 0.45
+TARGET_ADMISSION_POLICY_REVISION = "adaptive-target-admission-v1"
+TARGET_SELECTOR_POLICY_REVISION = "risk-limiting-selector-v1"
+_DECISIVE_OVERRIDE_SOURCES = frozenset(
+    {
+        "api_contract",
+        "detail_surface",
+        "identifier_detail_contract",
+        "identifier_detail_surface",
+    }
+)
 
 _SEARCH_TERMS = frozenset(
     {"search", "find", "query", "lookup", "list", "browse", "검색", "찾", "목록", "리스트"}
@@ -241,6 +253,247 @@ def target_action_priority_for_query(query: str) -> dict[str, int]:
     return dict(_ACTION_PRIORITY_READ)
 
 
+def admit_target_candidates(
+    query: str,
+    candidates: list[str] | list[dict[str, Any]],
+    tools: dict[str, Any],
+    *,
+    retrieval_results: list[dict[str, Any]] | None = None,
+    min_candidates: int = 5,
+    max_candidates: int = 16,
+    max_candidates_per_group: int | None = 3,
+    score_cliff: float = 0.08,
+    boundary_margin: float = 0.04,
+    token_budget: int | None = None,
+    token_counter: Any | None = None,
+    always_keep: list[str] | set[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Admit a bounded, explainable target catalog for model selection.
+
+    The policy keeps a minimum high-recall surface, expands through flat score
+    regions, and stops at the first meaningful score cliff or the configured
+    maximum. A per-group cap applies only after the minimum surface so one
+    semantic sibling family cannot consume every expansion slot. Optional
+    token accounting uses contract-projected schemas and never silently drops
+    a candidate: every exclusion has a stable reason.
+    """
+
+    minimum = max(1, int(min_candidates))
+    maximum = max(1, int(max_candidates))
+    if maximum < minimum:
+        raise ValueError("max_candidates must be greater than or equal to min_candidates.")
+    if score_cliff < 0:
+        raise ValueError("score_cliff must be non-negative.")
+    if boundary_margin < 0:
+        raise ValueError("boundary_margin must be non-negative.")
+    if token_budget is not None and token_budget <= 0:
+        raise ValueError("token_budget must be greater than zero.")
+
+    raw_names = _candidate_names(candidates)
+    tools_by_name = {name: _tool_dict(tool) for name, tool in (tools or {}).items()}
+    retrieval_by_name = _retrieval_signal_map(candidates, retrieval_results)
+    action_priority = target_action_priority_for_query(query)
+    shape_priority = _result_shape_priority_for_query(query)
+    query_terms = _selector_terms(query)
+    keep = {str(name).strip() for name in always_keep or [] if str(name).strip()}
+
+    missing_names = [name for name in raw_names if name not in tools_by_name]
+    scored = [
+        _score_target_candidate(
+            name,
+            tools_by_name[name],
+            query_terms=query_terms,
+            retrieval_signal=retrieval_by_name.get(name) or {},
+            learning_signal={},
+            action_priority=action_priority,
+            shape_priority=shape_priority,
+        )
+        for name in raw_names
+        if name in tools_by_name
+    ]
+    scored.sort(key=lambda row: (-float(row["selector_score"]), int(row["original_rank"] or 9999)))
+    ranked_names = [str(row["name"]) for row in scored]
+    scored_by_name = {str(row["name"]): row for row in scored}
+
+    adaptive_limit, cliff = _adaptive_admission_limit(
+        scored,
+        minimum=minimum,
+        maximum=maximum,
+        score_cliff=score_cliff,
+    )
+    eligible = _ensure_always_keep(
+        ranked_names[:adaptive_limit],
+        names=ranked_names,
+        limit=adaptive_limit,
+        always_keep=keep,
+    )
+
+    group_cap = (
+        max(1, int(max_candidates_per_group)) if max_candidates_per_group is not None else None
+    )
+    preliminarily_admitted: list[str] = []
+    group_counts: dict[str, int] = {}
+    drop_reasons: dict[str, str] = {}
+    eligible_group_keys = [_target_group_key(name, tools_by_name[name]) for name in eligible]
+    for index, name in enumerate(eligible):
+        group_key = _target_group_key(name, tools_by_name[name])
+        protected_minimum = len(preliminarily_admitted) < min(minimum, len(eligible))
+        over_group_cap = group_cap is not None and group_counts.get(group_key, 0) >= group_cap
+        alternative_group_available = bool(
+            group_cap is not None
+            and any(
+                other_key != group_key and group_counts.get(other_key, 0) < group_cap
+                for other_key in eligible_group_keys[index + 1 :]
+            )
+        )
+        if (
+            over_group_cap
+            and alternative_group_available
+            and not protected_minimum
+            and name not in keep
+        ):
+            drop_reasons[name] = "semantic_group_cap"
+            continue
+        preliminarily_admitted.append(name)
+        group_counts[group_key] = group_counts.get(group_key, 0) + 1
+
+    admitted: list[str] = []
+    projected_payloads: list[dict[str, Any]] = []
+    token_used = _count_catalog_payloads(projected_payloads, token_counter)
+    token_cost_by_name: dict[str, int] = {}
+    if token_budget is not None:
+        from graph_tool_call.graphify.dependency_closure import contract_projected_tool_schema
+
+    for name in preliminarily_admitted:
+        if token_budget is None:
+            admitted.append(name)
+            continue
+        projected = contract_projected_tool_schema(tools_by_name[name])
+        candidate_payloads = [*projected_payloads, projected]
+        candidate_total = _count_catalog_payloads(candidate_payloads, token_counter)
+        token_cost_by_name[name] = max(0, candidate_total - token_used)
+        if candidate_total > token_budget:
+            drop_reasons[name] = "token_budget_exceeded"
+            continue
+        admitted.append(name)
+        projected_payloads = candidate_payloads
+        token_used = candidate_total
+
+    admitted_set = set(admitted)
+    eligible_set = set(eligible)
+    for name in ranked_names:
+        if name in admitted_set or name in drop_reasons:
+            continue
+        drop_reasons[name] = (
+            "score_cliff" if name not in eligible_set and cliff else "candidate_limit"
+        )
+    for name in missing_names:
+        drop_reasons[name] = "tool_metadata_missing"
+
+    boundary_ambiguous = _admission_boundary_is_ambiguous(
+        scored,
+        admitted_names=admitted,
+        maximum=maximum,
+        boundary_margin=boundary_margin,
+    )
+    budget_limited = any(reason == "token_budget_exceeded" for reason in drop_reasons.values())
+    minimum_shortfall = len(admitted) < min(minimum, len(scored))
+    needs_expansion = bool(boundary_ambiguous or minimum_shortfall)
+    reason_codes: list[str] = []
+    if cliff:
+        reason_codes.append("score_cliff_detected")
+    if boundary_ambiguous:
+        reason_codes.append("ambiguous_admission_boundary")
+    if budget_limited:
+        reason_codes.append("token_budget_limited")
+    if minimum_shortfall:
+        reason_codes.append("minimum_candidate_shortfall")
+    if not reason_codes:
+        reason_codes.append("adaptive_admission_complete")
+
+    signals: list[dict[str, Any]] = []
+    for rank, name in enumerate(ranked_names, start=1):
+        row = scored_by_name[name]
+        signals.append(
+            {
+                "name": name,
+                "rank": rank,
+                "selector_score": row["selector_score"],
+                "retrieval_rank": row["original_rank"],
+                "retrieval_score": row["retrieval_score"],
+                "group_key": _target_group_key(name, tools_by_name[name]),
+                "admitted": name in admitted_set,
+                "decision_reason": "admitted" if name in admitted_set else drop_reasons[name],
+                "estimated_tokens": token_cost_by_name.get(name),
+            }
+        )
+    signals.extend(
+        {
+            "name": name,
+            "rank": None,
+            "selector_score": None,
+            "retrieval_rank": retrieval_by_name.get(name, {}).get("rank"),
+            "retrieval_score": retrieval_by_name.get(name, {}).get("score"),
+            "group_key": None,
+            "admitted": False,
+            "decision_reason": "tool_metadata_missing",
+            "estimated_tokens": None,
+        }
+        for name in missing_names
+    )
+    dropped = [
+        {
+            "name": name,
+            "reason": drop_reasons[name],
+            "rank": scored_by_name.get(name, {}).get("original_rank"),
+            "selector_score": scored_by_name.get(name, {}).get("selector_score"),
+        }
+        for name in raw_names
+        if name not in admitted_set
+    ]
+    return {
+        "raw_target_candidates": raw_names,
+        "ranked_target_candidates": ranked_names,
+        "admitted_target_candidates": admitted,
+        "target_candidates": admitted,
+        "dropped_target_candidates": dropped,
+        "raw_candidate_count": len(raw_names),
+        "admitted_candidate_count": len(admitted),
+        "dropped_candidate_count": len(dropped),
+        "admission_signals": signals,
+        "reason_codes": reason_codes,
+        "needs_expansion": needs_expansion,
+        "recommended_action": (
+            "expand_candidates"
+            if needs_expansion
+            else "increase_token_budget"
+            if budget_limited
+            else "select_target"
+        ),
+        "policy_revision": TARGET_ADMISSION_POLICY_REVISION,
+        "min_candidates": minimum,
+        "max_candidates": maximum,
+        "adaptive_limit": adaptive_limit,
+        "score_cliff": cliff,
+        "boundary_margin": boundary_margin,
+        "max_candidates_per_group": group_cap,
+        "token_budget": {
+            "limit": token_budget,
+            "used": token_used if token_budget is not None else None,
+            "utilization": (token_used / token_budget) if token_budget else None,
+            "accounting": (
+                "provided_token_counter"
+                if token_budget is not None and token_counter is not None
+                else "utf8_chars_div_3"
+                if token_budget is not None
+                else None
+            ),
+        },
+        "target_action_priority": action_priority,
+        "result_shape_priority": shape_priority,
+    }
+
+
 def build_candidate_set(
     target_candidates: list[str],
     tools_by_name: dict[str, dict[str, Any]],
@@ -398,11 +651,23 @@ def select_target_candidate(
             "confidence": 0.0,
             "overrode_llm": False,
             "ambiguous": False,
+            "needs_expansion": True,
+            "decision": "expand_candidates",
+            "recommended_action": "expand_candidates",
             "reason_codes": ["no_candidates"],
             "rank_signals": [],
             "candidate_evidence": [],
             "llm_target": llm_name or None,
             "policy": policy,
+            "policy_revision": TARGET_SELECTOR_POLICY_REVISION,
+            "override_assessment": {
+                "evaluated": False,
+                "allowed": False,
+                "risk_level": "high",
+                "supporting_sources": [],
+                "contradicting_sources": [],
+                "reason_codes": ["no_candidates"],
+            },
         }
 
     retrieval_by_name = _retrieval_signal_map(candidates, retrieval_results)
@@ -442,50 +707,38 @@ def select_target_candidate(
     selected = llm_row or winner
     overrode = False
     ambiguous = False
+    needs_expansion = False
     reason_codes: list[str] = []
-    override_block_reason = ""
+    override_assessment = _risk_limited_override_assessment(
+        winner,
+        llm_row,
+        runner_up=runner_up,
+        winner_margin=margin,
+        llm_margin=llm_margin,
+        action_priority=action_priority,
+    )
 
     if llm_name and llm_row and llm_row["name"] != winner["name"]:
-        winner_action_compatible = _action_priority_compatible(
-            action_priority,
-            str(winner.get("canonical_action") or ""),
-        )
-        llm_action_compatible = _action_priority_compatible(
-            action_priority,
-            str(llm_row.get("canonical_action") or ""),
-        )
-        strong = (
-            bool(winner["strong_evidence"])
-            and llm_margin is not None
-            and llm_margin >= _SELECTOR_OVERRIDE_MARGIN
-        )
-        if strong and llm_action_compatible and not winner_action_compatible:
-            strong = False
-            override_block_reason = "action_incompatible_override_blocked"
-        winner_rank = int(winner.get("original_rank") or 9999)
-        llm_rank = int(llm_row.get("original_rank") or 9999)
-        if strong and winner_rank > llm_rank and not _has_decisive_override_evidence(winner):
-            strong = False
-            override_block_reason = "lower_rank_surface_override_blocked"
-        if policy == "strong_evidence" and strong:
+        if policy in {"strong_evidence", "risk_limited"} and override_assessment["allowed"]:
             selected = winner
             overrode = True
             reason_codes.append("llm_target_overridden")
-        elif override_block_reason:
-            reason_codes.append(override_block_reason)
         else:
             ambiguous = True
-            reason_codes.append("ambiguous_target")
+            reason_codes.extend(override_assessment["reason_codes"])
+            if "ambiguous_target" not in reason_codes:
+                reason_codes.append("ambiguous_target")
+            needs_expansion = bool(override_assessment["needs_expansion"])
     elif llm_name and not llm_row:
         reason_codes.append("llm_target_not_in_candidates")
+        needs_expansion = True
 
     if margin < _SELECTOR_OVERRIDE_MARGIN and len(scored) > 1:
-        if overrode:
-            reason_codes.append("candidate_tie")
-        else:
+        if not overrode:
             ambiguous = True
             if "ambiguous_target" not in reason_codes:
                 reason_codes.append("ambiguous_target")
+            needs_expansion = True
     if selected["name"] != winner["name"] and not overrode:
         reason_codes.append("llm_target_preserved")
     if not reason_codes:
@@ -494,6 +747,16 @@ def select_target_candidate(
         )
 
     selected_name = str(selected["name"])
+    decision = (
+        "override_llm"
+        if overrode
+        else "preserve_llm"
+        if llm_row
+        else "select_fallback"
+        if llm_name
+        else "select"
+    )
+    recommended_action = "expand_candidates" if needs_expansion else decision
     rank_signals = [
         {
             **row,
@@ -508,10 +771,15 @@ def select_target_candidate(
         "confidence": round(float(selected["selector_score"]), 6),
         "overrode_llm": overrode,
         "ambiguous": ambiguous,
+        "needs_expansion": needs_expansion,
+        "decision": decision,
+        "recommended_action": recommended_action,
         "reason_codes": reason_codes,
         "margin": margin,
         "llm_margin": llm_margin,
         "policy": policy,
+        "policy_revision": TARGET_SELECTOR_POLICY_REVISION,
+        "override_assessment": override_assessment,
         "rank_signals": rank_signals,
         "candidate_evidence": [
             {
@@ -924,18 +1192,130 @@ def _action_priority_compatible(priority: dict[str, int], action: str) -> bool:
     return _normalized_priority(priority, action) >= 0.5
 
 
-def _has_decisive_override_evidence(row: dict[str, Any]) -> bool:
-    decisive_sources = {
-        "api_contract",
-        "detail_surface",
-        "identifier_detail_contract",
-        "identifier_detail_surface",
-    }
-    return any(
-        evidence.get("source") in decisive_sources
-        for evidence in row.get("evidence") or []
-        if isinstance(evidence, dict)
+def _risk_limited_override_assessment(
+    winner: dict[str, Any],
+    llm_row: dict[str, Any] | None,
+    *,
+    runner_up: dict[str, Any] | None,
+    winner_margin: float,
+    llm_margin: float | None,
+    action_priority: dict[str, int],
+) -> dict[str, Any]:
+    if llm_row is None or llm_row.get("name") == winner.get("name"):
+        return {
+            "evaluated": False,
+            "allowed": False,
+            "risk_level": "none",
+            "supporting_sources": [],
+            "contradicting_sources": [],
+            "reason_codes": [],
+            "needs_expansion": False,
+            "winner_margin": winner_margin,
+            "llm_margin": llm_margin,
+        }
+
+    supporting, contradicting = _pairwise_decisive_evidence(winner, llm_row)
+    reasons: list[str] = []
+    needs_expansion = False
+    winner_action_compatible = _action_priority_compatible(
+        action_priority,
+        str(winner.get("canonical_action") or ""),
     )
+    llm_action_compatible = _action_priority_compatible(
+        action_priority,
+        str(llm_row.get("canonical_action") or ""),
+    )
+    if llm_action_compatible and not winner_action_compatible:
+        reasons.append("action_incompatible_override_blocked")
+    if runner_up is not None and winner_margin < _SELECTOR_OVERRIDE_MARGIN:
+        reasons.append("candidate_tie_override_blocked")
+        needs_expansion = True
+    if llm_margin is None or llm_margin < _SELECTOR_OVERRIDE_MARGIN:
+        reasons.append("insufficient_pairwise_margin")
+        needs_expansion = True
+    if not bool(winner.get("strong_evidence")):
+        reasons.append("weak_winner_evidence")
+    if not supporting:
+        reasons.append("non_discriminative_override_blocked")
+        needs_expansion = True
+    if contradicting:
+        reasons.append("contradictory_evidence_override_blocked")
+        needs_expansion = True
+
+    winner_rank = int(winner.get("original_rank") or 9999)
+    llm_rank = int(llm_row.get("original_rank") or 9999)
+    if winner_rank > llm_rank and not supporting:
+        reasons.append("lower_rank_surface_override_blocked")
+
+    allowed = not reasons
+    if allowed:
+        risk_level = "low"
+    elif "action_incompatible_override_blocked" in reasons or contradicting:
+        risk_level = "high"
+    else:
+        risk_level = "medium"
+    return {
+        "evaluated": True,
+        "allowed": allowed,
+        "risk_level": risk_level,
+        "supporting_sources": supporting,
+        "contradicting_sources": contradicting,
+        "reason_codes": _dedupe_names(reasons),
+        "needs_expansion": needs_expansion,
+        "winner": winner.get("name"),
+        "llm_target": llm_row.get("name"),
+        "winner_margin": winner_margin,
+        "llm_margin": llm_margin,
+    }
+
+
+def _pairwise_decisive_evidence(
+    winner: dict[str, Any],
+    incumbent: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    winner_evidence = _evidence_by_source(winner)
+    incumbent_evidence = _evidence_by_source(incumbent)
+    supporting: list[str] = []
+    contradicting: list[str] = []
+    for source in sorted(_DECISIVE_OVERRIDE_SOURCES):
+        winner_row = winner_evidence.get(source)
+        incumbent_row = incumbent_evidence.get(source)
+        winner_score = float((winner_row or {}).get("score") or 0.0)
+        incumbent_score = float((incumbent_row or {}).get("score") or 0.0)
+        winner_signature = _evidence_signature(winner_row)
+        incumbent_signature = _evidence_signature(incumbent_row)
+        distinct = winner_signature != incumbent_signature
+        if winner_score >= 0.06 and distinct and winner_score - incumbent_score >= 0.04:
+            supporting.append(source)
+        if incumbent_score >= 0.06 and distinct and incumbent_score - winner_score >= 0.04:
+            contradicting.append(source)
+    return supporting, contradicting
+
+
+def _evidence_by_source(row: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for evidence in row.get("evidence") or []:
+        if not isinstance(evidence, dict):
+            continue
+        source = str(evidence.get("source") or "")
+        if source and float(evidence.get("score") or 0.0) > float(
+            (out.get(source) or {}).get("score") or 0.0
+        ):
+            out[source] = evidence
+    return out
+
+
+def _evidence_signature(evidence: dict[str, Any] | None) -> tuple[str, ...]:
+    if not evidence:
+        return ()
+    values: list[str] = []
+    for key in ("matched_terms", "value"):
+        raw = evidence.get(key)
+        if isinstance(raw, (list, tuple, set)):
+            values.extend(str(item) for item in raw)
+        elif raw is not None:
+            values.append(str(raw))
+    return tuple(sorted(values))
 
 
 def _last_explicit_action(query: str) -> str:
@@ -1147,6 +1527,77 @@ def _has_action_term(query_terms: set[str], action_terms: frozenset[str]) -> boo
             if action and action in term:
                 return True
     return False
+
+
+def _adaptive_admission_limit(
+    scored: list[dict[str, Any]],
+    *,
+    minimum: int,
+    maximum: int,
+    score_cliff: float,
+) -> tuple[int, dict[str, Any] | None]:
+    upper = min(maximum, len(scored))
+    lower = min(minimum, upper)
+    for boundary in range(lower, upper):
+        left_score = float(scored[boundary - 1]["selector_score"])
+        right_score = float(scored[boundary]["selector_score"])
+        drop = round(left_score - right_score, 6)
+        if drop >= score_cliff:
+            return (
+                boundary,
+                {
+                    "after_rank": boundary,
+                    "left_candidate": scored[boundary - 1]["name"],
+                    "right_candidate": scored[boundary]["name"],
+                    "score_drop": drop,
+                },
+            )
+    return upper, None
+
+
+def _admission_boundary_is_ambiguous(
+    scored: list[dict[str, Any]],
+    *,
+    admitted_names: list[str],
+    maximum: int,
+    boundary_margin: float,
+) -> bool:
+    if not admitted_names or len(scored) <= len(admitted_names):
+        return False
+    admitted_set = set(admitted_names)
+    last_admitted = next(
+        (
+            (index, row)
+            for index, row in reversed(list(enumerate(scored)))
+            if row["name"] in admitted_set
+        ),
+        None,
+    )
+    first_dropped = next(
+        ((index, row) for index, row in enumerate(scored) if row["name"] not in admitted_set),
+        None,
+    )
+    if last_admitted is None or first_dropped is None:
+        return False
+    last_rank, last_admitted_row = last_admitted
+    dropped_rank, first_dropped_row = first_dropped
+    if dropped_rank < last_rank:
+        return True
+    score_gap = float(last_admitted_row["selector_score"]) - float(
+        first_dropped_row["selector_score"]
+    )
+    reached_hard_limit = len(admitted_names) >= min(maximum, len(scored))
+    return bool(reached_hard_limit and score_gap <= boundary_margin)
+
+
+def _count_catalog_payloads(payloads: list[dict[str, Any]], token_counter: Any | None) -> int:
+    serialized = json.dumps(payloads, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    if token_counter is None:
+        return math.ceil(len(serialized.encode("utf-8")) / 3)
+    count = getattr(token_counter, "count", token_counter)
+    if not callable(count):
+        raise TypeError("token_counter must be callable or expose count(text).")
+    return int(count(serialized))
 
 
 def _rank_target_candidates(

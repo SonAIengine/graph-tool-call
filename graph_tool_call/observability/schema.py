@@ -10,6 +10,7 @@ from graph_tool_call.learning import scrub_trace_payload
 TRACE_SCHEMA_VERSION = "1.0"
 
 STAGE_RETRIEVAL = "retrieval"
+STAGE_TARGET_ADMISSION = "target_admission"
 STAGE_TARGET_SELECTION = "target_selection"
 STAGE_DEPENDENCY_CLOSURE = "dependency_closure"
 STAGE_SCHEMA_ADMISSION = "schema_admission"

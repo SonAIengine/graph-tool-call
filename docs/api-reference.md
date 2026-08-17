@@ -642,6 +642,41 @@ candidate_set = build_candidate_set(
 signals = candidate_set["target_rank_signals"]
 ```
 
+When a large retrieval surface must be exposed to an LLM, use
+`admit_target_candidates()` before `build_candidate_set()`. Unlike a fixed
+top-K slice, adaptive admission keeps a minimum recall surface, expands across
+a flat score boundary, and stops at a meaningful score cliff or the configured
+maximum. The group cap is soft: it reserves expansion space for a distinct
+resource/action family without discarding a sibling when no alternative family
+exists.
+
+```python
+from graph_tool_call.graphify import admit_target_candidates
+
+admission = admit_target_candidates(
+    query,
+    retrieval["results"],
+    graph_payload["tools"],
+    retrieval_results=retrieval["results"],
+    min_candidates=5,
+    max_candidates=16,
+    token_budget=2048,
+    token_counter=model_token_counter,
+)
+
+catalog_names = admission["admitted_target_candidates"]
+if admission["needs_expansion"]:
+    # Increase retrieval breadth or ask for a narrower intent before planning.
+    diagnostics = admission["reason_codes"]
+```
+
+Token accounting uses the same contract-projected tool shape as
+`assemble_tool_bundle()`. Every omitted candidate appears in
+`dropped_target_candidates` with a stable reason such as `score_cliff`,
+`candidate_limit`, `semantic_group_cap`, `token_budget_exceeded`, or
+`tool_metadata_missing`. `admission_signals` preserves retrieval rank,
+selector score, group, decision, and estimated token cost for each candidate.
+
 `build_candidate_set()` also returns `target_equivalence_groups`, an
 evidence-only list of high-confidence near-duplicate target surfaces. It does
 not merge, suppress, or rerank tools. Use `build_tool_equivalence_groups()`
@@ -653,6 +688,31 @@ from graph_tool_call.graphify import build_tool_equivalence_groups
 
 groups = build_tool_equivalence_groups(target_candidates, graph_payload["tools"])
 ```
+
+`select_target_candidate()` applies a risk-limiting reconciliation when an LLM
+target is supplied. A deterministic winner may override the LLM only when it
+has a clear margin over both the LLM target and the runner-up, and the pairwise
+comparison contains discriminative contract/detail evidence. Generic surface
+overlap or result shape alone cannot trigger an override. Ties preserve the LLM
+target and return `needs_expansion=True` instead of guessing.
+
+```python
+selection = select_target_candidate(
+    query,
+    catalog_names,
+    graph_payload["tools"],
+    retrieval_results=retrieval["results"],
+    llm_target=intent.target,
+    policy="risk_limited",
+)
+
+assert selection["override_assessment"]["risk_level"] in {"none", "low", "medium", "high"}
+```
+
+The legacy `policy="strong_evidence"` name remains supported and now uses the
+same risk-limiting policy revision. Inspect `decision`, `recommended_action`,
+`override_assessment`, and `reason_codes` to distinguish a safe override from a
+preserved LLM choice or a request to expand candidates.
 
 ---
 
@@ -859,7 +919,8 @@ The stable public surface is:
 | `TraceRecorder` | Records timed per-request spans and scrubbed decisions |
 | `TraceEnvelope` | Versioned JSON contract with fixed span, decision, and event fields |
 | `record_retrieval_result(...)` | Preserves rank, score channels, graph expansion, and semantic evidence |
-| `record_selector_result(...)` | Preserves every considered candidate, final target, margin, and reason codes |
+| `record_target_admission(...)` | Preserves every admitted/dropped target candidate and boundary reason |
+| `record_selector_result(...)` | Preserves every candidate, final target, override risk, margin, and reason codes |
 | `record_dependency_closure(...)` | Preserves required/optional producers, unresolved fields, cycles, and safety |
 | `record_tool_bundle(...)` | Preserves admitted/omitted schemas and token-budget reasons |
 | `record_plan(...)`, `record_runner_events(...)` | Adds bounded plan and execution diagnostics without raw arguments or payloads |

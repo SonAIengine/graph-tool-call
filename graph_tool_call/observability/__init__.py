@@ -6,6 +6,7 @@ from .adapters import (
     record_retrieval_result,
     record_runner_events,
     record_selector_result,
+    record_target_admission,
     record_tool_bundle,
 )
 from .otel import OpenTelemetryTraceExporter
@@ -16,6 +17,7 @@ from .schema import (
     STAGE_RETRIEVAL,
     STAGE_RUNNER,
     STAGE_SCHEMA_ADMISSION,
+    STAGE_TARGET_ADMISSION,
     STAGE_TARGET_SELECTION,
     TRACE_SCHEMA_VERSION,
     TraceDecision,
@@ -30,6 +32,7 @@ __all__ = [
     "STAGE_RETRIEVAL",
     "STAGE_RUNNER",
     "STAGE_SCHEMA_ADMISSION",
+    "STAGE_TARGET_ADMISSION",
     "STAGE_TARGET_SELECTION",
     "TRACE_SCHEMA_VERSION",
     "TraceDecision",
@@ -45,6 +48,7 @@ __all__ = [
     "record_retrieval_result",
     "record_runner_events",
     "record_selector_result",
+    "record_target_admission",
     "record_tool_bundle",
     "replay_trace",
 ]

@@ -74,8 +74,13 @@ def record_selector_result(span: TraceSpanRecorder, result: dict[str, Any]) -> N
     span.set_attribute("llm_target", result.get("llm_target"))
     span.set_attribute("overrode_llm", bool(result.get("overrode_llm")))
     span.set_attribute("ambiguous", bool(result.get("ambiguous")))
+    span.set_attribute("needs_expansion", bool(result.get("needs_expansion")))
+    span.set_attribute("decision", result.get("decision"))
+    span.set_attribute("recommended_action", result.get("recommended_action"))
     span.set_attribute("margin", result.get("margin"))
     span.set_attribute("policy", result.get("policy"))
+    span.set_attribute("policy_revision", result.get("policy_revision"))
+    span.set_attribute("override_assessment", result.get("override_assessment") or {})
 
     for rank, row in enumerate(rank_signals, start=1):
         name = str(row.get("name") or "")
@@ -109,6 +114,36 @@ def record_selector_result(span: TraceSpanRecorder, result: dict[str, Any]) -> N
         )
     if not selected:
         span.event("selector.empty", {"reason_codes": global_reasons or ["no_candidates"]})
+
+
+def record_target_admission(span: TraceSpanRecorder, result: dict[str, Any]) -> None:
+    """Record adaptive target-catalog admission and every dropped reason."""
+
+    signals = [row for row in (result.get("admission_signals") or []) if isinstance(row, dict)]
+    span.set_attribute("policy_revision", result.get("policy_revision"))
+    span.set_attribute("needs_expansion", bool(result.get("needs_expansion")))
+    span.set_attribute("recommended_action", result.get("recommended_action"))
+    span.set_attribute("reason_codes", result.get("reason_codes") or [])
+    span.set_attribute("raw_candidate_count", result.get("raw_candidate_count"))
+    span.set_attribute("admitted_candidate_count", result.get("admitted_candidate_count"))
+    span.set_attribute("dropped_candidate_count", result.get("dropped_candidate_count"))
+    span.set_attribute("token_budget", result.get("token_budget") or {})
+    span.set_attribute("score_cliff", result.get("score_cliff") or {})
+    for row in signals:
+        name = str(row.get("name") or "")
+        if not name:
+            continue
+        admitted = bool(row.get("admitted"))
+        reason = str(row.get("decision_reason") or "unknown")
+        span.decision(
+            name,
+            "admitted" if admitted else "omitted",
+            [f"target_admission.{reason}"],
+            score=_optional_float(row.get("selector_score")),
+            rank_before=_optional_int(row.get("retrieval_rank")),
+            rank_after=_optional_int(row.get("rank")),
+            evidence=row,
+        )
 
 
 def record_dependency_closure(span: TraceSpanRecorder, value: Any) -> None:

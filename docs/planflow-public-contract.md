@@ -54,11 +54,21 @@ The graphify package owns product-neutral collection graph logic.
 - `target_action_priority_for_query(...)` derives the same
   `target_action_priority` map from generic Korean/English query action terms
   without an LLM.
+- `admit_target_candidates(...)` converts a larger retrieval result into an
+  LLM-visible target catalog using a minimum recall floor, adaptive score-cliff
+  boundary, soft semantic-group cap, and optional contract-projected token
+  budget. It reports every admitted and dropped candidate with a stable reason
+  and returns `needs_expansion` when the hard boundary remains ambiguous.
 - `expand_candidates_with_producers(...)` expands retrieval candidates with deterministic producers for required `kind=data` inputs; `max_hops` defaults to `1` for backward compatibility and can be raised for target-specific producer chains.
 - `normalize_graph_edge(...)`, `merge_graph_edges(...)`, and `derive_plan_trace_edges(...)` normalize structural, LLM-curated, manual, and run-observed signals into graph version 2 edge metadata.
 - `retrieve_graphify(..., include_evidence=True)` keeps the legacy response keys and adds score/evidence details for logs and UI.
 - `retrieve_graphify(..., learning_suggestions=...)` accepts promoted collection-local learning suggestions as additive, traceable rank evidence.
-- `select_target_candidate(..., learning_suggestions=...)` accepts promoted target preference evidence and records the signal in selector diagnostics.
+- `select_target_candidate(..., learning_suggestions=...)` accepts promoted
+  target preference evidence and records the signal in selector diagnostics.
+  Its risk-limiting selector compares the deterministic winner directly with
+  the LLM target and runner-up. It blocks tie, action-conflict, weak-margin, and
+  non-discriminative overrides, preserving the LLM target while returning an
+  explicit expand recommendation when more evidence is needed.
 
 ## Trace Learning Contract
 
