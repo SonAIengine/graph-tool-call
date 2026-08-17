@@ -1,0 +1,3904 @@
+{
+  "benchmark": "Arazzo Long-Horizon Paired Evaluation",
+  "methodology": "paired_deterministic_retrieve_plan_execute_goal_state",
+  "model": "none",
+  "graph_tool_call_version": "0.43.0",
+  "catalog_size": 1000,
+  "workflow_lengths": [
+    3,
+    10,
+    30
+  ],
+  "top_k": 8,
+  "token_budget": 2048,
+  "summary": {
+    "status": "pass",
+    "case_count": 3,
+    "with_arazzo": {
+      "target_hit_at_k": 1.0,
+      "selected_target_exact": 1.0,
+      "candidate_required_tool_recall": 1.0,
+      "plan_required_tool_recall": 1.0,
+      "execution_required_tool_recall": 1.0,
+      "goal_completion_rate": 1.0,
+      "plan_order_exact": 1.0,
+      "execution_order_exact": 1.0,
+      "binding_accuracy": 1.0,
+      "token_budget_used": {
+        "average": 260.666667,
+        "max": 301
+      },
+      "latency_ms": {
+        "build": {
+          "p50": 396.38,
+          "p95": 410.442
+        },
+        "retrieve": {
+          "p50": 94.701,
+          "p95": 97.38
+        },
+        "plan_execute": {
+          "p50": 6.169,
+          "p95": 7.194
+        }
+      }
+    },
+    "without_arazzo": {
+      "goal_completion_rate": 0.0,
+      "plan_order_exact": 0.0,
+      "binding_accuracy": 0.0
+    },
+    "goal_completion_lift": 1.0,
+    "gates": {
+      "target_hit_at_k": true,
+      "selected_target_exact": true,
+      "candidate_required_tool_recall": true,
+      "plan_required_tool_recall": true,
+      "execution_required_tool_recall": true,
+      "goal_completion": true,
+      "plan_order_exact": true,
+      "execution_order_exact": true,
+      "binding_accuracy": true,
+      "positive_goal_lift": true
+    }
+  },
+  "cases": [
+    {
+      "id": "supplier_onboarding_3",
+      "family": "supplier_onboarding",
+      "workflow_length": 3,
+      "catalog_size": 1000,
+      "baseline": {
+        "use_arazzo": false,
+        "tool_count": 1000,
+        "edge_count": 0,
+        "edge_stats": {
+          "EXTRACTED": 0,
+          "INFERRED": 0,
+          "AMBIGUOUS": 0,
+          "dropped": 0,
+          "by_relation": {
+            "requires": 0
+          },
+          "cross_source": 0,
+          "tool_count": 1000,
+          "edge_count": 0,
+          "refs_preserved": 0,
+          "contract_signals": {
+            "tools_promoted": 1000,
+            "produces_added": 998,
+            "produces_consumer_aligned": 0,
+            "consumes_added": 3,
+            "produces_skipped": 3,
+            "produces_skipped_path_cap": 0,
+            "consumes_skipped": 0,
+            "required_consumer_demand_keys": 0
+          },
+          "contract_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_self": 0,
+            "skipped_no_producer": 3,
+            "skipped_echo": 0,
+            "skipped_consumer_scope": 0
+          },
+          "openapi_link_signals": {
+            "links_seen": 0,
+            "produces_added": 0,
+            "skipped_no_response_source": 0
+          },
+          "openapi_link_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_unresolved": 0,
+            "skipped_self": 0,
+            "by_relation": {}
+          },
+          "semantic_metadata": {
+            "tool_count": 1000,
+            "canonical_action_known_count": 1000,
+            "canonical_action_known_rate": 1.0,
+            "primary_resource_assigned_count": 1000,
+            "primary_resource_assigned_rate": 1.0,
+            "path_module_assigned_count": 1000,
+            "path_module_assigned_rate": 1.0,
+            "action_counts": {
+              "action": 2,
+              "create": 1,
+              "search": 997
+            },
+            "resource_counts": {
+              "archive": 997,
+              "supplier_onboarding": 3
+            },
+            "module_counts": {
+              "archive_references": 997,
+              "supplier_onboarding_stages": 3
+            },
+            "result_shape_counts": {
+              "list": 997,
+              "mutation": 3
+            },
+            "top_modules": [
+              {
+                "module": "archive_references",
+                "count": 997,
+                "rate": 0.997
+              },
+              {
+                "module": "supplier_onboarding_stages",
+                "count": 3,
+                "rate": 0.003
+              }
+            ],
+            "semantic_confidence_counts": {
+              "high": 1000
+            },
+            "unknown_samples": []
+          },
+          "relation_budget": 100000,
+          "relation_budget_reached": false,
+          "pair_edges": {
+            "manual": 0,
+            "auto": 0,
+            "skipped_target_missing": 0,
+            "skipped_self": 0,
+            "skipped_existing_structural": 0
+          }
+        },
+        "workflow_summary": {},
+        "target_hit_at_k": 1.0,
+        "selected_target_exact": 1.0,
+        "selected_target": "issueSupplierActivationCertificate",
+        "retrieved_tools": [
+          "issueSupplierActivationCertificate",
+          "resolveSupplierTenant",
+          "completeSupplierOnboardingStage02"
+        ],
+        "candidate_count": 1,
+        "planned_call_count": 1,
+        "executed_call_count": 1,
+        "plan_order_exact": 0.0,
+        "execution_order_exact": 0.0,
+        "planned_tools": [
+          "issueSupplierActivationCertificate"
+        ],
+        "executed_tools": [
+          "issueSupplierActivationCertificate"
+        ],
+        "runner_success": false,
+        "failure": {},
+        "evaluation": {
+          "scenario_id": "supplier_onboarding_3",
+          "goal_completed": false,
+          "metrics": {
+            "candidate_required_tool_recall": 0.333333,
+            "plan_required_tool_recall": 0.333333,
+            "execution_required_tool_recall": 0.0,
+            "required_tool_recall": 0.0,
+            "milestone_completion": 0.0,
+            "dependency_order_accuracy": 0.0,
+            "binding_accuracy": 0.0,
+            "final_state_accuracy": 0.0,
+            "schema_valid_call_rate": null,
+            "extraneous_call_rate": 1.0,
+            "policy_violation_count": 0,
+            "call_count": 1,
+            "replan_count": 0,
+            "latency_ms": 0,
+            "recovery_attempted": 1,
+            "recovery_success": 0,
+            "goal_completion": 0.0
+          },
+          "matched_milestones": {},
+          "checks": [
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_01",
+              "expected": [
+                "resolveSupplierTenant"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_02",
+              "expected": [
+                "completeSupplierOnboardingStage02"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_03",
+              "expected": [
+                "issueSupplierActivationCertificate"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_01->stage_02",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_02->stage_03",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_01.stageEvidence01->stage_02.handoffToken01",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_02.stageEvidence02->stage_03.handoffToken02",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "state",
+              "code": "goal_state_mismatch",
+              "passed": false,
+              "subject": "output.activationCertificateId",
+              "expected": {
+                "operator": "eq",
+                "value": "CERT-supplier_onboarding"
+              },
+              "observed": "<missing>"
+            },
+            {
+              "category": "budget",
+              "code": "call_budget_valid",
+              "passed": true,
+              "subject": "max_calls",
+              "expected": 3,
+              "observed": 1
+            },
+            {
+              "category": "budget",
+              "code": "replan_budget_valid",
+              "passed": true,
+              "subject": "max_replans",
+              "expected": 0,
+              "observed": 0
+            },
+            {
+              "category": "budget",
+              "code": "latency_budget_valid",
+              "passed": true,
+              "subject": "timeout_sec",
+              "expected": 30.0,
+              "observed": 0.0
+            },
+            {
+              "category": "execution",
+              "code": "execution_failed",
+              "passed": false,
+              "subject": "runner",
+              "expected": "completed",
+              "observed": "failed"
+            }
+          ],
+          "failure_reason_codes": [
+            "missing_milestone",
+            "invalid_dependency_order",
+            "binding_mismatch",
+            "goal_state_mismatch",
+            "execution_failed"
+          ]
+        },
+        "latency_ms": {
+          "build": 403.67,
+          "retrieve": 100.299,
+          "plan_execute": 5.472
+        },
+        "token_budget_used": 73
+      },
+      "with_arazzo": {
+        "use_arazzo": true,
+        "tool_count": 1000,
+        "edge_count": 2,
+        "edge_stats": {
+          "EXTRACTED": 0,
+          "INFERRED": 0,
+          "AMBIGUOUS": 0,
+          "dropped": 0,
+          "by_relation": {
+            "requires": 0
+          },
+          "cross_source": 0,
+          "tool_count": 1000,
+          "edge_count": 0,
+          "refs_preserved": 0,
+          "contract_signals": {
+            "tools_promoted": 1000,
+            "produces_added": 998,
+            "produces_consumer_aligned": 0,
+            "consumes_added": 3,
+            "produces_skipped": 3,
+            "produces_skipped_path_cap": 0,
+            "consumes_skipped": 0,
+            "required_consumer_demand_keys": 0
+          },
+          "contract_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_self": 0,
+            "skipped_no_producer": 3,
+            "skipped_echo": 0,
+            "skipped_consumer_scope": 0
+          },
+          "openapi_link_signals": {
+            "links_seen": 0,
+            "produces_added": 0,
+            "skipped_no_response_source": 0
+          },
+          "openapi_link_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_unresolved": 0,
+            "skipped_self": 0,
+            "by_relation": {}
+          },
+          "semantic_metadata": {
+            "tool_count": 1000,
+            "canonical_action_known_count": 1000,
+            "canonical_action_known_rate": 1.0,
+            "primary_resource_assigned_count": 1000,
+            "primary_resource_assigned_rate": 1.0,
+            "path_module_assigned_count": 1000,
+            "path_module_assigned_rate": 1.0,
+            "action_counts": {
+              "action": 2,
+              "create": 1,
+              "search": 997
+            },
+            "resource_counts": {
+              "archive": 997,
+              "supplier_onboarding": 3
+            },
+            "module_counts": {
+              "archive_references": 997,
+              "supplier_onboarding_stages": 3
+            },
+            "result_shape_counts": {
+              "list": 997,
+              "mutation": 3
+            },
+            "top_modules": [
+              {
+                "module": "archive_references",
+                "count": 997,
+                "rate": 0.997
+              },
+              {
+                "module": "supplier_onboarding_stages",
+                "count": 3,
+                "rate": 0.003
+              }
+            ],
+            "semantic_confidence_counts": {
+              "high": 1000
+            },
+            "unknown_samples": []
+          },
+          "relation_budget": 100000,
+          "relation_budget_reached": false,
+          "pair_edges": {
+            "manual": 0,
+            "auto": 0,
+            "skipped_target_missing": 0,
+            "skipped_self": 0,
+            "skipped_existing_structural": 0
+          }
+        },
+        "workflow_summary": {
+          "source_count": 1,
+          "workflow_count": 1,
+          "step_count": 3,
+          "relation_count": 2,
+          "by_dependency_kind": {
+            "runtime_reference": 2
+          },
+          "edge_stats": {
+            "added": 2,
+            "merged": 0,
+            "binding_aliases_added": 2
+          },
+          "source_snapshot_manifest": {
+            "spec_count": 1,
+            "specs": [
+              {
+                "index": 1,
+                "source": "inline:1",
+                "sha256": "08929f2c7d36ff7b0036617930b6636dcfda90ca514a2f1207564c01acfd317a",
+                "bytes": 793,
+                "arazzo_version": "1.1.0",
+                "workflow_count": 1
+              }
+            ]
+          }
+        },
+        "target_hit_at_k": 1.0,
+        "selected_target_exact": 1.0,
+        "selected_target": "issueSupplierActivationCertificate",
+        "retrieved_tools": [
+          "issueSupplierActivationCertificate",
+          "completeSupplierOnboardingStage02",
+          "resolveSupplierTenant"
+        ],
+        "candidate_count": 3,
+        "planned_call_count": 3,
+        "executed_call_count": 3,
+        "plan_order_exact": 1.0,
+        "execution_order_exact": 1.0,
+        "planned_tools": [
+          "resolveSupplierTenant",
+          "completeSupplierOnboardingStage02",
+          "issueSupplierActivationCertificate"
+        ],
+        "executed_tools": [
+          "resolveSupplierTenant",
+          "completeSupplierOnboardingStage02",
+          "issueSupplierActivationCertificate"
+        ],
+        "runner_success": true,
+        "failure": {},
+        "evaluation": {
+          "scenario_id": "supplier_onboarding_3",
+          "goal_completed": true,
+          "metrics": {
+            "candidate_required_tool_recall": 1.0,
+            "plan_required_tool_recall": 1.0,
+            "execution_required_tool_recall": 1.0,
+            "required_tool_recall": 1.0,
+            "milestone_completion": 1.0,
+            "dependency_order_accuracy": 1.0,
+            "binding_accuracy": 1.0,
+            "final_state_accuracy": 1.0,
+            "schema_valid_call_rate": 1.0,
+            "extraneous_call_rate": 0.0,
+            "policy_violation_count": 0,
+            "call_count": 3,
+            "replan_count": 0,
+            "latency_ms": 0,
+            "recovery_attempted": 0,
+            "recovery_success": null,
+            "goal_completion": 1.0
+          },
+          "matched_milestones": {
+            "stage_01": 1,
+            "stage_02": 2,
+            "stage_03": 3
+          },
+          "checks": [
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_01",
+              "expected": [
+                "resolveSupplierTenant"
+              ],
+              "observed": "resolveSupplierTenant"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_02",
+              "expected": [
+                "completeSupplierOnboardingStage02"
+              ],
+              "observed": "completeSupplierOnboardingStage02"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_03",
+              "expected": [
+                "issueSupplierActivationCertificate"
+              ],
+              "observed": "issueSupplierActivationCertificate"
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_01->stage_02",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 1,
+                "after_sequence": 2
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_02->stage_03",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 2,
+                "after_sequence": 3
+              }
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_01.stageEvidence01->stage_02.handoffToken01",
+              "expected": "EVIDENCE-supplier_onboarding-01",
+              "observed": "EVIDENCE-supplier_onboarding-01"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_02.stageEvidence02->stage_03.handoffToken02",
+              "expected": "EVIDENCE-supplier_onboarding-02",
+              "observed": "EVIDENCE-supplier_onboarding-02"
+            },
+            {
+              "category": "state",
+              "code": "state_assertion_valid",
+              "passed": true,
+              "subject": "output.activationCertificateId",
+              "expected": {
+                "operator": "eq",
+                "value": "CERT-supplier_onboarding"
+              },
+              "observed": "CERT-supplier_onboarding"
+            },
+            {
+              "category": "budget",
+              "code": "call_budget_valid",
+              "passed": true,
+              "subject": "max_calls",
+              "expected": 3,
+              "observed": 3
+            },
+            {
+              "category": "budget",
+              "code": "replan_budget_valid",
+              "passed": true,
+              "subject": "max_replans",
+              "expected": 0,
+              "observed": 0
+            },
+            {
+              "category": "budget",
+              "code": "latency_budget_valid",
+              "passed": true,
+              "subject": "timeout_sec",
+              "expected": 30.0,
+              "observed": 0.0
+            },
+            {
+              "category": "schema",
+              "code": "schema_valid",
+              "passed": true,
+              "subject": "tool_calls",
+              "expected": 3,
+              "observed": 3
+            }
+          ],
+          "failure_reason_codes": []
+        },
+        "latency_ms": {
+          "build": 388.028,
+          "retrieve": 92.561,
+          "plan_execute": 6.169
+        },
+        "token_budget_used": 190
+      },
+      "lift": {
+        "goal_completion": 1.0,
+        "candidate_required_tool_recall": 0.666667,
+        "plan_required_tool_recall": 0.666667,
+        "execution_required_tool_recall": 1.0,
+        "dependency_order_accuracy": 1.0,
+        "binding_accuracy": 1.0
+      }
+    },
+    {
+      "id": "incident_recovery_10",
+      "family": "incident_recovery",
+      "workflow_length": 10,
+      "catalog_size": 1000,
+      "baseline": {
+        "use_arazzo": false,
+        "tool_count": 1000,
+        "edge_count": 0,
+        "edge_stats": {
+          "EXTRACTED": 0,
+          "INFERRED": 0,
+          "AMBIGUOUS": 0,
+          "dropped": 0,
+          "by_relation": {
+            "requires": 0
+          },
+          "cross_source": 0,
+          "tool_count": 1000,
+          "edge_count": 0,
+          "refs_preserved": 0,
+          "contract_signals": {
+            "tools_promoted": 1000,
+            "produces_added": 991,
+            "produces_consumer_aligned": 0,
+            "consumes_added": 10,
+            "produces_skipped": 10,
+            "produces_skipped_path_cap": 0,
+            "consumes_skipped": 0,
+            "required_consumer_demand_keys": 0
+          },
+          "contract_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_self": 0,
+            "skipped_no_producer": 10,
+            "skipped_echo": 0,
+            "skipped_consumer_scope": 0
+          },
+          "openapi_link_signals": {
+            "links_seen": 0,
+            "produces_added": 0,
+            "skipped_no_response_source": 0
+          },
+          "openapi_link_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_unresolved": 0,
+            "skipped_self": 0,
+            "by_relation": {}
+          },
+          "semantic_metadata": {
+            "tool_count": 1000,
+            "canonical_action_known_count": 1000,
+            "canonical_action_known_rate": 1.0,
+            "primary_resource_assigned_count": 1000,
+            "primary_resource_assigned_rate": 1.0,
+            "path_module_assigned_count": 1000,
+            "path_module_assigned_rate": 1.0,
+            "action_counts": {
+              "action": 10,
+              "search": 990
+            },
+            "resource_counts": {
+              "archive": 990,
+              "incident_recovery": 10
+            },
+            "module_counts": {
+              "archive_references": 990,
+              "incident_recovery_stages": 10
+            },
+            "result_shape_counts": {
+              "list": 990,
+              "mutation": 10
+            },
+            "top_modules": [
+              {
+                "module": "archive_references",
+                "count": 990,
+                "rate": 0.99
+              },
+              {
+                "module": "incident_recovery_stages",
+                "count": 10,
+                "rate": 0.01
+              }
+            ],
+            "semantic_confidence_counts": {
+              "high": 1000
+            },
+            "unknown_samples": []
+          },
+          "relation_budget": 100000,
+          "relation_budget_reached": false,
+          "pair_edges": {
+            "manual": 0,
+            "auto": 0,
+            "skipped_target_missing": 0,
+            "skipped_self": 0,
+            "skipped_existing_structural": 0
+          }
+        },
+        "workflow_summary": {},
+        "target_hit_at_k": 1.0,
+        "selected_target_exact": 0.0,
+        "selected_target": "openIncidentInvestigation",
+        "retrieved_tools": [
+          "openIncidentInvestigation",
+          "issueIncidentRecoveryReport",
+          "completeIncidentRecoveryStage02",
+          "completeIncidentRecoveryStage03",
+          "completeIncidentRecoveryStage04"
+        ],
+        "candidate_count": 1,
+        "planned_call_count": 1,
+        "executed_call_count": 1,
+        "plan_order_exact": 0.0,
+        "execution_order_exact": 0.0,
+        "planned_tools": [
+          "openIncidentInvestigation"
+        ],
+        "executed_tools": [
+          "openIncidentInvestigation"
+        ],
+        "runner_success": true,
+        "failure": {},
+        "evaluation": {
+          "scenario_id": "incident_recovery_10",
+          "goal_completed": false,
+          "metrics": {
+            "candidate_required_tool_recall": 0.1,
+            "plan_required_tool_recall": 0.1,
+            "execution_required_tool_recall": 0.1,
+            "required_tool_recall": 0.1,
+            "milestone_completion": 0.1,
+            "dependency_order_accuracy": 0.0,
+            "binding_accuracy": 0.0,
+            "final_state_accuracy": 0.0,
+            "schema_valid_call_rate": 1.0,
+            "extraneous_call_rate": 0.0,
+            "policy_violation_count": 0,
+            "call_count": 1,
+            "replan_count": 0,
+            "latency_ms": 0,
+            "recovery_attempted": 0,
+            "recovery_success": null,
+            "goal_completion": 0.0
+          },
+          "matched_milestones": {
+            "stage_01": 1
+          },
+          "checks": [
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_01",
+              "expected": [
+                "openIncidentInvestigation"
+              ],
+              "observed": "openIncidentInvestigation"
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_02",
+              "expected": [
+                "completeIncidentRecoveryStage02"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_03",
+              "expected": [
+                "completeIncidentRecoveryStage03"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_04",
+              "expected": [
+                "completeIncidentRecoveryStage04"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_05",
+              "expected": [
+                "completeIncidentRecoveryStage05"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_06",
+              "expected": [
+                "completeIncidentRecoveryStage06"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_07",
+              "expected": [
+                "completeIncidentRecoveryStage07"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_08",
+              "expected": [
+                "completeIncidentRecoveryStage08"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_09",
+              "expected": [
+                "completeIncidentRecoveryStage09"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_10",
+              "expected": [
+                "issueIncidentRecoveryReport"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_01->stage_02",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 1,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_02->stage_03",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_03->stage_04",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_04->stage_05",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_05->stage_06",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_06->stage_07",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_07->stage_08",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_08->stage_09",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_09->stage_10",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_01.stageEvidence01->stage_02.handoffToken01",
+              "expected": "EVIDENCE-incident_recovery-01",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_02.stageEvidence02->stage_03.handoffToken02",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_03.stageEvidence03->stage_04.handoffToken03",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_04.stageEvidence04->stage_05.handoffToken04",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_05.stageEvidence05->stage_06.handoffToken05",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_06.stageEvidence06->stage_07.handoffToken06",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_07.stageEvidence07->stage_08.handoffToken07",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_08.stageEvidence08->stage_09.handoffToken08",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_09.stageEvidence09->stage_10.handoffToken09",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "state",
+              "code": "goal_state_mismatch",
+              "passed": false,
+              "subject": "output.recoveryReportId",
+              "expected": {
+                "operator": "eq",
+                "value": "CERT-incident_recovery"
+              },
+              "observed": "<missing>"
+            },
+            {
+              "category": "budget",
+              "code": "call_budget_valid",
+              "passed": true,
+              "subject": "max_calls",
+              "expected": 10,
+              "observed": 1
+            },
+            {
+              "category": "budget",
+              "code": "replan_budget_valid",
+              "passed": true,
+              "subject": "max_replans",
+              "expected": 0,
+              "observed": 0
+            },
+            {
+              "category": "budget",
+              "code": "latency_budget_valid",
+              "passed": true,
+              "subject": "timeout_sec",
+              "expected": 30.0,
+              "observed": 0.0
+            },
+            {
+              "category": "schema",
+              "code": "schema_valid",
+              "passed": true,
+              "subject": "tool_calls",
+              "expected": 1,
+              "observed": 1
+            }
+          ],
+          "failure_reason_codes": [
+            "missing_milestone",
+            "invalid_dependency_order",
+            "binding_mismatch",
+            "goal_state_mismatch"
+          ]
+        },
+        "latency_ms": {
+          "build": 392.905,
+          "retrieve": 94.25,
+          "plan_execute": 5.515
+        },
+        "token_budget_used": 118
+      },
+      "with_arazzo": {
+        "use_arazzo": true,
+        "tool_count": 1000,
+        "edge_count": 9,
+        "edge_stats": {
+          "EXTRACTED": 0,
+          "INFERRED": 0,
+          "AMBIGUOUS": 0,
+          "dropped": 0,
+          "by_relation": {
+            "requires": 0
+          },
+          "cross_source": 0,
+          "tool_count": 1000,
+          "edge_count": 0,
+          "refs_preserved": 0,
+          "contract_signals": {
+            "tools_promoted": 1000,
+            "produces_added": 991,
+            "produces_consumer_aligned": 0,
+            "consumes_added": 10,
+            "produces_skipped": 10,
+            "produces_skipped_path_cap": 0,
+            "consumes_skipped": 0,
+            "required_consumer_demand_keys": 0
+          },
+          "contract_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_self": 0,
+            "skipped_no_producer": 10,
+            "skipped_echo": 0,
+            "skipped_consumer_scope": 0
+          },
+          "openapi_link_signals": {
+            "links_seen": 0,
+            "produces_added": 0,
+            "skipped_no_response_source": 0
+          },
+          "openapi_link_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_unresolved": 0,
+            "skipped_self": 0,
+            "by_relation": {}
+          },
+          "semantic_metadata": {
+            "tool_count": 1000,
+            "canonical_action_known_count": 1000,
+            "canonical_action_known_rate": 1.0,
+            "primary_resource_assigned_count": 1000,
+            "primary_resource_assigned_rate": 1.0,
+            "path_module_assigned_count": 1000,
+            "path_module_assigned_rate": 1.0,
+            "action_counts": {
+              "action": 10,
+              "search": 990
+            },
+            "resource_counts": {
+              "archive": 990,
+              "incident_recovery": 10
+            },
+            "module_counts": {
+              "archive_references": 990,
+              "incident_recovery_stages": 10
+            },
+            "result_shape_counts": {
+              "list": 990,
+              "mutation": 10
+            },
+            "top_modules": [
+              {
+                "module": "archive_references",
+                "count": 990,
+                "rate": 0.99
+              },
+              {
+                "module": "incident_recovery_stages",
+                "count": 10,
+                "rate": 0.01
+              }
+            ],
+            "semantic_confidence_counts": {
+              "high": 1000
+            },
+            "unknown_samples": []
+          },
+          "relation_budget": 100000,
+          "relation_budget_reached": false,
+          "pair_edges": {
+            "manual": 0,
+            "auto": 0,
+            "skipped_target_missing": 0,
+            "skipped_self": 0,
+            "skipped_existing_structural": 0
+          }
+        },
+        "workflow_summary": {
+          "source_count": 1,
+          "workflow_count": 1,
+          "step_count": 10,
+          "relation_count": 9,
+          "by_dependency_kind": {
+            "runtime_reference": 9
+          },
+          "edge_stats": {
+            "added": 9,
+            "merged": 0,
+            "binding_aliases_added": 9
+          },
+          "source_snapshot_manifest": {
+            "spec_count": 1,
+            "specs": [
+              {
+                "index": 1,
+                "source": "inline:1",
+                "sha256": "42cbf08002ff711f27fda523ebfe3974c14eaa8e1ab48f8a8857e3d0ca8b31fc",
+                "bytes": 2308,
+                "arazzo_version": "1.1.0",
+                "workflow_count": 1
+              }
+            ]
+          }
+        },
+        "target_hit_at_k": 1.0,
+        "selected_target_exact": 1.0,
+        "selected_target": "issueIncidentRecoveryReport",
+        "retrieved_tools": [
+          "issueIncidentRecoveryReport",
+          "openIncidentInvestigation",
+          "completeIncidentRecoveryStage02",
+          "completeIncidentRecoveryStage03",
+          "completeIncidentRecoveryStage04"
+        ],
+        "candidate_count": 10,
+        "planned_call_count": 10,
+        "executed_call_count": 10,
+        "plan_order_exact": 1.0,
+        "execution_order_exact": 1.0,
+        "planned_tools": [
+          "openIncidentInvestigation",
+          "completeIncidentRecoveryStage02",
+          "completeIncidentRecoveryStage03",
+          "completeIncidentRecoveryStage04",
+          "completeIncidentRecoveryStage05",
+          "completeIncidentRecoveryStage06",
+          "completeIncidentRecoveryStage07",
+          "completeIncidentRecoveryStage08",
+          "completeIncidentRecoveryStage09",
+          "issueIncidentRecoveryReport"
+        ],
+        "executed_tools": [
+          "openIncidentInvestigation",
+          "completeIncidentRecoveryStage02",
+          "completeIncidentRecoveryStage03",
+          "completeIncidentRecoveryStage04",
+          "completeIncidentRecoveryStage05",
+          "completeIncidentRecoveryStage06",
+          "completeIncidentRecoveryStage07",
+          "completeIncidentRecoveryStage08",
+          "completeIncidentRecoveryStage09",
+          "issueIncidentRecoveryReport"
+        ],
+        "runner_success": true,
+        "failure": {},
+        "evaluation": {
+          "scenario_id": "incident_recovery_10",
+          "goal_completed": true,
+          "metrics": {
+            "candidate_required_tool_recall": 1.0,
+            "plan_required_tool_recall": 1.0,
+            "execution_required_tool_recall": 1.0,
+            "required_tool_recall": 1.0,
+            "milestone_completion": 1.0,
+            "dependency_order_accuracy": 1.0,
+            "binding_accuracy": 1.0,
+            "final_state_accuracy": 1.0,
+            "schema_valid_call_rate": 1.0,
+            "extraneous_call_rate": 0.0,
+            "policy_violation_count": 0,
+            "call_count": 10,
+            "replan_count": 0,
+            "latency_ms": 0,
+            "recovery_attempted": 0,
+            "recovery_success": null,
+            "goal_completion": 1.0
+          },
+          "matched_milestones": {
+            "stage_01": 1,
+            "stage_02": 2,
+            "stage_03": 3,
+            "stage_04": 4,
+            "stage_05": 5,
+            "stage_06": 6,
+            "stage_07": 7,
+            "stage_08": 8,
+            "stage_09": 9,
+            "stage_10": 10
+          },
+          "checks": [
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_01",
+              "expected": [
+                "openIncidentInvestigation"
+              ],
+              "observed": "openIncidentInvestigation"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_02",
+              "expected": [
+                "completeIncidentRecoveryStage02"
+              ],
+              "observed": "completeIncidentRecoveryStage02"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_03",
+              "expected": [
+                "completeIncidentRecoveryStage03"
+              ],
+              "observed": "completeIncidentRecoveryStage03"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_04",
+              "expected": [
+                "completeIncidentRecoveryStage04"
+              ],
+              "observed": "completeIncidentRecoveryStage04"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_05",
+              "expected": [
+                "completeIncidentRecoveryStage05"
+              ],
+              "observed": "completeIncidentRecoveryStage05"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_06",
+              "expected": [
+                "completeIncidentRecoveryStage06"
+              ],
+              "observed": "completeIncidentRecoveryStage06"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_07",
+              "expected": [
+                "completeIncidentRecoveryStage07"
+              ],
+              "observed": "completeIncidentRecoveryStage07"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_08",
+              "expected": [
+                "completeIncidentRecoveryStage08"
+              ],
+              "observed": "completeIncidentRecoveryStage08"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_09",
+              "expected": [
+                "completeIncidentRecoveryStage09"
+              ],
+              "observed": "completeIncidentRecoveryStage09"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_10",
+              "expected": [
+                "issueIncidentRecoveryReport"
+              ],
+              "observed": "issueIncidentRecoveryReport"
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_01->stage_02",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 1,
+                "after_sequence": 2
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_02->stage_03",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 2,
+                "after_sequence": 3
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_03->stage_04",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 3,
+                "after_sequence": 4
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_04->stage_05",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 4,
+                "after_sequence": 5
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_05->stage_06",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 5,
+                "after_sequence": 6
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_06->stage_07",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 6,
+                "after_sequence": 7
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_07->stage_08",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 7,
+                "after_sequence": 8
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_08->stage_09",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 8,
+                "after_sequence": 9
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_09->stage_10",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 9,
+                "after_sequence": 10
+              }
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_01.stageEvidence01->stage_02.handoffToken01",
+              "expected": "EVIDENCE-incident_recovery-01",
+              "observed": "EVIDENCE-incident_recovery-01"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_02.stageEvidence02->stage_03.handoffToken02",
+              "expected": "EVIDENCE-incident_recovery-02",
+              "observed": "EVIDENCE-incident_recovery-02"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_03.stageEvidence03->stage_04.handoffToken03",
+              "expected": "EVIDENCE-incident_recovery-03",
+              "observed": "EVIDENCE-incident_recovery-03"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_04.stageEvidence04->stage_05.handoffToken04",
+              "expected": "EVIDENCE-incident_recovery-04",
+              "observed": "EVIDENCE-incident_recovery-04"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_05.stageEvidence05->stage_06.handoffToken05",
+              "expected": "EVIDENCE-incident_recovery-05",
+              "observed": "EVIDENCE-incident_recovery-05"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_06.stageEvidence06->stage_07.handoffToken06",
+              "expected": "EVIDENCE-incident_recovery-06",
+              "observed": "EVIDENCE-incident_recovery-06"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_07.stageEvidence07->stage_08.handoffToken07",
+              "expected": "EVIDENCE-incident_recovery-07",
+              "observed": "EVIDENCE-incident_recovery-07"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_08.stageEvidence08->stage_09.handoffToken08",
+              "expected": "EVIDENCE-incident_recovery-08",
+              "observed": "EVIDENCE-incident_recovery-08"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_09.stageEvidence09->stage_10.handoffToken09",
+              "expected": "EVIDENCE-incident_recovery-09",
+              "observed": "EVIDENCE-incident_recovery-09"
+            },
+            {
+              "category": "state",
+              "code": "state_assertion_valid",
+              "passed": true,
+              "subject": "output.recoveryReportId",
+              "expected": {
+                "operator": "eq",
+                "value": "CERT-incident_recovery"
+              },
+              "observed": "CERT-incident_recovery"
+            },
+            {
+              "category": "budget",
+              "code": "call_budget_valid",
+              "passed": true,
+              "subject": "max_calls",
+              "expected": 10,
+              "observed": 10
+            },
+            {
+              "category": "budget",
+              "code": "replan_budget_valid",
+              "passed": true,
+              "subject": "max_replans",
+              "expected": 0,
+              "observed": 0
+            },
+            {
+              "category": "budget",
+              "code": "latency_budget_valid",
+              "passed": true,
+              "subject": "timeout_sec",
+              "expected": 30.0,
+              "observed": 0.0
+            },
+            {
+              "category": "schema",
+              "code": "schema_valid",
+              "passed": true,
+              "subject": "tool_calls",
+              "expected": 10,
+              "observed": 10
+            }
+          ],
+          "failure_reason_codes": []
+        },
+        "latency_ms": {
+          "build": 396.38,
+          "retrieve": 94.701,
+          "plan_execute": 6.153
+        },
+        "token_budget_used": 291
+      },
+      "lift": {
+        "goal_completion": 1.0,
+        "candidate_required_tool_recall": 0.9,
+        "plan_required_tool_recall": 0.9,
+        "execution_required_tool_recall": 0.9,
+        "dependency_order_accuracy": 1.0,
+        "binding_accuracy": 1.0
+      }
+    },
+    {
+      "id": "publication_approval_30",
+      "family": "publication_approval",
+      "workflow_length": 30,
+      "catalog_size": 1000,
+      "baseline": {
+        "use_arazzo": false,
+        "tool_count": 1000,
+        "edge_count": 0,
+        "edge_stats": {
+          "EXTRACTED": 0,
+          "INFERRED": 0,
+          "AMBIGUOUS": 0,
+          "dropped": 0,
+          "by_relation": {
+            "requires": 0
+          },
+          "cross_source": 0,
+          "tool_count": 1000,
+          "edge_count": 0,
+          "refs_preserved": 0,
+          "contract_signals": {
+            "tools_promoted": 1000,
+            "produces_added": 971,
+            "produces_consumer_aligned": 0,
+            "consumes_added": 30,
+            "produces_skipped": 30,
+            "produces_skipped_path_cap": 0,
+            "consumes_skipped": 0,
+            "required_consumer_demand_keys": 0
+          },
+          "contract_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_self": 0,
+            "skipped_no_producer": 30,
+            "skipped_echo": 0,
+            "skipped_consumer_scope": 0
+          },
+          "openapi_link_signals": {
+            "links_seen": 0,
+            "produces_added": 0,
+            "skipped_no_response_source": 0
+          },
+          "openapi_link_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_unresolved": 0,
+            "skipped_self": 0,
+            "by_relation": {}
+          },
+          "semantic_metadata": {
+            "tool_count": 1000,
+            "canonical_action_known_count": 1000,
+            "canonical_action_known_rate": 1.0,
+            "primary_resource_assigned_count": 1000,
+            "primary_resource_assigned_rate": 1.0,
+            "path_module_assigned_count": 1000,
+            "path_module_assigned_rate": 1.0,
+            "action_counts": {
+              "action": 30,
+              "search": 970
+            },
+            "resource_counts": {
+              "archive": 970,
+              "publication_approval": 30
+            },
+            "module_counts": {
+              "archive_references": 970,
+              "publication_approval_stages": 30
+            },
+            "result_shape_counts": {
+              "list": 970,
+              "mutation": 30
+            },
+            "top_modules": [
+              {
+                "module": "archive_references",
+                "count": 970,
+                "rate": 0.97
+              },
+              {
+                "module": "publication_approval_stages",
+                "count": 30,
+                "rate": 0.03
+              }
+            ],
+            "semantic_confidence_counts": {
+              "high": 1000
+            },
+            "unknown_samples": []
+          },
+          "relation_budget": 100000,
+          "relation_budget_reached": false,
+          "pair_edges": {
+            "manual": 0,
+            "auto": 0,
+            "skipped_target_missing": 0,
+            "skipped_self": 0,
+            "skipped_existing_structural": 0
+          }
+        },
+        "workflow_summary": {},
+        "target_hit_at_k": 1.0,
+        "selected_target_exact": 0.0,
+        "selected_target": "openPublicationReview",
+        "retrieved_tools": [
+          "openPublicationReview",
+          "issuePublicationApprovalCertificate",
+          "completePublicationReviewStage02",
+          "completePublicationReviewStage03",
+          "completePublicationReviewStage04"
+        ],
+        "candidate_count": 1,
+        "planned_call_count": 1,
+        "executed_call_count": 1,
+        "plan_order_exact": 0.0,
+        "execution_order_exact": 0.0,
+        "planned_tools": [
+          "openPublicationReview"
+        ],
+        "executed_tools": [
+          "openPublicationReview"
+        ],
+        "runner_success": true,
+        "failure": {},
+        "evaluation": {
+          "scenario_id": "publication_approval_30",
+          "goal_completed": false,
+          "metrics": {
+            "candidate_required_tool_recall": 0.033333,
+            "plan_required_tool_recall": 0.033333,
+            "execution_required_tool_recall": 0.033333,
+            "required_tool_recall": 0.033333,
+            "milestone_completion": 0.033333,
+            "dependency_order_accuracy": 0.0,
+            "binding_accuracy": 0.0,
+            "final_state_accuracy": 0.0,
+            "schema_valid_call_rate": 1.0,
+            "extraneous_call_rate": 0.0,
+            "policy_violation_count": 0,
+            "call_count": 1,
+            "replan_count": 0,
+            "latency_ms": 0,
+            "recovery_attempted": 0,
+            "recovery_success": null,
+            "goal_completion": 0.0
+          },
+          "matched_milestones": {
+            "stage_01": 1
+          },
+          "checks": [
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_01",
+              "expected": [
+                "openPublicationReview"
+              ],
+              "observed": "openPublicationReview"
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_02",
+              "expected": [
+                "completePublicationReviewStage02"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_03",
+              "expected": [
+                "completePublicationReviewStage03"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_04",
+              "expected": [
+                "completePublicationReviewStage04"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_05",
+              "expected": [
+                "completePublicationReviewStage05"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_06",
+              "expected": [
+                "completePublicationReviewStage06"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_07",
+              "expected": [
+                "completePublicationReviewStage07"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_08",
+              "expected": [
+                "completePublicationReviewStage08"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_09",
+              "expected": [
+                "completePublicationReviewStage09"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_10",
+              "expected": [
+                "completePublicationReviewStage10"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_11",
+              "expected": [
+                "completePublicationReviewStage11"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_12",
+              "expected": [
+                "completePublicationReviewStage12"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_13",
+              "expected": [
+                "completePublicationReviewStage13"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_14",
+              "expected": [
+                "completePublicationReviewStage14"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_15",
+              "expected": [
+                "completePublicationReviewStage15"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_16",
+              "expected": [
+                "completePublicationReviewStage16"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_17",
+              "expected": [
+                "completePublicationReviewStage17"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_18",
+              "expected": [
+                "completePublicationReviewStage18"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_19",
+              "expected": [
+                "completePublicationReviewStage19"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_20",
+              "expected": [
+                "completePublicationReviewStage20"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_21",
+              "expected": [
+                "completePublicationReviewStage21"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_22",
+              "expected": [
+                "completePublicationReviewStage22"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_23",
+              "expected": [
+                "completePublicationReviewStage23"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_24",
+              "expected": [
+                "completePublicationReviewStage24"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_25",
+              "expected": [
+                "completePublicationReviewStage25"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_26",
+              "expected": [
+                "completePublicationReviewStage26"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_27",
+              "expected": [
+                "completePublicationReviewStage27"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_28",
+              "expected": [
+                "completePublicationReviewStage28"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_29",
+              "expected": [
+                "completePublicationReviewStage29"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "milestone",
+              "code": "missing_milestone",
+              "passed": false,
+              "subject": "stage_30",
+              "expected": [
+                "issuePublicationApprovalCertificate"
+              ],
+              "observed": ""
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_01->stage_02",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 1,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_02->stage_03",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_03->stage_04",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_04->stage_05",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_05->stage_06",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_06->stage_07",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_07->stage_08",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_08->stage_09",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_09->stage_10",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_10->stage_11",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_11->stage_12",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_12->stage_13",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_13->stage_14",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_14->stage_15",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_15->stage_16",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_16->stage_17",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_17->stage_18",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_18->stage_19",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_19->stage_20",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_20->stage_21",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_21->stage_22",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_22->stage_23",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_23->stage_24",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_24->stage_25",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_25->stage_26",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_26->stage_27",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_27->stage_28",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_28->stage_29",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "invalid_dependency_order",
+              "passed": false,
+              "subject": "stage_29->stage_30",
+              "expected": "before",
+              "observed": {
+                "before_sequence": null,
+                "after_sequence": null
+              }
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_01.stageEvidence01->stage_02.handoffToken01",
+              "expected": "EVIDENCE-publication_approval-01",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_02.stageEvidence02->stage_03.handoffToken02",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_03.stageEvidence03->stage_04.handoffToken03",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_04.stageEvidence04->stage_05.handoffToken04",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_05.stageEvidence05->stage_06.handoffToken05",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_06.stageEvidence06->stage_07.handoffToken06",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_07.stageEvidence07->stage_08.handoffToken07",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_08.stageEvidence08->stage_09.handoffToken08",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_09.stageEvidence09->stage_10.handoffToken09",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_10.stageEvidence10->stage_11.handoffToken10",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_11.stageEvidence11->stage_12.handoffToken11",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_12.stageEvidence12->stage_13.handoffToken12",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_13.stageEvidence13->stage_14.handoffToken13",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_14.stageEvidence14->stage_15.handoffToken14",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_15.stageEvidence15->stage_16.handoffToken15",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_16.stageEvidence16->stage_17.handoffToken16",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_17.stageEvidence17->stage_18.handoffToken17",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_18.stageEvidence18->stage_19.handoffToken18",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_19.stageEvidence19->stage_20.handoffToken19",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_20.stageEvidence20->stage_21.handoffToken20",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_21.stageEvidence21->stage_22.handoffToken21",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_22.stageEvidence22->stage_23.handoffToken22",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_23.stageEvidence23->stage_24.handoffToken23",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_24.stageEvidence24->stage_25.handoffToken24",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_25.stageEvidence25->stage_26.handoffToken25",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_26.stageEvidence26->stage_27.handoffToken26",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_27.stageEvidence27->stage_28.handoffToken27",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_28.stageEvidence28->stage_29.handoffToken28",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "binding",
+              "code": "binding_mismatch",
+              "passed": false,
+              "subject": "stage_29.stageEvidence29->stage_30.handoffToken29",
+              "expected": "<missing>",
+              "observed": "<missing>"
+            },
+            {
+              "category": "state",
+              "code": "goal_state_mismatch",
+              "passed": false,
+              "subject": "output.publicationCertificateId",
+              "expected": {
+                "operator": "eq",
+                "value": "CERT-publication_approval"
+              },
+              "observed": "<missing>"
+            },
+            {
+              "category": "budget",
+              "code": "call_budget_valid",
+              "passed": true,
+              "subject": "max_calls",
+              "expected": 30,
+              "observed": 1
+            },
+            {
+              "category": "budget",
+              "code": "replan_budget_valid",
+              "passed": true,
+              "subject": "max_replans",
+              "expected": 0,
+              "observed": 0
+            },
+            {
+              "category": "budget",
+              "code": "latency_budget_valid",
+              "passed": true,
+              "subject": "timeout_sec",
+              "expected": 30.0,
+              "observed": 0.0
+            },
+            {
+              "category": "schema",
+              "code": "schema_valid",
+              "passed": true,
+              "subject": "tool_calls",
+              "expected": 1,
+              "observed": 1
+            }
+          ],
+          "failure_reason_codes": [
+            "missing_milestone",
+            "invalid_dependency_order",
+            "binding_mismatch",
+            "goal_state_mismatch"
+          ]
+        },
+        "latency_ms": {
+          "build": 419.135,
+          "retrieve": 98.081,
+          "plan_execute": 5.444
+        },
+        "token_budget_used": 125
+      },
+      "with_arazzo": {
+        "use_arazzo": true,
+        "tool_count": 1000,
+        "edge_count": 29,
+        "edge_stats": {
+          "EXTRACTED": 0,
+          "INFERRED": 0,
+          "AMBIGUOUS": 0,
+          "dropped": 0,
+          "by_relation": {
+            "requires": 0
+          },
+          "cross_source": 0,
+          "tool_count": 1000,
+          "edge_count": 0,
+          "refs_preserved": 0,
+          "contract_signals": {
+            "tools_promoted": 1000,
+            "produces_added": 971,
+            "produces_consumer_aligned": 0,
+            "consumes_added": 30,
+            "produces_skipped": 30,
+            "produces_skipped_path_cap": 0,
+            "consumes_skipped": 0,
+            "required_consumer_demand_keys": 0
+          },
+          "contract_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_self": 0,
+            "skipped_no_producer": 30,
+            "skipped_echo": 0,
+            "skipped_consumer_scope": 0
+          },
+          "openapi_link_signals": {
+            "links_seen": 0,
+            "produces_added": 0,
+            "skipped_no_response_source": 0
+          },
+          "openapi_link_edges": {
+            "added": 0,
+            "merged": 0,
+            "skipped_unresolved": 0,
+            "skipped_self": 0,
+            "by_relation": {}
+          },
+          "semantic_metadata": {
+            "tool_count": 1000,
+            "canonical_action_known_count": 1000,
+            "canonical_action_known_rate": 1.0,
+            "primary_resource_assigned_count": 1000,
+            "primary_resource_assigned_rate": 1.0,
+            "path_module_assigned_count": 1000,
+            "path_module_assigned_rate": 1.0,
+            "action_counts": {
+              "action": 30,
+              "search": 970
+            },
+            "resource_counts": {
+              "archive": 970,
+              "publication_approval": 30
+            },
+            "module_counts": {
+              "archive_references": 970,
+              "publication_approval_stages": 30
+            },
+            "result_shape_counts": {
+              "list": 970,
+              "mutation": 30
+            },
+            "top_modules": [
+              {
+                "module": "archive_references",
+                "count": 970,
+                "rate": 0.97
+              },
+              {
+                "module": "publication_approval_stages",
+                "count": 30,
+                "rate": 0.03
+              }
+            ],
+            "semantic_confidence_counts": {
+              "high": 1000
+            },
+            "unknown_samples": []
+          },
+          "relation_budget": 100000,
+          "relation_budget_reached": false,
+          "pair_edges": {
+            "manual": 0,
+            "auto": 0,
+            "skipped_target_missing": 0,
+            "skipped_self": 0,
+            "skipped_existing_structural": 0
+          }
+        },
+        "workflow_summary": {
+          "source_count": 1,
+          "workflow_count": 1,
+          "step_count": 30,
+          "relation_count": 29,
+          "by_dependency_kind": {
+            "runtime_reference": 29
+          },
+          "edge_stats": {
+            "added": 29,
+            "merged": 0,
+            "binding_aliases_added": 29
+          },
+          "source_snapshot_manifest": {
+            "spec_count": 1,
+            "specs": [
+              {
+                "index": 1,
+                "source": "inline:1",
+                "sha256": "21a3ad4765fcfda8aea532b05c84a753829039e9d45653270a918c2deda939e1",
+                "bytes": 6709,
+                "arazzo_version": "1.1.0",
+                "workflow_count": 1
+              }
+            ]
+          }
+        },
+        "target_hit_at_k": 1.0,
+        "selected_target_exact": 1.0,
+        "selected_target": "issuePublicationApprovalCertificate",
+        "retrieved_tools": [
+          "issuePublicationApprovalCertificate",
+          "openPublicationReview",
+          "completePublicationReviewStage02",
+          "completePublicationReviewStage03",
+          "completePublicationReviewStage04"
+        ],
+        "candidate_count": 30,
+        "planned_call_count": 30,
+        "executed_call_count": 30,
+        "plan_order_exact": 1.0,
+        "execution_order_exact": 1.0,
+        "planned_tools": [
+          "openPublicationReview",
+          "completePublicationReviewStage02",
+          "completePublicationReviewStage03",
+          "completePublicationReviewStage04",
+          "completePublicationReviewStage05",
+          "completePublicationReviewStage06",
+          "completePublicationReviewStage07",
+          "completePublicationReviewStage08",
+          "completePublicationReviewStage09",
+          "completePublicationReviewStage10",
+          "completePublicationReviewStage11",
+          "completePublicationReviewStage12",
+          "completePublicationReviewStage13",
+          "completePublicationReviewStage14",
+          "completePublicationReviewStage15",
+          "completePublicationReviewStage16",
+          "completePublicationReviewStage17",
+          "completePublicationReviewStage18",
+          "completePublicationReviewStage19",
+          "completePublicationReviewStage20",
+          "completePublicationReviewStage21",
+          "completePublicationReviewStage22",
+          "completePublicationReviewStage23",
+          "completePublicationReviewStage24",
+          "completePublicationReviewStage25",
+          "completePublicationReviewStage26",
+          "completePublicationReviewStage27",
+          "completePublicationReviewStage28",
+          "completePublicationReviewStage29",
+          "issuePublicationApprovalCertificate"
+        ],
+        "executed_tools": [
+          "openPublicationReview",
+          "completePublicationReviewStage02",
+          "completePublicationReviewStage03",
+          "completePublicationReviewStage04",
+          "completePublicationReviewStage05",
+          "completePublicationReviewStage06",
+          "completePublicationReviewStage07",
+          "completePublicationReviewStage08",
+          "completePublicationReviewStage09",
+          "completePublicationReviewStage10",
+          "completePublicationReviewStage11",
+          "completePublicationReviewStage12",
+          "completePublicationReviewStage13",
+          "completePublicationReviewStage14",
+          "completePublicationReviewStage15",
+          "completePublicationReviewStage16",
+          "completePublicationReviewStage17",
+          "completePublicationReviewStage18",
+          "completePublicationReviewStage19",
+          "completePublicationReviewStage20",
+          "completePublicationReviewStage21",
+          "completePublicationReviewStage22",
+          "completePublicationReviewStage23",
+          "completePublicationReviewStage24",
+          "completePublicationReviewStage25",
+          "completePublicationReviewStage26",
+          "completePublicationReviewStage27",
+          "completePublicationReviewStage28",
+          "completePublicationReviewStage29",
+          "issuePublicationApprovalCertificate"
+        ],
+        "runner_success": true,
+        "failure": {},
+        "evaluation": {
+          "scenario_id": "publication_approval_30",
+          "goal_completed": true,
+          "metrics": {
+            "candidate_required_tool_recall": 1.0,
+            "plan_required_tool_recall": 1.0,
+            "execution_required_tool_recall": 1.0,
+            "required_tool_recall": 1.0,
+            "milestone_completion": 1.0,
+            "dependency_order_accuracy": 1.0,
+            "binding_accuracy": 1.0,
+            "final_state_accuracy": 1.0,
+            "schema_valid_call_rate": 1.0,
+            "extraneous_call_rate": 0.0,
+            "policy_violation_count": 0,
+            "call_count": 30,
+            "replan_count": 0,
+            "latency_ms": 0,
+            "recovery_attempted": 0,
+            "recovery_success": null,
+            "goal_completion": 1.0
+          },
+          "matched_milestones": {
+            "stage_01": 1,
+            "stage_02": 2,
+            "stage_03": 3,
+            "stage_04": 4,
+            "stage_05": 5,
+            "stage_06": 6,
+            "stage_07": 7,
+            "stage_08": 8,
+            "stage_09": 9,
+            "stage_10": 10,
+            "stage_11": 11,
+            "stage_12": 12,
+            "stage_13": 13,
+            "stage_14": 14,
+            "stage_15": 15,
+            "stage_16": 16,
+            "stage_17": 17,
+            "stage_18": 18,
+            "stage_19": 19,
+            "stage_20": 20,
+            "stage_21": 21,
+            "stage_22": 22,
+            "stage_23": 23,
+            "stage_24": 24,
+            "stage_25": 25,
+            "stage_26": 26,
+            "stage_27": 27,
+            "stage_28": 28,
+            "stage_29": 29,
+            "stage_30": 30
+          },
+          "checks": [
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_01",
+              "expected": [
+                "openPublicationReview"
+              ],
+              "observed": "openPublicationReview"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_02",
+              "expected": [
+                "completePublicationReviewStage02"
+              ],
+              "observed": "completePublicationReviewStage02"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_03",
+              "expected": [
+                "completePublicationReviewStage03"
+              ],
+              "observed": "completePublicationReviewStage03"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_04",
+              "expected": [
+                "completePublicationReviewStage04"
+              ],
+              "observed": "completePublicationReviewStage04"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_05",
+              "expected": [
+                "completePublicationReviewStage05"
+              ],
+              "observed": "completePublicationReviewStage05"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_06",
+              "expected": [
+                "completePublicationReviewStage06"
+              ],
+              "observed": "completePublicationReviewStage06"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_07",
+              "expected": [
+                "completePublicationReviewStage07"
+              ],
+              "observed": "completePublicationReviewStage07"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_08",
+              "expected": [
+                "completePublicationReviewStage08"
+              ],
+              "observed": "completePublicationReviewStage08"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_09",
+              "expected": [
+                "completePublicationReviewStage09"
+              ],
+              "observed": "completePublicationReviewStage09"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_10",
+              "expected": [
+                "completePublicationReviewStage10"
+              ],
+              "observed": "completePublicationReviewStage10"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_11",
+              "expected": [
+                "completePublicationReviewStage11"
+              ],
+              "observed": "completePublicationReviewStage11"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_12",
+              "expected": [
+                "completePublicationReviewStage12"
+              ],
+              "observed": "completePublicationReviewStage12"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_13",
+              "expected": [
+                "completePublicationReviewStage13"
+              ],
+              "observed": "completePublicationReviewStage13"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_14",
+              "expected": [
+                "completePublicationReviewStage14"
+              ],
+              "observed": "completePublicationReviewStage14"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_15",
+              "expected": [
+                "completePublicationReviewStage15"
+              ],
+              "observed": "completePublicationReviewStage15"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_16",
+              "expected": [
+                "completePublicationReviewStage16"
+              ],
+              "observed": "completePublicationReviewStage16"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_17",
+              "expected": [
+                "completePublicationReviewStage17"
+              ],
+              "observed": "completePublicationReviewStage17"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_18",
+              "expected": [
+                "completePublicationReviewStage18"
+              ],
+              "observed": "completePublicationReviewStage18"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_19",
+              "expected": [
+                "completePublicationReviewStage19"
+              ],
+              "observed": "completePublicationReviewStage19"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_20",
+              "expected": [
+                "completePublicationReviewStage20"
+              ],
+              "observed": "completePublicationReviewStage20"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_21",
+              "expected": [
+                "completePublicationReviewStage21"
+              ],
+              "observed": "completePublicationReviewStage21"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_22",
+              "expected": [
+                "completePublicationReviewStage22"
+              ],
+              "observed": "completePublicationReviewStage22"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_23",
+              "expected": [
+                "completePublicationReviewStage23"
+              ],
+              "observed": "completePublicationReviewStage23"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_24",
+              "expected": [
+                "completePublicationReviewStage24"
+              ],
+              "observed": "completePublicationReviewStage24"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_25",
+              "expected": [
+                "completePublicationReviewStage25"
+              ],
+              "observed": "completePublicationReviewStage25"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_26",
+              "expected": [
+                "completePublicationReviewStage26"
+              ],
+              "observed": "completePublicationReviewStage26"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_27",
+              "expected": [
+                "completePublicationReviewStage27"
+              ],
+              "observed": "completePublicationReviewStage27"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_28",
+              "expected": [
+                "completePublicationReviewStage28"
+              ],
+              "observed": "completePublicationReviewStage28"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_29",
+              "expected": [
+                "completePublicationReviewStage29"
+              ],
+              "observed": "completePublicationReviewStage29"
+            },
+            {
+              "category": "milestone",
+              "code": "milestone_completed",
+              "passed": true,
+              "subject": "stage_30",
+              "expected": [
+                "issuePublicationApprovalCertificate"
+              ],
+              "observed": "issuePublicationApprovalCertificate"
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_01->stage_02",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 1,
+                "after_sequence": 2
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_02->stage_03",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 2,
+                "after_sequence": 3
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_03->stage_04",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 3,
+                "after_sequence": 4
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_04->stage_05",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 4,
+                "after_sequence": 5
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_05->stage_06",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 5,
+                "after_sequence": 6
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_06->stage_07",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 6,
+                "after_sequence": 7
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_07->stage_08",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 7,
+                "after_sequence": 8
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_08->stage_09",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 8,
+                "after_sequence": 9
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_09->stage_10",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 9,
+                "after_sequence": 10
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_10->stage_11",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 10,
+                "after_sequence": 11
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_11->stage_12",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 11,
+                "after_sequence": 12
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_12->stage_13",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 12,
+                "after_sequence": 13
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_13->stage_14",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 13,
+                "after_sequence": 14
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_14->stage_15",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 14,
+                "after_sequence": 15
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_15->stage_16",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 15,
+                "after_sequence": 16
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_16->stage_17",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 16,
+                "after_sequence": 17
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_17->stage_18",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 17,
+                "after_sequence": 18
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_18->stage_19",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 18,
+                "after_sequence": 19
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_19->stage_20",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 19,
+                "after_sequence": 20
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_20->stage_21",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 20,
+                "after_sequence": 21
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_21->stage_22",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 21,
+                "after_sequence": 22
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_22->stage_23",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 22,
+                "after_sequence": 23
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_23->stage_24",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 23,
+                "after_sequence": 24
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_24->stage_25",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 24,
+                "after_sequence": 25
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_25->stage_26",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 25,
+                "after_sequence": 26
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_26->stage_27",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 26,
+                "after_sequence": 27
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_27->stage_28",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 27,
+                "after_sequence": 28
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_28->stage_29",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 28,
+                "after_sequence": 29
+              }
+            },
+            {
+              "category": "dependency",
+              "code": "dependency_order_valid",
+              "passed": true,
+              "subject": "stage_29->stage_30",
+              "expected": "before",
+              "observed": {
+                "before_sequence": 29,
+                "after_sequence": 30
+              }
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_01.stageEvidence01->stage_02.handoffToken01",
+              "expected": "EVIDENCE-publication_approval-01",
+              "observed": "EVIDENCE-publication_approval-01"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_02.stageEvidence02->stage_03.handoffToken02",
+              "expected": "EVIDENCE-publication_approval-02",
+              "observed": "EVIDENCE-publication_approval-02"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_03.stageEvidence03->stage_04.handoffToken03",
+              "expected": "EVIDENCE-publication_approval-03",
+              "observed": "EVIDENCE-publication_approval-03"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_04.stageEvidence04->stage_05.handoffToken04",
+              "expected": "EVIDENCE-publication_approval-04",
+              "observed": "EVIDENCE-publication_approval-04"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_05.stageEvidence05->stage_06.handoffToken05",
+              "expected": "EVIDENCE-publication_approval-05",
+              "observed": "EVIDENCE-publication_approval-05"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_06.stageEvidence06->stage_07.handoffToken06",
+              "expected": "EVIDENCE-publication_approval-06",
+              "observed": "EVIDENCE-publication_approval-06"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_07.stageEvidence07->stage_08.handoffToken07",
+              "expected": "EVIDENCE-publication_approval-07",
+              "observed": "EVIDENCE-publication_approval-07"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_08.stageEvidence08->stage_09.handoffToken08",
+              "expected": "EVIDENCE-publication_approval-08",
+              "observed": "EVIDENCE-publication_approval-08"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_09.stageEvidence09->stage_10.handoffToken09",
+              "expected": "EVIDENCE-publication_approval-09",
+              "observed": "EVIDENCE-publication_approval-09"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_10.stageEvidence10->stage_11.handoffToken10",
+              "expected": "EVIDENCE-publication_approval-10",
+              "observed": "EVIDENCE-publication_approval-10"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_11.stageEvidence11->stage_12.handoffToken11",
+              "expected": "EVIDENCE-publication_approval-11",
+              "observed": "EVIDENCE-publication_approval-11"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_12.stageEvidence12->stage_13.handoffToken12",
+              "expected": "EVIDENCE-publication_approval-12",
+              "observed": "EVIDENCE-publication_approval-12"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_13.stageEvidence13->stage_14.handoffToken13",
+              "expected": "EVIDENCE-publication_approval-13",
+              "observed": "EVIDENCE-publication_approval-13"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_14.stageEvidence14->stage_15.handoffToken14",
+              "expected": "EVIDENCE-publication_approval-14",
+              "observed": "EVIDENCE-publication_approval-14"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_15.stageEvidence15->stage_16.handoffToken15",
+              "expected": "EVIDENCE-publication_approval-15",
+              "observed": "EVIDENCE-publication_approval-15"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_16.stageEvidence16->stage_17.handoffToken16",
+              "expected": "EVIDENCE-publication_approval-16",
+              "observed": "EVIDENCE-publication_approval-16"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_17.stageEvidence17->stage_18.handoffToken17",
+              "expected": "EVIDENCE-publication_approval-17",
+              "observed": "EVIDENCE-publication_approval-17"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_18.stageEvidence18->stage_19.handoffToken18",
+              "expected": "EVIDENCE-publication_approval-18",
+              "observed": "EVIDENCE-publication_approval-18"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_19.stageEvidence19->stage_20.handoffToken19",
+              "expected": "EVIDENCE-publication_approval-19",
+              "observed": "EVIDENCE-publication_approval-19"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_20.stageEvidence20->stage_21.handoffToken20",
+              "expected": "EVIDENCE-publication_approval-20",
+              "observed": "EVIDENCE-publication_approval-20"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_21.stageEvidence21->stage_22.handoffToken21",
+              "expected": "EVIDENCE-publication_approval-21",
+              "observed": "EVIDENCE-publication_approval-21"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_22.stageEvidence22->stage_23.handoffToken22",
+              "expected": "EVIDENCE-publication_approval-22",
+              "observed": "EVIDENCE-publication_approval-22"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_23.stageEvidence23->stage_24.handoffToken23",
+              "expected": "EVIDENCE-publication_approval-23",
+              "observed": "EVIDENCE-publication_approval-23"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_24.stageEvidence24->stage_25.handoffToken24",
+              "expected": "EVIDENCE-publication_approval-24",
+              "observed": "EVIDENCE-publication_approval-24"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_25.stageEvidence25->stage_26.handoffToken25",
+              "expected": "EVIDENCE-publication_approval-25",
+              "observed": "EVIDENCE-publication_approval-25"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_26.stageEvidence26->stage_27.handoffToken26",
+              "expected": "EVIDENCE-publication_approval-26",
+              "observed": "EVIDENCE-publication_approval-26"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_27.stageEvidence27->stage_28.handoffToken27",
+              "expected": "EVIDENCE-publication_approval-27",
+              "observed": "EVIDENCE-publication_approval-27"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_28.stageEvidence28->stage_29.handoffToken28",
+              "expected": "EVIDENCE-publication_approval-28",
+              "observed": "EVIDENCE-publication_approval-28"
+            },
+            {
+              "category": "binding",
+              "code": "binding_valid",
+              "passed": true,
+              "subject": "stage_29.stageEvidence29->stage_30.handoffToken29",
+              "expected": "EVIDENCE-publication_approval-29",
+              "observed": "EVIDENCE-publication_approval-29"
+            },
+            {
+              "category": "state",
+              "code": "state_assertion_valid",
+              "passed": true,
+              "subject": "output.publicationCertificateId",
+              "expected": {
+                "operator": "eq",
+                "value": "CERT-publication_approval"
+              },
+              "observed": "CERT-publication_approval"
+            },
+            {
+              "category": "budget",
+              "code": "call_budget_valid",
+              "passed": true,
+              "subject": "max_calls",
+              "expected": 30,
+              "observed": 30
+            },
+            {
+              "category": "budget",
+              "code": "replan_budget_valid",
+              "passed": true,
+              "subject": "max_replans",
+              "expected": 0,
+              "observed": 0
+            },
+            {
+              "category": "budget",
+              "code": "latency_budget_valid",
+              "passed": true,
+              "subject": "timeout_sec",
+              "expected": 30.0,
+              "observed": 0.0
+            },
+            {
+              "category": "schema",
+              "code": "schema_valid",
+              "passed": true,
+              "subject": "tool_calls",
+              "expected": 30,
+              "observed": 30
+            }
+          ],
+          "failure_reason_codes": []
+        },
+        "latency_ms": {
+          "build": 412.004,
+          "retrieve": 97.678,
+          "plan_execute": 7.308
+        },
+        "token_budget_used": 301
+      },
+      "lift": {
+        "goal_completion": 1.0,
+        "candidate_required_tool_recall": 0.966667,
+        "plan_required_tool_recall": 0.966667,
+        "execution_required_tool_recall": 0.966667,
+        "dependency_order_accuracy": 1.0,
+        "binding_accuracy": 1.0
+      }
+    }
+  ],
+  "limitations": [
+    "The benchmark isolates engine behavior and does not test independent LLM reasoning.",
+    "Generated catalogs are contract-distinct synthetic fixtures, not production APIs.",
+    "Arazzo evidence is supplied explicitly; workflow discovery without Arazzo is the baseline."
+  ]
+}

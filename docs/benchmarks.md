@@ -16,8 +16,8 @@ expensive full model benchmarks.
 - **Pipelines compared**: `baseline` (all tools), `retrieve-k3 / k5 / k10`, plus `+ embedding`, `+ ontology`
 - **Reproduce**: see [Reproduce](#reproduce) at the bottom
 
-> **Release-claim policy:** the `v0.42.0` README headline uses the checked-in,
-> model-free [dependency-chain release artifact](../benchmarks/results/releases/v0.42.0/dependency-chain-evidence.json).
+> **Release-claim policy:** the `v0.43.0` README headline uses the checked-in,
+> model-free [dependency-chain release artifact](../benchmarks/results/releases/v0.43.0/dependency-chain-evidence.json).
 > The older `qwen3:4b` tables below document historical self-hosted runs. Their
 > original case-level output was not preserved in the current repository, so
 > they are not used as a current release or leaderboard claim.
@@ -48,7 +48,7 @@ population-level estimate of LLM tool-calling accuracy.
 The 0.38 release introduced a measured, replayable trace gate for retrieval,
 target selection, dependency closure, schema admission, planning, and runner
 events. The current
-[observability artifact](../benchmarks/results/releases/v0.42.0/observability-evidence.json)
+[observability artifact](../benchmarks/results/releases/v0.43.0/observability-evidence.json)
 records the environment and case-level checks. CI also runs a fresh local
 microbenchmark instead of trusting only the stored number.
 
@@ -1172,7 +1172,7 @@ On the frozen artifact, OpenAPI-only planning reaches `0.0` goal completion
 because the opaque handoff fields cannot be justified. Adding Arazzo reaches
 `1.0` target hit@8, target selection, exact plan order, exact execution order,
 binding accuracy, and final goal completion. The result is recorded in
-[`benchmarks/results/arazzo_long_horizon_0.42.json`](../benchmarks/results/arazzo_long_horizon_0.42.json).
+[`benchmarks/results/arazzo_long_horizon_0.43.json`](../benchmarks/results/arazzo_long_horizon_0.43.json).
 
 This benchmark measures graph-tool-call's deterministic middleware. It does
 not claim that a model independently discovered the 30-step workflow.

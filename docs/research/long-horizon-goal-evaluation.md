@@ -113,7 +113,7 @@ The Arazzo condition executes exactly 3, 10, and 30 calls. It extracts 2, 9,
 and 29 runtime-reference relations respectively, then promotes only the
 declared response-path to request-field aliases. The saved case-level artifact
 is
-[`arazzo_long_horizon_0.42.json`](../../benchmarks/results/arazzo_long_horizon_0.42.json).
+[`arazzo_long_horizon_0.43.json`](../../benchmarks/results/arazzo_long_horizon_0.43.json).
 
 This is deterministic engine evidence, not an LLM reasoning score and not a
 claim about arbitrary production workflows. The next release-candidate gate
