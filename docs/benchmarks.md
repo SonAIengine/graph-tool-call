@@ -17,7 +17,7 @@ expensive full model benchmarks.
 - **Reproduce**: see [Reproduce](#reproduce) at the bottom
 
 > **Release-claim policy:** the `v0.44.0` README headline uses the checked-in,
-> model-free [dependency-chain release artifact](../benchmarks/results/releases/v0.44.0/dependency-chain-evidence.json).
+> model-free [dependency-chain release artifact](../benchmarks/results/releases/v0.45.0/dependency-chain-evidence.json).
 > The older `qwen3:4b` tables below document historical self-hosted runs. Their
 > original case-level output was not preserved in the current repository, so
 > they are not used as a current release or leaderboard claim.
@@ -48,7 +48,7 @@ population-level estimate of LLM tool-calling accuracy.
 The 0.38 release introduced a measured, replayable trace gate for retrieval,
 target selection, dependency closure, schema admission, planning, and runner
 events. The current
-[observability artifact](../benchmarks/results/releases/v0.44.0/observability-evidence.json)
+[observability artifact](../benchmarks/results/releases/v0.45.0/observability-evidence.json)
 records the environment and case-level checks. CI also runs a fresh local
 microbenchmark instead of trusting only the stored number.
 
