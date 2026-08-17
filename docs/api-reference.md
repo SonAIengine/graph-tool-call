@@ -692,9 +692,29 @@ groups = build_tool_equivalence_groups(target_candidates, graph_payload["tools"]
 `select_target_candidate()` applies a risk-limiting reconciliation when an LLM
 target is supplied. A deterministic winner may override the LLM only when it
 has a clear margin over both the LLM target and the runner-up, and the pairwise
-comparison contains discriminative contract/detail evidence. Generic surface
-overlap or result shape alone cannot trigger an override. Ties preserve the LLM
-target and return `needs_expansion=True` instead of guessing.
+comparison contains discriminative qualifier or directional contract evidence.
+Generic surface overlap or result shape alone cannot trigger an override. Ties
+preserve the LLM target and return `needs_expansion=True` instead of guessing.
+
+Use `contrast_target_candidates()` when an adapter needs the comparison before
+selection. It removes terms shared by semantic siblings and reports only the
+differences that matter: matched qualifiers, unrequested specialization terms,
+request-contract matches, and response-contract matches. The output contains
+no raw query or identifier value.
+
+```python
+from graph_tool_call.graphify import contrast_target_candidates
+
+contrast = contrast_target_candidates(
+    query,
+    catalog_names,
+    graph_payload["tools"],
+    retrieval_results=retrieval["results"],
+)
+
+for row in contrast["candidate_contrasts"]:
+    print(row["name"], row["score_adjustment"], row["evidence"])
+```
 
 ```python
 selection = select_target_candidate(
@@ -707,12 +727,16 @@ selection = select_target_candidate(
 )
 
 assert selection["override_assessment"]["risk_level"] in {"none", "low", "medium", "high"}
+print(selection["ambiguity_set"])
+print(selection["why_selected"])
+print(selection["why_rejected"])
 ```
 
 The legacy `policy="strong_evidence"` name remains supported and now uses the
 same risk-limiting policy revision. Inspect `decision`, `recommended_action`,
-`override_assessment`, and `reason_codes` to distinguish a safe override from a
-preserved LLM choice or a request to expand candidates.
+`override_assessment`, `ambiguity_set`, `why_selected`, `why_rejected`, and
+`reason_codes` to distinguish a safe override from a preserved LLM choice or a
+request to expand candidates.
 
 ---
 

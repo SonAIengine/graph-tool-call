@@ -1,0 +1,126 @@
+{
+  "schema_version": "1.0",
+  "description": "Product-neutral sibling target disambiguation cases across ten API domains.",
+  "cases": [
+    {
+      "id": "commerce_product_detail",
+      "query": "show product detail for product id 42",
+      "expected": "getProductDetail",
+      "llm_target": "getGeneralProductInfo",
+      "resource": "product",
+      "candidates": [
+        {"name": "getProductDetail", "summary": "Product detail by product id", "action": "read", "shape": "single", "consumes": ["productId"]},
+        {"name": "getGeneralProductInfo", "summary": "General product information", "action": "read", "shape": "single"},
+        {"name": "searchProducts", "summary": "Search product list", "action": "search", "shape": "list"}
+      ]
+    },
+    {
+      "id": "events_generic_list",
+      "query": "진행 중인 이벤트 목록을 조회해줘",
+      "expected": "getEventList",
+      "llm_target": "getEventSurveyList",
+      "resource": "event",
+      "candidates": [
+        {"name": "getEventList", "summary": "진행 중인 이벤트 목록", "action": "search", "shape": "list"},
+        {"name": "getEventSurveyList", "summary": "이벤트 설문 목록", "action": "search", "shape": "list"},
+        {"name": "getEventReplyList", "summary": "이벤트 댓글 목록", "action": "search", "shape": "list"}
+      ]
+    },
+    {
+      "id": "finance_invoice_count",
+      "query": "count overdue invoices for the account",
+      "expected": "countOverdueInvoices",
+      "llm_target": "listOverdueInvoices",
+      "resource": "invoice",
+      "candidates": [
+        {"name": "countOverdueInvoices", "summary": "Count overdue invoices", "action": "search", "shape": "count", "produces": ["totalCount"]},
+        {"name": "listOverdueInvoices", "summary": "List overdue invoices", "action": "search", "shape": "list"},
+        {"name": "getInvoiceDetail", "summary": "Invoice detail", "action": "read", "shape": "single"}
+      ]
+    },
+    {
+      "id": "identity_audit_history",
+      "query": "사용자 계정의 감사 이력을 보여줘",
+      "expected": "getUserAuditHistory",
+      "llm_target": "getUserStatus",
+      "resource": "user",
+      "candidates": [
+        {"name": "getUserAuditHistory", "summary": "사용자 계정 감사 이력", "action": "read", "shape": "list", "produces": ["auditEvents"]},
+        {"name": "getUserStatus", "summary": "사용자 계정 상태", "action": "read", "shape": "single"},
+        {"name": "getUserProfile", "summary": "사용자 프로필 상세", "action": "read", "shape": "single"}
+      ]
+    },
+    {
+      "id": "storage_file_metadata",
+      "query": "read metadata for file id abc",
+      "expected": "getFileMetadata",
+      "llm_target": "downloadFile",
+      "resource": "file",
+      "candidates": [
+        {"name": "getFileMetadata", "summary": "Read file metadata by file id", "action": "read", "shape": "single", "consumes": ["fileId"], "produces": ["metadata"]},
+        {"name": "downloadFile", "summary": "Download file content", "action": "read", "shape": "single", "consumes": ["fileId"], "produces": ["content"]},
+        {"name": "listFileVersions", "summary": "List file versions", "action": "search", "shape": "list", "consumes": ["fileId"]}
+      ]
+    },
+    {
+      "id": "logistics_shipment_tracking",
+      "query": "배송번호로 배송 추적 정보를 확인해줘",
+      "expected": "getShipmentTracking",
+      "llm_target": "getShipmentLabel",
+      "resource": "shipment",
+      "candidates": [
+        {"name": "getShipmentTracking", "summary": "배송번호 기준 배송 추적 정보", "action": "read", "shape": "single", "consumes": ["shipmentNo"], "produces": ["trackingEvents"]},
+        {"name": "getShipmentLabel", "summary": "배송 라벨 정보", "action": "read", "shape": "single", "consumes": ["shipmentNo"]},
+        {"name": "getShipmentRates", "summary": "배송 요금 목록", "action": "search", "shape": "list"}
+      ]
+    },
+    {
+      "id": "messaging_delivery_status",
+      "query": "show delivery status for message id 77",
+      "expected": "getMessageDeliveryStatus",
+      "llm_target": "getMessageTemplate",
+      "resource": "message",
+      "candidates": [
+        {"name": "getMessageDeliveryStatus", "summary": "Message delivery status by message id", "action": "read", "shape": "single", "consumes": ["messageId"], "produces": ["deliveryStatus"]},
+        {"name": "getMessageTemplate", "summary": "Message template detail", "action": "read", "shape": "single", "consumes": ["templateId"]},
+        {"name": "sendMessage", "summary": "Send a message", "action": "create", "shape": "mutation"}
+      ]
+    },
+    {
+      "id": "support_ticket_comments",
+      "query": "티켓의 댓글 목록을 조회해줘",
+      "expected": "listTicketComments",
+      "llm_target": "getTicketDetail",
+      "resource": "ticket",
+      "candidates": [
+        {"name": "listTicketComments", "summary": "티켓 댓글 목록", "action": "search", "shape": "list", "produces": ["comments"]},
+        {"name": "getTicketDetail", "summary": "티켓 상세 정보", "action": "read", "shape": "single"},
+        {"name": "getTicketAuditHistory", "summary": "티켓 감사 이력", "action": "read", "shape": "list"}
+      ]
+    },
+    {
+      "id": "healthcare_appointment_availability",
+      "query": "find appointment availability for tomorrow",
+      "expected": "searchAppointmentAvailability",
+      "llm_target": "getAppointmentDetail",
+      "resource": "appointment",
+      "candidates": [
+        {"name": "searchAppointmentAvailability", "summary": "Find appointment availability", "action": "search", "shape": "list", "produces": ["availableSlots"]},
+        {"name": "getAppointmentDetail", "summary": "Appointment detail", "action": "read", "shape": "single"},
+        {"name": "cancelAppointment", "summary": "Cancel an appointment", "action": "delete", "shape": "mutation"}
+      ]
+    },
+    {
+      "id": "infrastructure_deployment_logs",
+      "query": "배포 작업의 실행 로그를 보여줘",
+      "expected": "getDeploymentLogs",
+      "llm_target": "getDeploymentStatus",
+      "resource": "deployment",
+      "candidates": [
+        {"name": "getDeploymentLogs", "summary": "배포 작업 실행 로그", "action": "read", "shape": "list", "produces": ["logEntries"]},
+        {"name": "getDeploymentStatus", "summary": "배포 작업 상태", "action": "read", "shape": "single"},
+        {"name": "restartDeployment", "summary": "배포 작업 재시작", "action": "action", "shape": "mutation"}
+      ]
+    }
+  ]
+}

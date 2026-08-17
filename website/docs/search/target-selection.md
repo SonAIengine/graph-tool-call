@@ -56,7 +56,10 @@ extraction, or graph edges first.
 ## Public API
 
 `select_target_candidate()` is product-neutral. It reads generic tool metadata,
-retrieval evidence, and optional promoted learning suggestions.
+retrieval evidence, and optional promoted learning suggestions. It also performs
+contrastive sibling analysis: terms shared by all siblings are ignored, while
+distinguishing qualifiers and directional request/response contract matches are
+used as bounded evidence.
 
 <Tabs>
   <TabItem value="basic" label="Basic" default>
@@ -174,6 +177,10 @@ intent metadata, plan metadata, Quality Lab results, and trace records.
 | `confidence` | Selector score of the final target |
 | `overrode_llm` | Whether deterministic evidence replaced the LLM target |
 | `ambiguous` | Whether the margin was weak or candidates were too close |
+| `ambiguity_set` | Equivalent or unresolved siblings that remain plausible |
+| `why_selected` | Stable reason codes and evidence sources for the final target |
+| `why_rejected` | Per-sibling score delta and rejection reasons |
+| `query_facets` | Secret-safe action, result shape, and identifier-presence summary |
 | `reason_codes` | Stable diagnostic reason codes |
 | `margin` | Difference between the top two selector scores |
 | `llm_margin` | Difference between the deterministic winner and the LLM target |
@@ -185,6 +192,27 @@ intent metadata, plan metadata, Quality Lab results, and trace records.
 
 The numeric score is useful for relative comparison inside one selector run. Do
 not treat absolute score values as a public compatibility contract.
+
+## Inspect Sibling Differences
+
+Call `contrast_target_candidates()` directly when a UI, benchmark, or LLM prompt
+needs the comparison without making a selection.
+
+```python
+from graph_tool_call.graphify import contrast_target_candidates
+
+contrast = contrast_target_candidates(query, candidates, tools_by_name)
+for row in contrast["candidate_contrasts"]:
+    print(row["name"])
+    print(row["matched_qualifiers"])
+    print(row["unrequested_qualifiers"])
+    print(row["request_contract_matches"])
+    print(row["response_contract_matches"])
+```
+
+The helper never returns the raw query or raw identifier values. If two
+operations remain indistinguishable, the selector preserves the LLM choice and
+lists both tools in `ambiguity_set` instead of manufacturing confidence.
 
 ## Ranking Signals
 
