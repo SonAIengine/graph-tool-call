@@ -347,3 +347,147 @@ def test_audit_query_with_identifier_prefers_single_result_shape():
 
     assert result["query_facets"]["result_shape"] == "single"
     assert result["selected_target"] == "getAuditLog"
+
+
+def test_filtered_scope_overrides_unbounded_sibling_with_positive_evidence():
+    tools = {
+        "searchAccounts": _tool(
+            "account",
+            {
+                "name": "searchAccounts",
+                "summary": "Search accounts matching filters",
+                "action": "search",
+                "shape": "list",
+                "consumes": ["status"],
+            },
+        ),
+        "getAllAccounts": _tool(
+            "account",
+            {
+                "name": "getAllAccounts",
+                "summary": "List all accounts",
+                "action": "search",
+                "shape": "list",
+            },
+        ),
+        "searchCustomers": _tool(
+            "customer",
+            {
+                "name": "searchCustomers",
+                "summary": "Search customers matching filters",
+                "action": "search",
+                "shape": "list",
+                "consumes": ["status"],
+            },
+        ),
+    }
+    retrieval = [
+        {"name": "searchCustomers", "score": 0.04},
+        {"name": "getAllAccounts", "score": 0.03},
+        {"name": "searchAccounts", "score": 0.02},
+    ]
+
+    result = select_target_candidate(
+        "find accounts matching these filters",
+        retrieval,
+        tools,
+        retrieval_results=retrieval,
+        llm_target="getAllAccounts",
+        policy="risk_limited",
+    )
+
+    assert result["query_facets"]["scope"] == "filtered"
+    assert result["selected_target"] == "searchAccounts"
+    assert result["overrode_llm"] is True
+    assert result["sibling_comparison_applied"] is True
+    assert "scope_fit" in result["override_assessment"]["supporting_sources"]
+
+
+def test_explicit_all_scope_prefers_unbounded_sibling():
+    tools = {
+        "listAccounts": _tool(
+            "account",
+            {
+                "name": "listAccounts",
+                "summary": "List accounts",
+                "action": "search",
+                "shape": "list",
+            },
+        ),
+        "getAllAccounts": _tool(
+            "account",
+            {
+                "name": "getAllAccounts",
+                "summary": "List all accounts",
+                "action": "search",
+                "shape": "list",
+            },
+        ),
+    }
+    retrieval = [
+        {"name": "listAccounts", "score": 0.03},
+        {"name": "getAllAccounts", "score": 0.02},
+    ]
+
+    result = select_target_candidate(
+        "list all accounts",
+        retrieval,
+        tools,
+        retrieval_results=retrieval,
+        llm_target="listAccounts",
+        policy="risk_limited",
+    )
+
+    assert result["query_facets"]["scope"] == "all"
+    assert result["selected_target"] == "getAllAccounts"
+    assert result["overrode_llm"] is True
+
+
+def test_hierarchical_level_and_scope_disambiguate_localized_siblings():
+    tools = {
+        "getLargeCategory": _tool(
+            "category",
+            {
+                "name": "getLargeCategory",
+                "summary": "문의유형(대) 조회",
+                "action": "read",
+                "shape": "list",
+            },
+        ),
+        "getSmallCategory": _tool(
+            "category",
+            {
+                "name": "getSmallCategory",
+                "summary": "문의유형(소) 조회",
+                "action": "read",
+                "shape": "list",
+            },
+        ),
+        "getAllLargeCategories": _tool(
+            "category",
+            {
+                "name": "getAllLargeCategories",
+                "summary": "문의유형(대) 전체 조회",
+                "action": "search",
+                "shape": "list",
+            },
+        ),
+    }
+    retrieval = [
+        {"name": "getLargeCategory", "score": 0.03},
+        {"name": "getSmallCategory", "score": 0.029},
+        {"name": "getAllLargeCategories", "score": 0.02},
+    ]
+
+    result = select_target_candidate(
+        "대분류 문의유형을 조회해줘",
+        retrieval,
+        tools,
+        retrieval_results=retrieval,
+        llm_target="getAllLargeCategories",
+        policy="risk_limited",
+    )
+
+    assert result["selected_target"] == "getLargeCategory"
+    assert result["overrode_llm"] is True
+    assert result["sibling_comparison_applied"] is True

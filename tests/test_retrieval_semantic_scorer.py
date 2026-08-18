@@ -42,6 +42,8 @@ def _tool(
         ("invoice count", "count", ""),
         ("문서를 삭제해줘", "mutation", "delete"),
         ("account information", "single", "read"),
+        ("find account information matching these filters", "list", "search"),
+        ("조건에 맞는 협력사 정보를 검색해줘", "list", "search"),
     ],
 )
 def test_query_semantics_are_domain_independent(query, shape, action):
