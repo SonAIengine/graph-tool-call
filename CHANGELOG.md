@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-08-18
+
+### Changed
+- Target selection now gives explicit list and filtered-search intent precedence over
+  weak generic information cues when disambiguating sibling operations.
+- Sibling comparison now recognizes bounded, filtered, and all-result scopes from
+  localized hierarchy labels and duplicate version-suffixed operation names.
+
+### Fixed
+- Scope evidence is constrained to the same resource family, preventing unrelated
+  tools from overriding a better target based on surface-level list terminology.
+- Corrected target ranking and selection regressions found by replaying Korean queries
+  against a real 1,133-tool XGEN catalog without adding catalog-specific rules.
+
 ## [0.45.1] - 2026-08-18
 
 ### Fixed
@@ -752,7 +766,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.45.1...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.46.0...HEAD
 [0.39.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.36.0...v0.37.0
@@ -797,3 +811,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.44.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.43.0...v0.44.0
 [0.45.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.44.0...v0.45.0
 [0.45.1]: https://github.com/SonAIengine/graph-tool-call/compare/v0.45.0...v0.45.1
+[0.46.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.45.1...v0.46.0
