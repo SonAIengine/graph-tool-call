@@ -19,7 +19,23 @@ _SHAPE_TERMS = {
         "정보",
         "단건",
     },
-    "list": {"list", "lists", "search", "query", "목록", "리스트", "검색"},
+    "list": {
+        "list",
+        "lists",
+        "search",
+        "find",
+        "query",
+        "browse",
+        "filter",
+        "filtered",
+        "matching",
+        "condition",
+        "conditions",
+        "목록",
+        "리스트",
+        "검색",
+        "조건",
+    },
     "count": {"count", "total", "cnt", "건수", "개수", "카운트"},
     "mutation": {
         "create",
@@ -32,6 +48,8 @@ _SHAPE_TERMS = {
         "처리",
     },
 }
+_STRONG_SINGLE_SHAPE_TERMS = {"single", "detail", "details", "상세", "단건"}
+_WEAK_SINGLE_SHAPE_TERMS = _SHAPE_TERMS["single"] - _STRONG_SINGLE_SHAPE_TERMS
 _ACTION_TERMS = {
     "search": {"search", "find", "query", "list", "검색", "목록"},
     "read": {"read", "get", "detail", "view", "show", "조회", "상세", "확인"},
@@ -214,12 +232,16 @@ def infer_query_result_shape(query: str) -> str:
     normalized = _normalized_text(query)
     if _contains_any(normalized, _SHAPE_TERMS["count"]):
         return "count"
-    if _contains_any(normalized, _SHAPE_TERMS["single"]):
-        return "single"
+    # Generic nouns such as "information" describe the resource, not the
+    # cardinality. Explicit list/search language must win when both appear.
     if _contains_any(normalized, _SHAPE_TERMS["list"]):
         return "list"
+    if _contains_any(normalized, _STRONG_SINGLE_SHAPE_TERMS):
+        return "single"
     if _contains_any(normalized, _SHAPE_TERMS["mutation"]):
         return "mutation"
+    if _contains_any(normalized, _WEAK_SINGLE_SHAPE_TERMS):
+        return "single"
     return ""
 
 

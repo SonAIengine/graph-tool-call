@@ -22,7 +22,7 @@ _SELECTOR_OVERRIDE_MARGIN = 0.12
 _SELECTOR_STRONG_SCORE = 0.45
 _CONTRASTIVE_AMBIGUITY_MARGIN = 0.04
 TARGET_ADMISSION_POLICY_REVISION = "adaptive-target-admission-v1"
-TARGET_SELECTOR_POLICY_REVISION = "contrastive-risk-limiting-selector-v3"
+TARGET_SELECTOR_POLICY_REVISION = "contrastive-risk-limiting-selector-v4"
 _DECISIVE_OVERRIDE_SOURCES = frozenset(
     {
         "api_contract",
@@ -31,8 +31,11 @@ _DECISIVE_OVERRIDE_SOURCES = frozenset(
         "detail_surface",
         "identifier_detail_contract",
         "identifier_detail_surface",
+        "hierarchy_level_match",
         "request_contract_fit",
         "response_contract_fit",
+        "scope_fit",
+        "scope_mismatch",
     }
 )
 
@@ -59,6 +62,10 @@ _READ_TERMS = frozenset(
 _DETAIL_READ_TERMS = frozenset({"detail", "details", "상세", "단건"})
 _SINGLE_TERMS = frozenset({"detail", "details", "info", "view", "single", "상세", "정보", "단건"})
 _LIST_TERMS = frozenset({"list", "lists", "search", "find", "query", "목록", "리스트", "검색"})
+_ALL_SCOPE_TERMS = frozenset({"all", "every", "entire", "전체", "모든"})
+_FILTERED_SCOPE_TERMS = frozenset(
+    {"filter", "filtered", "matching", "condition", "conditions", "where", "조건", "검색"}
+)
 _COUNT_TERMS = frozenset({"count", "total", "cnt", "건수", "개수", "카운트"})
 _IDENTIFIER_TERMS = frozenset(
     {
@@ -693,12 +700,14 @@ def select_target_candidate(
                 "result_shape": "",
                 "identifier_present": False,
                 "content_term_count": 0,
+                "scope": "",
             },
             "rank_signals": [],
             "candidate_evidence": [],
             "llm_target": llm_name or None,
             "policy": policy,
             "policy_revision": TARGET_SELECTOR_POLICY_REVISION,
+            "sibling_comparison_applied": False,
             "override_assessment": {
                 "evaluated": False,
                 "allowed": False,
@@ -753,12 +762,30 @@ def select_target_candidate(
     scored.sort(key=lambda row: (-float(row["selector_score"]), int(row["original_rank"] or 9999)))
 
     winner = scored[0]
-    runner_up = scored[1] if len(scored) > 1 else None
+    decision_rows = scored
+    sibling_comparison_applied = False
+    llm_row = next((row for row in scored if row["name"] == llm_name), None) if llm_name else None
+    if llm_row:
+        sibling_rows = [row for row in scored if _same_selector_sibling_family(row, llm_row)]
+        sibling_winner = sibling_rows[0] if sibling_rows else llm_row
+        supporting, contradicting = _pairwise_decisive_evidence(sibling_winner, llm_row)
+        if sibling_winner["name"] != llm_row["name"] and supporting and not contradicting:
+            winner = sibling_winner
+            decision_rows = sibling_rows
+            sibling_comparison_applied = True
+    runner_up = next(
+        (
+            row
+            for row in decision_rows
+            if row["name"] != winner["name"]
+            and not _selector_candidates_share_operation_id(winner, row, tools_by_name)
+        ),
+        None,
+    )
     margin = round(
         float(winner["selector_score"]) - float(runner_up["selector_score"] if runner_up else 0.0),
         6,
     )
-    llm_row = next((row for row in scored if row["name"] == llm_name), None) if llm_name else None
     llm_margin = (
         round(
             float(winner["selector_score"]) - float(llm_row["selector_score"]),
@@ -804,14 +831,17 @@ def select_target_candidate(
             needs_expansion = True
     ambiguity_set = [
         str(row["name"])
-        for row in scored
-        if float(winner["selector_score"]) - float(row["selector_score"])
+        for row in decision_rows
+        if 0.0
+        <= float(winner["selector_score"]) - float(row["selector_score"])
         <= _CONTRASTIVE_AMBIGUITY_MARGIN
     ]
     if ambiguous and str(selected.get("name") or "") not in ambiguity_set:
         ambiguity_set.append(str(selected["name"]))
     if len(ambiguity_set) > 1 and not overrode:
         ambiguous = True
+        if "ambiguous_target" not in reason_codes:
+            reason_codes.append("ambiguous_target")
         if "insufficient_contrastive_evidence" not in reason_codes:
             reason_codes.append("insufficient_contrastive_evidence")
     if selected["name"] != winner["name"] and not overrode:
@@ -877,6 +907,7 @@ def select_target_candidate(
         "target_action_priority": action_priority,
         "result_shape_priority": shape_priority,
         "learning_applied": bool(learning_by_name),
+        "sibling_comparison_applied": sibling_comparison_applied,
     }
 
 
@@ -900,6 +931,7 @@ def contrast_target_candidates(
     tools_by_name = {name: _tool_dict(tool) for name, tool in (tools or {}).items()}
     names = [name for name in names if name in tools_by_name]
     query_terms = _contrastive_normalize_terms(_selector_terms(query))
+    query_scope = _query_scope(query_terms)
     action_priority = target_action_priority_for_query(query)
     shape_priority = _result_shape_priority_for_query(query)
     contexts = {name: _contrastive_candidate_context(name, tools_by_name[name]) for name in names}
@@ -943,6 +975,7 @@ def contrast_target_candidates(
         )
         request_matches = _matching_contrast_terms(query_terms, context["consumes_terms"])
         response_matches = _matching_contrast_terms(query_terms, context["produces_terms"])
+        peer_scopes = {contexts[peer]["scope"] for peer in peers}
 
         evidence: list[dict[str, Any]] = []
         adjustment = 0.0
@@ -956,6 +989,16 @@ def contrast_target_candidates(
                     "score": round(value, 6),
                 }
             )
+            hierarchy_matches = matched_qualifiers & {"large", "small"}
+            if hierarchy_matches:
+                adjustment += 0.02
+                evidence.append(
+                    {
+                        "source": "hierarchy_level_match",
+                        "matched_terms": sorted(hierarchy_matches),
+                        "score": 0.02,
+                    }
+                )
         if penalized_qualifiers:
             value = -min(0.14, 0.07 * len(penalized_qualifiers))
             adjustment += value
@@ -986,6 +1029,19 @@ def contrast_target_candidates(
                     "score": round(value, 6),
                 }
             )
+        if len(peer_scopes) > 1:
+            scope_adjustment = _scope_adjustment(query_scope, context["scope"])
+            if scope_adjustment:
+                adjustment += scope_adjustment
+                evidence.append(
+                    {
+                        "source": "scope_fit" if scope_adjustment > 0 else "scope_mismatch",
+                        "value": context["scope"],
+                        "query_scope": query_scope,
+                        "candidate_scope": context["scope"],
+                        "score": round(scope_adjustment, 6),
+                    }
+                )
 
         rows.append(
             {
@@ -1008,6 +1064,7 @@ def contrast_target_candidates(
             "result_shape": _preferred_taxonomy_value(shape_priority),
             "identifier_present": _query_has_identifier(query_terms),
             "content_term_count": len(_contrastive_query_content_terms(query_terms)),
+            "scope": query_scope,
         },
         "candidate_contrasts": rows,
         "candidate_count": len(rows),
@@ -1419,24 +1476,108 @@ def _contrastive_candidate_context(name: str, tool: dict[str, Any]) -> dict[str,
             resource,
         )
     )
+    surface_terms = _contrastive_normalize_terms(_selector_terms(surface))
+    consumes_terms = _contrastive_normalize_terms(
+        _contract_terms_for_direction(metadata, "consumes")
+    )
     return {
         "resource": resource,
         "action": action,
         "shape": shape,
         "module": module,
         "semantic_group": (resource or module or "unknown", "siblings", "all"),
-        "surface_terms": _contrastive_normalize_terms(_selector_terms(surface)),
-        "qualifier_surface_terms": _contrastive_normalize_terms(_selector_terms(surface)),
+        "scope": _candidate_scope(
+            surface_terms,
+            consumes_terms,
+            action=action,
+            shape=shape,
+        ),
+        "surface_terms": surface_terms,
+        "qualifier_surface_terms": surface_terms,
         "penalty_qualifier_surface_terms": _contrastive_normalize_terms(
             _selector_terms(penalty_qualifier_surface)
         ),
-        "consumes_terms": _contrastive_normalize_terms(
-            _contract_terms_for_direction(metadata, "consumes")
-        ),
+        "consumes_terms": consumes_terms,
         "produces_terms": _contrastive_normalize_terms(
             _contract_terms_for_direction(metadata, "produces")
         ),
     }
+
+
+def _same_selector_sibling_family(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_resource = str(left.get("primary_resource") or "").strip().lower()
+    right_resource = str(right.get("primary_resource") or "").strip().lower()
+    if left_resource and left_resource not in {"unknown", "unassigned"}:
+        return left_resource == right_resource
+    left_module = str(left.get("path_module") or "").strip().lower()
+    right_module = str(right.get("path_module") or "").strip().lower()
+    return bool(left_module and left_module == right_module)
+
+
+def _selector_candidates_share_operation_id(
+    left: dict[str, Any],
+    right: dict[str, Any],
+    tools_by_name: dict[str, dict[str, Any]],
+) -> bool:
+    left_name = str(left.get("name") or "")
+    right_name = str(right.get("name") or "")
+    if not left_name or not right_name:
+        return False
+    left_metadata = (tools_by_name.get(left_name) or {}).get("metadata") or {}
+    right_metadata = (tools_by_name.get(right_name) or {}).get("metadata") or {}
+    left_openapi = left_metadata.get("openapi") or {}
+    right_openapi = right_metadata.get("openapi") or {}
+    left_operation = str(left_openapi.get("operation_id") or "").strip().lower()
+    right_operation = str(right_openapi.get("operation_id") or "").strip().lower()
+    left_summary = str(left_openapi.get("summary") or "").strip().lower()
+    right_summary = str(right_openapi.get("summary") or "").strip().lower()
+    same_deduplicated_operation = (
+        re.sub(r"_\d+$", "", left_operation) == re.sub(r"_\d+$", "", right_operation)
+        and left_summary
+        and left_summary == right_summary
+    )
+    return bool(
+        left_operation
+        and right_operation
+        and (left_operation == right_operation or same_deduplicated_operation)
+        and left_name != right_name
+    )
+
+
+def _query_scope(query_terms: set[str]) -> str:
+    if query_terms & _ALL_SCOPE_TERMS:
+        return "all"
+    if query_terms & _FILTERED_SCOPE_TERMS:
+        return "filtered"
+    return "bounded"
+
+
+def _candidate_scope(
+    surface_terms: set[str],
+    consumes_terms: set[str],
+    *,
+    action: str,
+    shape: str,
+) -> str:
+    if action != "search" and shape != "list":
+        return "bounded"
+    if surface_terms & _ALL_SCOPE_TERMS or {"no", "paging"} <= surface_terms:
+        return "all"
+    if surface_terms & _FILTERED_SCOPE_TERMS or consumes_terms:
+        return "filtered"
+    return "bounded"
+
+
+def _scope_adjustment(query_scope: str, candidate_scope: str) -> float:
+    if query_scope == candidate_scope:
+        return 0.16 if query_scope in {"all", "filtered"} else 0.0
+    if candidate_scope == "all":
+        return -0.16 if query_scope == "filtered" else -0.12
+    if query_scope == "all":
+        return -0.10
+    if query_scope == "filtered" and candidate_scope == "bounded":
+        return 0.04
+    return 0.0
 
 
 def _contrastive_qualifier_terms(
@@ -1781,13 +1922,25 @@ def _pairwise_decisive_evidence(
     incumbent_evidence = _evidence_by_source(incumbent)
     supporting: list[str] = []
     contradicting: list[str] = []
+    same_sibling_family = _same_selector_sibling_family(winner, incumbent)
     for source in sorted(_DECISIVE_OVERRIDE_SOURCES):
+        if (
+            source
+            in {
+                "contrastive_qualifier_match",
+                "contrastive_unrequested_qualifier",
+                "scope_fit",
+                "scope_mismatch",
+            }
+            and not same_sibling_family
+        ):
+            continue
         winner_row = winner_evidence.get(source)
         incumbent_row = incumbent_evidence.get(source)
         winner_score = float((winner_row or {}).get("score") or 0.0)
         incumbent_score = float((incumbent_row or {}).get("score") or 0.0)
-        winner_signature = _evidence_signature(winner_row)
-        incumbent_signature = _evidence_signature(incumbent_row)
+        winner_signature = _decisive_evidence_signature(source, winner_row)
+        incumbent_signature = _decisive_evidence_signature(source, incumbent_row)
         distinct = winner_signature != incumbent_signature
         if (
             distinct
@@ -1802,6 +1955,29 @@ def _pairwise_decisive_evidence(
         ):
             contradicting.append(source)
     return supporting, contradicting
+
+
+def _decisive_evidence_signature(
+    source: str,
+    evidence: dict[str, Any] | None,
+) -> tuple[str, ...]:
+    signature = _evidence_signature(evidence)
+    if source not in {"contrastive_qualifier_match", "contrastive_unrequested_qualifier"}:
+        return signature
+    generic_terms = (
+        _SEARCH_TERMS
+        | _READ_TERMS
+        | _SINGLE_TERMS
+        | _LIST_TERMS
+        | _COUNT_TERMS
+        | _CREATE_TERMS
+        | _UPDATE_TERMS
+        | _ACTION_TERMS
+        | _DELETE_TERMS
+        | _ALL_SCOPE_TERMS
+        | _FILTERED_SCOPE_TERMS
+    )
+    return tuple(term for term in signature if not _has_action_term({term}, generic_terms))
 
 
 def _evidence_by_source(row: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -1904,13 +2080,20 @@ def _query_has_directive_cue(query: str) -> bool:
 
 
 def _selector_terms(text: str) -> set[str]:
-    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(text or ""))
+    source = str(text or "")
+    source = re.sub(r"[（(]\s*대\s*[）)]", " large ", source)
+    source = re.sub(r"[（(]\s*소\s*[）)]", " small ", source)
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", source)
     raw_terms = [
         term for term in re.split(r"[\s_\-/.,;:!?()[\]{}$#]+", spaced.lower()) if len(term) > 1
     ]
     terms: set[str] = set()
     for term in raw_terms:
         terms.update(_normalize_selector_term(term))
+        if term in {"대분류", "상위분류", "대유형"}:
+            terms.add("large")
+        elif term in {"소분류", "하위분류", "소유형"}:
+            terms.add("small")
     return terms
 
 
