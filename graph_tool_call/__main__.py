@@ -322,6 +322,17 @@ def _build_parser() -> argparse.ArgumentParser:
         default=8000,
         help="Port for SSE/Streamable-HTTP (default: 8000)",
     )
+    p_proxy.add_argument(
+        "--eager",
+        action="store_true",
+        help="Connect all backends before serving (disables lazy startup)",
+    )
+    p_proxy.add_argument(
+        "--backend-timeout",
+        type=float,
+        default=None,
+        help="Per-backend connect budget in seconds (default: 120)",
+    )
 
     # --- call (search + execute) ---
     p_call = sub.add_parser("call", help="Search + execute an API tool via HTTP")
@@ -882,6 +893,12 @@ def cmd_proxy(args: argparse.Namespace) -> None:
         transport=args.transport,
         host=args.host,
         port=args.port,
+        lazy=not args.eager and options.get("lazy", True),
+        backend_timeout=(
+            args.backend_timeout
+            if args.backend_timeout is not None
+            else options.get("backend_timeout", 120.0)
+        ),
     )
 
 

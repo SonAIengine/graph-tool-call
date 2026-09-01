@@ -573,3 +573,181 @@ async def test_gateway_unknown_tool_returns_error():
     result = await handler(request)
     text = result.root.content[0].text
     assert "not found" in text.lower() or "search_tools" in text.lower()
+
+
+# --- Lazy startup ---
+
+
+@pytest.mark.asyncio
+async def test_connect_backends_parallel_and_ready_signal(monkeypatch):
+    """Backends connect concurrently; readiness is signaled when all attempted."""
+    mcp_mod = pytest.importorskip("mcp", reason="mcp required")
+    types = mcp_mod.types
+
+    import asyncio
+    import time
+
+    from graph_tool_call.mcp_proxy import BackendConnection
+
+    backends = [BackendConfig(name=f"b{i}", command="true") for i in range(3)]
+    proxy = MCPProxy(backends, top_k=5, passthrough_threshold=0)
+
+    async def fake_open(self, cfg, stack):
+        await asyncio.sleep(0.2)
+        tool = types.Tool(
+            name=f"{cfg.name}_tool",
+            description="d",
+            inputSchema={"type": "object", "properties": {}},
+        )
+        return BackendConnection(config=cfg, session=None, tools=[tool])
+
+    monkeypatch.setattr(MCPProxy, "_open_backend", fake_open)
+
+    assert proxy.is_ready  # never started connecting counts as ready
+
+    t0 = time.monotonic()
+    task = asyncio.create_task(proxy.connect_backends())
+    await asyncio.sleep(0)
+    assert not proxy.is_ready  # connect in progress
+    await task
+    elapsed = time.monotonic() - t0
+
+    assert proxy.is_ready
+    assert elapsed < 0.5, f"3 x 0.2s backends should connect in parallel, took {elapsed:.2f}s"
+    assert set(proxy.all_tools) == {"b0_tool", "b1_tool", "b2_tool"}
+    assert proxy.is_gateway_mode
+    await proxy.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_connect_backends_collision_prefix_is_config_ordered(monkeypatch):
+    """Collision prefixing follows config order even if backends finish out of order."""
+    mcp_mod = pytest.importorskip("mcp", reason="mcp required")
+    types = mcp_mod.types
+
+    import asyncio
+
+    from graph_tool_call.mcp_proxy import BackendConnection
+
+    backends = [
+        BackendConfig(name="first", command="true"),
+        BackendConfig(name="second", command="true"),
+    ]
+    proxy = MCPProxy(backends, top_k=5, passthrough_threshold=0)
+
+    async def fake_open(self, cfg, stack):
+        # "first" finishes last on purpose
+        await asyncio.sleep(0.1 if cfg.name == "first" else 0.0)
+        tool = types.Tool(
+            name="shared",
+            description="d",
+            inputSchema={"type": "object", "properties": {}},
+        )
+        return BackendConnection(config=cfg, session=None, tools=[tool])
+
+    monkeypatch.setattr(MCPProxy, "_open_backend", fake_open)
+
+    await proxy.connect_backends()
+
+    assert proxy.tool_to_backend["shared"] == "first"
+    assert proxy.tool_to_backend["second__shared"] == "second"
+    await proxy.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_wait_ready_timeout_returns_false():
+    proxy = MCPProxy([], top_k=5)
+    proxy._connect_started = True
+    assert not await proxy.wait_ready(0.05)
+
+
+@pytest.mark.asyncio
+async def test_list_tools_before_ready_serves_meta_tools():
+    """tools/list answers immediately with meta-tools while backends connect."""
+    mcp_mod = pytest.importorskip("mcp", reason="mcp required")
+    types = mcp_mod.types
+
+    from graph_tool_call.mcp_proxy import create_proxy_server
+
+    proxy = MCPProxy([], top_k=5, passthrough_threshold=100)
+    proxy._connect_started = True  # lazy connect in progress
+    server = create_proxy_server(proxy)
+    handler = server.request_handlers[types.ListToolsRequest]
+
+    result = await handler(types.ListToolsRequest(method="tools/list"))
+    names = [t.name for t in result.root.tools]
+    assert "search_tools" in names
+    assert "call_backend_tool" in names
+
+
+@pytest.mark.asyncio
+async def test_list_tools_after_ready_passthrough_clears_refresh_flag():
+    mcp_mod = pytest.importorskip("mcp", reason="mcp required")
+    types = mcp_mod.types
+
+    from graph_tool_call.mcp_proxy import create_proxy_server
+
+    proxy = MCPProxy([], top_k=5, passthrough_threshold=100)
+    proxy._connect_started = True
+    proxy._all_tools = {
+        "a": types.Tool(
+            name="a",
+            description="d",
+            inputSchema={"type": "object", "properties": {}},
+        )
+    }
+    proxy._gateway_mode = False
+    proxy._list_refresh_pending = True
+    proxy._ready.set()
+
+    server = create_proxy_server(proxy)
+    handler = server.request_handlers[types.ListToolsRequest]
+
+    result = await handler(types.ListToolsRequest(method="tools/list"))
+    names = [t.name for t in result.root.tools]
+    assert names == ["a"]
+    assert not proxy._list_refresh_pending
+
+
+@pytest.mark.asyncio
+async def test_call_tool_waits_for_lazy_ready():
+    """A tool call arriving before readiness blocks until ready, then runs."""
+    mcp_mod = pytest.importorskip("mcp", reason="mcp required")
+    types = mcp_mod.types
+
+    import asyncio
+
+    from graph_tool_call.mcp_proxy import create_proxy_server
+
+    proxy = MCPProxy([], top_k=5, passthrough_threshold=0)
+    proxy._connect_started = True  # not ready yet
+    server = create_proxy_server(proxy)
+    handler = server.request_handlers[types.CallToolRequest]
+
+    async def finish_connect():
+        await asyncio.sleep(0.05)
+        proxy._build_tool_graph()
+        proxy._all_tools = {
+            "x": types.Tool(
+                name="x",
+                description="d",
+                inputSchema={"type": "object", "properties": {}},
+            )
+        }
+        proxy._gateway_mode = True
+        proxy._ready.set()
+
+    finisher = asyncio.create_task(finish_connect())
+    request = types.CallToolRequest(
+        method="tools/call",
+        params=types.CallToolRequestParams(
+            name="get_tool_schema",
+            arguments={"tool_name": "x"},
+        ),
+    )
+    result = await handler(request)
+    await finisher
+
+    assert proxy.is_ready
+    schema = json.loads(result.root.content[0].text)
+    assert schema["name"] == "x"
