@@ -751,3 +751,40 @@ async def test_call_tool_waits_for_lazy_ready():
     assert proxy.is_ready
     schema = json.loads(result.root.content[0].text)
     assert schema["name"] == "x"
+
+
+@pytest.mark.asyncio
+async def test_ready_grace_does_not_wait_for_stragglers(monkeypatch):
+    """Proxy goes ready after the grace period; a slow backend joins later."""
+    mcp_mod = pytest.importorskip("mcp", reason="mcp required")
+    types = mcp_mod.types
+
+    import asyncio
+
+    from graph_tool_call.mcp_proxy import BackendConnection
+
+    backends = [
+        BackendConfig(name="fast", command="true"),
+        BackendConfig(name="slow", command="true"),
+    ]
+    proxy = MCPProxy(backends, top_k=5, passthrough_threshold=0, ready_grace=0.1)
+
+    async def fake_open(self, cfg, stack):
+        await asyncio.sleep(0.5 if cfg.name == "slow" else 0.0)
+        tool = types.Tool(
+            name=f"{cfg.name}_tool",
+            description="d",
+            inputSchema={"type": "object", "properties": {}},
+        )
+        return BackendConnection(config=cfg, session=None, tools=[tool])
+
+    monkeypatch.setattr(MCPProxy, "_open_backend", fake_open)
+
+    task = proxy.start_connect()
+    assert await proxy.wait_ready(0.4), "should be ready before the slow backend connects"
+    assert set(proxy.all_tools) == {"fast_tool"}
+
+    await task
+    assert set(proxy.all_tools) == {"fast_tool", "slow_tool"}
+    assert proxy._list_refresh_pending
+    await proxy.shutdown()

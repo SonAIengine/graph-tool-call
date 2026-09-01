@@ -333,6 +333,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Per-backend connect budget in seconds (default: 120)",
     )
+    p_proxy.add_argument(
+        "--ready-grace",
+        type=float,
+        default=None,
+        help="Seconds to wait for all backends before going ready without stragglers (default: 15)",
+    )
 
     # --- call (search + execute) ---
     p_call = sub.add_parser("call", help="Search + execute an API tool via HTTP")
@@ -898,6 +904,9 @@ def cmd_proxy(args: argparse.Namespace) -> None:
             args.backend_timeout
             if args.backend_timeout is not None
             else options.get("backend_timeout", 120.0)
+        ),
+        ready_grace=(
+            args.ready_grace if args.ready_grace is not None else options.get("ready_grace", 15.0)
         ),
     )
 

@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--eager` CLI flag and `"lazy": false` config key to restore
   connect-before-serve, plus `--backend-timeout` / `"backend_timeout"` for a
   per-backend connect budget (default 120s).
+- Progressive readiness: after `--ready-grace` / `"ready_grace"` seconds
+  (default 15) the proxy goes ready with whichever backends have connected;
+  stragglers join later with a graph rebuild and a `tools/list_changed`
+  refresh, so one hung backend cannot delay every tool call.
 
 ### Changed
 - Backend connections are owned by per-backend runner tasks, keeping anyio
