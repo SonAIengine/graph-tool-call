@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Lazy proxy startup: the MCP proxy now serves `initialize`/`tools/list`
+  immediately and connects backends in a parallel background task, so clients
+  with short connect timeouts (Claude Code: 10s) no longer fail on slow
+  backend startup. Tool calls arriving early wait for readiness.
+- `--eager` CLI flag and `"lazy": false` config key to restore
+  connect-before-serve, plus `--backend-timeout` / `"backend_timeout"` for a
+  per-backend connect budget (default 120s).
+- Progressive readiness: after `--ready-grace` / `"ready_grace"` seconds
+  (default 15) the proxy goes ready with whichever backends have connected;
+  stragglers join later with a graph rebuild and a `tools/list_changed`
+  refresh, so one hung backend cannot delay every tool call.
+
+### Changed
+- Backend connections are owned by per-backend runner tasks, keeping anyio
+  cancel scopes task-local during shutdown, and backends now connect in
+  parallel instead of sequentially.
+- Gateway and passthrough modes are resolved per request by a single server;
+  a `tools/list_changed` notification is attempted when passthrough mode is
+  decided after a lazy start.
+
 ## [0.46.0] - 2026-08-18
 
 ### Changed

@@ -50,21 +50,33 @@ Config format (backends.json)::
         "top_k": 10,
         "embedding": "ollama/qwen3-embedding:0.6b",
         "passthrough_threshold": 30,
-        "cache_path": "/tmp/graph-tool-call-proxy-cache.json"
+        "cache_path": "/tmp/graph-tool-call-proxy-cache.json",
+        "lazy": true,
+        "backend_timeout": 120
     }
 
 Or use .mcp.json format directly (``mcpServers`` key).
+
+Startup
+-------
+By default the proxy serves MCP requests **immediately** and connects
+backends in parallel in the background (lazy startup), so clients with a
+short initialize timeout (Claude Code: 10s) never fail on slow backend
+startup (``npx``/``uvx`` cold caches, embedding builds). Tool calls that
+arrive before backends are ready wait for readiness. Use ``--eager`` or
+``"lazy": false`` to restore connect-before-serve.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
 import os
 import re
 import sys
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -73,6 +85,17 @@ logger = logging.getLogger("graph-tool-call.mcp-proxy")
 
 # Default: if total tools <= this, expose all directly (no gateway overhead)
 DEFAULT_PASSTHROUGH_THRESHOLD = 30
+
+# Default per-backend connect budget (seconds). A hung backend must not block
+# proxy readiness forever.
+DEFAULT_BACKEND_TIMEOUT = 120.0
+
+# Default grace period (seconds) to wait for all backends before going ready
+# with whichever have connected; stragglers join later with a list refresh.
+DEFAULT_READY_GRACE = 15.0
+
+# How long a tool call waits for backends before giving up (seconds)
+_READY_WAIT_SECONDS = 90.0
 
 # Max description length in search results (truncated with "...")
 _SEARCH_DESC_MAX = 120
@@ -134,6 +157,8 @@ class MCPProxy:
         cache_path: str | None = None,
         compress_results: bool = False,
         compress_max_chars: int = 4000,
+        backend_timeout: float = DEFAULT_BACKEND_TIMEOUT,
+        ready_grace: float = DEFAULT_READY_GRACE,
     ):
         self._backends_config = backends
         self._connections: dict[str, BackendConnection] = {}
@@ -144,8 +169,20 @@ class MCPProxy:
         self._embedding = embedding  # True, False, or provider string
         self._passthrough_threshold = passthrough_threshold
         self._gateway_mode: bool = False  # determined after connect
-        self._exit_stack: AsyncExitStack | None = None
         self._cache_path = Path(cache_path) if cache_path else None
+        # Lazy-startup lifecycle: each backend's connection contexts are owned
+        # by a dedicated runner task so shutdown never crosses anyio
+        # cancel-scope task boundaries.
+        self._backend_timeout = backend_timeout
+        self._ready_grace = ready_grace
+        self._connect_started = False
+        self._ready = asyncio.Event()
+        self._shutdown_event: asyncio.Event | None = None
+        self._runner_tasks: list[asyncio.Task[None]] = []
+        self._pending_conns: dict[str, BackendConnection] = {}
+        # Set when the visible tool list changed while no client was looking
+        # (e.g. passthrough mode decided after a lazy start)
+        self._list_refresh_pending = False
         # Dynamic tool injection: tools exposed after search
         self._exposed_tools: dict[str, Any] = {}  # name -> mcp.types.Tool
         # Session history: track tool calls for history-aware retrieval
@@ -176,63 +213,167 @@ class MCPProxy:
     def is_gateway_mode(self) -> bool:
         return self._gateway_mode
 
+    @property
+    def is_ready(self) -> bool:
+        """True once backends are connected and the tool graph is built.
+
+        A proxy that never started connecting (unit tests wiring internals
+        directly) counts as ready.
+        """
+        return self._ready.is_set() or not self._connect_started
+
+    async def wait_ready(self, timeout: float | None = None) -> bool:
+        """Wait until the proxy is ready. Returns False on timeout."""
+        if self.is_ready:
+            return True
+        try:
+            await asyncio.wait_for(self._ready.wait(), timeout)
+        except asyncio.TimeoutError:
+            return False
+        return True
+
+    def start_connect(self) -> asyncio.Task[None]:
+        """Start connecting in the background.
+
+        Marks the proxy as not-ready synchronously, so a request racing the
+        first scheduling of the connect task cannot observe a ready proxy
+        with zero tools.
+        """
+        self._connect_started = True
+        return asyncio.create_task(self.connect_backends())
+
     async def connect_backends(self) -> None:
-        """Connect to stdio or remote MCP backends and collect tools."""
-        from mcp import ClientSession
+        """Connect all backends in parallel and collect tools.
 
-        self._exit_stack = AsyncExitStack()
-        await self._exit_stack.__aenter__()
+        Safe to run in a background task while the MCP server is already
+        answering requests: readiness is signaled via ``wait_ready()``.
 
+        Readiness is not held hostage by the slowest backend: after
+        ``ready_grace`` seconds the proxy goes ready with whichever backends
+        have connected, and stragglers join later with a tool-list refresh.
+        """
+        self._connect_started = True
+        self._shutdown_event = asyncio.Event()
+
+        loop = asyncio.get_running_loop()
+        attempted: list[asyncio.Future[None]] = []
         for cfg in self._backends_config:
-            try:
-                read_stream, write_stream = await self._connect_backend(cfg)
-                session = await self._exit_stack.enter_async_context(
-                    ClientSession(read_stream, write_stream)
-                )
-                await session.initialize()
-                result = await session.list_tools()
-                tools = result.tools
-                logger.info("Connected to %s: %d tools", cfg.name, len(tools))
-                conn = BackendConnection(config=cfg, session=session, tools=tools)
-            except Exception as exc:
-                logger.warning("Failed to connect to %s: %s", cfg.name, exc)
-                continue
-            self._connections[cfg.name] = conn
-            for tool in conn.tools:
-                name = tool.name
-                if name in self._tool_to_backend:
-                    original_backend = self._tool_to_backend[name]
-                    logger.warning(
-                        "Tool name collision: '%s' from '%s' and '%s'. "
-                        "Prefixing with backend name.",
-                        name,
-                        original_backend,
-                        cfg.name,
-                    )
-                    prefixed = f"{cfg.name}__{name}"
-                    self._tool_to_backend[prefixed] = cfg.name
-                    self._all_tools[prefixed] = tool
-                else:
-                    self._tool_to_backend[name] = cfg.name
-                    self._all_tools[name] = tool
+            fut: asyncio.Future[None] = loop.create_future()
+            attempted.append(fut)
+            self._runner_tasks.append(asyncio.create_task(self._backend_runner(cfg, fut)))
 
-        self._build_tool_graph()
+        pending: set[asyncio.Future[None]] = set()
+        if attempted:
+            _, pending = await asyncio.wait(attempted, timeout=self._ready_grace)
+        if pending:
+            slow = [
+                cfg.name for cfg, fut in zip(self._backends_config, attempted) if fut in pending
+            ]
+            logger.warning(
+                "Going ready without slow backends (still connecting): %s",
+                ", ".join(slow),
+            )
 
-        # Decide mode
-        total = len(self._all_tools)
-        self._gateway_mode = total > self._passthrough_threshold
-        mode = "gateway" if self._gateway_mode else "passthrough"
+        self._register_pending_conns()
+        await loop.run_in_executor(None, self._build_tool_graph)
+        self._decide_mode()
         logger.info(
             "Proxy ready: %d backends, %d tools, mode=%s",
             len(self._connections),
-            total,
-            mode,
+            len(self._all_tools),
+            "gateway" if self._gateway_mode else "passthrough",
         )
+        self._ready.set()
 
-    async def _connect_backend(self, cfg: BackendConfig) -> tuple[Any, Any]:
-        if self._exit_stack is None:
-            raise RuntimeError("Proxy connection stack is not initialized")
+        if pending:
+            await asyncio.wait(pending)
+            if self._register_pending_conns():
+                await loop.run_in_executor(None, self._build_tool_graph)
+                self._decide_mode()
+                self._list_refresh_pending = True
+                logger.info(
+                    "Late backends joined: %d backends, %d tools, mode=%s",
+                    len(self._connections),
+                    len(self._all_tools),
+                    "gateway" if self._gateway_mode else "passthrough",
+                )
 
+    def _register_pending_conns(self) -> bool:
+        """Register connected-but-unregistered backends in config order.
+
+        Config order keeps tool-name collision prefixes deterministic
+        regardless of which backend connected first.
+        """
+        registered = False
+        for cfg in self._backends_config:
+            conn = self._pending_conns.pop(cfg.name, None)
+            if conn is not None:
+                self._register_backend(conn)
+                registered = True
+        return registered
+
+    def _decide_mode(self) -> None:
+        self._gateway_mode = len(self._all_tools) > self._passthrough_threshold
+        if not self._gateway_mode:
+            self._list_refresh_pending = True
+
+    async def _backend_runner(self, cfg: BackendConfig, attempted: asyncio.Future[None]) -> None:
+        """Own one backend's connection contexts for the proxy's lifetime.
+
+        anyio requires stream contexts to enter and exit in the same task, so
+        the runner connects, parks until shutdown, then unwinds its own stack.
+        """
+        try:
+            async with AsyncExitStack() as stack:
+                try:
+                    conn = await asyncio.wait_for(
+                        self._open_backend(cfg, stack), self._backend_timeout
+                    )
+                    self._pending_conns[cfg.name] = conn
+                except Exception as exc:
+                    detail = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+                    logger.warning("Failed to connect to %s (%s)", cfg.name, detail)
+                    return
+                finally:
+                    if not attempted.done():
+                        attempted.set_result(None)
+                if self._shutdown_event is not None:
+                    await self._shutdown_event.wait()
+        finally:
+            if not attempted.done():
+                attempted.set_result(None)
+
+    async def _open_backend(self, cfg: BackendConfig, stack: AsyncExitStack) -> BackendConnection:
+        from mcp import ClientSession
+
+        read_stream, write_stream = await self._connect_backend(cfg, stack)
+        session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
+        await session.initialize()
+        result = await session.list_tools()
+        logger.info("Connected to %s: %d tools", cfg.name, len(result.tools))
+        return BackendConnection(config=cfg, session=session, tools=result.tools)
+
+    def _register_backend(self, conn: BackendConnection) -> None:
+        cfg = conn.config
+        self._connections[cfg.name] = conn
+        for tool in conn.tools:
+            name = tool.name
+            if name in self._tool_to_backend:
+                original_backend = self._tool_to_backend[name]
+                logger.warning(
+                    "Tool name collision: '%s' from '%s' and '%s'. Prefixing with backend name.",
+                    name,
+                    original_backend,
+                    cfg.name,
+                )
+                prefixed = f"{cfg.name}__{name}"
+                self._tool_to_backend[prefixed] = cfg.name
+                self._all_tools[prefixed] = tool
+            else:
+                self._tool_to_backend[name] = cfg.name
+                self._all_tools[name] = tool
+
+    async def _connect_backend(self, cfg: BackendConfig, stack: AsyncExitStack) -> tuple[Any, Any]:
         if cfg.url:
             transport = cfg.transport or (
                 "sse" if cfg.url.rstrip("/").endswith("/sse") else "streamable-http"
@@ -241,9 +382,7 @@ class MCPProxy:
             if transport == "sse":
                 from mcp.client.sse import sse_client
 
-                connection = await self._exit_stack.enter_async_context(
-                    sse_client(cfg.url, headers=headers)
-                )
+                connection = await stack.enter_async_context(sse_client(cfg.url, headers=headers))
                 return connection[0], connection[1]
             if transport != "streamable-http":
                 raise ValueError(f"Remote MCP backend requires sse or streamable-http: {cfg.name}")
@@ -260,11 +399,11 @@ class MCPProxy:
                 if headers:
                     import httpx
 
-                    http_client = await self._exit_stack.enter_async_context(
+                    http_client = await stack.enter_async_context(
                         httpx.AsyncClient(headers=headers)
                     )
                 client_context = streamable_client(cfg.url, http_client=http_client)
-            connection = await self._exit_stack.enter_async_context(client_context)
+            connection = await stack.enter_async_context(client_context)
             return connection[0], connection[1]
 
         from mcp import StdioServerParameters
@@ -275,7 +414,7 @@ class MCPProxy:
             args=cfg.args,
             env=cfg.env,
         )
-        return await self._exit_stack.enter_async_context(stdio_client(params))
+        return await stack.enter_async_context(stdio_client(params))
 
     def _tool_fingerprint(self) -> str:
         """Hash of all tool names — used for cache invalidation."""
@@ -321,14 +460,19 @@ class MCPProxy:
             logger.warning("Cache save failed: %s", exc)
 
     def _build_tool_graph(self) -> None:
-        """Build ToolGraph from all collected backend tools."""
+        """Build ToolGraph from all collected backend tools.
+
+        Builds into a local graph and swaps it in at the end, so searches
+        running concurrently (straggler rebuilds happen off-loop while the
+        server keeps answering) never see a half-built graph.
+        """
         # Try cache first
         if self._try_load_cache():
             return
 
         from graph_tool_call import ToolGraph
 
-        self._tg = ToolGraph()
+        tg = ToolGraph()
         for backend_name, conn in self._connections.items():
             tool_dicts = []
             for tool in conn.tools:
@@ -344,19 +488,21 @@ class MCPProxy:
                         pass
                 tool_dicts.append(d)
             if tool_dicts:
-                self._tg.ingest_mcp_tools(tool_dicts, server_name=backend_name)
+                tg.ingest_mcp_tools(tool_dicts, server_name=backend_name)
 
         # Enable embedding for cross-language search
-        if self._embedding and self._tg.tools:
+        if self._embedding and tg.tools:
             try:
                 provider = self._embedding if isinstance(self._embedding, str) else None
                 if provider:
-                    self._tg.enable_embedding(provider)
+                    tg.enable_embedding(provider)
                 else:
-                    self._tg.enable_embedding()
-                logger.info("Embedding enabled (%d tools indexed)", len(self._tg.tools))
+                    tg.enable_embedding()
+                logger.info("Embedding enabled (%d tools indexed)", len(tg.tools))
             except Exception as exc:
                 logger.warning("Embedding unavailable, BM25-only: %s", exc)
+
+        self._tg = tg
 
         # Save cache for next startup
         self._save_cache()
@@ -452,10 +598,19 @@ class MCPProxy:
         return await conn.session.call_tool(actual_name, arguments)
 
     async def shutdown(self) -> None:
-        """Disconnect all backends."""
-        if self._exit_stack:
-            await self._exit_stack.aclose()
-            self._exit_stack = None
+        """Disconnect all backends; each runner unwinds its own contexts."""
+        if self._shutdown_event is not None:
+            self._shutdown_event.set()
+        if self._runner_tasks:
+            # Connected runners exit via the shutdown event; cancel only the
+            # ones still stuck mid-connect.
+            _, pending = await asyncio.wait(self._runner_tasks, timeout=5)
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+        self._runner_tasks.clear()
+        self._pending_conns.clear()
         self._connections.clear()
 
 
@@ -529,22 +684,25 @@ def create_proxy_server(
 ) -> Any:
     """Create a low-level MCP Server wired to the proxy.
 
+    The server can start answering requests **before** backends are connected
+    (lazy startup): the mode is resolved per request, and tool calls wait for
+    readiness. Until then the gateway meta-tools are listed.
+
     In **gateway mode** (many tools), exposes ``search_tools``,
     ``get_tool_schema``, and ``call_backend_tool`` meta-tools.
     After search, matched backend tools are dynamically injected
     into ``tools/list`` for 1-hop direct calling.
 
     In **passthrough mode** (few tools), exposes all backend tools directly.
+    A ``tools/list_changed`` notification is attempted once passthrough mode
+    is decided after a lazy start.
     """
     _check_mcp_installed()
 
     from mcp.server.lowlevel import Server
 
     server = Server("graph-tool-call-proxy")
-
-    if proxy.is_gateway_mode:
-        return _create_gateway_server(server, proxy)
-    return _create_passthrough_server(server, proxy)
+    return _register_proxy_handlers(server, proxy)
 
 
 def _maybe_compress_content(content: list[Any], proxy: MCPProxy) -> list[Any]:
@@ -567,27 +725,53 @@ def _maybe_compress_content(content: list[Any], proxy: MCPProxy) -> list[Any]:
     return result
 
 
-def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
-    """Gateway mode: search + get_schema + dynamic tool injection.
+def _register_proxy_handlers(server: Any, proxy: MCPProxy) -> Any:
+    """Register mode-aware ``tools/list`` and ``tools/call`` handlers.
 
-    After ``search_tools`` is called, matched backend tools are added to
-    ``proxy._exposed_tools``.  On the next ``tools/list`` request (triggered
-    by the SDK's automatic cache-miss refresh), those tools appear as
-    first-class callable tools — enabling **1-hop direct calling**.
+    Gateway behavior: after ``search_tools`` is called, matched backend tools
+    are added to ``proxy._exposed_tools``.  On the next ``tools/list`` request
+    (triggered by the SDK's automatic cache-miss refresh), those tools appear
+    as first-class callable tools — enabling **1-hop direct calling**.
+
+    While backends are still connecting, ``tools/list`` serves the gateway
+    meta-tools immediately so client initialization never blocks on backend
+    startup; ``tools/call`` waits for readiness.
     """
     import mcp.types as types
 
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:
+        if proxy.is_ready and not proxy.is_gateway_mode:
+            # Passthrough: the client is now looking at the real tool list
+            proxy._list_refresh_pending = False
+            return [
+                types.Tool(
+                    name=name,
+                    description=tool.description or "",
+                    inputSchema=tool.inputSchema if tool.inputSchema else {},
+                )
+                for name, tool in proxy._all_tools.items()
+            ]
+
+        if proxy.is_ready:
+            search_desc = (
+                f"Search across {len(proxy._all_tools)} tools from "
+                f"{proxy.backend_count} MCP servers. Returns matching "
+                "tools ranked by relevance. After search, matched tools "
+                "become directly callable by name."
+            )
+        else:
+            search_desc = (
+                "Search across backend MCP tools (backends are still "
+                "connecting; the first call may wait a moment). Returns "
+                "matching tools ranked by relevance. After search, matched "
+                "tools become directly callable by name."
+            )
+
         meta_tools = [
             types.Tool(
                 name="search_tools",
-                description=(
-                    f"Search across {len(proxy._all_tools)} tools from "
-                    f"{proxy.backend_count} MCP servers. Returns matching "
-                    "tools ranked by relevance. After search, matched tools "
-                    "become directly callable by name."
-                ),
+                description=search_desc,
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -668,6 +852,24 @@ def _create_gateway_server(server: Any, proxy: MCPProxy) -> Any:
     async def call_tool(
         name: str, arguments: dict[str, Any]
     ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+        if not proxy.is_ready:
+            if not await proxy.wait_ready(_READY_WAIT_SECONDS):
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=(
+                            "Proxy backends are still connecting "
+                            f"(waited {int(_READY_WAIT_SECONDS)}s). "
+                            "Retry in a moment."
+                        ),
+                    )
+                ]
+
+        # Lazy start decided passthrough mode after the client fetched the
+        # initial (gateway) tool list — ask it to refresh.
+        if proxy._list_refresh_pending and await _notify_tool_list_changed(server):
+            proxy._list_refresh_pending = False
+
         # --- Meta-tool: search_tools ---
         if name == "search_tools":
             query = arguments.get("query", "")
@@ -766,33 +968,6 @@ def _proxy_initialization_options(server: Any) -> Any:
     )
 
 
-def _create_passthrough_server(server: Any, proxy: MCPProxy) -> Any:
-    """Passthrough mode: expose all backend tools directly."""
-    import mcp.types as types
-
-    @server.list_tools()
-    async def list_tools() -> list[types.Tool]:
-        result: list[types.Tool] = []
-        for name, tool in proxy._all_tools.items():
-            result.append(
-                types.Tool(
-                    name=name,
-                    description=tool.description or "",
-                    inputSchema=tool.inputSchema if tool.inputSchema else {},
-                )
-            )
-        return result
-
-    @server.call_tool()
-    async def call_tool(
-        name: str, arguments: dict[str, Any]
-    ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-        result = await proxy.call_tool(name, arguments)
-        return _maybe_compress_content(result.content, proxy)
-
-    return server
-
-
 async def _run_proxy_async(
     backends: list[BackendConfig],
     *,
@@ -803,19 +978,35 @@ async def _run_proxy_async(
     transport: str = "stdio",
     host: str = "127.0.0.1",
     port: int = 8000,
+    lazy: bool = True,
+    backend_timeout: float = DEFAULT_BACKEND_TIMEOUT,
+    ready_grace: float = DEFAULT_READY_GRACE,
 ) -> None:
-    """Run the proxy server (async entry point)."""
+    """Run the proxy server (async entry point).
+
+    With ``lazy=True`` (default) the MCP server starts serving immediately and
+    backends connect in a background task, so clients with a short initialize
+    timeout (e.g. Claude Code's 10s MCP connect budget) never time out on
+    slow backend startup. ``lazy=False`` restores the old eager behavior.
+    """
     proxy = MCPProxy(
         backends,
         top_k=top_k,
         embedding=embedding,
         passthrough_threshold=passthrough_threshold,
         cache_path=cache_path,
+        backend_timeout=backend_timeout,
+        ready_grace=ready_grace,
     )
 
+    connect_task: asyncio.Task[None] | None = None
     try:
-        await proxy.connect_backends()
         server = create_proxy_server(proxy)
+        if lazy:
+            connect_task = proxy.start_connect()
+            connect_task.add_done_callback(_log_connect_result)
+        else:
+            await proxy.connect_backends()
 
         if transport == "stdio":
             import mcp.server.stdio
@@ -833,7 +1024,20 @@ async def _run_proxy_async(
         else:
             raise ValueError(f"Unknown transport: {transport}")
     finally:
+        if connect_task is not None and not connect_task.done():
+            connect_task.cancel()
+        if connect_task is not None:
+            with suppress(asyncio.CancelledError, Exception):
+                await connect_task
         await proxy.shutdown()
+
+
+def _log_connect_result(task: asyncio.Task[None]) -> None:
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("Background backend connection failed: %s", exc)
 
 
 async def _run_proxy_sse(server: Any, host: str, port: int) -> None:
@@ -930,6 +1134,9 @@ def run_proxy(
     transport: str = "stdio",
     host: str = "127.0.0.1",
     port: int = 8000,
+    lazy: bool = True,
+    backend_timeout: float = DEFAULT_BACKEND_TIMEOUT,
+    ready_grace: float = DEFAULT_READY_GRACE,
 ) -> None:
     """Run the MCP proxy (blocking entry point).
 
@@ -941,14 +1148,20 @@ def run_proxy(
         Bind address for SSE/Streamable-HTTP (default: 127.0.0.1).
     port:
         Port for SSE/Streamable-HTTP (default: 8000).
+    lazy:
+        Serve immediately and connect backends in the background (default).
+        Set False to connect all backends before serving.
+    backend_timeout:
+        Per-backend connect budget in seconds (default: 120).
+    ready_grace:
+        Seconds to wait for all backends before going ready with whichever
+        have connected (default: 15); stragglers join later.
     """
     try:
         _check_mcp_installed()
     except ImportError as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)
-
-    import asyncio
 
     asyncio.run(
         _run_proxy_async(
@@ -960,5 +1173,8 @@ def run_proxy(
             transport=transport,
             host=host,
             port=port,
+            lazy=lazy,
+            backend_timeout=backend_timeout,
+            ready_grace=ready_grace,
         )
     )
