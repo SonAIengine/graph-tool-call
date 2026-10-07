@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from graph_tool_call.core.tool import ToolParameter, ToolSchema
-from graph_tool_call.retrieval.keyword import BM25Scorer
+from graph_tool_call.retrieval.keyword import BM25Scorer, _path_context_text
 
 
 def _make_tool(
@@ -409,3 +409,33 @@ def test_mixed_korean_english():
     assert "해지" in tokens
     # English parts from camelCase split — "order" and "cancel" are part of mixed tokens
     # They remain as part of their original tokens since there's no camelCase boundary
+
+
+def test_path_context_text_describes_deep_paths_only():
+    assert _path_context_text("get", "/items/{id}") == ""
+    assert _path_context_text("get", "/api/v1/nodes/list") == "cluster-wide"
+    assert (
+        _path_context_text("get", "/api/v1/namespaces/{namespace}/pods/{name}/status")
+        == "namespaced, status of pods"
+    )
+    assert (
+        _path_context_text("DELETE", "/api/v1/namespaces/{namespace}/pods")
+        == "namespaced, collection"
+    )
+
+
+def test_path_context_is_indexed_without_changing_description():
+    tool = ToolSchema(
+        name="readPodStatus",
+        description="read the specified Pod",
+        metadata={"method": "get", "path": "/api/v1/namespaces/{namespace}/pods/{name}/status"},
+    )
+    other = ToolSchema(
+        name="readPod",
+        description="read the specified Pod",
+        metadata={"method": "get", "path": "/api/v1/namespaces/{namespace}/pods/{name}"},
+    )
+    scorer = BM25Scorer({tool.name: tool, other.name: other})
+    scores = scorer.score("status of a pod")
+    assert scores["readPodStatus"] > scores.get("readPod", 0.0)
+    assert tool.description == "read the specified Pod"

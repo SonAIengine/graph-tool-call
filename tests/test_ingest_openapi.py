@@ -2360,6 +2360,43 @@ class TestDescriptionFallback:
         tools, _ = ingest_openapi(spec)
         assert tools[0].description == "POST /items [items, crud]"
 
+    def test_deep_paths_keep_source_description(self) -> None:
+        """Path-derived scope hints are index-only and never appended to descriptions."""
+        spec: dict = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/admin/menus/list": {
+                    "get": {
+                        "operationId": "listMenus",
+                        "summary": "메뉴 목록 조회",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
+                "/api/v1/namespaces/{namespace}/pods/{name}/status": {
+                    "get": {
+                        "operationId": "readPodStatus",
+                        "summary": "read status of the specified Pod",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
+                "/api/v1/namespaces/{namespace}/pods": {
+                    "delete": {
+                        "operationId": "deletePods",
+                        "summary": "delete collection of Pod",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
+            },
+        }
+        tools, _ = ingest_openapi(spec)
+        descriptions = {tool.name: tool.description for tool in tools}
+        assert descriptions == {
+            "listMenus": "메뉴 목록 조회",
+            "readPodStatus": "read status of the specified Pod",
+            "deletePods": "delete collection of Pod",
+        }
+
 
 class TestMalformedParameters:
     def test_malformed_param_without_name_skipped(self) -> None:
