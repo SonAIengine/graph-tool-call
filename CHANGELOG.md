@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-10-09
+
+### Added
+- `benchmarks/openapi_request_recall`: a natural-language request to OpenAPI operation
+  recall harness that uses the same public path as collection consumers
+  (`build_openapi_collection_artifact` then `retrieve_with_scores`), with Gitea and
+  WireMock design cases.
+
+### Changed
+- OpenAPI ingest keeps the source summary/description as the tool description.
+  Path-derived scope hints (`namespaced`, `cluster-wide`, `<sub> of <parent>`,
+  `collection`) are no longer appended to descriptions; they are used only as BM25
+  index tokens, so retrieval ranking is unchanged while descriptions shown to
+  planners no longer contain statements absent from the source.
+
+### Fixed
+- The first results of `retrieve_with_scores` no longer depend on the requested
+  `top_k`. The strong-keyword guard now lifts candidates into a fixed head of five
+  results instead of above the `top_k`-th score, so callers requesting 10 or 20
+  results see the same first five as a `top_k=5` request.
+
 ## [0.46.0] - 2026-08-18
 
 ### Changed
@@ -766,7 +787,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests**: 32 tests passing across all modules
 - **Example**: `quickstart.py` demonstrating full workflow
 
-[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.46.0...HEAD
+[Unreleased]: https://github.com/SonAIengine/graph-tool-call/compare/v0.47.0...HEAD
 [0.39.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/SonAIengine/graph-tool-call/compare/v0.36.0...v0.37.0
