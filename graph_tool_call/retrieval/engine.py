@@ -15,6 +15,11 @@ from graph_tool_call.retrieval.graph_search import GraphSearcher
 from graph_tool_call.retrieval.keyword import BM25Scorer
 from graph_tool_call.retrieval.ranking import stable_score_items
 
+# Strong lexical winners are lifted into this fixed head of the ranking. It must not
+# follow the requested top_k, or the first results would change with how many
+# results the caller asks for.
+_DOMINANT_KEYWORD_HEAD = 5
+
 _CLAUSE_ACTION_PATTERN = re.compile(
     r"\b("
     r"find|get|retrieve|search|calculate|compute|convert|make|create|return|fit|"
@@ -398,7 +403,7 @@ class RetrievalEngine:
         self._preserve_dominant_keyword_candidates(
             keyword_scores,
             final_scores,
-            top_k,
+            _DOMINANT_KEYWORD_HEAD,
             allow_top_rank_promotion=not self._has_diverse_actionable_clauses(query),
         )
         semantic_scores = self._boost_structured_semantics(query, final_scores)
@@ -971,7 +976,7 @@ class RetrievalEngine:
     def _preserve_dominant_keyword_candidates(
         keyword_scores: dict[str, float],
         final_scores: dict[str, float],
-        top_k: int,
+        head: int,
         *,
         allow_top_rank_promotion: bool = True,
     ) -> None:
@@ -980,13 +985,13 @@ class RetrievalEngine:
         wRRF, clause injection, and semantic boosts are rank-based by design,
         which keeps unrelated raw score scales from dominating the whole
         pipeline. The tradeoff is that a very strong BM25 winner can sometimes
-        slide just below ``top_k`` or sit behind a close sibling when multiple
+        slide below the first ``head`` results or sit behind a close sibling when multiple
         auxiliary hints agree. This conservative guard only lifts top lexical
         candidates whose raw BM25 score is both strong in absolute terms and
         close to the keyword leader, preserving exact operationId/schema
         evidence without making weak keyword tails noisy.
         """
-        if top_k <= 0 or not keyword_scores or not final_scores:
+        if head <= 0 or not keyword_scores or not final_scores:
             return
 
         ranked_keyword = [
@@ -1005,8 +1010,8 @@ class RetrievalEngine:
         if not ranked_final:
             return
 
-        top_names = {name for name, _score in ranked_final[:top_k]}
-        boundary_score = ranked_final[min(top_k - 1, len(ranked_final) - 1)][1]
+        top_names = {name for name, _score in ranked_final[:head]}
+        boundary_score = ranked_final[min(head - 1, len(ranked_final) - 1)][1]
         if boundary_score <= 0:
             return
 
@@ -1020,9 +1025,9 @@ class RetrievalEngine:
             and top_keyword_name in top_names
         ):
             keyword_lead = top_keyword_score / max(keyword_by_name.get(top_final_name, 0.0), 1e-9)
-            final_rank = final_rank_by_name.get(top_keyword_name, top_k + 1)
+            final_rank = final_rank_by_name.get(top_keyword_name, head + 1)
             final_ratio = final_scores[top_keyword_name] / max(top_final_score, 1e-9)
-            if final_rank < top_k and keyword_lead >= 1.02 and final_ratio >= 0.88:
+            if final_rank < head and keyword_lead >= 1.02 and final_ratio >= 0.88:
                 final_scores[top_keyword_name] = max(
                     final_scores[top_keyword_name], top_final_score * 1.02
                 )
@@ -1038,9 +1043,9 @@ class RetrievalEngine:
             candidate_score = boundary_score * lift
             if allow_top_rank_promotion and keyword_rank == 1 and name != top_final_name:
                 keyword_lead = score / max(keyword_by_name.get(top_final_name, 0.0), 1e-9)
-                final_rank = final_rank_by_name.get(name, top_k + 10)
+                final_rank = final_rank_by_name.get(name, head + 10)
                 final_ratio = final_scores[name] / max(top_final_score, 1e-9)
-                if final_rank <= top_k + 2 and keyword_lead >= 1.02 and final_ratio >= 0.8:
+                if final_rank <= head + 2 and keyword_lead >= 1.02 and final_ratio >= 0.8:
                     candidate_score = max(candidate_score, top_final_score * 1.02)
             final_scores[name] = max(final_scores[name], candidate_score)
 
