@@ -1,0 +1,649 @@
+{
+ "format_version": 1,
+ "split": "design",
+ "note": "Design-only cases. Requests were already inspected during development; do not use them to claim held-out improvement.",
+ "sources": {
+  "gitea": {
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/08c6ea6728ee35a16f9a39588e725044b7f389cd/templates/swagger/v1_json.tmpl",
+   "sha256": "c418b5362113c352e012d82d9e9eb7a430c41cd8310ec938aa944d70a8dcdcee"
+  },
+  "wiremock": {
+   "url": "https://raw.githubusercontent.com/wiremock/wiremock/1a9a61507fbca5c7d6da72de4b22d54ceef48760/src/main/resources/swagger/wiremock-admin-api.json",
+   "sha256": "ab12a954320dbad1cebc1a54898aaab2d4ffe4b92165768fded650c9891a68fd"
+  }
+ },
+ "cases": [
+  {
+   "id": "search-gitea-owned-repos-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "Show the repositories owned by my signed-in account.",
+   "primary": {
+    "method": "get",
+    "path": "/user/repos"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-owned-repos-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "내 계정이 소유한 저장소 목록을 보여줘.",
+   "primary": {
+    "method": "get",
+    "path": "/user/repos"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-org-repos-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "Which repositories belong to this organization?",
+   "primary": {
+    "method": "get",
+    "path": "/orgs/{org}/repos"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-org-repos-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "이 조직에 속한 저장소들을 찾아줘.",
+   "primary": {
+    "method": "get",
+    "path": "/orgs/{org}/repos"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-repo-branches-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "Show all branches of this repository.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/branches"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-repo-branches-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "이 저장소의 브랜치 목록을 알려줘.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/branches"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-repo-releases-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "Show the releases published for this repository.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/releases"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-repo-releases-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "이 저장소에 게시된 릴리즈 목록을 보여줘.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/releases"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-repo-issues-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "List the issues reported in this repository.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/issues"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-repo-issues-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "이 저장소에 등록된 이슈 목록을 조회해줘.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/issues"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-repo-pulls-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "List the pull requests for this repository.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/pulls"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-repo-pulls-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "이 저장소의 풀 리퀘스트 목록을 조회해줘.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/pulls"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-issue-comments-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "Read every comment on this issue.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/issues/{index}/comments"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-issue-comments-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "이 이슈에 달린 댓글들을 읽어줘.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/issues/{index}/comments"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-file-content-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "Read the contents of a file at a given path in this repository.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/contents/{filepath}"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-gitea-file-content-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "이 저장소에서 지정한 경로의 파일 내용을 읽어줘.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/contents/{filepath}"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-all-mappings-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Show all configured stub mappings.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/mappings"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-all-mappings-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "설정된 스텁 매핑 목록을 보여줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/mappings"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-mapping-detail-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Read the stub mapping with this ID.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/mappings/{stubMappingId}"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-mapping-detail-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "이 ID에 해당하는 스텁 매핑을 조회해줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/mappings/{stubMappingId}"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-request-journal-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Show the requests recorded in the request journal.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/requests"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-request-journal-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "요청 로그에 기록된 요청 목록을 보여줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/requests"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-request-detail-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Read the logged request identified by this ID.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/requests/{requestId}"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-request-detail-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "이 ID로 기록된 요청의 상세 내용을 조회해줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/requests/{requestId}"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-unmatched-requests-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Find received requests that matched no stub mapping.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/requests/unmatched"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-unmatched-requests-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "스텁 매핑과 일치하지 않은 요청들을 찾아줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/requests/unmatched"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-recording-status-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Check whether request recording is currently running.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/recordings/status"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-recording-status-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "요청 녹화가 지금 실행 중인지 확인해줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/recordings/status"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-scenarios-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Show all stateful scenarios and their current states.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/scenarios"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-scenarios-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "모든 시나리오와 현재 상태를 보여줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/scenarios"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-files-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "List the names of all stored response files.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/files"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "search-wiremock-files-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "저장된 응답 파일의 이름 목록을 보여줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/files"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-search-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-gitea-branch-tip-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "For the branch main in repository acme/notes, show its latest commit details.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/branches/{branch}"
+   },
+   "alternatives": [
+    {
+     "method": "get",
+     "path": "/repos/{owner}/{repo}/branches"
+    }
+   ],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-gitea-branch-tip-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "acme/notes 저장소의 main 브랜치에서 가장 최근 커밋 정보를 보고 싶어.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/branches/{branch}"
+   },
+   "alternatives": [
+    {
+     "method": "get",
+     "path": "/repos/{owner}/{repo}/branches"
+    }
+   ],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-gitea-commit-tree-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "Show the file tree associated with a particular Git tree SHA, including nested entries.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/git/trees/{sha}"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-gitea-commit-tree-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "특정 Git tree SHA에 대응하는 파일 트리를 하위 항목까지 보여줘.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/git/trees/{sha}"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-gitea-language-bytes-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "How many source-code bytes does each programming language account for in acme/notes?",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/languages"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-gitea-language-bytes-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "acme/notes 저장소에서 프로그래밍 언어별 소스 코드 용량을 바이트로 알려줘.",
+   "primary": {
+    "method": "get",
+    "path": "/repos/{owner}/{repo}/languages"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-gitea-public-user-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "Show the public profile of the account whose username is riverdev.",
+   "primary": {
+    "method": "get",
+    "path": "/users/{username}"
+   },
+   "alternatives": [
+    {
+     "method": "get",
+     "path": "/users/search"
+    }
+   ],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-gitea-public-user-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "사용자명이 riverdev인 계정의 공개 프로필을 보여줘.",
+   "primary": {
+    "method": "get",
+    "path": "/users/{username}"
+   },
+   "alternatives": [
+    {
+     "method": "get",
+     "path": "/users/search"
+    }
+   ],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-wiremock-unused-stubs-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Which stub definitions have not matched any recorded requests?",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/mappings/unmatched"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-wiremock-unused-stubs-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "기록된 요청에 한 번도 매칭되지 않은 스텁 정의들을 찾아줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/mappings/unmatched"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-wiremock-near-misses-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Show closest stub matches for received requests that failed to match any stub.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/requests/unmatched/near-misses"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-wiremock-near-misses-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "어느 스텁에도 일치하지 않은 수신 요청들의 가장 가까운 스텁 매칭 후보를 보여줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/requests/unmatched/near-misses"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-wiremock-server-version-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Which software version is this WireMock server running?",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/version"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-wiremock-server-version-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "이 WireMock 서버가 실행 중인 소프트웨어 버전을 알려줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/version"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-wiremock-server-health-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Check whether this WireMock instance is currently healthy.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/health"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-wiremock-server-health-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "이 WireMock 인스턴스의 현재 상태가 정상인지 점검해줘.",
+   "primary": {
+    "method": "get",
+    "path": "/__admin/health"
+   },
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-gitea-unsupported-air-en",
+   "system": "gitea",
+   "language": "en",
+   "query": "Measure current airborne particulate concentration at a monitoring station.",
+   "primary": null,
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-gitea-unsupported-air-ko",
+   "system": "gitea",
+   "language": "ko",
+   "query": "관측소의 현재 공기 중 미세먼지 농도를 측정해줘.",
+   "primary": null,
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-wiremock-unsupported-audio-en",
+   "system": "wiremock",
+   "language": "en",
+   "query": "Transcribe a spoken audio recording into text.",
+   "primary": null,
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  },
+  {
+   "id": "choice-wiremock-unsupported-audio-ko",
+   "system": "wiremock",
+   "language": "ko",
+   "query": "음성 녹음 파일을 받아서 발화 내용을 텍스트로 변환해줘.",
+   "primary": null,
+   "alternatives": [],
+   "origin": "xgen-cli tool-choice-evaluation 2026-10-06"
+  }
+ ]
+}

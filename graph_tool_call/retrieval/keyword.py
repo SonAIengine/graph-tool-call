@@ -8,6 +8,48 @@ from collections.abc import Callable
 
 from graph_tool_call.core.tool import ToolSchema
 
+_PATH_SUB_RESOURCES = frozenset(
+    {
+        "exec",
+        "attach",
+        "portforward",
+        "proxy",
+        "log",
+        "status",
+        "scale",
+        "finalize",
+        "binding",
+        "eviction",
+        "ephemeralcontainers",
+    }
+)
+
+
+def _path_context_text(method: str, path: str) -> str:
+    """Describe scope and sub-resource hints derived from a deep OpenAPI path.
+
+    Large APIs (e.g. Kubernetes) repeat one description across operations that
+    differ only in scope or sub-resource. These hints are index-only: they are
+    inferred from the path, not stated by the source, so they must not be shown
+    as the tool description.
+    """
+    segments = [s for s in path.split("/") if s and not s.startswith("{")]
+    if len(segments) < 3:
+        return ""
+    method = method.lower()
+    has_name = "{name}" in path
+    hints: list[str] = []
+    if "{namespace}" in path or "{ns}" in path:
+        hints.append("namespaced")
+    elif not has_name and method in ("get", "delete"):
+        hints.append("cluster-wide")
+    if segments[-1].lower() in _PATH_SUB_RESOURCES:
+        hints.append(f"{segments[-1]} of {segments[-2]}")
+    if method == "delete" and not has_name:
+        hints.append("collection")
+    return ", ".join(hints)
+
+
 # Baseline stopwords — always removed regardless of corpus.
 # These are common filler words that never carry discriminative value.
 _BASE_STOPWORDS = frozenset(
@@ -750,6 +792,8 @@ class BM25Scorer:
 
         if not path:
             return tokens
+
+        tokens.extend(self._tokenize_fn(_path_context_text(method, path)))
 
         # Split path into segments, skip empty and {param} placeholders
         segments = [s for s in path.split("/") if s and not s.startswith("{")]

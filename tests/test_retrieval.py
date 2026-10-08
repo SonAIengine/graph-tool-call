@@ -247,7 +247,7 @@ def test_dominant_keyword_candidate_preserved_near_top_k_boundary():
         "auxiliary_c": 18.0,
     }
 
-    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, top_k=5)
+    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, head=5)
 
     ranked = sorted(final_scores, key=final_scores.get, reverse=True)
     assert "exact_keyword_target" in ranked[:5]
@@ -268,7 +268,7 @@ def test_dominant_keyword_leader_just_outside_boundary_can_win_close_sibling():
         "auxiliary_a": 20.0,
     }
 
-    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, top_k=5)
+    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, head=5)
 
     ranked = sorted(final_scores, key=final_scores.get, reverse=True)
     assert ranked[0] == "exact_keyword_target"
@@ -289,7 +289,7 @@ def test_dominant_keyword_candidate_guard_ignores_weak_tail_matches():
         "weak_keyword_tail": 12.0,
     }
 
-    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, top_k=5)
+    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, head=5)
 
     ranked = sorted(final_scores, key=final_scores.get, reverse=True)
     assert "weak_keyword_tail" not in ranked[:5]
@@ -309,7 +309,7 @@ def test_dominant_keyword_leader_can_win_close_sibling_rank():
         "auxiliary_a": 20.0,
     }
 
-    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, top_k=5)
+    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, head=5)
 
     ranked = sorted(final_scores, key=final_scores.get, reverse=True)
     assert ranked[0] == "exact_keyword_target"
@@ -331,7 +331,7 @@ def test_dominant_keyword_leader_top_rank_promotion_can_be_disabled():
     RetrievalEngine._preserve_dominant_keyword_candidates(
         keyword_scores,
         final_scores,
-        top_k=5,
+        head=5,
         allow_top_rank_promotion=False,
     )
 
@@ -352,7 +352,7 @@ def test_dominant_keyword_leader_does_not_jump_large_score_gap():
         "semantic_sibling": 60.0,
     }
 
-    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, top_k=5)
+    RetrievalEngine._preserve_dominant_keyword_candidates(keyword_scores, final_scores, head=5)
 
     ranked = sorted(final_scores, key=final_scores.get, reverse=True)
     assert ranked[0] == "semantic_sibling"
@@ -567,3 +567,21 @@ def test_clause_diversity_gate_detects_distinct_subtasks():
     )
 
     assert engine._has_diverse_actionable_clauses(query)
+
+
+def test_dominant_keyword_guard_head_does_not_follow_top_k(monkeypatch):
+    seen = []
+    original = RetrievalEngine._preserve_dominant_keyword_candidates
+
+    def record(keyword_scores, final_scores, head, **kwargs):
+        seen.append(head)
+        return original(keyword_scores, final_scores, head, **kwargs)
+
+    monkeypatch.setattr(
+        RetrievalEngine, "_preserve_dominant_keyword_candidates", staticmethod(record)
+    )
+    tg = _build_file_tools_graph()
+    for top_k in (3, 10, 20):
+        tg.retrieve_with_scores("read the file contents", top_k=top_k)
+    assert len(seen) == 3
+    assert len(set(seen)) == 1
